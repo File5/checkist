@@ -19,8 +19,9 @@
 - SPA запрашивает `<VITE_API_BASE_URL>/health/` (default `/api/health/`), `Accept: application/json`, `credentials: omit`, `cache: no-store`. Адаптер валидирует JSON и соответствие HTTP/тела, сохраняет все checks при 503, ограничивает fetch и чтение тела 15 секундами. Страница показывает загрузку, успех, частичный отказ, безопасные ошибки и повтор; предыдущие запросы отменяются. Это технический health UI, без данных чеков.
 - `GET /api/health/` запускает три probes параллельно в `ThreadPoolExecutor(max_workers=3)`: SQL `SELECT 1`, Redis cache set/get/delete, Celery inspect ping. Соединения БД каждого probe-потока закрываются. Известный отказ зависимости даёт HTTP 503 с независимыми `checks`.
 - `check_services` последовательно проверяет SQL/cache и публикует `health.ping` через реальный broker, затем читает результат. Control ping и выполнение задачи — разные проверки.
-- Django global DRF permission — `IsAuthenticated`; health явно открыт без authentication. Бизнес-эндпоинтов и пользовательского входа нет. Стандартные Django apps подключены, но `/admin/` не зарегистрирован.
-- Приложения `stores`, `catalog`, `receipts` не имеют URL, задач и команд: это модели и функции, вызываемые из кода. `receipts` зависит от `stores` и `catalog`, те друг от друга не зависят; `health` с ними не связан.
+- Django global DRF permission — `IsAuthenticated`; health явно открыт без authentication. Бизнес-эндпоинтов и пользовательского входа в SPA нет. `DEFAULT_AUTHENTICATION_CLASSES` не переопределён, поэтому действуют Session и Basic: пользователь админки пройдёт `IsAuthenticated` в будущем эндпоинте, если тот не задаст свои правила.
+- `/admin/` — стандартный Django admin (`backend/config/urls.py`), HTML-интерфейс для пользователей с `is_staff`. Его открывают напрямую на Django (`127.0.0.1:8000`, QA — `18000`): Vite проксирует только `/api`, а `/admin` и `/static` — нет. Сессии хранятся в Postgres, статику админки отдаёт `runserver` при `DJANGO_DEBUG=1`. При `DJANGO_DEBUG=0` статика не отдаётся: `STATIC_ROOT`, `collectstatic`, secure cookies и HTTPS не настроены, админка — только для локальных dev/QA.
+- Приложения `stores`, `catalog`, `receipts` не имеют своих URL, задач и команд: это модели, функции, вызываемые из кода, и `admin.py` с настройками админки. `receipts` зависит от `stores` и `catalog`, те друг от друга не зависят; `health` с ними не связан.
 
 | Redis logical DB | Назначение | Локальная переменная |
 | --- | --- | --- |
@@ -30,19 +31,19 @@
 
 Эти DB не являются границей безопасности. Redis без пароля — локальная dev/QA-конфигурация; публикация ограничена `127.0.0.1`. Health cache keys уникальны, TTL 5 секунд, удаление выполняется в `finally`. `health.ping` идемпотентна и не меняет бизнес-данные. При таймауте ожидания уже принятая task может выполниться позже.
 
-Postgres содержит технические таблицы стандартных миграций `admin`, `auth`, `contenttypes`, `sessions` и 14 таблиц предметной модели. Собственных моделей/миграций `health` нет. Seed users и фотографии не нужны.
+Postgres содержит технические таблицы стандартных миграций `admin`, `auth`, `contenttypes`, `sessions` и 14 таблиц предметной модели. Собственных моделей/миграций `health` нет. Seed users и фотографии не нужны; пользователя для админки человек создаёт сам командой `createsuperuser`, в репозитории его реквизитов нет.
 
 ## Предметная модель
 
 | Приложение | Таблицы | Код помимо моделей |
 | --- | --- | --- |
-| `stores` | `Country`, `Currency`, `TaxRate`, `Merchant`, `Store` | `normalize.py` — ключ адреса; сид-миграция `0002_seed_reference` |
-| `catalog` | `Category`, `GenericProduct`, `Brand`, `Product` | `units.py` — единицы и приведение к базовой |
-| `receipts` | `Receipt`, `ReceiptLine`, `ReceiptDiscount`, `ReceiptTax`, `ProductAlias` | `dedup.py` — фискальный ключ, поиск дубликатов и сопоставлений; `validation.py` — проверка чека; `prices.py` — история цен |
+| `stores` | `Country`, `Currency`, `TaxRate`, `Merchant`, `Store` | `normalize.py` — ключ адреса; сид-миграция `0002_seed_reference`; `admin.py` — 5 админок, форма магазина |
+| `catalog` | `Category`, `GenericProduct`, `Brand`, `Product` | `units.py` — единицы и приведение к базовой; `admin.py` — 4 админки, защита от цикла категорий |
+| `receipts` | `Receipt`, `ReceiptLine`, `ReceiptDiscount`, `ReceiptTax`, `ProductAlias` | `dedup.py` — фискальный ключ, поиск дубликатов и сопоставлений; `validation.py` — проверка чека; `prices.py` — история цен; `admin.py` — чек с тремя inline, строки чеков, сопоставления |
 
 Магазин определяется продавцом и нормализованным адресом. Чек защищён от повторного ввода тремя уровнями unique-ограничений. Каталог двухуровневый: обобщённый продукт для сравнения и конкретный товар. История цен отдельной таблицы не имеет и выводится из строк чеков. Сид-миграция создаёт три страны, три валюты и четыре ставки налога; чеки, магазины и товары не сидируются.
 
-Поля, ограничения, JSON-поля, границы ответственности БД и приложения, порядок миграций и отката, известные ограничения — в [data-model.md](data-model.md). API и админки для этих данных нет: они вводятся только кодом.
+Поля, ограничения, JSON-поля, границы ответственности БД и приложения, порядок миграций и отката, известные ограничения — в [data-model.md](data-model.md). HTTP API для этих данных нет: их вводят через админку или кодом. Какие модели зарегистрированы, что вычисляют и проверяют формы и чем админка ограничена — в разделе [«Админка»](data-model.md#админка).
 
 Compose создаёт сеть и тома отдельно по имени project: `checkist_dev` и `checkist_qa`. `postgres_data` хранит `/var/lib/postgresql/data`, `redis_data` — `/data` с AOF и `noeviction`. Worker собран из `backend/Dockerfile`, работает non-root (UID 10001), монтирует `backend/` в `/app:ro`, использует prefork/concurrency 2. Backend/frontend контейнеров, beat и Flower нет.
 

@@ -2,9 +2,9 @@
 
 ## Граница проверки
 
-Реализованы backend scaffold (health API, Postgres/Redis probes, Celery task/CLI, Compose), React/TypeScript/Vite SPA с настоящим health API через proxy и предметная модель данных чеков — приложения `catalog`, `stores`, `receipts` с миграциями и тестами ([data-model.md](data-model.md)). Контрактные тесты health используют mocks; integration-tag tests работают с реальными Postgres и Redis; выполнение очереди и result backend проверяет отдельный `check_services`. Ограничения БД, каскады, сиды, дедупликацию, проверку чека и историю цен проверяют integration tests трёх приложений на реальном Postgres. Vitest проверяет клиентский API-адаптер с mocked fetch; CLI `backend/scripts/check_health_proxy.mjs` — настоящий HTTP и тот же адаптер через proxy в Node 24.
+Реализованы backend scaffold (health API, Postgres/Redis probes, Celery task/CLI, Compose), React/TypeScript/Vite SPA с настоящим health API через proxy и предметная модель данных чеков — приложения `catalog`, `stores`, `receipts` с миграциями и тестами ([data-model.md](data-model.md)). Контрактные тесты health используют mocks; integration-tag tests работают с реальными Postgres и Redis; выполнение очереди и result backend проверяет отдельный `check_services`. Ограничения БД, каскады, сиды, дедупликацию, проверку чека и историю цен проверяют integration tests трёх приложений на реальном Postgres. Django admin (`/admin/`, 12 моделей и inline чека) проверяют `test_admin.py` трёх приложений и `health/tests/test_admin_site.py` через `django.test.Client`: это HTTP-запросы к настоящим страницам админки без браузера. Vitest проверяет клиентский API-адаптер с mocked fetch; CLI `backend/scripts/check_health_proxy.mjs` — настоящий HTTP и тот же адаптер через proxy в Node 24.
 
-Планируются продуктовые функции: хранение фото чеков, распознавание магазина/адреса и товаров/стоимостей, API ввода чеков, статистический дашборд. OCR-провайдер не выбран. Пользовательского входа и бизнес-API нет. У модели данных нет API и админки, поэтому HTTP-проверок для неё нет. Клиент описан в [frontend.md](frontend.md).
+Планируются продуктовые функции: хранение фото чеков, распознавание магазина/адреса и товаров/стоимостей, API ввода чеков, статистический дашборд. OCR-провайдер не выбран. Бизнес-API и пользовательского входа в SPA нет. HTTP API у модели данных нет; её HTML-интерфейс — Django admin, проверки которого описаны в разделах [«Админка: проверки без браузера»](#админка-проверки-без-браузера) и [«Ручная приёмка админки человеком»](#ручная-приёмка-админки-человеком). Клиент описан в [frontend.md](frontend.md).
 
 Ни сборка образа, ни `check`, ни mocked API tests не доказывают реальную HTTP/клиентскую интеграцию. Визуальную и интерактивную приёмку выполняет человек; автоматический обход browser UI запрещён. HTTP, CLI и unit tests можно автоматизировать.
 
@@ -50,15 +50,17 @@ docker compose -p checkist_qa up -d --build --wait --wait-timeout 120 worker
 ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py check_services
 ```
 
-Ожидается exit 0, отсутствие новых миграций, 62 теста без БД и 158 integration tests, затем JSON с `celery_task.result={"message":"pong"}`. На пустой БД `migrate` применяет 22 миграции: 18 стандартных и 4 собственных. Числа соответствуют текущему коду и могут измениться вместе с тестами. Команда без тега не использует БД и может выполняться при TCP-отказе; integration-команда не должна заменяться skip/eager. Django runner создаёт и затем удаляет **`test_checkist_qa`**; Redis integration использует отдельный QA Redis DB 2 и уникальные временные ключи.
+Ожидается exit 0, отсутствие новых миграций, 67 тестов без БД и 342 integration tests, затем JSON с `celery_task.result={"message":"pong"}`. На пустой БД `migrate` применяет 22 миграции: 18 стандартных и 4 собственных. Числа соответствуют текущему коду и могут измениться вместе с тестами. Команда без тега не использует БД и может выполняться при TCP-отказе; integration-команда не должна заменяться skip/eager. Django runner создаёт и затем удаляет **`test_checkist_qa`**; Redis integration использует отдельный QA Redis DB 2 и уникальные временные ключи.
 
 | Приложение | Без БД (`--exclude-tag=integration`) | С БД (`--tag=integration`) |
 | --- | --- | --- |
-| `catalog` | 9 | 19 |
-| `stores` | 14 | 31 |
-| `receipts` | 18 | 106 |
-| `health` | 21 | 2 |
-| Всего | 62 | 158 |
+| `catalog` | 9 | 73 |
+| `stores` | 14 | 79 |
+| `receipts` | 18 | 183 |
+| `health` | 26 | 7 |
+| Всего | 67 | 342 |
+
+Числа — по фактическому прогону [2026-10-03](#фактические-результаты-проверки-админки-2026-10-03). Тесты админки — integration, кроме пяти тестов маршрута в `health/tests/test_admin_site.py`, которым БД не нужна. При прогоне тестов без БД в выводе дважды появляется `Internal Server Error: /api/health/`: это журнал контрактных тестов безопасного ответа 500, а не отказ.
 
 Unit/contract tests health покрывают точный 200, комбинации 503, сохранение независимых checks, анонимность, игнорирование query/Authorization, 405, 406, безопасный 500 при DEBUG, отсутствие публикации task из health, параллельность probes, cleanup кеша, bounded publication retries и негативную env-валидацию. Это не сетевой замер времени отказа.
 
@@ -74,12 +76,49 @@ Unit/contract tests health покрывают точный 200, комбинац
 ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test catalog stores receipts --tag=integration --verbosity=2
 ```
 
-Ожидается exit 0 у каждой команды, `No changes detected`, 41 тест без БД и 156 integration tests (без `health`).
+Ожидается exit 0 у каждой команды, `No changes detected`, 41 тест без БД и 335 integration tests (без `health`).
 
 Что проверяют тесты трёх приложений:
 
 - без БД — `to_base` и единицы, `normalize_address` и `address_key`, `name_key`, сборку `fiscal_key`, согласованность образцов чеков;
-- с БД — unique и check каждой таблицы, три уровня дедупликации и `find_duplicates`, отрицательные строки и итог, `PROTECT` / `CASCADE` / `SET_NULL`, сиды и их повторное и обратное применение, сохранение трёх образцов чеков и отказ при повторе, `validate_receipt`, `find_alias`, историю цен.
+- с БД — unique и check каждой таблицы, три уровня дедупликации и `find_duplicates`, отрицательные строки и итог, `PROTECT` / `CASCADE` / `SET_NULL`, сиды и их повторное и обратное применение, сохранение трёх образцов чеков и отказ при повторе, `validate_receipt`, `find_alias`, историю цен;
+- с БД, админка (`test_admin.py`) — см. следующий раздел.
+
+## Админка: проверки без браузера
+
+Админка миграций не добавляет, поэтому `makemigrations --check --dry-run` обязан отвечать `No changes detected`. `manage.py check` здесь значим: он выполняет проверки конфигурации админок (`autocomplete_fields`, `search_fields` и т. п.). Тот же `check` нужен в worker-контейнере: worker импортирует `admin.py` при старте.
+
+```powershell
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py check
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py makemigrations --check --dry-run
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test catalog stores receipts health --exclude-tag=integration --verbosity=2
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test catalog stores receipts health --tag=integration --verbosity=2
+docker compose -p checkist_qa exec -T worker python -X utf8 manage.py check
+```
+
+Что проверяют тесты админки (`backend/<app>/tests/test_admin.py`, `backend/health/tests/test_admin_site.py`):
+
+- маршрут `/admin/`, заголовки сайта, сохранение анонимного JSON у `/api/health/`;
+- доступ: аноним и пользователь без `is_staff` перенаправляются на вход, неактивный staff не входит, staff без прав на модель получает 403, анонимный POST ничего не создаёт;
+- регистрацию 12 моделей, отсутствие отдельных страниц у `ReceiptDiscount` и `ReceiptTax` и их наличие в inline чека;
+- 200 у списка, добавления и правки; поиск, каждый фильтр, иерархию дат, сортировку; неизменность числа запросов списка при росте числа строк;
+- сохранение через POST, включая чек с позицией, скидкой и итогом по ставке;
+- ошибки формы вместо 500: дубликат адреса магазина, сопоставления и чека на каждом из трёх уровней, `gross != net + tax`, повтор `position`, нарушения check строк, цикл категорий, неизвестный часовой пояс, чужая родительская строка;
+- вычисляемые `address_key`, `name_key`, `fiscal_key`; блок предупреждений `validate_receipt` и экранирование в нём сохранённого текста;
+- ответы автодополнения для каждого поля и его недоступность без `is_staff`.
+
+Тесты создают пользователей сами в `test_checkist_qa` и входят через `force_login`; настоящая форма входа проверена только на отказ пользователю без `is_staff`. Данные вымышленные.
+
+HTTP-проверка работающего сервера без браузера. В отдельном QA-терминале — `runserver 127.0.0.1:18000` (команда в разделе ниже), в другом:
+
+```powershell
+curl.exe -i --max-time 15 http://127.0.0.1:18000/admin/
+curl.exe -i --max-time 15 http://127.0.0.1:18000/admin/login/
+curl.exe -i --max-time 15 http://127.0.0.1:18000/api/health/
+curl.exe -sS -o NUL -w 'HTTP=%{http_code} type=%{content_type}\n' --max-time 15 http://127.0.0.1:18000/static/admin/css/base.css
+```
+
+Ожидается: 302 с `Location: /admin/login/?next=/admin/`; 200 `text/html` с формой входа и заголовком «Checkist — администрирование»; 200 `application/json` с тремя checks `ok` (нужен QA worker); 200 `text/css`. Curl exit 0 не подтверждает HTTP-статус. Последняя проба показывает только то, что `runserver` отдаёт файл стилей при `DJANGO_DEBUG=1`; как страница выглядит в браузере, она не подтверждает.
 
 Образцы чеков — тестовые данные, собранные по пересказу; соответствие настоящим чекам автоматически не проверяется и остаётся за человеком.
 
@@ -112,7 +151,7 @@ docker compose -p checkist_qa exec -T worker celery -A config inspect ping --des
 docker compose -p checkist_qa ps
 ```
 
-Ожидается exit 0 для каждой команды; зависимости без конфликтов, check без ошибок, migrations применены/уже актуальны, `No changes detected`, 158 integration tests passed, реальный pong через task/results и отдельный control pong. `ps` должен показывать три healthy services с QA host-портами. Docker build может использовать cache: это не новая установка с нуля, но `pip check` проверяет реально установленные зависимости образа.
+Ожидается exit 0 для каждой команды; зависимости без конфликтов, check без ошибок, migrations применены/уже актуальны, `No changes detected`, 342 integration tests passed, реальный pong через task/results и отдельный control pong. `ps` должен показывать три healthy services с QA host-портами. Docker build может использовать cache: это не новая установка с нуля, но `pip check` проверяет реально установленные зависимости образа.
 
 ## HTTP: позитивные и негативные сценарии
 
@@ -273,7 +312,76 @@ for name in ('POSTGRES_PASSWORD', 'DJANGO_SECRET_KEY'):
 5. Tab до «Повторить», видимый focus, Enter/Space запускают запрос; сводка объявляется через aria-live со screen reader. Статусы понятны без цвета. На ширине около 375 px и масштабе 200% нет обрезания/горизонтального scroll, кнопка доступна; при reduced motion интерфейс статичен.
 6. Страница честно отмечает каркас и планируемые фото/OCR/категории/дашборд. Рабочие бизнес-функции и распознанные чеки не представлены.
 
-Автоматический обход browser UI не выполняется. Скриншотов и результатов визуальной/интерактивной приёмки пока нет. После проверки остановить оба локальных процесса и QA Compose по разделу завершения ниже.
+Автоматический обход browser UI не выполняется. Скриншотов и результатов визуальной/интерактивной приёмки пока нет. Админка принимается отдельным сценарием [ниже](#ручная-приёмка-админки-человеком). После проверки остановить оба локальных процесса и QA Compose по разделу завершения ниже.
+
+## Ручная приёмка админки человеком
+
+Выполняется в QA-среде в браузере; автоматически эти шаги не проходились. Нужны QA Postgres, применённые миграции и `runserver 127.0.0.1:18000` с полным QA environment; Vite, Redis и worker не нужны. Открывать напрямую `http://127.0.0.1:18000/admin/`, не через Vite. Данные вводить вымышленные.
+
+Подготовка — суперпользователь в QA-БД (пароль вводится в терминале и нигде не сохраняется):
+
+```powershell
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py createsuperuser
+```
+
+1. **Вход и стили.** Открыть `/admin/`: перенаправление на форму входа. Войти. Страница оформлена (стили загружены, не «голый» HTML), заголовок «Checkist — администрирование», на главной — группы `Catalog`, `Receipts`, `Stores` и «Пользователи и группы». Неверный пароль даёт сообщение об ошибке, а не вход.
+2. **Списки 12 моделей.** Открыть по очереди (названия английские и образованы автоматически, отсюда `Countrys` и `Currencys`): `Countrys`, `Currencys`, `Tax rates`, `Merchants`, `Stores`, `Categories`, `Generic products`, `Brands`, `Products`, `Receipts`, `Receipt lines`, `Product aliases`. У каждого проверить колонки, поиск и фильтры в правой панели (где они есть — см. [таблицу](data-model.md#какие-модели-доступны)). У `Receipts` — иерархию дат над списком. Отдельных списков скидок и итогов по налогам быть не должно; у `Receipt lines` нет кнопки добавления. В справочниках после `migrate` уже есть 3 страны, 3 валюты и 4 ставки.
+3. **Ввод чека.** Создать продавца (`Merchants`) и магазин (`Stores`): поле `Address key` недоступно для ввода и заполняется после сохранения. Создать категорию, обобщённый продукт и товар. В `Receipts` добавить чек: магазин, валюта, `purchased_at` в UTC, `purchased_on` — локальная дата, `receipt_number`, `total`; в inline — две позиции, скидку (без привязки к строке) и итог по ставке, у которого `gross = net + tax`. Сохранить. Открыть чек: блок «Предупреждения проверки» показывает «Нарушений не найдено.» либо список расхождений — намеренно ошибиться в `total` и убедиться, что предупреждение появилось, а чек всё равно сохраняется. Ввести тот же чек ещё раз (те же магазин, `purchased_on`, `shift_number`, `register_code` и `receipt_number`): ошибка формы на странице, а не страница сбоя сервера. Итог с `gross`, не равным `net + tax`, — тоже ошибка формы.
+4. **Автодополнение и сопоставление.** В форме чека поля магазина, товара и ставки ищут по вводу и подставляют значение. После сохранения чека в позиции-залоге поле `parent` и в скидке поле `line` предлагают только строки этого чека. Открыть `Receipt lines`, в фильтре по `product` выбрать «Пусто» (товар не задан), открыть строку, выбрать товар, сохранить: строка исчезает из отфильтрованного списка. В `Product aliases` добавить сопоставление: `Name key` заполняется сам; повтор того же названия у того же продавца — ошибка формы.
+5. **Удаление.** Удалить страну, в которой есть продавец: админка отказывает и перечисляет защищённые объекты. Удалить чек: страница подтверждения перечисляет его позиции, скидки и итоги по налогам; после подтверждения чек и они удалены, магазин и товары на месте.
+
+Дополнительно, по желанию: поменять `position` двух строк одним сохранением — ожидается ошибка формы (переставлять через свободный номер); выйти и убедиться, что `/admin/` снова требует входа.
+
+После приёмки удалить введённые записи либо помнить, что они остались в томе `checkist_qa`; суперпользователь тоже остаётся в этой БД. Завершение — по разделу [«Завершение QA»](#завершение-qa).
+
+## Фактические результаты проверки админки, 2026-10-03
+
+Задача T5 (`task_musmfb796y`): состояние ветки после слияния T1–T4 (`f164bad`) плюс правки документов; код и тесты в этой задаче не менялись. Windows-хост: Python 3.13.9, Docker/Linux daemon. Использованы только Compose project и БД `checkist_qa`, тестовая `test_checkist_qa`, Postgres 25432, Redis 16379, Django 18000 — полный QA environment выше. Перед запуском контейнеров project и слушателей на QA-портах не было. Том `checkist_qa` существовал от прежних прогонов. Dev-контейнеры `checkist_dev` работали параллельно и не затрагивались.
+
+### Проверено и прошло
+
+Команды `manage.py` запускались как `./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py …`; у каждой — exit 0.
+
+| Фактическая команда | Результат |
+| --- | --- |
+| `Copy-Item .env.example .env`, `py -3.13 -m venv backend/.venv`, `pip install -r backend/requirements.txt`, `pip check` | Созданы игнорируемые env/venv; `No broken requirements found.` |
+| `docker compose -p checkist_qa config --quiet`, `up -d --wait --wait-timeout 90 postgres redis` | Оба healthy на `127.0.0.1:25432` и `127.0.0.1:16379` |
+| `Test-NetConnection 127.0.0.1 -Port 25432`, `-Port 16379` | Оба `TcpTestSucceeded=True` |
+| `manage.py check` | `System check identified no issues (0 silenced).` |
+| `manage.py makemigrations --check --dry-run` | `No changes detected` |
+| `manage.py migrate --noinput` | `No migrations to apply.` — в существующем томе миграции уже применены |
+| `manage.py test catalog stores receipts health --exclude-tag=integration` | 67 tests OK, БД не использовалась |
+| Та же команда отдельно по приложениям | `catalog` 9, `stores` 14, `receipts` 18, `health` 26 |
+| `manage.py test catalog stores receipts health --tag=integration --noinput` | 342 tests OK за 88 с; `test_checkist_qa` создана и удалена runner |
+| Та же команда отдельно по приложениям | `catalog` 73, `stores` 79, `receipts` 183, `health` 7 |
+| `docker compose -p checkist_qa up -d --build --wait --wait-timeout 180 worker` | Worker healthy |
+| `docker compose -p checkist_qa exec -T worker python -m pip check` | `No broken requirements found.` |
+| `docker compose -p checkist_qa exec -T worker python -X utf8 manage.py check` | 0 issues: `admin.py` трёх приложений импортируются в Linux-контейнере |
+| `docker compose -p checkist_qa exec -T worker python -X utf8 manage.py makemigrations --check --dry-run` | `No changes detected` |
+| Linux-путь: `docker compose -p checkist_qa exec -T worker python -X utf8 manage.py test catalog stores receipts health --tag=integration --noinput`, затем `… --exclude-tag=integration` | Exit 0: найдено и выполнено 342 и 67 tests |
+| `manage.py check_services` | `{"database": "ok", "redis": "ok", "celery_task": {"status": "ok", "result": {"message": "pong"}}}` |
+| `manage.py runserver 127.0.0.1:18000 --noreload` | Сервер обслужил запросы ниже, затем остановлен |
+| `curl.exe -sS -i --max-time 15 http://127.0.0.1:18000/admin/` | Curl exit 0; HTTP 302, `Location: /admin/login/?next=/admin/`, `X-Frame-Options: DENY` |
+| `curl.exe -sS -i --max-time 15 http://127.0.0.1:18000/admin/login/` | Curl exit 0; HTTP 200, `text/html; charset=utf-8`, `<title>Войти \| Checkist</title>`, заголовок «Checkist — администрирование», форма с CSRF-токеном, ссылки на `/static/admin/css/*.css` |
+| `curl.exe -sS -i --max-time 15 http://127.0.0.1:18000/api/health/` | Curl exit 0; HTTP 200, `application/json`, `Cache-Control: no-store`, три checks `ok` |
+| `curl.exe -sS -o NUL -w '…' --max-time 15 http://127.0.0.1:18000/static/admin/css/base.css` | Curl exit 0; HTTP 200, `text/css`, 22 120 байт |
+
+### Проверено и не прошло
+
+Дефектов кода и упавших проверок нет. В выводе тестов без БД дважды встречается `Internal Server Error: /api/health/` — это ожидаемый журнал контрактных тестов ответа 500, тесты при этом OK.
+
+### Не проверено и почему
+
+- **Страницы админки в браузере**: внешний вид и стили, списки 12 моделей, ввод чека, автодополнение, удаление. Автоматический обход UI запрещён; принимает человек по [сценарию выше](#ручная-приёмка-админки-человеком). Суперпользователь в QA не создавался.
+- **Вход через настоящую форму** (логин и пароль): тесты входят через `force_login`, форма проверена только на отказ пользователю без `is_staff`. Шаг 1 сценария.
+- **Страницы удаления** (отказ по `PROTECT`, подтверждение каскада): автотестов на них нет, поведение — стандартное для Django. Шаг 5 сценария.
+- **Перестановка `position` двух строк через свободный номер**: тестами покрыта только ошибка формы при повторе номера. Дополнительный шаг сценария.
+- **Админка при `DJANGO_DEBUG=0`** и production-настройки (статика, secure cookies, HTTPS): не настроены и не проверялись, админка — только для dev/QA.
+- **Поведение на больших объёмах** при `statement_timeout=2000` мс (поиск, подсчёт строк, страница чека с сотнями позиций): представительных данных нет, замеров нет. Шаги: наполнить QA-БД чеками, открыть списки с поиском и замерить время ответа.
+- **`migrate` на пустой БД** в этом прогоне не повторялся: том уже содержал применённые миграции, а новых миграций задача не добавляет. Результат на пустой БД — в разделе ниже.
+- **Frontend-проверки (`npm`), proxy и сценарии отказов health** не повторялись: код health, клиента и Compose не менялся. Результаты — в разделах ниже.
+
+Уборка: runserver остановлен, `docker compose -p checkist_qa down` — контейнеры и сеть удалены, тома сохранены.
 
 ## Фактические результаты интеграции через proxy, 2026-10-03
 
@@ -345,7 +453,7 @@ console.log('Stopped API: proxy empty 502; real adapter returns network error')
 
 ## Фактические результаты проверки модели данных, 2026-10-03
 
-Источник: задача T5 (`task_musd0fst2t`), состояние ветки после слияния T0–T4; код и тесты в этой задаче не менялись. Windows-хост: Python 3.13.9, Docker 29.8.1 (Linux daemon), Postgres 17.11. Использован отдельный Compose project `checkist_qa_t5` с новыми томами, БД `checkist_qa_t5`, тестовая БД `test_checkist_qa_t5`, Postgres 25432, Redis 16379: том `checkist_qa` уже существовал и не гарантировал пустую БД. Dev-данные и локальный Postgres не затронуты. Environment — блок выше с `POSTGRES_DB = "checkist_qa_t5"`.
+Числа тестов в этом разделе (62 и 158) относятся к состоянию до появления админки; актуальные — в [результатах проверки админки](#фактические-результаты-проверки-админки-2026-10-03). Источник: задача T5 (`task_musd0fst2t`), состояние ветки после слияния T0–T4; код и тесты в этой задаче не менялись. Windows-хост: Python 3.13.9, Docker 29.8.1 (Linux daemon), Postgres 17.11. Использован отдельный Compose project `checkist_qa_t5` с новыми томами, БД `checkist_qa_t5`, тестовая БД `test_checkist_qa_t5`, Postgres 25432, Redis 16379: том `checkist_qa` уже существовал и не гарантировал пустую БД. Dev-данные и локальный Postgres не затронуты. Environment — блок выше с `POSTGRES_DB = "checkist_qa_t5"`.
 
 ### Проверено и прошло
 
