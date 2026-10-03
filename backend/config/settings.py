@@ -97,6 +97,7 @@ INSTALLED_APPS = [
     "catalog.apps.CatalogConfig",
     "stores.apps.StoresConfig",
     "receipts.apps.ReceiptsConfig",
+    "api.apps.ApiConfig",
 ]
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
