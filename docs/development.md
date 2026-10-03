@@ -2,7 +2,7 @@
 
 ## Реализовано и планируется
 
-Сейчас запускаются Django/DRF и React + TypeScript + Vite SPA локально, Postgres, Redis и Celery worker — в Linux Docker. Клиент показывает настоящий health API через proxy, ошибки и повтор; подробности — [frontend.md](frontend.md). Предметная модель данных чеков (приложения `stores`, `catalog`, `receipts`) реализована и описана в [data-model.md](data-model.md); API и админки для неё нет. Хранение фото чеков, OCR магазина/адреса и товаров/стоимостей и дашборд не реализованы; OCR-провайдер не выбран.
+Сейчас запускаются Django/DRF и React + TypeScript + Vite SPA локально, Postgres, Redis и Celery worker — в Linux Docker. Клиент показывает настоящий health API через proxy, ошибки и повтор; подробности — [frontend.md](frontend.md). Предметная модель данных чеков (приложения `stores`, `catalog`, `receipts`) реализована и описана в [data-model.md](data-model.md); данные вводят через [Django admin](#админка) или кодом, HTTP API для неё нет. Хранение фото чеков, OCR магазина/адреса и товаров/стоимостей и дашборд не реализованы; OCR-провайдер не выбран.
 
 ## Версии и установка Windows
 
@@ -104,9 +104,32 @@ npm.cmd run dev
 
 Для тестовых миграций, очереди и отключений сервисов используйте только [QA-блок и сквозной сценарий](verification.md#сквозная-проверка-клиента-через-vite-proxy): API 18000, Vite 15173, `DEV_API_PROXY_TARGET=http://127.0.0.1:18000`, `VITE_API_BASE_URL=/api`. Все npm-команды выше выполняются с QA environment; dev-команда — `npm.cmd run dev -- --port 15173`. Unit-тесты адаптера используют mocked fetch; реальный adapter/HTTP проверяет `node backend/scripts/check_health_proxy.mjs healthy` из корня при запущенных QA API и Vite. UI принимает человек.
 
+## Админка
+
+Django admin работает на том же локальном Django, что и API, отдельного процесса нет. Открывайте его **напрямую**: dev — `http://127.0.0.1:8000/admin/`, QA — `http://127.0.0.1:18000/admin/`. Через Vite (5173/15173) админка недоступна: proxy передаёт только `/api`, а `/admin` и `/static` — нет.
+
+Нужны применённые миграции (таблицы `auth`, `sessions`, `admin` создаёт `migrate`) и пользователь с `is_staff`. Готовых пользователей в проекте нет — создайте суперпользователя один раз для каждой БД:
+
+```powershell
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py createsuperuser
+```
+
+Команда интерактивная: логин, e-mail (можно пустой) и пароль вводятся в терминале; пароль проверяют четыре стандартных валидатора Django. Пользователь хранится только в БД того окружения, где выполнена команда: с QA environment из [verification.md](verification.md) он попадёт в `checkist_qa`, без него — в dev. Логин и пароль не записывайте в `.env`, `.env.example`, документы и коммиты. Тесты создают своих пользователей сами в тестовой БД.
+
+Затем запустите `runserver` (команда выше; в QA — `runserver 127.0.0.1:18000`) и войдите на `/admin/`. Worker и Redis для админки не нужны, достаточно Postgres. Заголовок сайта — «Checkist — администрирование». Быстрая проверка без браузера: `curl.exe -i --max-time 15 http://127.0.0.1:8000/admin/` — ожидается 302 на `/admin/login/?next=/admin/`.
+
+Что важно при работе:
+
+- Стили и скрипты админки отдаёт `runserver` только при `DJANGO_DEBUG=1`. При `DJANGO_DEBUG=0` страницы останутся без стилей: `STATIC_ROOT` и раздача статики не настроены. Secure cookies и HTTPS тоже не настроены — админка только для локальных dev/QA.
+- `purchased_at` чека вводится в UTC, `purchased_on` — локальная дата магазина.
+- Названия моделей и полей в интерфейсе английские, остальной интерфейс русский.
+- Тестовые чеки, магазины и товары вводите в QA, не в dev.
+
+Какие модели доступны, что формы вычисляют и проверяют, остальные ограничения — в [data-model.md](data-model.md#админка). После правки `admin.py` выполните `manage.py check` (он проверяет конфигурацию админок) и тесты `test_admin.py`; тот же `check` в worker-контейнере обязателен, потому что worker импортирует `admin.py` при старте.
+
 ## Данные, остановка и восстановление
 
-Технические таблицы и таблицы предметной модели создаёт `migrate`; он же вносит сид-данные справочников: страны `KZ`, `RU`, `DE`, валюты `KZT`, `RUB`, `EUR` и четыре ставки налога. Seed users/фото чеков не нужны. Чеки, магазины и товары вводятся только кодом, например из `manage.py shell`: API и админки для них нет. Тестовые записи делайте в QA, не в dev. `postgres_data` и `redis_data` — именованные тома с префиксом Compose project. Redis хранит AOF; mount `backend:/app:ro` не хранит состояние приложения. Dev и QA не делят эти тома.
+Технические таблицы и таблицы предметной модели создаёт `migrate`; он же вносит сид-данные справочников: страны `KZ`, `RU`, `DE`, валюты `KZT`, `RUB`, `EUR` и четыре ставки налога. Seed users/фото чеков не нужны; пользователя для админки создаёт человек командой `createsuperuser`. Чеки, магазины и товары вводятся через [админку](#админка) или кодом, например из `manage.py shell`: HTTP API для них нет. Тестовые записи делайте в QA, не в dev. `postgres_data` и `redis_data` — именованные тома с префиксом Compose project. Redis хранит AOF; mount `backend:/app:ro` не хранит состояние приложения. Dev и QA не делят эти тома.
 
 Остановите Vite/preview и Django через Ctrl+C, затем `docker compose -p checkist_dev down`. Это удаляет контейнеры/сеть, сохраняет тома. Для возобновления выполните последовательность запуска выше; повторный `migrate` применяет только недостающие миграции. Правки worker-кода видны через mount, но задачи исполняет долгоживущий процесс: перезапустите worker; изменения зависимостей требуют `up --build`.
 
@@ -118,7 +141,7 @@ npm.cmd run dev
 
 ## Проверки модели данных
 
-После изменения моделей, миграций или функций трёх приложений выполните в QA-среде команды из [verification.md](verification.md#модель-данных-catalog-stores-receipts): `check`, `makemigrations --check --dry-run`, `migrate`, тесты `catalog stores receipts` без БД и с тегом `integration`. Тесты без тега БД не требуют и запускаются без Docker:
+После изменения моделей, миграций, функций или админок трёх приложений выполните в QA-среде команды из [verification.md](verification.md#модель-данных-catalog-stores-receipts): `check`, `makemigrations --check --dry-run`, `migrate`, тесты `catalog stores receipts` без БД и с тегом `integration`. Тесты без тега БД не требуют и запускаются без Docker:
 
 ```powershell
 ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test catalog stores receipts --exclude-tag=integration --verbosity=2
