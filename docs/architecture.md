@@ -2,7 +2,7 @@
 
 ## Реализовано
 
-Каркас состоит из локальных React/TypeScript/Vite SPA и Django/DRF API и трёх Compose services: Postgres, Redis и Celery worker. Docker Desktop использует Linux daemon. Браузер обращается к Vite на своём origin, proxy передаёт `/api` в Django без rewrite. Django обращается к опубликованным loopback-портам, worker — к service DNS внутри Compose-сети.
+Каркас состоит из локальных React/TypeScript/Vite SPA и Django/DRF API, предметной модели данных чеков и трёх Compose services: Postgres, Redis и Celery worker. Docker Desktop использует Linux daemon. Браузер обращается к Vite на своём origin, proxy передаёт `/api` в Django без rewrite. Django обращается к опубликованным loopback-портам, worker — к service DNS внутри Compose-сети.
 
 | Процесс | Dev на хосте | QA на хосте | В Docker-сети |
 | --- | --- | --- | --- |
@@ -20,6 +20,7 @@
 - `GET /api/health/` запускает три probes параллельно в `ThreadPoolExecutor(max_workers=3)`: SQL `SELECT 1`, Redis cache set/get/delete, Celery inspect ping. Соединения БД каждого probe-потока закрываются. Известный отказ зависимости даёт HTTP 503 с независимыми `checks`.
 - `check_services` последовательно проверяет SQL/cache и публикует `health.ping` через реальный broker, затем читает результат. Control ping и выполнение задачи — разные проверки.
 - Django global DRF permission — `IsAuthenticated`; health явно открыт без authentication. Бизнес-эндпоинтов и пользовательского входа нет. Стандартные Django apps подключены, но `/admin/` не зарегистрирован.
+- Приложения `stores`, `catalog`, `receipts` не имеют URL, задач и команд: это модели и функции, вызываемые из кода. `receipts` зависит от `stores` и `catalog`, те друг от друга не зависят; `health` с ними не связан.
 
 | Redis logical DB | Назначение | Локальная переменная |
 | --- | --- | --- |
@@ -29,7 +30,19 @@
 
 Эти DB не являются границей безопасности. Redis без пароля — локальная dev/QA-конфигурация; публикация ограничена `127.0.0.1`. Health cache keys уникальны, TTL 5 секунд, удаление выполняется в `finally`. `health.ping` идемпотентна и не меняет бизнес-данные. При таймауте ожидания уже принятая task может выполниться позже.
 
-Postgres содержит технические таблицы стандартных миграций `admin`, `auth`, `contenttypes`, `sessions`. Собственных моделей/миграций `health` нет. Для scaffold не нужны seed users, чеки или фотографии.
+Postgres содержит технические таблицы стандартных миграций `admin`, `auth`, `contenttypes`, `sessions` и 14 таблиц предметной модели. Собственных моделей/миграций `health` нет. Seed users и фотографии не нужны.
+
+## Предметная модель
+
+| Приложение | Таблицы | Код помимо моделей |
+| --- | --- | --- |
+| `stores` | `Country`, `Currency`, `TaxRate`, `Merchant`, `Store` | `normalize.py` — ключ адреса; сид-миграция `0002_seed_reference` |
+| `catalog` | `Category`, `GenericProduct`, `Brand`, `Product` | `units.py` — единицы и приведение к базовой |
+| `receipts` | `Receipt`, `ReceiptLine`, `ReceiptDiscount`, `ReceiptTax`, `ProductAlias` | `dedup.py` — фискальный ключ, поиск дубликатов и сопоставлений; `validation.py` — проверка чека; `prices.py` — история цен |
+
+Магазин определяется продавцом и нормализованным адресом. Чек защищён от повторного ввода тремя уровнями unique-ограничений. Каталог двухуровневый: обобщённый продукт для сравнения и конкретный товар. История цен отдельной таблицы не имеет и выводится из строк чеков. Сид-миграция создаёт три страны, три валюты и четыре ставки налога; чеки, магазины и товары не сидируются.
+
+Поля, ограничения, JSON-поля, границы ответственности БД и приложения, порядок миграций и отката, известные ограничения — в [data-model.md](data-model.md). API и админки для этих данных нет: они вводятся только кодом.
 
 Compose создаёт сеть и тома отдельно по имени project: `checkist_dev` и `checkist_qa`. `postgres_data` хранит `/var/lib/postgresql/data`, `redis_data` — `/data` с AOF и `noeviction`. Worker собран из `backend/Dockerfile`, работает non-root (UID 10001), монтирует `backend/` в `/app:ro`, использует prefork/concurrency 2. Backend/frontend контейнеров, beat и Flower нет.
 
@@ -41,6 +54,6 @@ Vite dev/preview используют `/api` → `DEV_API_PROXY_TARGET` с со�
 
 ## Планируется
 
-Продуктовые функции: база данных фото чеков; распознавание магазина и адреса, товаров и стоимостей; категории товаров; дашборд со статистикой. OCR-провайдер, хранение фото, предметная схема данных и пользовательское разграничение ещё не выбраны/не реализованы. Production-архитектура и deployment не определены текущим scaffold.
+Продуктовые функции: хранение фото чеков; распознавание магазина и адреса, товаров и стоимостей; API и интерфейс ввода чеков; дашборд со статистикой. OCR-провайдер, хранение фото (`MEDIA_ROOT` не настроен), курсы валют и пользовательское разграничение ещё не выбраны/не реализованы. Production-архитектура и deployment не определены текущим scaffold.
 
-Контракт и реальные ограничения проверки: [api-contract.md](api-contract.md), [verification.md](verification.md).
+Контракт, модель данных и реальные ограничения проверки: [api-contract.md](api-contract.md), [data-model.md](data-model.md), [verification.md](verification.md).
