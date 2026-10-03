@@ -2,7 +2,7 @@
 
 ## Реализовано и планируется
 
-Сейчас запускаются Django/DRF локально и Postgres, Redis, Celery worker в Linux Docker. React + TypeScript + Vite SPA планируется на следующем этапе; `frontend/` и его package scripts пока отсутствуют. База фото чеков, OCR магазина/адреса и товаров/стоимостей, категории и дашборд не реализованы; OCR-провайдер и предметная модель не выбраны.
+Сейчас запускаются Django/DRF и React + TypeScript + Vite SPA локально, Postgres, Redis и Celery worker — в Linux Docker. Клиент показывает настоящий health API через proxy, ошибки и повтор; подробности — [frontend.md](frontend.md). База фото чеков, OCR магазина/адреса и товаров/стоимостей, категории и дашборд не реализованы; OCR-провайдер и предметная модель не выбраны.
 
 ## Версии и установка Windows
 
@@ -15,7 +15,8 @@
 | Postgres / Redis images | `postgres:17.11-alpine` / `redis:7.4.11-alpine` |
 | Worker Python image | `python:3.13.16-slim-bookworm` |
 | Docker / Compose, проверенная среда | 29.8.1 / 5.5.1, Linux daemon |
-| Node / npm, для будущего frontend | Проверены 24.18.0 / 11.16.0; frontend-зависимости ещё не закреплены |
+| Node / npm | Проверены 24.18.0 / 11.16.0; полный lock — `frontend/package-lock.json` |
+| React / TypeScript / Vite | 19.3.0 / 5.9.3 / 8.3.2 |
 
 `backend/requirements.in` содержит прямые зависимости, `requirements.txt` — точные прямые и транзитивные версии. Устанавливайте полный набор из `.txt`; обновление lock должно сохранять совместимость Windows и Linux. Случайное обновление redis-py поверх набора не требуется.
 
@@ -31,7 +32,7 @@ py -3.13 -m venv backend/.venv
 ./backend/.venv/Scripts/python.exe -X utf8 -m pip check
 ```
 
-Не используйте bare `python`, если PATH ведёт на другую версию. Активация venv и `Activate.ps1` не нужны. `-X utf8` позволяет воспроизводимо печатать русские ошибки/JSON. При будущей установке frontend используйте `npm.cmd`, поскольку PowerShell ExecutionPolicy может блокировать `npm.ps1`; системную политику менять не нужно.
+Не используйте bare `python`, если PATH ведёт на другую версию. Активация venv и `Activate.ps1` не нужны. `-X utf8` позволяет воспроизводимо печатать русские ошибки/JSON. Для frontend используйте `npm.cmd`, поскольку PowerShell ExecutionPolicy может блокировать `npm.ps1`; системную политику менять не нужно.
 
 ## `.env`
 
@@ -51,10 +52,12 @@ py -3.13 -m venv backend/.venv
 | `DJANGO_SECRET_KEY` | Известный dev-only placeholder из образца |
 | `DJANGO_DEBUG` | `1`; поддержаны `0`, `1`, `true`, `false` без учёта регистра |
 | `DJANGO_ALLOWED_HOSTS` | `127.0.0.1,localhost`; wildcard не разрешён |
-| `VITE_API_BASE_URL` | `/api`, заготовка для будущего browser-клиента |
-| `DEV_API_PROXY_TARGET` | `http://127.0.0.1:8000`, заготовка для будущего Vite proxy |
+| `VITE_API_BASE_URL` | `/api`, публичный префикс browser-клиента |
+| `DEV_API_PROXY_TARGET` | `http://127.0.0.1:8000`, только Node-конфигурация Vite proxy |
 
 Backend валидирует порты (1–65535), hostnames/IP, Redis/rediss URL с `/db` без query/fragment, непустые значения и boolean. `DJANGO_DEBUG=0` с известным dev secret отвергается. Эти ограничения не заменяют production-настройку.
+
+Vite читает тот же корневой `.env` через `envDir`, process environment имеет приоритет. `envPrefix: []` и `define` публикуют только `VITE_API_BASE_URL`, без DB-реквизитов, `DJANGO_SECRET_KEY` и `DEV_API_PROXY_TARGET`. Не помещайте секреты в публичный адрес. После изменения env перезапустите Vite; изменение browser-префикса требует новой сборки. Proxy `/api` сохраняет путь, CORS для внешнего origin не настроен.
 
 В worker всегда используются `postgres:5432`, `redis:6379/0`, `/1`, `/2`, независимо от host-портов. Compose явно передаёт `POSTGRES_DB/USER/PASSWORD`, поэтому QA process overrides распространяются и на worker. `DJANGO_SETTINGS_MODULE=config.settings` устанавливают entry points; Dockerfile также задаёт `PYTHONDONTWRITEBYTECODE=1`, `PYTHONUNBUFFERED=1`.
 
@@ -62,7 +65,7 @@ Backend валидирует порты (1–65535), hostnames/IP, Redis/rediss 
 
 Windows-запуск с зависимостями проверен в изолированной [QA-среде `checkist_qa2`](verification.md#фактические-результаты-windows-проверки-2026-10-03): Postgres 25433, Redis 16380, Django 18001. Следующий блок — инструкция для отдельной dev-среды; проверка выполнялась с QA overrides, без обращения к dev-данным.
 
-Проверьте свободные порты 15432, 6379, 8000 и, позднее, 5173:
+Проверьте свободные порты 15432, 6379, 8000 и 5173:
 
 ```powershell
 Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
@@ -86,13 +89,26 @@ docker compose -p checkist_dev logs --tail 50 worker
 
 Ожидается: три healthy services, миграции применены, `check_services` exit 0 с реальным pong, локальный Django слушает 8000. В другом терминале — `curl.exe -i --max-time 15 http://127.0.0.1:8000/api/health/`, ожидается 200 и три `ok`. Curl без `--fail` может вернуть exit 0 при HTTP 503/405: проверяйте статус и JSON отдельно. Worker уже запущен Compose; отдельный Windows Celery worker не нужен.
 
-Будущий frontend будет запускаться локально через `npm.cmd` из `frontend/`, dev-порт 5173, QA 15173; полный порядок и фактические scripts появятся в `docs/frontend.md`. Пока не запускайте команды установки отсутствующего frontend.
+В другом терминале из корня запустите клиент:
+
+```powershell
+Set-Location frontend
+npm.cmd ci
+npm.cmd run lint
+npm.cmd run test
+npm.cmd run build
+npm.cmd run dev
+```
+
+Откройте `http://127.0.0.1:5173`; HTTP-проба — `curl.exe -i --max-time 15 http://127.0.0.1:5173/api/health/`. При dev defaults proxy идёт на API 8000 без rewrite. `strictPort: true` запрещает тихий выбор другого порта. `npm.cmd run preview` показывает сборку на том же 5173 с тем же proxy; предварительно остановите dev-сервер. Это локальная приёмка, deployment не настроен.
+
+Для тестовых миграций, очереди и отключений сервисов используйте только [QA-блок и сквозной сценарий](verification.md#сквозная-проверка-клиента-через-vite-proxy): API 18000, Vite 15173, `DEV_API_PROXY_TARGET=http://127.0.0.1:18000`, `VITE_API_BASE_URL=/api`. Все npm-команды выше выполняются с QA environment; dev-команда — `npm.cmd run dev -- --port 15173`. Unit-тесты адаптера используют mocked fetch; реальный adapter/HTTP проверяет `node backend/scripts/check_health_proxy.mjs healthy` из корня при запущенных QA API и Vite. UI принимает человек.
 
 ## Данные, остановка и восстановление
 
 Технические таблицы создаёт `migrate`; seed users/фото чеков не нужны. `postgres_data` и `redis_data` — именованные тома с префиксом Compose project. Redis хранит AOF; mount `backend:/app:ro` не хранит состояние приложения. Dev и QA не делят эти тома.
 
-Остановите Django через Ctrl+C, затем `docker compose -p checkist_dev down`. Это удаляет контейнеры/сеть, сохраняет тома. Для возобновления выполните последовательность запуска выше; повторный `migrate` применяет только недостающие миграции. Правки worker-кода видны через mount, но задачи исполняет долгоживущий процесс: перезапустите worker; изменения зависимостей требуют `up --build`.
+Остановите Vite/preview и Django через Ctrl+C, затем `docker compose -p checkist_dev down`. Это удаляет контейнеры/сеть, сохраняет тома. Для возобновления выполните последовательность запуска выше; повторный `migrate` применяет только недостающие миграции. Правки worker-кода видны через mount, но задачи исполняет долгоживущий процесс: перезапустите worker; изменения зависимостей требуют `up --build`.
 
 После потери Redis допустимо явное восстановление: запустить Redis, перезапустить worker и заново проверить `check_services` и health. Это recovery-проверка, а не сокрытие исходного failed результата. Stop/recovery-сценарии выполняйте в QA.
 
