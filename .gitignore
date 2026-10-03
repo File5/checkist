@@ -1,0 +1,14 @@
+.env
+.env.*
+!.env.example
+.venv/
+__pycache__/
+*.pyc
+node_modules/
+dist/
+.coverage
+.coverage.*
+coverage/
+htmlcov/
+*.log
+.orca-attachments/
