@@ -94,6 +94,9 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "rest_framework",
     "health.apps.HealthConfig",
+    "catalog.apps.CatalogConfig",
+    "stores.apps.StoresConfig",
+    "receipts.apps.ReceiptsConfig",
 ]
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
