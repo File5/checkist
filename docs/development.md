@@ -60,7 +60,7 @@ Backend валидирует порты (1–65535), hostnames/IP, Redis/rediss 
 
 ## Dev-запуск
 
-Проверки данной задачи выполнялись только в [QA](verification.md). Следующий блок — инструкция для отдельной dev-среды; успешный локальный Windows запуск с зависимостями сейчас не подтверждён из-за описанного ниже TCP-отказа.
+Windows-запуск с зависимостями проверен в изолированной [QA-среде `checkist_qa2`](verification.md#фактические-результаты-windows-проверки-2026-10-03): Postgres 25433, Redis 16380, Django 18001. Следующий блок — инструкция для отдельной dev-среды; проверка выполнялась с QA overrides, без обращения к dev-данным.
 
 Проверьте свободные порты 15432, 6379, 8000 и, позднее, 5173:
 
@@ -98,27 +98,27 @@ docker compose -p checkist_dev logs --tail 50 worker
 
 `down -v` удаляет данные и не нужен для обычной остановки. Значения `POSTGRES_DB/USER/PASSWORD` применяются Postgres image при **первой инициализации пустого тома**: изменение `.env` не перенастраивает существующий кластер. Для чистой одноразовой среды выделите новый project/тома и согласованные порты; ценные данные требуют backup/плана восстановления. Миграции не имеют автоматического универсального отката: оценивайте обратимость конкретной будущей миграции и восстанавливайте backup при необратимом изменении.
 
-## Диагностика Windows → Docker published ports
+## Диагностика: нет доступа с Windows к портам Docker
 
-На документационном этапе 2026-10-03 ограничение предыдущего worker воспроизвелось. При healthy QA Postgres/Redis:
+Симптомы прежнего отказа: `Test-NetConnection 127.0.0.1 -Port <порт>` возвращает `TcpTestSucceeded=False`, локальное подключение истекает по таймауту, хотя контейнеры healthy и опубликованные порты отвечают изнутри WSL. Ограниченные socket-пробы тогда показывали:
 
 ```text
 127.0.0.1:25432: TimeoutError: timed out
 127.0.0.1:16379: TimeoutError: timed out
 ```
 
-Локальный `./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py migrate --noinput` с QA environment завершился с exit 1. Точные строки исключений, без пользовательских путей:
+Локальный `migrate --noinput` в прежней проверке завершился с exit 1:
 
 ```text
 psycopg.errors.ConnectionTimeout: connection timeout expired
 django.db.utils.OperationalError: connection timeout expired
 ```
 
-Причина не установлена; проблема проброса Docker Desktop — предположение, не доказанный диагноз. Не перезапускайте Docker Desktop и не меняйте firewall/системные настройки в этой задаче.
-
-Воспроизведение: сначала настройте QA из verification.md и запустите QA Postgres/Redis, затем выполните ограниченные TCP-пробы:
+Для диагностики сначала настройте QA из verification.md и запустите QA Postgres/Redis, затем выполните TCP-пробы (для другого QA project подставьте его порты):
 
 ```powershell
+Test-NetConnection 127.0.0.1 -Port 25432
+Test-NetConnection 127.0.0.1 -Port 16379
 @'
 import socket
 for port in (25432, 16379):
@@ -141,4 +141,19 @@ docker compose -p checkist_qa exec -T redis redis-cli ping
 docker compose -p checkist_qa exec -T worker python -X utf8 manage.py check_services
 ```
 
-`pg_isready` выше использует username образца; при изменённом QA username подставьте его. Healthy и PONG не подтверждают host-доступ. Linux SQL/cache/task проверки прошли, а успешные Windows миграции, интеграционные тесты и API с зависимостями остаются **непроверенными**. После устранения внешней причины повторите локальные QA-команды из verification.md, сравните HTTP 200/503 и негативное время ответа. Системную причину диагностирует человек или отдельная авторизованная задача.
+`pg_isready` выше использует username образца; при изменённом QA username подставьте его. Healthy и PONG не подтверждают host-доступ. Проверьте режим сети WSL:
+
+```powershell
+wsl.exe -d docker-desktop -- wslinfo --networking-mode
+```
+
+В `~/.wslconfig` стояло `[wsl2] networkingMode=Mirrored`. Помогло выполненное человеком изменение: закомментировать строку, сохранив остальные настройки:
+
+```ini
+[wsl2]
+# networkingMode=Mirrored
+```
+
+Затем человек выполнил `wsl --shutdown` и перезапустил Docker Desktop. После этого `wslinfo --networking-mode` вернул `virtioproxy`, а Windows TCP-пробы на QA2-портах 25433/16380 — `True`. При неизменном коде прошли Windows миграции, integration tests, `check_services` и HTTP 200/503/405/406; негативные ответы уложились в ≤10 с, после восстановления вернулся 200. Точные результаты — в [verification.md](verification.md#фактические-результаты-windows-проверки-2026-10-03).
+
+Доступ восстановился после изменения окружения; строгая причинность Mirrored против VPN не изолирована. VPN мог быть дополнительным фактором: повторное включение Mirrored и отдельная проверка без VPN не выполнялись. Изменение WSL, VPN/firewall и перезапуск Docker Desktop — решение человека; агенты самостоятельно их не выполняют. После устранения такого отказа повторите локальные QA-команды и HTTP/negative сценарии из verification.md.
