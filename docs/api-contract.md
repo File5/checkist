@@ -72,9 +72,9 @@ Cache использует DB 2, уникальный `health:<uuid>`, случ�
 | Celery HTTP probe reply | `inspect(timeout=1, limit=1)` |
 | Docker worker healthcheck reply | `inspect --timeout=2`, отдельная проверка |
 
-Probes запускаются параллельно, поэтому их обычные сетевые ожидания не суммируются последовательно. Общего жёсткого deadline HTTP-запроса в коде **нет**; DNS, отдельные операции и cleanup могут увеличить время. Цель при отказе — ответ не позднее 10 секунд. В Windows QA2-прогоне она выполнена: HTTP 503 при остановке worker — 1.057378 с (`worker_unavailable`), Postgres — 2.028070 с (`database_unavailable`), Redis — 2.063928 с (`redis_unavailable` + `broker_unavailable`). Это измерения конкретных сценариев, не общий deadline. Клиентский таймаут 15 секунд **планируется**, frontend ещё отсутствует. Команды и границы проверки — в [verification.md](verification.md#фактические-результаты-windows-проверки-2026-10-03).
+Probes запускаются параллельно, поэтому их обычные сетевые ожидания не суммируются последовательно. Общего жёсткого deadline HTTP-запроса в коде **нет**; DNS, отдельные операции и cleanup могут увеличить время. Цель при отказе — ответ не позднее 10 секунд. В Windows QA2-прогоне она выполнена: HTTP 503 при остановке worker — 1.057378 с (`worker_unavailable`), Postgres — 2.028070 с (`database_unavailable`), Redis — 2.063928 с (`redis_unavailable` + `broker_unavailable`). Это измерения конкретных сценариев, не общий deadline. Реализованный клиентский таймаут 15 секунд охватывает fetch и чтение тела; отмена запроса не отменяет серверные probes. Команды и результаты проверки через proxy — в [verification.md](verification.md#сквозная-проверка-клиента-через-vite-proxy).
 
-### Разбор клиентом — требования к будущему SPA
+### Разбор клиентом — реализованный SPA
 
 1. Запрашивать `<VITE_API_BASE_URL>/health/` с нормализованными `/`, `Accept: application/json`, без credentials. Базовый относительный префикс — `/api`.
 2. Прочитать JSON до общей обработки `response.ok`: HTTP 503 содержит полезные `checks`.
@@ -82,7 +82,7 @@ Probes запускаются параллельно, поэтому их обы
 4. Для 200 требовать `status=ok`, все checks `ok`; для 503 — `status=degraded`, хотя бы один error и общий `dependency_unavailable`. Сохранить все checks для отображения частичного отказа.
 5. Network error, abort/timeout, 500, неверный JSON/schema или несовместимая пара HTTP/body — отдельная ошибка клиента с возможностью повторить. Старый success и устаревший ответ не должны подменять новое состояние.
 
-Пока это требования контракта, не реализованный frontend-адаптер. Произвольный внешний API origin и CORS не настроены; планируется Vite same-origin proxy с сохранением `/api`.
+Адаптер `frontend/src/api/health.ts` реализует этот разбор; описание клиента — [frontend.md](frontend.md). Vite dev/preview используют same-origin proxy с сохранением `/api`. Произвольный внешний API origin и CORS не настроены. Не-JSON 502/504 от недоступного proxy upstream обрабатываются как ошибка соединения; схема Django 200/503/405/406/500 остаётся прежней.
 
 ## Реализовано: task и `check_services`
 

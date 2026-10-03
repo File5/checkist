@@ -2,9 +2,9 @@
 
 ## Граница проверки
 
-Реализован backend scaffold: health API, Postgres/Redis probes, Celery task/CLI, Compose и тесты. Контрактные тесты используют mocks; integration-tag tests работают с реальными Postgres и Redis; выполнение очереди и result backend проверяет отдельный `check_services`.
+Реализованы backend scaffold и React/TypeScript/Vite SPA с настоящим health API через proxy. Серверные контрактные тесты используют mocks; integration-tag tests работают с реальными Postgres и Redis; выполнение очереди и result backend проверяет отдельный `check_services`. Vitest проверяет клиентский API-адаптер с mocked fetch; CLI `backend/scripts/check_health_proxy.mjs` — настоящий HTTP и тот же адаптер через proxy в Node 24.
 
-Планируются React/TypeScript/Vite SPA и продуктовые функции: база фото чеков, распознавание магазина/адреса и товаров/стоимостей, категории, статистический дашборд. OCR-провайдер и предметная модель не выбраны. Frontend-код и UI пока отсутствуют, поэтому frontend-проверки не выполнены.
+Планируются продуктовые функции: база фото чеков, распознавание магазина/адреса и товаров/стоимостей, категории, статистический дашборд. OCR-провайдер и предметная модель не выбраны. Пользовательского входа и бизнес-API нет. Клиент описан в [frontend.md](frontend.md).
 
 Ни сборка образа, ни `check`, ни mocked API tests не доказывают реальную HTTP/клиентскую интеграцию. Визуальную и интерактивную приёмку выполняет человек; автоматический обход browser UI запрещён. HTTP, CLI и unit tests можно автоматизировать.
 
@@ -22,10 +22,11 @@ $env:REDIS_PORT = "16379"
 $env:CELERY_BROKER_URL = "redis://127.0.0.1:16379/0"
 $env:CELERY_RESULT_BACKEND = "redis://127.0.0.1:16379/1"
 $env:DJANGO_CACHE_URL = "redis://127.0.0.1:16379/2"
+$env:VITE_API_BASE_URL = "/api"
 $env:DEV_API_PROXY_TARGET = "http://127.0.0.1:18000"
 ```
 
-Проверьте LISTEN на 25432, 16379, 18000 и будущем 15173 командой `Get-NetTCPConnection` из development.md, заменив список портов. При конфликте выберите свободные и согласованно измените все URL/CLI ports. Compose project изолирует контейнеры, сеть и тома; одни только разные Redis DB номера QA не изолируют. Настройки DB/user/password должны соответствовать уже инициализированному QA-тому.
+Проверьте LISTEN на 25432, 16379, 18000 и 15173 командой `Get-NetTCPConnection` из development.md, заменив список портов. При конфликте выберите свободные и согласованно измените все URL/CLI ports. Compose project изолирует контейнеры, сеть и тома; одни только разные Redis DB номера QA не изолируют. Настройки DB/user/password должны соответствовать уже инициализированному QA-тому.
 
 ```powershell
 docker compose -p checkist_qa config --quiet
@@ -123,20 +124,182 @@ curl.exe -i --max-time 15 http://127.0.0.1:18000/api/health/
 
 Перезапуск worker после Redis — явный шаг восстановления control-связи; исходный отказ остаётся в отчёте. Таймаут task не отменяет принятую задачу, но повтор служебного ping безопасен.
 
-## Планируется: frontend и ручная UI-приёмка
+## Сквозная проверка клиента через Vite proxy
 
-После появления `frontend/` и `docs/frontend.md` используйте фактические scripts проекта через `npm.cmd`: установка по lock, lint, unit tests, build. Их успешное выполнение не заменяет HTTP через Vite proxy и ручную приёмку. QA proxy должен вести на `http://127.0.0.1:18000`, Vite использовать порт 15173. Проверьте `curl.exe -i --max-time 15 http://127.0.0.1:15173/api/health/`: тот же контракт, `/api` не удалён.
+Сначала выполните QA setup, TCP, migrate, worker, серверные tests и `check_services` выше. Во всех терминалах примените полный QA-блок, включая `VITE_API_BASE_URL=/api`: browser URL должен использовать same-origin proxy. API запустите в отдельном терминале из корня:
 
-Человеку после интеграции открыть `http://127.0.0.1:15173`:
+```powershell
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py runserver 127.0.0.1:18000 --noreload
+```
 
-1. Первое открытие: loading → success, статусы БД, Redis, Celery видны текстом. Для loading можно замедлить сеть в DevTools.
-2. Остановить QA worker; «Повторить» показывает частичный отказ Celery, сохраняя БД/Redis. Восстановить worker, повторить — success.
-3. Остановить QA API через Ctrl+C; повтор даёт понятную network error. Вернуть API; повтор восстанавливает состояние без перезагрузки страницы.
-4. Offline/throttling: ошибка/timeout, loading не зависает; после online повтор успешен, старый success не остаётся текущим.
-5. Проверить Tab/Enter, видимый focus, текстовые статусы/aria-live и ширину около 375 px без обрезания/горизонтального scroll.
-6. Страница честно отмечает scaffold и planned фото/OCR/категории/dashboard, не показывает вымышленные распознанные чеки как рабочие данные.
+В другом QA-терминале из корня:
 
-Это будущий сценарий, сейчас UI и скриншотов нет.
+```powershell
+Set-Location frontend
+npm.cmd ci
+npm.cmd run lint
+npm.cmd run test
+npm.cmd run build
+npm.cmd run dev -- --port 15173
+```
+
+Каждый завершившийся шаг должен иметь exit 0; dev и runserver работают до Ctrl+C. Vitest — mocked fetch в Node, build — типизация/bundle. Они не подтверждают React-поведение в браузере.
+
+В третьем QA-терминале из корня:
+
+```powershell
+curl.exe -i --max-time 15 http://127.0.0.1:18000/api/health/
+curl.exe -i --max-time 15 http://127.0.0.1:15173/api/health/
+curl.exe -i --max-time 15 -X POST http://127.0.0.1:15173/api/health/
+curl.exe -i --max-time 15 -H "Accept: text/html" http://127.0.0.1:15173/api/health/
+node backend/scripts/check_health_proxy.mjs healthy
+```
+
+Ожидаются одинаковые тела 200 напрямую/через proxy, затем 405 и 406 с точными телами контракта. CLI без новых зависимостей использует Node 24 и встроенное чтение TypeScript: сравнивает полный JSON, HTTP, Content-Type, Cache-Control и Allow, вызывает настоящий `getHealth` через proxy, проверяет `kind` и сохранение всех checks. Он требует QA environment и loopback origins; при другом Vite-порте передайте origin вторым аргументом после state, например `healthy http://127.0.0.1:15174`. Это проверка исходного адаптера в Node с явным baseUrl, не browser runtime или собранного React UI.
+
+Выключайте зависимости по одной. После каждого `stop` до восстановления выполните измерение:
+
+```powershell
+$taskDuration = Measure-Command {
+  $script:taskHttp = curl.exe -sS -i --max-time 15 http://127.0.0.1:15173/api/health/
+  $script:taskCurlExit = $LASTEXITCODE
+}
+$taskHttp
+$taskDuration.TotalSeconds
+if ($taskCurlExit -ne 0 -or $taskDuration.TotalSeconds -gt 10) {
+  throw "HTTP request failed or exceeded the 10-second target"
+}
+```
+
+Затем CLI с соответствующим state должен завершиться exit 0: ожидается точный 503, здоровые checks сохранены. CLI дополнительно требует ≤10 с для каждого своего HTTP 503. Восстановление каждый раз подтверждайте state `healthy` (200) и настоящим `check_services` (exit 0):
+
+```powershell
+docker compose -p checkist_qa stop worker
+# Измерение выше
+node backend/scripts/check_health_proxy.mjs worker
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py check_services
+# Пока worker остановлен, ожидается exit 1 с celery_task_unavailable
+docker compose -p checkist_qa up -d --wait --wait-timeout 90 worker
+node backend/scripts/check_health_proxy.mjs healthy
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py check_services
+
+docker compose -p checkist_qa stop postgres
+# Измерение выше
+node backend/scripts/check_health_proxy.mjs postgres
+docker compose -p checkist_qa up -d --wait --wait-timeout 90 postgres
+node backend/scripts/check_health_proxy.mjs healthy
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py check_services
+
+docker compose -p checkist_qa stop redis
+# Измерение выше
+node backend/scripts/check_health_proxy.mjs redis
+docker compose -p checkist_qa up -d --wait --wait-timeout 90 redis
+docker compose -p checkist_qa restart worker
+docker compose -p checkist_qa up -d --wait --wait-timeout 90 worker
+node backend/scripts/check_health_proxy.mjs healthy
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py check_services
+```
+
+Проверяйте exit каждого шага; ожидаемый exit 1 служебной команды при stop worker — успешная негативная проверка. Любой другой failed шаг сохраняйте в отчёте, зависимые проверки не продолжайте. Таблица кодов отказов выше относится и к proxy.
+
+Проверка bundle на значения секретов из корневого `.env` (не печатает сами значения), из корня после build:
+
+```powershell
+@'
+from pathlib import Path
+from dotenv import dotenv_values
+values = dotenv_values('.env')
+files = [path for path in Path('frontend/dist').rglob('*') if path.is_file()]
+assert files, 'Bundle missing'
+for name in ('POSTGRES_PASSWORD', 'DJANGO_SECRET_KEY'):
+    secret = values.get(name)
+    assert secret, f'{name} missing from root .env'
+    for path in files:
+        assert secret.encode('utf-8') not in path.read_bytes(), f'{name} found in {path}'
+    print(f'{name}: absent from all {len(files)} bundle files (value redacted)')
+'@ | ./backend/.venv/Scripts/python.exe -X utf8 -
+```
+
+## Ручная UI-приёмка человеком
+
+При запущенных QA API и Vite открыть `http://127.0.0.1:15173`. Endpoint анонимный: логин, token, seed users, фото и чеки не нужны; в QA только технические таблицы и временные служебные ключи/задачи.
+
+1. Первое открытие: «Проверяем соединение…» и disabled «Повторить» → «Соединение установлено», API отвечает и три сервиса доступны. Для просмотра loading замедлить сеть в DevTools; проверить, что блок не меняет высоту.
+2. Выполнить `docker compose -p checkist_qa stop worker`, нажать «Повторить»: loading → «Некоторые сервисы недоступны», API/БД/Redis доступны, Celery — «Обработчик задач не отвечает». Выполнить `docker compose -p checkist_qa up -d --wait --wait-timeout 90 worker`, повторить — успех. По аналогии проверить stop/recovery Postgres и Redis; после Redis перезапустить worker командами выше.
+3. Остановить QA API через Ctrl+C, оставить Vite. Повтор даёт понятную ошибку соединения: Vite возвращает пустой 502, адаптер трактует его как network error. Прежние успешные checks не остаются текущими. Вернуть API той же командой; повтор без reload восстанавливает успех.
+4. В DevTools Offline → повтор: безопасная ошибка, кнопка доступна. Вернуть Online → повтор: успех. Для timeout задержать health-запрос более 15 с при доступном Vite: сообщение «Сервер не ответил за 15 секунд…», без вечной загрузки. Снять задержку и повторить. Проверить, что устаревший ответ не подменяет текущую проверку.
+5. Tab до «Повторить», видимый focus, Enter/Space запускают запрос; сводка объявляется через aria-live со screen reader. Статусы понятны без цвета. На ширине около 375 px и масштабе 200% нет обрезания/горизонтального scroll, кнопка доступна; при reduced motion интерфейс статичен.
+6. Страница честно отмечает каркас и планируемые фото/OCR/категории/дашборд. Рабочие бизнес-функции и распознанные чеки не представлены.
+
+Автоматический обход browser UI не выполняется. Скриншотов и результатов визуальной/интерактивной приёмки пока нет. После проверки остановить оба локальных процесса и QA Compose по разделу завершения ниже.
+
+## Фактические результаты интеграции через proxy, 2026-10-03
+
+Задача `task_muscdxor28`. Windows Python 3.13.9, Node 24.18.0/npm 11.16.0, Docker 29.8.1/Linux, Compose 5.5.1. Использованы полный QA environment выше, только Compose project/БД `checkist_qa` и временная `test_checkist_qa`; Postgres 25432, Redis 16379, Django 18000, Vite 15173. Порты были свободны. Dev, локальный Postgres, WSL, VPN и Docker Desktop не изменялись.
+
+Потребитель API — `frontend/src/api/health.ts`. Аудит пути/trailing slash, заголовков, credentials, runtime-схемы, 200/503/405/406/500, кодов checks и `frontend/vite.config.ts` подтвердил соответствие контракту. Proxy сохраняет `/api`, `envDir` указывает на корень, process overrides работают; `VITE_API_BASE_URL` публичен, proxy target остаётся в Node. Расхождений клиента/сервера/env не выявлено, серверные правки и миграции не понадобились. JSON-контракт и доступ не изменены; несовместимости нет. Добавлена воспроизводимая CLI-проверка настоящего адаптера и HTTP, обновлены общие документы.
+
+Последний абзац `docs/frontend.md` содержит историческую ремарку frontend-этапа о ещё не обновлённых общих документах. Теперь они обновлены этой интеграцией; сам файл сохранён согласно границе владения задачи.
+
+### Проверено и прошло
+
+Все завершившиеся команды ниже — exit 0, кроме явно ожидаемого негативного `check_services` и Ctrl+C при уборке.
+
+| Фактические команды | Результат |
+| --- | --- |
+| `py -3.13 -X utf8 --version`, `node --version`, `npm.cmd --version`, `docker info --format 'Server={{.ServerVersion}} OS={{.OSType}}'`, `docker compose version` | Версии выше; Linux daemon доступен |
+| `docker ps -a --filter label=com.docker.compose.project=checkist_qa --format '{{.Names}} {{.Status}}'`, `Get-NetTCPConnection -State Listen` с фильтром QA-портов | Перед запуском контейнеров и слушателей нет |
+| `Copy-Item .env.example .env` при отсутствии файла, `py -3.13 -X utf8 -m venv backend/.venv`, `./backend/.venv/Scripts/python.exe -X utf8 -m pip install -r backend/requirements.txt`, `./backend/.venv/Scripts/python.exe -X utf8 -m pip check` | Подготовлены игнорируемые env/venv; зависимости без конфликтов |
+| `docker compose -p checkist_qa config --quiet`, `docker compose -p checkist_qa up -d --wait --wait-timeout 90 postgres redis`, `docker compose -p checkist_qa ps` | Оба healthy, опубликованы на 127.0.0.1:25432/16379 |
+| `socket.create_connection(('127.0.0.1', port), timeout=2)` через `py -3.13 -X utf8 -`, port 25432 и 16379 | Оба TCP OK с Windows; до локальных действий с БД |
+| `./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py check`, `./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py migrate --noinput` | 0 issues; в существующем QA-томе `No migrations to apply` |
+| `docker compose -p checkist_qa up -d --build --wait --wait-timeout 120 worker`, `docker compose -p checkist_qa exec -T worker python -m pip check` | Worker healthy; build использовал cache установки, зависимости образа без конфликтов |
+| `./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py makemigrations --check --dry-run` | No changes detected |
+| `./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test health --exclude-tag=integration --verbosity=2` | 21 tests OK, mocks/unit/contract, БД не использована |
+| `./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test health --tag=integration --verbosity=2` | 2 tests OK, настоящий SQL/cache; runner создал/мигрировал/удалил `test_checkist_qa` |
+| `./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py check_services` | Настоящая очередь и results вернули `{"message":"pong"}` |
+| В `frontend/`: `npm.cmd ci`, `npm.cmd run lint`, `npm.cmd run test`, `npm.cmd run build` | Установка по lock, lint без warnings, 49 mocked adapter tests OK, типизация и bundle созданы |
+| `./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py runserver 127.0.0.1:18000 --noreload`, в `frontend/` `npm.cmd run dev -- --port 15173` | Управляемые PTY-сессии обслужили реальные запросы, затем остановлены |
+| Четыре `curl.exe -i --max-time 15` из сквозного сценария выше | Напрямую и через proxy одинаковый 200; POST через proxy — 405; Accept text/html — 406; точные JSON и headers |
+| `node --check backend/scripts/check_health_proxy.mjs`, `node backend/scripts/check_health_proxy.mjs healthy` | Синтаксис и реальные HTTP/адаптер прошли; healthy повторён после каждого recovery и в конце |
+| Python bundle-проверка из сквозного сценария выше | Значения POSTGRES_PASSWORD и DJANGO_SECRET_KEY из `.env` отсутствуют во всех 3 файлах dist; сами значения не выводились |
+
+Отказы по одному измерялись `Measure-Command` для `curl.exe -sS -i --max-time 15 http://127.0.0.1:15173/api/health/`. Curl exit 0; полный JSON/headers и сохранение checks также проверены CLI с настоящим frontend adapter:
+
+| Команда отказа (exit 0) | CLI (exit 0) | Точный proxy HTTP 503 | Measure-Command |
+| --- | --- | --- | --- |
+| `docker compose -p checkist_qa stop worker` | `node backend/scripts/check_health_proxy.mjs worker` | database/redis ok, celery worker_unavailable | 1.0586939 с |
+| `docker compose -p checkist_qa stop postgres` | `node backend/scripts/check_health_proxy.mjs postgres` | database database_unavailable, redis/celery ok | 2.0816441 с |
+| `docker compose -p checkist_qa stop redis` | `node backend/scripts/check_health_proxy.mjs redis` | database ok, redis redis_unavailable, celery broker_unavailable | 2.0732798 с |
+
+Все времена ≤10 с; `status=degraded`, общий `dependency_unavailable` и сообщение точные. CLI дополнительно подтвердил те же состояния напрямую, через proxy и в `getHealth` с `kind=degraded`. При stop worker `check_services` ожидаемо дал exit 1 и `celery_task_unavailable`, database/redis ok: негативная проверка прошла. Recovery выполнен точными `up/restart` командами сквозного сценария выше (каждая exit 0); после Redis worker явно перезапущен. После каждого recovery и в конце — 200 и `check_services` exit 0 с настоящим pong.
+
+Дополнительный отказ API: Ctrl+C остановил runserver, `curl.exe -i --max-time 15 http://127.0.0.1:15173/api/health/` дал пустой 502 (curl exit 0). Node-проверка через `node --input-type=module -` использовала настоящий `fetch` и `getHealth({baseUrl:'http://127.0.0.1:15173/api'})`: точный `{kind:'error',reason:'network'}`, exit 0. API запущен повторно той же командой; финальные `healthy` и `check_services` снова exit 0. Для воспроизведения остановите API и выполните из корня:
+
+```powershell
+@'
+import assert from 'node:assert/strict'
+import { getHealth } from './frontend/src/api/health.ts'
+const response = await fetch('http://127.0.0.1:15173/api/health/')
+assert.equal(response.status, 502)
+assert.equal(await response.text(), '')
+assert.deepEqual(await getHealth({baseUrl:'http://127.0.0.1:15173/api'}), {kind:'error',reason:'network'})
+console.log('Stopped API: proxy empty 502; real adapter returns network error')
+'@ | node --input-type=module -
+```
+
+Уборка подтверждена: Ctrl+C остановил обе runserver-сессии и Vite (exit 1 вследствие прерывания, для npm подтверждён `Terminate batch job: Y`); `docker compose -p checkist_qa down` exit 0, контейнеры и сеть удалены, тома сохранены. `docker ps -a` с фильтром своего project пуст, `Get-NetTCPConnection` не нашёл LISTEN на четырёх QA-портах; `Get-CimInstance Win32_Process` не нашёл node/python/cmd с путём этого worktree. Фоновых процессов задачи не осталось.
+
+### Проверено и не прошло
+
+Продуктовых failed-проверок нет. `npm.cmd ci` сообщил deprecated warning выбранного ESLint 9.39.5; установка exit 0, lint exit 0 без предупреждений. Ожидаемые 503/502 и негативный CLI exit 1 учтены выше как успешные проверки отказов.
+
+### Не проверено и почему
+
+- React browser runtime, визуальная/интерактивная приёмка, keyboard/screen reader/responsive, Offline/timeout через DevTools, скриншоты: по правилам выполняет человек по сценарию выше. Node adapter и mocked tests этого не подтверждают.
+- HTTP 500 на реальном сервере не провоцировался изменением кода; безопасный handler подтверждён только mocked contract tests.
+- Vite preview, production hosting/reverse proxy и внешний API origin/CORS не запускались; в этой интеграции проверен dev proxy, публикация не задана.
+- Фото/OCR/бизнес-данные/пользовательское разграничение не реализованы; тестовых пользователей и чеков нет. Dev и локальный Postgres не использованы.
 
 ## Фактические результаты Windows-проверки, 2026-10-03
 
@@ -204,7 +367,7 @@ $taskDuration = Measure-Command {
 
 - Точный механизм прежнего TCP-таймаута и отдельное влияние Mirrored/VPN: отказ больше не воспроизводится; повторное включение Mirrored и отключение VPN не выполнялись.
 - HTTP 500 на реальном сервере специально не провоцировался изменением кода; безопасный handler проверен только существующими mocked contract tests.
-- Frontend/proxy, UI и скриншоты: `frontend/` ещё нет. После интеграции выполнить фактические scripts и ручной сценарий выше человеком.
+- На момент этой backend QA2-проверки frontend отсутствовал, proxy/UI не проверялись. Более поздняя интеграция `task_muscdxor28` описана выше; UI и скриншоты остаются ручной приёмкой.
 - Dev-данные и локальный Postgres: намеренно не использовались, все записи, миграции и публикации задач выполнялись только в QA2.
 
 ## Завершение QA
