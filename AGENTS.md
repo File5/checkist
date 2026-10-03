@@ -1,12 +1,14 @@
 # Правила работы с Checkist
 
-Перед правками прочитайте этот файл и относящиеся к задаче документы в `docs/`: [архитектуру](docs/architecture.md), [API-контракт](docs/api-contract.md), [разработку](docs/development.md), [проверки](docs/verification.md). Сверяйте утверждения с кодом, `compose.yaml` и `.env.example`. Требования конкретной задачи и проекта имеют приоритет; при существенном противоречии выясните решение, не меняйте контракт молча.
+Перед правками прочитайте этот файл и относящиеся к задаче документы в `docs/`: [архитектуру](docs/architecture.md), [модель данных](docs/data-model.md), [API-контракт](docs/api-contract.md), [разработку](docs/development.md), [проверки](docs/verification.md). Сверяйте утверждения с кодом, `compose.yaml` и `.env.example`. Требования конкретной задачи и проекта имеют приоритет; при существенном противоречии выясните решение, не меняйте контракт молча.
 
 ## Реализовано и планируется
 
-Checkist предназначен для распознавания продуктовых чеков. Реализован серверный scaffold: Django/DRF, анонимный health API, probes Postgres/Redis/Celery, демонстрационная задача `health.ping`, CLI `check_services`, Compose и тесты. Используются только стандартные технические модели и миграции Django; URL административного интерфейса не подключён.
+Checkist предназначен для распознавания продуктовых чеков. Реализован серверный scaffold: Django/DRF, анонимный health API, probes Postgres/Redis/Celery, демонстрационная задача `health.ping`, CLI `check_services`, Compose и тесты.
 
-Планируется: база данных фото чеков; распознавание магазина и адреса, товаров и их стоимостей; категории товаров; дашборд со статистикой. OCR-провайдер и предметная модель не выбраны. React/TypeScript/Vite SPA появится на следующем этапе. Фото, OCR, бизнес-API, пользовательская авторизация и разграничение чеков пока не реализованы. Не выдавайте planned функции за готовый продукт и не выбирайте провайдера или схему данных без задачи.
+Реализована предметная модель данных — приложения `stores` (страны, валюты, ставки налога, продавцы, магазины), `catalog` (категории, обобщённые продукты, бренды, товары) и `receipts` (чеки, позиции, скидки, итоги по налогам, сопоставление названий): модели, миграции с сид-данными, функции нормализации, дедупликации, проверки чека и истории цен, тесты. Описание — [docs/data-model.md](docs/data-model.md). Данные вводятся только кодом: API и админки для них нет, модели в админке не зарегистрированы, URL административного интерфейса не подключён.
+
+Планируется: хранение фото чеков; распознавание магазина и адреса, товаров и их стоимостей; дашборд со статистикой. OCR-провайдер не выбран. React/TypeScript/Vite SPA появится на следующем этапе. Фото, OCR, бизнес-API, пользовательская авторизация и разграничение чеков, курсы валют пока не реализованы. Не выдавайте planned функции за готовый продукт, не выбирайте провайдера и не меняйте схему данных без задачи.
 
 ## Стек, структура и владение
 
@@ -16,13 +18,16 @@ Python 3.13, Django 5.2.17, DRF 3.16.1, Celery 5.6.3, redis-py 6.4.0, psycopg 3.
 backend/
   config/                 settings, URL, Celery, безопасные DRF ошибки
   health/                 API, probes, task, management command, tests
+  stores/                 справочники и магазины: models, normalize, migrations, tests
+  catalog/                каталог товаров: models, units, migrations, tests
+  receipts/               чеки: models, dedup, validation, prices, migrations, tests
   manage.py
   requirements.in         прямые зависимости
   requirements.txt        закреплённый полный набор
   Dockerfile, .dockerignore
 compose.yaml, .env.example
 README.md, AGENTS.md, CLAUDE.md
-docs/                     architecture, api-contract, development, verification
+docs/                     architecture, data-model, api-contract, development, verification
 ```
 
 | Область | Владелец |
@@ -47,7 +52,9 @@ Backend владеет [контрактом](docs/api-contract.md). Точны�
 
 Глобальная DRF permission — `IsAuthenticated`, health явно использует `AllowAny` и пустой список authentication classes. Это не готовая пользовательская система. При новых API установите потребителей, валидацию, доступ к объектам и границы пользователей; не раскрывайте внутренние ошибки. Изменение формата отражайте в контракте, тестах, клиенте и отчёте с перечнем несовместимости.
 
-Собственных миграций сейчас нет. Новые миграции добавляйте по соглашениям Django; применённые не переписывайте. Для изменения данных предусмотрите транзакции, конкуренцию, идемпотентность, таймауты, обратимость и восстановление. Проверяйте миграции на изолированных представительных данных; оценивайте объём запросов, индексы, N+1 и пагинацию, когда они затронуты.
+Собственные миграции: `catalog.0001_initial`, `stores.0001_initial`, `stores.0002_seed_reference` (страны, валюты, ставки налога), `receipts.0001_initial`; у `health` моделей и миграций нет. Схема, ограничения БД, инварианты приложения, порядок применения и отката — в [docs/data-model.md](docs/data-model.md); меняя модели, обновляйте его. Откат трёх приложений удаляет все данные чеков: перед ним нужен `pg_dump`. Тесты приложения лежат в `backend/<app>/tests/test_*.py`: с реальной БД — `TestCase` с `@tag("integration")`, без БД — `SimpleTestCase`. Реальные ФИО и ИНН физических лиц (предприниматель, кассир) в код, тесты и документацию не переносите — используйте вымышленные.
+
+Новые миграции добавляйте по соглашениям Django; применённые не переписывайте. Для изменения данных предусмотрите транзакции, конкуренцию, идемпотентность, таймауты, обратимость и восстановление. Проверяйте миграции на изолированных представительных данных; оценивайте объём запросов, индексы, N+1 и пагинацию, когда они затронуты.
 
 ## Запуск и проверки
 
@@ -62,10 +69,13 @@ docker compose -p checkist_qa config --quiet
 ./backend/.venv/Scripts/python.exe -X utf8 -m pip check
 ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py check
 ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py makemigrations --check --dry-run
-./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test health --exclude-tag=integration --verbosity=2
-./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test health --tag=integration --verbosity=2
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py migrate --noinput
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test catalog stores receipts health --exclude-tag=integration --verbosity=2
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test catalog stores receipts health --tag=integration --verbosity=2
 ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py check_services
 ```
+
+Тесты без тега `integration` БД не используют; с тегом — требуют QA Postgres, а `health` ещё и QA Redis. `check_services` требует запущенный QA worker. Проверку отката миграций см. в [verification.md](docs/verification.md#модель-данных-catalog-stores-receipts).
 
 Проверяйте exit code каждого шага. Не продолжайте зависимые шаги после ошибки. Если Windows не достигает Docker-портов, сначала выполните ограниченную TCP-[диагностику](docs/development.md#диагностика-нет-доступа-с-windows-к-портам-docker); не повторяйте заведомо невозможный прогон. Linux-проверки из verification.md подтверждают только путь внутри контейнерной сети. Изменение WSL Mirrored и перезапуск Docker Desktop в диагностике — решение человека; агентам самостоятельно системные настройки не менять и Docker Desktop не перезапускать. После проверки остановите созданные процессы и выполните `docker compose -p checkist_qa down`; тома сохраняются, `down -v` удаляет данные.
 
