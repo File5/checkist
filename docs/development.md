@@ -2,7 +2,7 @@
 
 ## Реализовано и планируется
 
-Сейчас запускаются Django/DRF и React + TypeScript + Vite SPA локально, Postgres, Redis и Celery worker — в Linux Docker. Клиент показывает настоящий health API через proxy, ошибки и повтор; подробности — [frontend.md](frontend.md). Предметная модель данных чеков (приложения `stores`, `catalog`, `receipts`) реализована и описана в [data-model.md](data-model.md); API и админки для неё нет. Хранение фото чеков, OCR магазина/адреса и товаров/стоимостей и дашборд не реализованы; OCR-провайдер не выбран.
+Сейчас запускаются Django/DRF и React + TypeScript + Vite SPA локально, Postgres, Redis и Celery worker — в Linux Docker. Клиент показывает настоящий health API через proxy, ошибки и повтор; подробности — [frontend.md](frontend.md). Предметная модель данных чеков (приложения `stores`, `catalog`, `receipts`) реализована и описана в [data-model.md](data-model.md). К ней есть HTTP API только на чтение — приложение `api`, 13 GET-эндпоинтов ([api-contract.md](api-contract.md#реализовано-api-чтения-каталога-и-цен)); API записи и админки нет, клиент эти эндпоинты пока не вызывает. Хранение фото чеков, OCR магазина/адреса и товаров/стоимостей и дашборд не реализованы; OCR-провайдер не выбран.
 
 ## Версии и установка Windows
 
@@ -106,7 +106,7 @@ npm.cmd run dev
 
 ## Данные, остановка и восстановление
 
-Технические таблицы и таблицы предметной модели создаёт `migrate`; он же вносит сид-данные справочников: страны `KZ`, `RU`, `DE`, валюты `KZT`, `RUB`, `EUR` и четыре ставки налога. Seed users/фото чеков не нужны. Чеки, магазины и товары вводятся только кодом, например из `manage.py shell`: API и админки для них нет. Тестовые записи делайте в QA, не в dev. `postgres_data` и `redis_data` — именованные тома с префиксом Compose project. Redis хранит AOF; mount `backend:/app:ro` не хранит состояние приложения. Dev и QA не делят эти тома.
+Технические таблицы и таблицы предметной модели создаёт `migrate`; он же вносит сид-данные справочников: страны `KZ`, `RU`, `DE`, валюты `KZT`, `RUB`, `EUR` и четыре ставки налога. Seed users/фото чеков не нужны. Чеки, магазины и товары вводятся только кодом, например из `manage.py shell`: API записи и админки для них нет. API чтения показывает только товары каталога и позиции, сопоставленные с товаром, поэтому на пустой БД списки пусты. Тестовые записи делайте в QA, не в dev. `postgres_data` и `redis_data` — именованные тома с префиксом Compose project. Redis хранит AOF; mount `backend:/app:ro` не хранит состояние приложения. Dev и QA не делят эти тома.
 
 Остановите Vite/preview и Django через Ctrl+C, затем `docker compose -p checkist_dev down`. Это удаляет контейнеры/сеть, сохраняет тома. Для возобновления выполните последовательность запуска выше; повторный `migrate` применяет только недостающие миграции. Правки worker-кода видны через mount, но задачи исполняет долгоживущий процесс: перезапустите worker; изменения зависимостей требуют `up --build`.
 
@@ -125,6 +125,24 @@ npm.cmd run dev
 ```
 
 Новую миграцию создаёт `makemigrations <app>`; проверьте её применение и откат на пустой QA-БД и обновите [data-model.md](data-model.md).
+
+## Проверки API чтения
+
+После изменения `backend/api/`, `backend/config/exceptions.py` или `backend/receipts/prices.py` выполните в QA-среде полный набор тестов с приложением `api` и HTTP-сценарии из [verification.md](verification.md#http-api-чтения). Тесты `api` без тега БД не требуют и запускаются без Docker:
+
+```powershell
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test api --exclude-tag=integration --verbosity=2
+```
+
+Тесты с тегом `integration` используют образцы `receipts.tests.samples` и фабрики `backend/api/tests/factories.py`. Для ручной пробы в QA-БД образцы вносит `save_samples()`:
+
+```powershell
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py shell -c "from api.tests.factories import save_samples; save_samples()"
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py runserver 127.0.0.1:18000 --noreload
+curl.exe -i --max-time 15 "http://127.0.0.1:18000/api/products/?page_size=2"
+```
+
+Образцы вносятся один раз и только в QA-БД, не в dev. Не-ASCII в query передавайте с percent-encoding: иначе `curl.exe` может отправить строку не в UTF-8, и поиск ничего не найдёт. У `api` нет миграций: `makemigrations --check --dry-run` должен отвечать `No changes detected`, а откат изменений API — это возврат коммитов без действий с БД.
 
 ## Диагностика: нет доступа с Windows к портам Docker
 

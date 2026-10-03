@@ -6,9 +6,11 @@
 
 Checkist предназначен для распознавания продуктовых чеков. Реализован scaffold: Django/DRF, анонимный health API, probes Postgres/Redis/Celery, демонстрационная задача `health.ping`, CLI `check_services`, Compose и тесты; React/TypeScript/Vite SPA показывает реальные health-ответы через proxy, частичные отказы, ошибки и повтор. Клиент описан в [docs/frontend.md](docs/frontend.md).
 
-Реализована предметная модель данных — приложения `stores` (страны, валюты, ставки налога, продавцы, магазины), `catalog` (категории, обобщённые продукты, бренды, товары) и `receipts` (чеки, позиции, скидки, итоги по налогам, сопоставление названий): модели, миграции с сид-данными, функции нормализации, дедупликации, проверки чека и истории цен, тесты. Описание — [docs/data-model.md](docs/data-model.md). Данные вводятся только кодом: API и админки для них нет, модели в админке не зарегистрированы, URL административного интерфейса не подключён.
+Реализована предметная модель данных — приложения `stores` (страны, валюты, ставки налога, продавцы, магазины), `catalog` (категории, обобщённые продукты, бренды, товары) и `receipts` (чеки, позиции, скидки, итоги по налогам, сопоставление названий): модели, миграции с сид-данными, функции нормализации, дедупликации, проверки чека и истории цен, тесты. Описание — [docs/data-model.md](docs/data-model.md). Данные вводятся только кодом: API записи и админки для них нет, модели в админке не зарегистрированы, URL административного интерфейса не подключён.
 
-Планируется: хранение фото чеков; распознавание магазина и адреса, товаров и их стоимостей; дашборд со статистикой. OCR-провайдер не выбран. Фото, OCR, бизнес-API, пользовательская авторизация и разграничение чеков, курсы валют пока не реализованы. Не выдавайте planned функции за готовый продукт, не выбирайте провайдера и не меняйте схему данных без задачи.
+Реализован HTTP API чтения — приложение `api` без моделей и миграций, 13 GET-эндпоинтов под `/api/`: справочники, категории, обобщённые продукты, товары, история цен, сравнение альтернативных товаров между странами и валютами. Эндпоинты открыты анонимно; перед любым внешним развёртыванием доступ нужно закрыть. Курсы валют не хранятся: пересчёт только по курсам из запроса. Несопоставленные позиции чеков в API не видны. SPA эти эндпоинты пока не вызывает. Контракт — [docs/api-contract.md](docs/api-contract.md#реализовано-api-чтения-каталога-и-цен).
+
+Планируется: хранение фото чеков; распознавание магазина и адреса, товаров и их стоимостей; дашборд со статистикой. OCR-провайдер не выбран. Фото, OCR, API записи и сопоставления позиций, пользовательская авторизация и разграничение чеков, хранение курсов валют пока не реализованы. Не выдавайте planned функции за готовый продукт, не выбирайте провайдера и не меняйте схему данных без задачи.
 
 ## Стек, структура и владение
 
@@ -21,6 +23,7 @@ backend/
   stores/                 справочники и магазины: models, normalize, migrations, tests
   catalog/                каталог товаров: models, units, migrations, tests
   receipts/               чеки: models, dedup, validation, prices, migrations, tests
+  api/                    HTTP API чтения: views, params, pagination, common, rates, tests
   manage.py
   requirements.in         прямые зависимости
   requirements.txt        закреплённый полный набор
@@ -52,9 +55,11 @@ docs/                     architecture, data-model, api-contract, development, f
 
 Backend владеет [контрактом](docs/api-contract.md). Точный URL — `/api/health/`; JSON-only; анонимный GET; HTTP 503 содержит валидное тело с `checks`. GET выполняет control ping, но не публикует Celery-task и не проверяет result backend. Реальную очередь/результат проверяет `check_services`; eager/local вызов не заменяет интеграцию. Клиент обязан валидировать JSON во время выполнения и сохранять `checks` при 503.
 
-Глобальная DRF permission — `IsAuthenticated`, health явно использует `AllowAny` и пустой список authentication classes. Это не готовая пользовательская система. При новых API установите потребителей, валидацию, доступ к объектам и границы пользователей; не раскрывайте внутренние ошибки. Изменение формата отражайте в контракте, тестах, клиенте и отчёте с перечнем несовместимости.
+API чтения (`backend/api/`): только GET, JSON, завершающий `/` обязателен; деньги — `Decimal` от БД до JSON, строками, без `float`; цены разных валют не складываются и не усредняются; ошибки — `{"error": {"code", "message", "fields?"}}` из `config/exceptions.py`, общие для всех DRF views под `/api/`. В ответы не должны попадать `raw_text`, `fiscal`, `fiscal_key`, `extra`, `Merchant.legal_name`, `tax_id`, номера чека, смены и кассы. Query разбирает `api.params.Params`, страницы — `api.pagination.paginate`; зависимостей вроде `django-filter` нет. Число запросов эндпоинта не должно расти с размером страницы — это фиксируют тесты с `assertNumQueries`.
 
-Собственные миграции: `catalog.0001_initial`, `stores.0001_initial`, `stores.0002_seed_reference` (страны, валюты, ставки налога), `receipts.0001_initial`; у `health` моделей и миграций нет. Схема, ограничения БД, инварианты приложения, порядок применения и отката — в [docs/data-model.md](docs/data-model.md); меняя модели, обновляйте его. Откат трёх приложений удаляет все данные чеков: перед ним нужен `pg_dump`. Тесты приложения лежат в `backend/<app>/tests/test_*.py`: с реальной БД — `TestCase` с `@tag("integration")`, без БД — `SimpleTestCase`. Реальные ФИО и ИНН физических лиц (предприниматель, кассир) в код, тесты и документацию не переносите — используйте вымышленные.
+Глобальная DRF permission — `IsAuthenticated`; health и API чтения явно используют `AllowAny` и пустой список authentication classes. Это не готовая пользовательская система. При новых API установите потребителей, валидацию, доступ к объектам и границы пользователей; не раскрывайте внутренние ошибки. Изменение формата отражайте в контракте, тестах, клиенте и отчёте с перечнем несовместимости.
+
+Собственные миграции: `catalog.0001_initial`, `stores.0001_initial`, `stores.0002_seed_reference` (страны, валюты, ставки налога), `receipts.0001_initial`; у `health` и `api` моделей и миграций нет, откат API — возврат коммитов. Схема, ограничения БД, инварианты приложения, порядок применения и отката — в [docs/data-model.md](docs/data-model.md); меняя модели, обновляйте его. Откат трёх приложений удаляет все данные чеков: перед ним нужен `pg_dump`. Тесты приложения лежат в `backend/<app>/tests/test_*.py`: с реальной БД — `TestCase` с `@tag("integration")`, без БД — `SimpleTestCase`. Реальные ФИО и ИНН физических лиц (предприниматель, кассир) в код, тесты и документацию не переносите — используйте вымышленные.
 
 Новые миграции добавляйте по соглашениям Django; применённые не переписывайте. Для изменения данных предусмотрите транзакции, конкуренцию, идемпотентность, таймауты, обратимость и восстановление. Проверяйте миграции на изолированных представительных данных; оценивайте объём запросов, индексы, N+1 и пагинацию, когда они затронуты.
 
@@ -72,12 +77,12 @@ docker compose -p checkist_qa config --quiet
 ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py check
 ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py makemigrations --check --dry-run
 ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py migrate --noinput
-./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test catalog stores receipts health --exclude-tag=integration --verbosity=2
-./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test catalog stores receipts health --tag=integration --verbosity=2
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test catalog stores receipts health api --exclude-tag=integration --verbosity=2
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test catalog stores receipts health api --tag=integration --verbosity=2
 ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py check_services
 ```
 
-Тесты без тега `integration` БД не используют; с тегом — требуют QA Postgres, а `health` ещё и QA Redis. `check_services` требует запущенный QA worker. Проверку отката миграций см. в [verification.md](docs/verification.md#модель-данных-catalog-stores-receipts).
+Тесты без тега `integration` БД не используют; с тегом — требуют QA Postgres, а `health` ещё и QA Redis. HTTP-сценарии API чтения через `curl.exe` — в [verification.md](docs/verification.md#http-api-чтения). `check_services` требует запущенный QA worker. Проверку отката миграций см. в [verification.md](docs/verification.md#модель-данных-catalog-stores-receipts).
 
 В `frontend/`: `npm.cmd ci`, `npm.cmd run lint`, `npm.cmd run test`, `npm.cmd run build`. При запущенных QA API/Vite из корня: `node backend/scripts/check_health_proxy.mjs healthy`; stop/recovery и states `worker`, `postgres`, `redis` — по verification.md. Эта проверка использует настоящий fetch и клиентский адаптер в Node, без обхода UI.
 
