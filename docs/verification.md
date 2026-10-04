@@ -4,7 +4,7 @@
 
 Реализованы backend scaffold (health API, Postgres/Redis probes, Celery task/CLI, Compose), React/TypeScript/Vite SPA с настоящим health API через proxy и предметная модель данных чеков — приложения `catalog`, `stores`, `receipts` с миграциями и тестами ([data-model.md](data-model.md)) — и HTTP API чтения этой модели, приложение `api` с 13 GET-эндпоинтами ([api-contract.md](api-contract.md#реализовано-api-чтения-каталога-и-цен)). Контрактные тесты health используют mocks; integration-tag tests работают с реальными Postgres и Redis; выполнение очереди и result backend проверяет отдельный `check_services`. Ограничения БД, каскады, сиды, дедупликацию, проверку чека и историю цен проверяют integration tests трёх приложений на реальном Postgres. API чтения проверяют тесты `api`: без БД — разбор параметров, пагинация, сериализация, курсы и формат ошибок; с тегом `integration` — эндпоинты через тестовый клиент Django на реальном Postgres; настоящий HTTP — сценарии `curl.exe` [ниже](#http-api-чтения). Django admin (`/admin/`, 12 моделей и inline чека) проверяют `test_admin.py` трёх приложений и `health/tests/test_admin_site.py` через `django.test.Client`: это HTTP-запросы к настоящим страницам админки без браузера. Vitest проверяет клиентский API-адаптер с mocked fetch; CLI `backend/scripts/check_health_proxy.mjs` — настоящий HTTP и тот же адаптер через proxy в Node 24.
 
-Планируются продуктовые функции: хранение фото чеков, распознавание магазина/адреса и товаров/стоимостей, API ввода чеков, статистический дашборд. OCR-провайдер не выбран. Пользовательского входа в SPA и API записи нет. Клиент API чтения не вызывает, поэтому сквозной проверки этих эндпоинтов через proxy и UI нет. HTML-интерфейс модели данных — Django admin, проверки которого описаны в разделах [«Админка: проверки без браузера»](#админка-проверки-без-браузера) и [«Ручная приёмка админки человеком»](#ручная-приёмка-админки-человеком). Клиент описан в [frontend.md](frontend.md).
+Реализован `recognition`: фото/вырезки MEDIA, очередь PostgreSQL, host-worker, FakeProvider/Codex CLI, автоматический импорт, локальный HTTP upload/cancel/retry и чтение всех строк чеков. Новый сквозной набор — [ниже](#распознавание-сквозная-серверная-проверка). Пользовательского входа, HTTP ручного редактирования, UI загрузки/чеков и дашборда пока нет. Прежний SPA использует только health, поэтому новые HTTP-тесты не подтверждают React/proxy/UI интеграцию. Админку проверяют отдельно [без браузера](#админка-проверки-без-браузера) и [человеком](#ручная-приёмка-админки-человеком).
 
 Ни сборка образа, ни `check`, ни mocked API tests не доказывают реальную HTTP/клиентскую интеграцию. Визуальную и интерактивную приёмку выполняет человек; автоматический обход browser UI запрещён. HTTP, CLI и unit tests можно автоматизировать.
 
@@ -45,12 +45,12 @@ docker compose -p checkist_qa up -d --wait --wait-timeout 90 postgres redis
 ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py migrate --noinput
 docker compose -p checkist_qa up -d --build --wait --wait-timeout 120 worker
 ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py makemigrations --check --dry-run
-./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test catalog stores receipts health api --exclude-tag=integration --verbosity=2
-./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test catalog stores receipts health api --tag=integration --verbosity=2
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test catalog stores receipts health api recognition --exclude-tag=integration --verbosity=2
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test catalog stores receipts health api recognition --tag=integration --verbosity=2
 ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py check_services
 ```
 
-Ожидается exit 0, отсутствие новых миграций, 179 тестов без БД и 671 integration test, затем JSON с `celery_task.result={"message":"pong"}`. На пустой БД `migrate` применяет 22 миграции: 18 стандартных и 4 собственных. Числа соответствуют текущему коду и могут измениться вместе с тестами. Команда без тега не использует БД и может выполняться при TCP-отказе; integration-команда не должна заменяться skip/eager. Django runner создаёт и затем удаляет **`test_checkist_qa`**; Redis integration использует отдельный QA Redis DB 2 и уникальные временные ключи.
+Ожидается exit 0, отсутствие новых миграций, 247 тестов без БД и 846 integration, затем JSON с `celery_task.result={"message":"pong"}`. На пустой БД `migrate` применяет 23 миграции: 18 стандартных и 5 собственных, включая recognition.0001_initial. Числа соответствуют текущему коду и могут измениться вместе с тестами. Команда без тега БД не использует; integration нельзя заменять skip/eager. Runner создаёт и удаляет **`test_checkist_qa`**; Redis tests используют QA Redis DB 2 и уникальные ключи. Recognition tests используют временный MEDIA и fake/mock, настоящий Codex не вызывают.
 
 | Приложение | Без БД (`--exclude-tag=integration`) | С БД (`--tag=integration`) |
 | --- | --- | --- |
@@ -58,10 +58,11 @@ docker compose -p checkist_qa up -d --build --wait --wait-timeout 120 worker
 | `stores` | 14 | 79 |
 | `receipts` | 18 | 238 |
 | `health` | 26 | 7 |
-| `api` | 112 | 267 |
-| Всего | 179 | 671 |
+| `api` | 112 | 304 |
+| `recognition` | 68 | 138 |
+| Всего | 247 | 846 |
 
-Числа в таблице — после слияния ветки админки с `main` (API чтения), получены обнаружением тестов `DiscoverRunner.build_suite` по приложениям и тегам и подтверждены полным прогоном объединённого кода на Windows 2026-10-04 (отдельный Compose project и БД `checkist_qa_merge`, Postgres 25450, Redis 16390): `pip check`, `check`, `makemigrations --check --dry-run`, `migrate` на пустой БД — exit 0; 179 OK без БД и 671 OK integration. Worker-контейнер, `check_services`, HTTP и UI после слияния не повторялись. Прогоны F3–F6 ниже выполнялись до этого слияния, без приложения `api`: их итоги 67 и 404 относятся к четырём приложениям. Числа после F1/F2/F4/F6 — см. [итоговый прогон F6](#фактические-результаты-f6-2026-10-04). F6 добавил 21 integration-тест `receipts` в `ReceiptInlineUniqueTests`. F1 добавил 14 integration-тестов `receipts`, F2 — 7 `catalog`, F4 — ещё 20 `receipts` в `ReceiptInlineTransactionTests`; subtests внутри метода отдельно не считаются. Тесты админки — integration, кроме пяти тестов маршрута в `health/tests/test_admin_site.py`, которым БД не нужна. Гонки проверяются `TransactionTestCase` на разных Postgres-соединениях, ошибки удаления — с настоящим commit. При прогоне тестов без БД в выводе дважды появляется `Internal Server Error: /api/health/`: это журнал контрактных тестов безопасного ответа 500, а не отказ.
+Числа обнаружены `DiscoverRunner.build_suite` по приложениям/тегам и подтверждены итоговым прогоном С6 на Windows, DB `checkist_qa_c6` / `test_checkist_qa_c6`, Postgres 25466, Redis 16396. Результаты — [ниже](#фактические-результаты-с6). Предыдущий merge-прогон без recognition: 179/671; F3–F6 до merge, без api: 67/404. Эти исторические результаты ниже сохраняются со своими датами и scope. Subtests отдельно не считаются. Гонки — TransactionTestCase и отдельные Postgres-соединения. Журналы ожидаемых безопасных HTTP 400/403/409/500 в негативных тестах не означают failure теста; окончательный exit code и сводка runner обязательны.
 
 Unit/contract tests health покрывают точный 200, комбинации 503, сохранение независимых checks, анонимность, игнорирование query/Authorization, 405, 406, безопасный 500 при DEBUG, отсутствие публикации task из health, параллельность probes, cleanup кеша, bounded publication retries и негативную env-валидацию. Это не сетевой замер времени отказа.
 
@@ -72,6 +73,130 @@ Unit/contract tests health покрывают точный 200, комбинац
 Регрессии D1 и E1: `api.tests.test_request_errors` — 24 теста (17 без БД, 7 integration); два дополнительных теста в `test_errors` проверяют семейство Django request exceptions и безопасный 415. Граница 1000/1001 проверена на всех 13 маршрутах при обоих DEBUG, с точным JSON, без SQL при отказе. Проверяются percent-кодирование/UTF-8/суррогаты, Host, Accept/Content-Type, конструкторы настоящих WSGI/ASGI request, длинные значения, повторения/пустые имена/массивы, ID, отсутствие чтения body при GET/405, запись без слэша и редактирование access log. E1 проверяет однократное декодирование пути, регистр hex, начальные //, двойное кодирование, dot segments, absolute-form, пустые/битые targets и сохранение обычных путей вне API; нормализация сверена с настоящими парсером runserver и WSGIRequest. Неизвестные `RuntimeError`, `ValueError`, `LookupError`, `UnicodeDecodeError` из view остаются безопасным 500. Запуск: `manage.py test api.tests.test_request_errors api.tests.test_errors --noinput --verbosity=0` — 49 тестов. Полный WSGI-вызов с SQL использует `TransactionTestCase`: сигнал `request_started` закрывает соединение в атомарном обычном `TestCase`.
 
 Регрессии `api.tests.test_read_resilience`: точные значения обоих маршрутов сравнения на границах моделей и курсов, отрицательная оплаченная цена при большой скидке, среднее и процент динамики нормализованных цен. Конкурентное удаление проверяет `TransactionTestCase` с autocommit: `connection.execute_wrapper` перед чтением последних цен коммитит удаление строки и чека через отдельное psycopg-соединение в тестовую БД; результаты SQL не подменяются. Покрыты `price_summary`, карточка и список товаров, оба сравнения (сравнимые и несравнимые предложения), сводка истории, карточка и список обобщённых продуктов, удаление единственной группы и сохранение более раннего наблюдения. Runner очищает данные через flush. Запуск: `manage.py test api.tests.test_read_resilience --tag=integration --noinput --verbosity=2` — 19 тестов.
+
+## Распознавание: сквозная серверная проверка
+
+Сначала полный QA environment выше, затем recognition overrides из [development.md](development.md#qa-сервер-worker-демо). MEDIA/scratch отдельно от dev. Автотесты не вызывают настоящий Codex:
+
+```powershell
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test recognition.tests.test_e2e --tag=integration --noinput --verbosity=2
+```
+
+9 `TransactionTestCase` на PostgreSQL: настоящий APIClient с cookie/Origin/CSRF, multipart upload → queued → `recognition_worker --once` → succeeded/2 crops; original/preview/crop files и GET их URL байт в байт; receipts/lines/discounts/taxes; точный replay; другое фото по сильной идентичности и отдельно без номеров по store/time/total без новых lines/products; HTTP cancel queued и первого/второго recognize на отдельном соединении; сохранение первой импортированной части; retry failed/cancelled/partial; needs_review с нормализованным результатом, missing quantity и противоречивыми totals. Для MEDIA тест перепривязывает только document_root существующего DEBUG media route к TemporaryDirectory, API-маршруты остаются из config.urls. Это dispatch внутри Django, без HTTP-сокета и браузера.
+
+Регрессия — обе полные команды шести приложений выше. Откат recognition на QA **до загрузок**, при остановленном OCR-worker:
+
+```powershell
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py migrate --noinput
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py migrate recognition zero --noinput
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py migrate recognition --noinput
+```
+
+Это удаляет всю recognition-историю, сохраняя domain и MEDIA; перед откатом ценных данных обязательны pg_dump и копия MEDIA. Integration `recognition.tests.test_models.RecognitionMigrationTests` отдельно проверяет откат/повтор на представительном Receipt с товаром/строкой и сравнивает все старые PK/поля. Восстановление backup этим тестом не подтверждается.
+
+### HTTP/CLI без браузера
+
+В QA запустить API 18000 и host-worker `--fake-scenario success2` по development.md. В третьем терминале после **того же** полного environment/recognition block выполнить:
+
+```powershell
+$apiBase='http://127.0.0.1:18000'
+$cookieFile=Join-Path $env:RECEIPT_OCR_TEMP_ROOT 'qa-http-cookies.txt'
+$csrfFile=Join-Path $env:RECEIPT_OCR_TEMP_ROOT 'qa-http-csrf.json'
+$uploadFile=Join-Path $env:RECEIPT_OCR_TEMP_ROOT 'qa-http-upload.json'
+$demoFile=Join-Path $env:MEDIA_ROOT 'demo/double.png'
+curl.exe --fail-with-body -sS --max-time 15 -c $cookieFile -o $csrfFile "$apiBase/api/recognition/csrf/"
+if ($LASTEXITCODE -ne 0) { throw 'CSRF request failed' }
+$csrf=(Get-Content -Raw -Encoding UTF8 $csrfFile | ConvertFrom-Json).csrf_token
+curl.exe --fail-with-body -sS --max-time 30 -b $cookieFile -c $cookieFile -H "Origin: $apiBase" -H "X-CSRFToken: $csrf" -F "file=@$demoFile" -o $uploadFile "$apiBase/api/recognition/photos/"
+if ($LASTEXITCODE -ne 0) { throw 'Upload failed' }
+$upload=Get-Content -Raw -Encoding UTF8 $uploadFile | ConvertFrom-Json
+$jobUrl="$apiBase/api/recognition/jobs/$($upload.job.id)/"
+$deadline=(Get-Date).AddMinutes(7)
+do {
+    $job=Invoke-RestMethod -Uri $jobUrl -TimeoutSec 15
+    Write-Output "$($job.status) / $($job.stage)"
+    if ($job.status -in 'succeeded','partial_succeeded','failed','cancelled') { break }
+    if ((Get-Date) -ge $deadline) { throw 'Job polling timeout' }
+    Start-Sleep -Milliseconds 500
+} while ($true)
+if ($job.status -ne 'succeeded' -or $job.items.Count -ne 2) { throw 'Expected two successful receipts; inspect Job/images' }
+$images=Invoke-RestMethod -Uri "$apiBase/api/recognition/receipt-images/?job=$($job.id)" -TimeoutSec 15
+foreach ($image in $images.results) {
+    $cropFile=Join-Path $env:RECEIPT_OCR_TEMP_ROOT "qa-crop-$($image.id).png"
+    curl.exe --fail-with-body -sS --max-time 15 -o $cropFile "$apiBase$($image.image_url)"
+    if ($LASTEXITCODE -ne 0) { throw 'Crop GET failed' }
+    $receipt=Invoke-RestMethod -Uri "$apiBase/api/receipts/$($image.receipt_id)/" -TimeoutSec 15
+    $receipt
+    Invoke-RestMethod -Uri "$apiBase$($receipt.lines_url)" -TimeoutSec 15
+}
+Invoke-RestMethod -Uri "$apiBase/api/receipts/" -TimeoutSec 15
+curl.exe --fail-with-body -sS --max-time 30 -b $cookieFile -H "Origin: $apiBase" -H "X-CSRFToken: $csrf" -F "file=@$demoFile" "$apiBase/api/recognition/photos/"
+if ($LASTEXITCODE -ne 0) { throw 'Replay failed' }
+```
+
+На новой QA БД первый upload — HTTP 202/reused=false; totals 4.42/6.00, 6 lines (5 product + 1 deposit), 5 product IDs; две crop PNG. Последний POST — HTTP 200/reused=true с теми же photo/job IDs. На уже заполненной QA повтор допустимо сразу даёт reused; это не новый OCR-прогон. `Invoke-RestMethod` бросает при HTTP-ошибке, curl exit проверяется явно. Для проверки статуса curl добавить `-w ' HTTP=%{http_code}'`. Cookie/token и ответы остаются в private scratch, не в публичном MEDIA.
+
+Для cancel/retry: получить свежий CSRF, использовать тот же cookie/Origin/header и `Content-Type: application/json`, body `{}` на `${jobUrl}cancel/` или `${jobUrl}retry/`. Queued cancel — 200/cancelled, running — 202/cancel_requested до подтверждения worker; terminal cancel — 409, cancelled replay cancel — 200. Retry failed/partial/cancelled — 202 нового Job, одновременно active sibling —409. Для running cancel остановить свой worker, загрузить новый файл/создать retry, запустить `--fake-scenario pause_recognize`, дождаться stage=recognize и отправить cancel; для needs_review использовать partial_success/inconsistent_total. Не подменять реальный сбой endless retry и не использовать чужой job.
+
+Реальный Codex: остановить fake worker, загрузить **ещё не обработанный** single.png, в worker terminal provider=codex_cli/native exe; запуск и замер:
+
+```powershell
+$duration=[System.Diagnostics.Stopwatch]::StartNew()
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py recognition_worker --once
+$workerExit=$LASTEXITCODE
+$duration.Stop()
+Write-Output "worker exit=$workerExit; seconds=$($duration.Elapsed.TotalSeconds)"
+```
+
+Проверить GET job/images и причины независимо от exit. `--once` может вернуть 0 при Job failed/partial; пустая очередь не является OCR-тестом. Если нет native exe/авторизации/сети, сохранить конкретный CommandError/Job.error/time, человеку проверить `codex.exe login status` и доступ к модели, затем повторить в QA. Автотесты не заменяют эту проверку.
+
+### Ручная приёмка OCR человеком
+
+UI загрузки/чеков ещё предстоит реализовать. После интеграции клиента (и `/media` proxy) человек выполняет следующие шаги; текущие [SPA health](#ручная-ui-приёмка-человеком) и [admin](#ручная-приёмка-админки-человеком) сценарии остаются отдельными:
+
+1. QA fake/double.png: загрузка с клавиатуры, loading/stages, две читаемые вырезки без потери текста, чеки 4.42/6.00 и все строки/товары/скидки/залоги/налоги; original и EXIF preview. Проверить mobile/desktop, focus, refresh/back/forward, пустые состояния/ошибки.
+2. Точный повтор — прежние photo/job IDs; другое изображение одного чека — новый Photo и тот же Receipt, без новых строк/товаров. Без strong key точный store/time/total связывает; разные реальные чеки с таким совпадением могут ложно объединиться — это ограничение правила v1, сверять с эталоном.
+3. Partial_success/inconsistent_total: needs_review, доступный crop, безопасные нормализованные поля и понятные причины; успешная часть остаётся. Нет Draft/формы исправления OCR: API ручного разрешения причин v1 не реализует.
+4. Остановить worker, upload → queued → cancel → cancelled. Pause_recognize → cancel_requested → cancelled; retry → новый Job, старый сохраняет outcome. После отмены второго OCR первая часть остаётся. Последний committed import делает cancel 409/job_terminal. Сеть/refresh/отмена browser fetch не отменяют серверную работу.
+5. HEIC, битый/анимированный файл, >20 MiB/>40 MP, >10 чеков, нет CSRF/неверный Origin/выключенный flag, отсутствие API/worker/media: корректные ошибки, нет выдуманного успеха. Idle executor=false само по себе не доказывает отсутствие worker.
+6. Реальный Codex: разрешённые к облачной обработке фото RU/KZ/DE вне git; эталон числа чеков, границ, полей/строк/сумм/налогов и нечитаемых мест. Проверить один/несколько чеков, поворот, длинный/мятый/термо-чек, блики/размытие, частично обрезанный и не-чек, повтор/лучший снимок/разные чеки с одинаковыми суммами. Сверить timezone магазина, CLI/model/schema versions, реальные durations/errors и каждый Receipt/needs_review с эталоном. Синтетический smoke не доказывает качество этих фото.
+7. Проверить нет потери результата, дублей/ложного объединения и перезаписи заполненных значений при последовательном повторе. Не редактировать aggregate параллельно OCR ради гарантии: manual_locked/отпечаток формы и защита stale admin POST сознательно исключены из v1. По существующей админке пройти F4/F6 отдельно.
+
+### Фактические результаты С6
+
+Прогон 2026-10-04–05.
+
+**Проверено и прошло.** Windows Python 3.13.9, Docker 29.8.1/Compose 5.5.1, QA PostgreSQL 17.11/Redis 7.4.11. Только новый Compose project/DB `checkist_qa_c6`, runner `test_checkist_qa_c6`, host Postgres 25466/Redis 16396/API 18006. Environment — весь QA-блок с согласованной заменой портов/DB/proxy; MEDIA и scratch в разных игнорируемых `.orca-attachments/c6/` каталогах, автотесты — TemporaryDirectory. Dev и чужой QA не менялись.
+
+P = `./backend/.venv/Scripts/python.exe -X utf8`. Завершившиеся проверки ниже имеют exit 0; долгоживущие runserver/fake worker подтверждены HTTP и остановлены отдельно.
+
+| Команда | Наблюдаемый результат |
+| --- | --- |
+| `py -3.13 -m venv backend/.venv`; `P -m pip install -r backend/requirements.txt`; `P -m pip check` | Установка закреплённого набора, No broken requirements |
+| `docker compose -p checkist_qa_c6 config --quiet`; `up -d --wait --wait-timeout 90 postgres redis` | Отдельные healthy контейнеры/сеть/тома; socket.create_connection с timeout=2 на 25466/16396 — TCP OK |
+| `P backend/manage.py check`; `makemigrations --check --dry-run` | 0 issues; No changes detected |
+| `P backend/manage.py migrate --noinput`; `migrate recognition zero --noinput`; `migrate recognition --noinput` | 23 миграции на пустой QA; recognition.0001 unapply/reapply OK |
+| `P backend/manage.py test recognition.tests.test_e2e --tag=integration --noinput --verbosity=2` | 9 OK, 10.282 с |
+| `P backend/manage.py test catalog stores receipts health api recognition --exclude-tag=integration --noinput --verbosity=1` | 247 OK, 12.395 с, без skips |
+| Та же команда с `--tag=integration` | 846 OK, 162.341 с, без skips; представительский reverse/reapply test включён; test DB удалена |
+| `docker compose -p checkist_qa_c6 up -d --build --wait --wait-timeout 120 worker`; `P backend/manage.py check_services` | Worker healthy, настоящая Celery task/result pong |
+| `docker compose -p checkist_qa_c6 exec -T worker python -m pip check`; `python -X utf8 manage.py check`; `makemigrations --check --dry-run`; `check_services` | Каждая команда exit 0, no broken/0 issues/no changes/реальный pong внутри Docker-сети |
+| `P backend/manage.py seed_recognition_demo`; `runserver 127.0.0.1:18006 --noreload`; `recognition_worker --fake-scenario success2` | Синтетические demo-файлы, запущенные host API/worker |
+| `P .orca-attachments/c6/http_smoke.py fake` (временный urllib/cookie/CSRF/multipart/assert script, не deliverable) | Реальный HTTP 202 → queued/running/succeeded; 2 Receipt, 6 lines, 5 product IDs; оригинал/preview/2 crops GET 200 image/png, проверены байты/hash; повтор HTTP 200 reused, те же IDs |
+| `curl.exe --fail-with-body -sS --max-time 15 http://127.0.0.1:18006/api/health/`; curl admin/css | HTTP health 200/3 ok, admin 302, CSS 200; браузер не запускался |
+| Native `codex.exe --version`; `codex.exe login status` | 0.160.0, Logged in using ChatGPT; auth/config не менялись |
+| HTTP upload `single.png`; provider=codex_cli, `P backend/manage.py recognition_worker --once` | Exit 0, Job 2 **partial_succeeded**, wall time **102.738 с** включая startup; detect 9.553 с и recognize 92.061 с, оба attempts succeeded; 1 сохранённая PNG вырезка/needs_review |
+| `P .orca-attachments/c6/http_smoke.py verify-codex` | Job/images доступны через настоящий HTTP; original/preview/crop 200, review=1, normalized result/причины сохранены, нового Receipt нет |
+
+Подсчёт по приложениям в таблице выше — обнаружение DiscoverRunner плюс фактические полные прогоны. После этих прогонов менялись только документы; тесты и продуктовый код не менялись. Предупреждения override DATABASES относятся к существующим unit-тестам QA guard; отрицательные HTTP log entries — ожидаемые сценарии. Производственные дефекты С1–С5, требующие правки, в С6 не обнаружены; их код/контракт/миграции не изменены.
+
+Завершение: свои runserver/fake worker остановлены Ctrl+C (shell exit 1 вследствие прерывания, fake worker сообщил корректную остановку); Codex --once завершился сам с exit 0. `docker compose -p checkist_qa_c6 down` — exit 0, контейнеры/сеть удалены, тома сохранены. `docker ps -a` с фильтром этого project, LISTEN 25466/16396/18006/15176 и Get-CimInstance фильтр своих python/codex процессов — пусто. QA MEDIA/приватные синтетические результаты оставлены в игнорируемом каталоге до приёмки; в коммит не входят. Финальные `P backend/manage.py check`, `makemigrations --check --dry-run`, `P -m pip check` повторены после документации — exit 0. UTF-8/LF/ссылки и `git diff --check` проверены отдельно, это проверки файлов, не OCR/UI.
+
+**Проверено и не прошло.** Реальный Codex **не дал автоимпорт демо-чека**: operation=null, неоднозначный `/fiscal/register_serial`; внутренние причины missing_required/identity_conflict/ambiguous_value. API сохраняет безопасные missing_required `/operation`, identity_conflict `/` и invalid_value `/`, без закрытого фискального поля. Итог 4.42 и читаемые строки сохранены на needs_review; это не ошибка тестового runner и не доказательство готового OCR-качества. Повторный вызов модели не выполнялся, ожидания не ослаблялись. С6 сделал один реальный прогон, как задано.
+
+Две первоначальные вспомогательные команды записи логов не запустили тесты из-за отсутствующего каталога (PowerShell Out-File, оболочка ошибочно вернула 0). После создания каталога `ErrorActionPreference=Stop` с перенаправленным native stderr прервал команды на обычных сообщениях Django runner, shell exit 1. Эти попытки не считались прогоном; тестовые БД/процессы после них проверены, затем обе команды выполнены напрямую без перенаправления и прошли с числами выше. Продукт/тесты для этого не менялись.
+
+**Не проверено и почему.** Реальные фото/полевое OCR-качество и UI — нужны разрешённые фото/эталон и реализованный клиент; шаги ручной приёмки выше. Vite `/media` proxy ещё отсутствует; новый API через него и frontend lint/test/build не повторялись, frontend не менялся. Полный suite в Linux не повторялся: проверен Windows→QA путь, отдельно container checks/pong; Linux OCR/POSIX crash/watchdog не принят (watchdog исключён v1). Нагрузка/большие данные, облачные лимиты/истечение auth, backup restore и recovery после реального убийства worker — не испытывались в С6; deterministic leases/recovery/cancel покрыты существующими integration-тестами. Эти проверки не заменяются сборкой/статическим аудитом.
 
 ## Модель данных: catalog, stores, receipts
 

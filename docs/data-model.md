@@ -1,8 +1,8 @@
 # Модель данных Checkist
 
-Документ описывает код в `backend/catalog`, `backend/stores`, `backend/receipts` по состоянию ветки. Источник истины — `models.py` и миграции этих приложений; при расхождении прав код, документ исправляется.
+Документ описывает код в `backend/catalog`, `backend/stores`, `backend/receipts`, `backend/recognition` по состоянию ветки. Источник истины — `models.py` и миграции этих приложений; при расхождении прав код, документ исправляется.
 
-Реализованы таблицы, ограничения БД, функции нормализации, дедупликации, проверки чека и истории цен, а также тесты. Данные доступны на чтение через HTTP API ([api-contract.md](api-contract.md#реализовано-api-чтения-каталога-и-цен)). Для ручного ввода и правки подключён Django admin — см. [«Админка»](#админка). **API записи и распознавания нет**: данные создаются через админку или кодом (shell, тесты). Фото чека, владелец-пользователь и курсы валют не хранятся — см. [известные ограничения](#известные-ограничения).
+Реализованы модели, нормализация, дедупликация, проверка чека, история цен и распознавание через host-worker. Данные доступны через [API](api-contract.md): прежний каталог/цены и новый локальный upload/jobs/receipts. Ручной ввод и правка — [Django admin](#админка); API произвольного редактирования нет. Фото хранятся в MEDIA и связаны с чеками через `ReceiptImage`. Владельца-пользователя и серверных курсов валют нет.
 
 ## Приложения и таблицы
 
@@ -11,10 +11,11 @@
 | `stores` | Справочники и магазины | `stores_country`, `stores_currency`, `stores_taxrate`, `stores_merchant`, `stores_store` |
 | `catalog` | Каталог товаров двух уровней | `catalog_category`, `catalog_genericproduct`, `catalog_brand`, `catalog_product` |
 | `receipts` | Чеки и сопоставление названий | `receipts_receipt`, `receipts_receiptline`, `receipts_receiptdiscount`, `receipts_receipttax`, `receipts_productalias` |
+| `recognition` | Фото, очередь, вырезки и попытки | `recognition_sourcephoto`, `recognition_processingjob`, `recognition_receiptimage`, `recognition_recognitionattempt` |
 
 `stores` и `catalog` друг от друга не зависят; `receipts` ссылается на оба. `catalog/units.py` принадлежит `catalog`, `receipts` его импортирует.
 
-Общие правила:
+Общие правила предметной модели (особенности recognition — ниже):
 
 - PK — `BigAutoField`; у `Country` и `Currency` PK — код ISO (`code`).
 - Необязательные строки — `blank=True, default=""`, не `NULL`: на этом построены условные уникальные ограничения.
@@ -190,6 +191,50 @@
 - `receipts.dedup.find_alias(merchant, raw_name, store_item_code="")`: если код задан — ищет по `(merchant, store_item_code)` и среди найденных предпочитает точное совпадение `name_key`, иначе берёт первое по `pk`; без кода — по `(merchant, name_key)`, предпочитая сопоставление без кода.
 - Сопоставление **не выполняется автоматически**: при сохранении строки `product` не заполняется, `find_alias` вызывает тот, кто создаёт строку.
 
+## `recognition`: фотографии и очередь
+
+Миграция `recognition.0001_initial` зависит от `receipts.0001_initial`. Старые модели и их миграции не менялись. PK четырёх моделей — BigAutoField; storage UUID не является HTTP ID. JSON provider-результатов валидируется схемами detect v1 / receipt v2, но прямой ORM может обойти эту проверку.
+
+| Модель | Сохраняемые данные и связи |
+| --- | --- |
+| `SourcePhoto` | `storage_uuid` unique; `original_file`, nullable `upright_file`; unique lowercase SHA-256 исходных байтов; sniffed content_type/bytes; raw и upright width/height, EXIF orientation 1–8, preparation_version, created_at |
+| `ProcessingJob` | photo PROTECT, retry_of SET_NULL; status/stage; detected/current_position и completed/imported/reused/review/failed/cancelled counters; version/run_token/claim_count; available/started/finished/deadline/heartbeat/lease/cancel timestamps; safe error_code |
+| `ReceiptImage` | photo PROTECT, job CASCADE; position 1–10; file/hash/width/height; normalized bbox/quad/rotation/crop_transform/clipped; status/import_effect; Receipt SET_NULL; nullable normalized_result, issues list, outcome_snapshot, created_at |
+| `RecognitionAttempt` | job CASCADE, nullable image CASCADE; phase detect/recognize, ordinal, run_token; provider/model/provider/CLI/prompt/schema versions; input_sha256; status, private raw_payload/invalid_output_text/error_code; started/finished |
+
+Ограничения БД:
+
+- Photo: bytes 1..20971520, оба размера положительны и площадь ≤40000000 (умножение bigint), JPEG/PNG/WebP; ориентация 1..8. SHA-256 и storage UUID unique.
+- Job: не более одного active job/photo (`queued`, `running`, `cancel_requested`); допустимые status/stage; version ≥1; detected_count ≤10; current_position в диапазоне обнаруженного количества; каждый progress counter ≤detected_count (при NULL только 0). Сумма counters отдельно БД не проверяется, её ведёт queue service.
+- Terminal Job требует finished_at и stage=finished; active — без finished_at. Только executing состояния имеют run_token/heartbeat/lease/started/deadline; queued/terminal не имеют token/heartbeat/lease. Cancel timestamp требуется только cancel_requested/cancelled.
+- Image: unique `(job,position)`, position 1..10, положительные размеры ≤40 MP, допустимые status/import_effect, rotation −180..180. Принадлежность photo к job и геометрия проверяются `clean()`/storage, не FK-ограничением БД.
+- Attempt: unique `(job,phase,image,ordinal)` с `nulls_distinct=False`; ordinal ≥1; detect без image, recognize с image; running без finished_at, завершённый с ним. Принадлежность image к job проверяет приложение.
+
+Индексы: photo `(created_at,id)`; job `(status,available_at,id)` и `(status,lease_expires_at)`; image `(photo,id)` и `(receipt,id)`; attempt `(job,id)`, плюс FK/unique. Списки HTTP используют пагинацию и фиксированное число SQL, зафиксированное API-тестами. Импорт большого чека делает проверки/записи по строкам; throughput/N+1 на больших импортируемых графах не измерялся.
+
+Job statuses: queued → running → succeeded / partial_succeeded / failed; running → cancel_requested → cancelled; queued → cancelled. Recovery истёкшего running lease возвращает queued с новым fence при остатке budget и claim_count <2, иначе failed; cancel_requested становится cancelled. HTTP retry разрешён из failed/partial_succeeded/cancelled, создаёт новый job на том же photo, прежние outcomes остаются.
+
+Image statuses: pending/running → imported/reused/updated/needs_review/failed/cancelled. Import effect: none/created/linked/updated. Завершённый image outcome immutable для сервисов очереди. `needs_review` сохраняет нормализованное наблюдение и причины даже без Receipt; при неоднозначном товаре импорт остального графа может сохранить Receipt с product=NULL и issues. API отдаёт safe projection normalized_result только для needs_review, без raw_text, fiscal, tax_id, provider notes или stderr; сырой payload attempt всегда приватен.
+
+Повтор исходного файла определяется по SHA-256: API возвращает тот же Photo и последний Job, без новой обработки. Другие байты дают новый Photo. Import сначала ищет фискальный ключ, затем магазин/локальную дату/номер с кассой и сменой, затем точный store/purchased_at/total; конфликт нескольких кандидатов сохраняется для review. Найденный Receipt дополняется только пустыми реквизитами и product у ранее несопоставленных совместимых строк. Набор позиций, имена, суммы, количество и зависимости должны совпадать; расширение/перезапись графа повторным OCR не выполняется. Merchant/Store/Product не перезаписываются. Новые товары получают служебные Category/GenericProduct, точные aliases/GTIN/name+package/brand переиспользуются без fuzzy matching.
+
+Страна берётся из observation store/merchant либо RUB→RU, KZT→KZ, EUR→DE. Валюта должна существовать. Новый Store получает Europe/Moscow, Asia/Almaty или Europe/Berlin для этих стран (UTC для остальных); существующий timezone сохраняется. Без printed offset неоднозначный/несуществующий DST момент требует review. Такой default для всей RU не определяет фактический регион магазина: перед реальными фото оператор проверяет timezone.
+
+Очередь/импорт: `queue.fenced_job` проверяет token/version/неистёкший lease/status под row lock. OCR проходит вне транзакции. Отдельная неблокирующая transaction advisory-блокировка сериализует OCR imports; один durable commit сохраняет domain graph и image outcome, последний crop — также terminal job. Конфликт доменной валидации откатывает новые магазины/товары/чек, сохраняя observation/issues вне savepoint. Cancel, принятый до import, запрещает его; уже закоммиченные чеки отмена не удаляет. Старые ORM/admin/SQL writers не участвуют в OCR mutex, stale admin form не защищена от OCR-дополнений (упрощение v1).
+
+MEDIA: original сохраняется без изменений; upright preview/crops — PNG без EXIF; пути UUID, staging вне MEDIA и atomic rename. Deletion ORM не удаляет файлы. Удаление Receipt оставляет images с receipt=NULL и историческим ID в outcome_snapshot (`receipt_deleted=true` в API); удаление Job каскадирует images/attempts, но сохраняет Receipt и файлы. Photo защищён, пока есть jobs/images. Ни cleanup-команды, ни retention-политики нет; crash между записью файла и DB commit может оставить orphan.
+
+### Откат recognition
+
+Сначала остановить свой OCR-worker и запретить uploads; сделать `pg_dump` и отдельную копию всего MEDIA. В изолированной QA, после полного environment из verification.md:
+
+```powershell
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py migrate recognition zero --noinput
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py migrate recognition --noinput
+```
+
+Первый шаг удаляет четыре recognition-таблицы и всю историю фото/jobs/images/attempts; Receipt/lines/catalog/stores и MEDIA остаются. Повторное применение создаёт пустые recognition-таблицы, связи и очередь не восстанавливаются автоматически. Восстановление требует согласованного DB dump + MEDIA backup и совместимой версии кода. Проверка с представительными товарами/строками есть в `RecognitionMigrationTests`, полный прогон С6 её выполняет; восстановление dump/MEDIA человеком не испытано. Полный откат предметной модели ниже теперь также снимает зависимую recognition-миграцию: заранее остановить uploads/worker и сохранить MEDIA.
+
 ## JSON-поля
 
 Отдельных колонок под эти данные нет; набор ключей не фиксирован и не проверяется. Ниже — ключи, которые использует код и образцы `backend/receipts/tests/samples.py`.
@@ -307,11 +352,11 @@
 - Σ `line.amount` − Σ `discount.amount` = `receipt.total`; при `prices_include_tax=False` к сумме добавляется Σ `ReceiptTax.tax`;
 - Σ `ReceiptTax.gross` = `receipt.total`, если итоги по ставкам есть.
 
-Нарушения — **предупреждения, а не отказ в сохранении**: будущий источник данных — распознавание, и чек с ошибкой в одной цифре лучше сохранить, чем потерять. Функцию нужно вызывать явно, `save()` её не вызывает.
+Сама функция возвращает предупреждения, `save()` её не вызывает и прямой ORM их не запрещает. Recognition importer вызывает её внутри транзакции: невалидный domain graph откатывает, наблюдение/причины сохраняет на ReceiptImage для review. Админка показывает отдельный блок предупреждений.
 
 Приложение же отвечает за сборку `fiscal_key`, `address_key` (кроме случая `Store.save()` с пустым ключом) и `name_key`, за вызов `find_duplicates` и `find_alias`.
 
-**Никем не проверяется:** `receipt.discount_total` против суммы скидок; `store.country` против `merchant.country`; соответствие валюты стране; соответствие `fiscal_key` содержимому `fiscal`; значения `choices` вне `full_clean()`; содержимое JSON-полей; формат `gtin`, `tax_id`, `timezone` при сохранении. Форма админки закрывает часть этого списка — `choices`, существование `timezone`, сборку пустого `fiscal_key` — но только для ввода через админку; запись кодом по-прежнему ничем не проверяется.
+**Прямое сохранение ORM без recognition/admin не проверяет:** `receipt.discount_total` против суммы скидок; `store.country` против `merchant.country`; соответствие валюты стране; соответствие `fiscal_key` содержимому `fiscal`; значения `choices` вне `full_clean()`; содержимое JSON-полей; формат `gtin`, `tax_id`, `timezone` при сохранении. Форма админки закрывает часть этого списка — `choices`, существование `timezone`, сборку пустого `fiscal_key` — но только для ввода через админку; запись кодом по-прежнему ничем не проверяется.
 
 ## Админка
 
@@ -463,11 +508,11 @@ docker compose -p checkist_dev cp postgres:/tmp/checkist.dump ./checkist.dump
 
 - **Нет курсов валют.** Цены лежат в валюте чека. API чтения пересчитывает цены только по курсам, переданным в запросе, и не хранит их; серверные курсы потребуют таблицы и источника данных.
 - **Скидка на весь чек не распределяется по строкам** (`ReceiptDiscount.line IS NULL`) и в `paid_unit_price` и `normalized_price` не входит.
-- **Нет фото чека.** Хранилище файлов не выбрано, `MEDIA_ROOT` не настроен.
+- **Локальный MEDIA.** Фото/вырезки хранятся на host filesystem; production storage, retention и cleanup не реализованы.
 - **Нет владельца.** Пользователей в проекте нет, чеки ни к кому не привязаны и не разграничены.
-- **API только на чтение.** Есть 13 GET-эндпоинтов ([api-contract.md](api-contract.md#реализовано-api-чтения-каталога-и-цен)), открытых анонимно; перед внешним развёртыванием доступ нужно закрыть. Записи через HTTP нет: данные вводятся через [админку](#админка) или кодом — из `manage.py shell` и тестов. Ограничения самой админки перечислены в её разделе. Позиции чеков, не сопоставленные с товаром, в API не видны.
+- **Доступ локальный.** Прежние 13 GET открыты анонимно; новый API recognition/receipts требует DEBUG+флаг+loopback и CSRF для записи. Несопоставленные строки видны в новом `/api/receipts/{id}/lines/`, в API цен их нет. Произвольного HTTP редактирования нет; при внешнем развёртывании нужен другой контракт доступа.
 - **Признак налога в ценах не выравнивается.** `Receipt.prices_include_tax` в истории цен и в API не учитывается: цены чеков с налогом и без него идут рядом как есть.
-- Нет распознавания: `raw_text` и фискальные реквизиты заполняет вызывающий код.
+- OCR недетерминирован и может ошибаться; fake проверяет конвейер, не качество. Нет ReceiptDraft, MutationRequest/Idempotency-Key, manual_locked/отпечатка админской формы, отдельного WorkerSlot и POSIX watchdog. Причины сохраняются на ReceiptImage; UI ручного разрешения причин отсутствует.
 - Валюты с тремя знаками после запятой не помещаются в `(14, 2)`.
 - Сеть магазинов — только `Merchant.brand_name`; сопоставления названий не делятся между юрлицами одной сети.
 - Периоды действия ставок налога, координаты магазина, тип скидки не хранятся.
