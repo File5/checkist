@@ -97,11 +97,12 @@ INSTALLED_APPS = [
     "catalog.apps.CatalogConfig",
     "stores.apps.StoresConfig",
     "receipts.apps.ReceiptsConfig",
+    "api.apps.ApiConfig",
 ]
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
-    "django.middleware.common.CommonMiddleware",
+    "config.requests.ApiCommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
@@ -120,6 +121,20 @@ TEMPLATES = [{
 }]
 WSGI_APPLICATION = "config.wsgi.application"
 ASGI_APPLICATION = "config.asgi.application"
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "filters": {"safe_api_target": {"()": "config.requests.SafeApiTargetFilter"}},
+    "formatters": {"django.server": {
+        "()": "django.utils.log.ServerFormatter", "format": "[{server_time}] {message}", "style": "{",
+    }},
+    "handlers": {"django.server": {
+        "class": "logging.StreamHandler", "level": "INFO", "formatter": "django.server",
+        "filters": ["safe_api_target"],
+    }},
+    "loggers": {"django.server": {"handlers": ["django.server"], "level": "INFO", "propagate": False}},
+}
 
 DATABASES = {"default": {
     "ENGINE": "django.db.backends.postgresql",
