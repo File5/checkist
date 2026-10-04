@@ -17,6 +17,27 @@ describe('price history', () => {
     reply(body)
     expect(await getProductPrices(9)).toEqual({ kind: 'ok', data: body })
   })
+  it('accepts position zero alongside other positions and receipts without dropping points', async () => {
+    const points = [{ ...point, position: 0 }, { ...point, position: 1 }, { ...point, receipt_id: 13, position: 0 }]
+    const body = { ...history, ...pageOf(points, 200) }
+    reply(body)
+    expect(await getProductPrices(9)).toEqual({ kind: 'ok', data: body })
+  })
+  it('accepts rows inserted between the backend count and history page query', async () => {
+    const body = { ...history, count: 0, pages: 0 }
+    reply(body)
+    expect(await getProductPrices(9)).toEqual({ kind: 'ok', data: body })
+  })
+  it.each([['d', 'e'], ['de', 'eur'], ['1', '12'], ['Я', '¤'], ['😀😀', '😀😀😀']])(
+    'preserves stored country/currency codes %s/%s in points and summary', async (country, currency) => {
+      const body = { ...history, results: [{ ...point, store: { ...point.store, country }, currency }] }
+      reply(body)
+      expect(await getProductPrices(9)).toEqual({ kind: 'ok', data: body })
+      const aggregate = { ...summary, groups: [{ ...summary.groups[0], country, currency }] }
+      reply(aggregate)
+      expect(await getProductPriceSummary(9)).toEqual({ kind: 'ok', data: aggregate })
+    },
+  )
   it('accepts normalized prices and actual metres without marking them comparable with litres', async () => {
     const points = [
       { ...point, normalized_price: '1.2353', normalized_unit: 'l', comparable: true },
@@ -31,16 +52,22 @@ describe('price history', () => {
     ...[
       { ...point, receipt_id: Number.MAX_SAFE_INTEGER + 1 },
       { ...point, store: { ...point.store, id: Number.MAX_SAFE_INTEGER + 1 } },
-      { ...point, position: Number.MAX_SAFE_INTEGER + 1 }, { ...point, position: 0 },
+      ...[-1, 0.5, Number.MAX_SAFE_INTEGER + 1, '0', null, true].map((position) => ({ ...point, position })),
       { ...point, observed_at: '2026-10-04T25:00:00Z' }, { ...point, purchased_on: '2026-04-31' },
       { ...point, paid_unit_price: -1.05 }, { ...point, list_unit_price: '1.05' }, { ...point, quantity: '1.00' },
       { ...point, discount_amount: 'NaN' }, { ...point, unit: 'lb' }, { ...point, currency: null },
       { ...point, normalized_price: '1.0000', normalized_unit: null },
       { ...point, comparable: true }, { ...point, normalized_unit: 'l' },
       { ...point, store: { ...point.store, country: '' } },
+      { ...point, store: { ...point.store, country: 'DEU' } },
+      { ...point, currency: 'EURO' }, { ...point, currency: '' }, { ...point, currency: 123 },
     ].map((item) => ({ ...history, results: [item] })),
   ])('rejects invalid envelope/point schema %#', async (body) => {
     reply(body)
+    expect(await getProductPrices(9)).toEqual({ kind: 'error', reason: 'invalid_response', status: 200 })
+  })
+  it('keeps a malformed mandatory point as an error of the whole history block', async () => {
+    reply({ ...history, ...pageOf([point, { ...point, position: -1 }], 200) })
     expect(await getProductPrices(9)).toEqual({ kind: 'error', reason: 'invalid_response', status: 200 })
   })
   it('sends all history filters, canonical path and descending ordering', async () => {
@@ -69,7 +96,7 @@ describe('price summary', () => {
     expect((await getProductPriceSummary(9, { interval })).kind).toBe('ok')
   })
   it('requires skipped_without_normalized only in normalized mode and preserves empty groups', async () => {
-    const body = { ...summary, price: 'normalized', skipped_without_normalized: 2, groups: [] }
+    const body = { ...summary, price: 'normalized', skipped_without_normalized: 0, groups: [] }
     reply(body)
     expect(await getProductPriceSummary(9, { price: 'normalized' })).toEqual({ kind: 'ok', data: body })
     const empty = { ...summary, groups: [] }
@@ -99,6 +126,7 @@ describe('price summary', () => {
       { ...summary.groups[0], total: { ...total, first: null } },
       { ...summary.groups[0], total: { ...total, min: null } },
       { ...summary.groups[0], buckets: null },
+      { ...summary.groups[0], buckets: [{ ...summary.groups[0].buckets[0], count: 0 }] },
       { ...summary.groups[0], buckets: [{ ...summary.groups[0].buckets[0], period_start: '2026-02-30' }] },
       { ...summary.groups[0], buckets: [{ ...summary.groups[0].buckets[0], last: null }] },
     ].map((group) => ({ ...summary, groups: [group] })),

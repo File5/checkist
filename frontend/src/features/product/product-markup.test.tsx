@@ -1,4 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
+import { isValidElement } from 'react'
+import type { ReactNode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { detail, history, pageOf, point, store, total } from '../../api/test-support'
 import type { ApiFailure, ApiResult, Page, PriceSummary as SummaryData, Store, StoreEntry } from '../../api/types'
@@ -92,6 +94,33 @@ describe('store identities beyond the first 50 (SSR in Node)', () => {
 })
 
 describe('price content and semantic markup (SSR in Node, not browser acceptance)', () => {
+  it('renders position zero and gives every receipt/position pair a distinct React row key', () => {
+    const data = { ...history, ...pageOf([
+      { ...point, position: 0, paid_unit_price: '2.0000' },
+      { ...point, position: 1, paid_unit_price: '3.0000' },
+      { ...point, receipt_id: 13, position: 0, paid_unit_price: '4.0000' },
+    ], 200) }
+    let view: ReactNode = null
+    function Capture() {
+      view = PriceHistory({ state: { kind: 'ok', data }, query: { page: 1 }, stores: [],
+        retry: noop, reset: noop, buildPageHref })
+      return view
+    }
+    const html = renderToStaticMarkup(<Capture />)
+    expect(rowLabels(html)).toHaveLength(3)
+    for (const price of ['2', '3', '4']) expect(html).toContain(`${price}\u00a0EUR/шт`)
+    const keys: string[] = []
+    function collectRowKeys(node: ReactNode) {
+      if (Array.isArray(node)) node.forEach(collectRowKeys)
+      else if (isValidElement<{ children?: ReactNode }>(node)) {
+        if (node.type === 'tr' && node.key !== null) keys.push(String(node.key))
+        collectRowKeys(node.props.children)
+      }
+    }
+    collectRowKeys(view)
+    expect(keys).toEqual(['12:0', '12:1', '13:0'])
+    expect(new Set(keys).size).toBe(3)
+  })
   it('renders row prices, unknown normalization, UTC fallback and a keyboard scroll region', () => {
     const html = renderToStaticMarkup(<PriceHistory state={{ kind: 'ok', data: history }} query={{ page: 1 }} stores={[]} retry={noop} reset={noop} buildPageHref={buildPageHref} />)
     expect(html).toContain('<caption>Наблюдения покупок из чеков</caption>')

@@ -17,6 +17,16 @@ describe('store directory', () => {
     reply(pageOf([]))
     expect(await getStores()).toEqual({ kind: 'ok', data: pageOf([]) })
   })
+  it.each(['d', 'de', '1', 'Я', '😀😀'])('preserves country code %s allowed by the reference model', async (country) => {
+    const body = pageOf([{ ...storeEntry, country }])
+    reply(body)
+    expect(await getStores()).toEqual({ kind: 'ok', data: body })
+  })
+  it('accepts an insertion between COUNT and fetching stores', async () => {
+    const body = { ...pageOf([storeEntry]), count: 0, pages: 0 }
+    reply(body)
+    expect(await getStores()).toEqual({ kind: 'ok', data: body })
+  })
   it('encodes country, search and pagination without inventing product/currency filters', async () => {
     reply(pageOf([]))
     await getStores({ country: 'DE', q: 'магазин & +%', page: 2, page_size: 5 })
@@ -27,6 +37,7 @@ describe('store directory', () => {
     { ...storeEntry, address: null }, { ...storeEntry, timezone: null },
     { ...storeEntry, receipts_count: -1 }, { ...storeEntry, receipts_count: Number.MAX_SAFE_INTEGER + 1 },
     { ...storeEntry, country: 'Germany' },
+    { ...storeEntry, country: '' }, { ...storeEntry, country: null }, { ...storeEntry, country: 12 },
   ])('rejects store schema %#', async (item) => {
     reply(pageOf([item]))
     expect(await getStores()).toEqual({ kind: 'error', reason: 'invalid_response', status: 200 })

@@ -10,15 +10,19 @@ type Guard<T> = (value: unknown) => value is T
 const text: Check = (value) => typeof value === 'string'
 const bool: Check = (value) => typeof value === 'boolean'
 export const isId: Guard<number> = (value): value is number => Number.isSafeInteger(value) && (value as number) > 0
-const count: Check = (value) => Number.isSafeInteger(value) && (value as number) >= 0
+const nonNegativeInteger: Check = (value) => Number.isSafeInteger(value) && (value as number) >= 0
 const nullable = (check: Check): Check => (value) => value === null || check(value)
 const array = (check: Check): Check => (value) => Array.isArray(value) && value.every(check)
 const choice = (...values: string[]): Check => (value) => typeof value === 'string' && values.includes(value)
 const baseUnit = choice('pcs', 'kg', 'l')
 const normalizedUnit = choice('pcs', 'kg', 'l', 'm')
 const unit = choice('pcs', 'g', 'kg', 'ml', 'l', 'm')
-const country: Check = (value) => typeof value === 'string' && /^[A-Z]{2}$/.test(value)
-const currency: Check = (value) => typeof value === 'string' && /^[A-Z]{3}$/.test(value)
+// Reference models limit length, but do not validate ISO syntax on stored codes.
+// Query syntax is stricter and belongs to the request/navigation validation.
+const referenceCode = (maximum: number): Check => (value) => typeof value === 'string'
+  && value.length > 0 && Array.from(value).length <= maximum
+const country = referenceCode(2)
+const currency = referenceCode(3)
 const decimal = (places: number): Check => (value) => typeof value === 'string'
   && new RegExp(`^-?\\d+\\.\\d{${places}}$`).test(value)
 const price = decimal(4)
@@ -54,22 +58,23 @@ export function isISODateTime(value: unknown): value is string {
 const named = object<NamedObject>({ id: isId, name: text })
 const categoryRef = object<CategoryRef>({ id: isId, name: text, path: array(named) })
 export const isCategory = object<Category>({
-  id: isId, name: text, path: array(named), parent_id: nullable(isId), depth: count,
-  children_count: count, generic_products_count: count, products_count: count, products_total: count,
+  id: isId, name: text, path: array(named), parent_id: nullable(isId), depth: nonNegativeInteger,
+  children_count: nonNegativeInteger, generic_products_count: nonNegativeInteger,
+  products_count: nonNegativeInteger, products_total: nonNegativeInteger,
 })
 const genericRef = object<GenericRef>({ id: isId, name: text, base_unit: baseUnit })
-const categoryGeneric = object<CategoryGeneric>({ id: isId, name: text, base_unit: baseUnit, products_count: count })
+const categoryGeneric = object<CategoryGeneric>({ id: isId, name: text, base_unit: baseUnit, products_count: nonNegativeInteger })
 export const isCategoryDetail: Guard<CategoryDetail> = (value): value is CategoryDetail => isCategory(value)
   && object<{ children: Category[]; generic_products: CategoryGeneric[] }>({
     children: array(isCategory), generic_products: array(categoryGeneric),
   })(value)
 export const isGenericProduct = object<GenericProduct>({
-  id: isId, name: text, base_unit: baseUnit, products_count: count, category: categoryRef, countries: array(country),
+  id: isId, name: text, base_unit: baseUnit, products_count: nonNegativeInteger, category: categoryRef, countries: array(country),
 })
 const storeBrief = object<StoreBrief>({ id: isId, name: text, city: text, country })
 const store = object<Store>({ id: isId, name: text, city: text, country, address: text, timezone: text })
 export const isStoreEntry: Guard<StoreEntry> = (value): value is StoreEntry => store(value)
-  && object<{ receipts_count: number }>({ receipts_count: count })(value)
+  && object<{ receipts_count: number }>({ receipts_count: nonNegativeInteger })(value)
 const productStore: Guard<ProductStore> = (value): value is ProductStore => store(value)
   && object<{ observations: number; last_purchased_on: string }>({ observations: isId, last_purchased_on: isISODate })(value)
 const normalizedShape = object<NormalizedPrice>({
@@ -104,24 +109,27 @@ function jsonValue(value: unknown): value is JsonValue {
 const alias = object<ProductAlias>({ store_name: text, raw_name: text, store_item_code: text })
 export const isProductDetail: Guard<ProductDetail> = (value): value is ProductDetail => isProduct(value)
   && object<{ attributes: JsonValue; aliases: ProductAlias[]; stores: ProductStore[]; alternatives_count: number }>({
-    attributes: jsonValue, aliases: array(alias), stores: array(productStore), alternatives_count: count,
+    attributes: jsonValue, aliases: array(alias), stores: array(productStore), alternatives_count: nonNegativeInteger,
   })(value)
 
 export function results<T>(check: Guard<T>): Guard<Results<T>> {
   return object<Results<T>>({ results: array(check) })
 }
 export function page<T>(check: Guard<T>, maximum = 200): Guard<Page<T>> {
-  const shape = object<Page<T>>({ count, page: isId, page_size: isId, pages: count, results: array(check) })
+  const shape = object<Page<T>>({ count: nonNegativeInteger, page: isId, page_size: isId,
+    pages: nonNegativeInteger, results: array(check) })
   return (value): value is Page<T> => shape(value) && value.page_size <= maximum
     && value.pages === Math.ceil(value.count / value.page_size) && value.page <= Math.max(1, value.pages)
-    && value.results.length <= Math.min(value.page_size, value.count - (value.page - 1) * value.page_size)
+    // COUNT and the page query may see different snapshots under READ COMMITTED.
+    && value.results.length <= value.page_size
 }
 
 const priceProduct = object<PriceProduct>({ id: isId, name: text, base_unit: baseUnit })
 const point: Guard<PricePoint> = (value): value is PricePoint => normalized(value)
   && object<Omit<PricePoint, keyof NormalizedPrice>>({
     observed_at: isISODateTime, purchased_on: isISODate, store: storeBrief, currency, quantity, unit,
-    list_unit_price: price, paid_unit_price: price, discount_amount: amount, receipt_id: isId, position: isId,
+    list_unit_price: price, paid_unit_price: price, discount_amount: amount,
+    receipt_id: isId, position: nonNegativeInteger,
   })(value)
 export const isPriceHistory: Guard<PriceHistory> = (value): value is PriceHistory => page(point, 500)(value)
   && object<{ product: PriceProduct }>({ product: priceProduct })(value)
@@ -137,7 +145,7 @@ export const isPriceSummary: Guard<PriceSummary> = (value): value is PriceSummar
   if (!record(value) || !priceProduct(value.product) || !choice('paid', 'list', 'normalized')(value.price)
     || !choice('country', 'store', 'none')(value.group_by) || !choice('none', 'day', 'week', 'month')(value.interval)
     || !Array.isArray(value.groups)) return false
-  if (value.price === 'normalized' ? !count(value.skipped_without_normalized)
+  if (value.price === 'normalized' ? !nonNegativeInteger(value.skipped_without_normalized)
     : Object.hasOwn(value, 'skipped_without_normalized')) return false
   return value.groups.every((item: unknown) => group(item)
     && (value.price !== 'normalized' || normalizedUnit(item.unit))
