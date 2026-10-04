@@ -94,8 +94,11 @@ export function mergeStores(initial: Store[], additional: Store[]): Store[] {
   return [...stores.values()]
 }
 
-export function storeLabel(store: StoreBrief & Partial<Store>): string {
-  return [store.name.trim() || 'Не указано', store.address?.trim(), store.city.trim(), store.country].filter(Boolean).join(' · ')
+export function storeLabel(store: Pick<StoreBrief, 'id'> & Partial<Store>): string {
+  const address = store.address?.trim()
+  // Keep the point identity first, including when a native select clips a long label.
+  return [`ID ${store.id}`, store.name?.trim() || 'Не указано', address, store.city?.trim(), store.country,
+    !address && 'адрес неизвестен'].filter(Boolean).join(' · ')
 }
 
 /** One independent request block. Abort and generation both protect against late completions. */

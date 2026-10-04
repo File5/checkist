@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react'
 import { getProduct } from '../../api/catalog'
 import { getProductPrices, getProductPriceSummary } from '../../api/prices'
-import type { ApiFailure, ApiResult, PriceSummary as SummaryData, ProductDetail, Store } from '../../api/types'
+import type { ApiFailure, ApiResult, PriceSummary as SummaryData, ProductDetail, Store, StoreBrief } from '../../api/types'
 import type { ProductPageProps } from '../../pages/types'
 import { buildHistoryQuery, Link, navigate } from '../../navigation'
 import type { HistoryQuery } from '../../navigation'
@@ -16,8 +16,8 @@ import type { FieldErrors, FilterField } from './state'
 import { useProductRequest } from './useProductRequest'
 import './Product.css'
 
-function FilterForm({ query, product, failures, apply, reset, onStores }: {
-  query: HistoryQuery; product?: ProductDetail; failures: ApiFailure[]
+function FilterForm({ query, product, stores, selectedStore, failures, apply, reset, onStores }: {
+  query: HistoryQuery; product?: ProductDetail; stores: Store[]; selectedStore?: StoreBrief; failures: ApiFailure[]
   apply: (query: HistoryQuery) => void; reset: () => void; onStores: (stores: Store[]) => void
 }) {
   const source = buildHistoryQuery({ ...query, page: 1 })
@@ -65,6 +65,7 @@ function FilterForm({ query, product, failures, apply, reset, onStores }: {
       }}>
         <div className="product-filter-grid">{select('country', 'Страна', options.countries)}{select('currency', 'Валюта', options.currencies)}</div>
         <StoreFilter country={form.draft.country} value={form.draft.store} initial={product?.stores ?? []}
+          known={stores} selected={selectedStore}
           error={errors.store} onChange={(value) => update('store', value)} onStores={onStores} />
         <div className="product-filter-grid">{date('date_from', 'Период с')}{date('date_to', 'Период по')}</div>
         <p className="product-note" id="product-period-note">ГГГГ-ММ-ДД. Обе границы включительно, по локальной дате покупки в чеке.</p>
@@ -99,7 +100,12 @@ function ProductScreen({ productId, query, returnTo }: ProductPageProps) {
   const buildPageHref = (nextPage: number) => ({ kind: 'product' as const, productId, query: { ...query, page: nextPage } })
   const product = productRequest.state.kind === 'ok' ? productRequest.state.data : undefined
   const failures = [historyRequest.state, summaryRequest.state].filter((state): state is ApiFailure => state.kind === 'error')
-  const stores = mergeStores(directoryStores, product?.stores ?? [])
+  // Store-grouped summary already includes full stores beyond the card's 50-item limit.
+  const summaryStores = summaryRequest.state.kind === 'ok' && summaryRequest.state.data.group_by === 'store'
+    ? summaryRequest.state.data.groups.map((group) => group.store) : []
+  const stores = mergeStores(mergeStores(directoryStores, product?.stores ?? []), summaryStores)
+  const selectedStore = historyRequest.state.kind === 'ok'
+    ? historyRequest.state.data.results.find((point) => point.store.id === query.store)?.store : undefined
   if (productRequest.state.kind === 'error' && productRequest.state.reason === 'not_found') {
     return <div className="product-page"><RequestState kind="empty" message="Товар не найден" action={<Link className="action-link" to="/catalog">В каталог</Link>} /></div>
   }
@@ -132,7 +138,8 @@ function ProductScreen({ productId, query, returnTo }: ProductPageProps) {
         <p>Это наблюдения покупок из чеков, а не текущие цены магазинов. Скидка всего чека не распределена по товарам. Налоговая база цен не указана.</p>
         <p>Сопоставимость обозначает совместимость единиц; она не подтверждает одинаковую налоговую базу. Валюты и единицы не объединяются.</p>
       </aside>
-      <FilterForm query={query} product={product} failures={failures} apply={apply} reset={reset} onStores={onStores} />
+      <FilterForm query={query} product={product} stores={stores} selectedStore={selectedStore}
+        failures={failures} apply={apply} reset={reset} onStores={onStores} />
       <PriceHistory state={historyRequest.state} query={query} stores={stores} retry={historyRequest.retry} reset={reset} buildPageHref={buildPageHref} />
       <PriceSummary state={summaryRequest.state} retry={summaryRequest.retry} reset={reset} />
     </div>
