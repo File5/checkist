@@ -55,6 +55,29 @@ class InvalidRequest(ApiError):
     message = "Некорректный запрос."
 
 
+class RecognitionApiError(ApiError):
+    """Scoped recognition errors; only fixed, public codes and messages."""
+
+    ERRORS = {
+        "csrf_failed": (403, "Проверка CSRF не пройдена."),
+        "permission_denied": (403, "Доступ запрещён."),
+        "unsupported_format": (400, "Поддерживаются только JPEG, PNG и WebP."),
+        "invalid_image": (400, "Не удалось прочитать изображение."),
+        "image_too_large": (400, "Изображение превышает предел 40 мегапикселей."),
+        "upload_too_large": (413, "Файл или запрос превышает допустимый размер."),
+        "job_active": (409, "Для фото уже есть активное задание."),
+        "job_terminal": (409, "Задание уже завершено."),
+        "retry_not_allowed": (409, "Повтор этого задания недоступен."),
+        "storage_unavailable": (503, "Хранилище изображений недоступно."),
+        "database_unavailable": (503, "База данных недоступна."),
+    }
+
+    def __init__(self, code):
+        self.code = code
+        self.status_code, self.message = self.ERRORS[code]
+        super().__init__()
+
+
 REQUEST_ERRORS = (SuspiciousOperation, BadRequest, UnreadablePostError, MultiPartParserError)
 
 

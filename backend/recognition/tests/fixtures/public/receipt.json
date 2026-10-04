@@ -1,0 +1,30 @@
+{
+  "id": 71,
+  "store": {
+    "id": 51,
+    "name": "Тестовый магазин",
+    "city": "Berlin",
+    "address": "Teststrasse 12",
+    "country": "DE",
+    "timezone": "Europe/Berlin"
+  },
+  "currency": "EUR",
+  "operation": "sale",
+  "purchased_on": "2026-10-04",
+  "purchased_at": "2026-10-04T12:35:00Z",
+  "total": "2.38",
+  "discount_total": "0.20",
+  "prices_include_tax": true,
+  "origin": "recognized",
+  "review_required": false,
+  "lines_count": 1,
+  "unmatched_products_count": 0,
+  "receipt_images_count": 1,
+  "preview_image_url": "/media/crops/test/crop.png",
+  "created_at": "2026-10-04T12:35:00Z",
+  "updated_at": "2026-10-04T12:35:00Z",
+  "lines_url": "/api/receipts/71/lines/",
+  "discounts_url": "/api/receipts/71/discounts/",
+  "taxes_url": "/api/receipts/71/taxes/",
+  "images_url": "/api/recognition/receipt-images/?receipt=71"
+}

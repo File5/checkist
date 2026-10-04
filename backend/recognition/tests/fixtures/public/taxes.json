@@ -1,0 +1,21 @@
+{
+  "count": 1,
+  "page": 1,
+  "page_size": 50,
+  "pages": 1,
+  "results": [
+    {
+      "id": 301,
+      "tax_rate": {
+        "id": 1,
+        "country": "DE",
+        "kind": "vat",
+        "rate": "7.00"
+      },
+      "tax_code": "A",
+      "net": "2.22",
+      "tax": "0.16",
+      "gross": "2.38"
+    }
+  ]
+}
