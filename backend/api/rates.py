@@ -7,6 +7,7 @@ import re
 from dataclasses import dataclass, field
 from decimal import Decimal
 
+from receipts.decimal_math import price_context
 from stores.models import Currency
 
 MAX_RATES = 10
@@ -65,7 +66,8 @@ class Conversion:
         rate = self.rate(currency)
         if value is None or rate is None:
             return None
-        return value * rate
+        with price_context():
+            return value * rate
 
     def as_json(self):
         """Блок ``conversion`` ответа; курсы — строками, как разобраны."""

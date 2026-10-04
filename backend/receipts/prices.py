@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import Decimal
 
 from django.db.models import (
     Avg, Case, CharField, Count, DecimalField, ExpressionWrapper, F, Max, Min, Q, Value, When,
@@ -7,11 +7,13 @@ from django.db.models import (
 from django.db.models.functions import Round
 
 from catalog.units import Unit, to_base
+from receipts.decimal_math import round_decimal
 from receipts.models import Receipt, ReceiptLine
 
 PRICE_DECIMAL_PLACES = 4  # как у ReceiptLine.unit_price
-_PRICE = DecimalField(max_digits=20, decimal_places=PRICE_DECIMAL_PLACES)
-_PRICE_QUANTUM = Decimal(1).scaleb(-PRICE_DECIMAL_PLACES)
+# Вычисляемая цена: до 21 целой цифры при минимальных количестве и фасовке.
+# ExpressionWrapper задаёт тип ORM, а вычисления Postgres остаются numeric без typmod.
+_PRICE = DecimalField(max_digits=25, decimal_places=PRICE_DECIMAL_PLACES)
 # Единица -> множитель до базовой (г -> 0,001 кг) из catalog.units.to_base.
 _FACTORS = {unit: to_base(1, unit)[0] for unit in Unit}
 # Единица -> базовая единица, за которую получается нормализованная цена (г -> кг).
@@ -185,10 +187,7 @@ def price_groups(products, *, countries=None, currency=None, store=None, date_fr
             comparable_observations=row["comparable_observations"],
             normalized_min=row["normalized_min"],
             normalized_max=row["normalized_max"],
-            normalized_avg=(
-                None if row["normalized_avg"] is None
-                else row["normalized_avg"].quantize(_PRICE_QUANTUM, rounding=ROUND_HALF_UP)
-            ),
+            normalized_avg=round_decimal(row["normalized_avg"], PRICE_DECIMAL_PLACES),
         )
         for row in rows
     ]
@@ -226,7 +225,9 @@ def price_summary(products, *, countries=None, currency=None, store=None, date_f
 
     Два запроса на весь набор независимо от числа товаров: ``price_groups`` и
     ``last_prices``. У каждой группы заполнена ``last``; группы товара идут по
-    ``country, currency``. Товара без наблюдений в результате нет.
+    ``country, currency``. Товара без наблюдений в результате нет. Если группа
+    исчезла между запросами, она пропускается: ``last`` всегда заполнена.
+    Общего снимка на оба запроса при READ COMMITTED нет.
     """
     filters = dict(countries=countries, currency=currency, store=store, date_from=date_from, date_to=date_to)
     products = list(products)
@@ -240,5 +241,7 @@ def price_summary(products, *, countries=None, currency=None, store=None, date_f
     summary = {}
     for group in groups:
         group.last = last.get((group.product_id, group.country, group.currency))
+        if group.last is None:
+            continue
         summary.setdefault(group.product_id, []).append(group)
     return summary

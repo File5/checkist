@@ -6,6 +6,7 @@ from rest_framework.response import Response
 
 from catalog.models import Product
 from config.exceptions import ObjectNotFound, RangeTooLarge
+from receipts.decimal_math import change_percent, decimal_average, price_context
 from receipts.prices import price_history
 from stores.models import Store
 
@@ -149,13 +150,14 @@ def _summary_rows(lines, keys, interval, value_field):
 def _change_percent(first, last, count):
     if count < 2 or first == 0:
         return None
-    return common.percent((last - first) / first * 100)
+    return common.percent(change_percent(first, last))
 
 
 def _group(rows, interval, value_field):
     """Итог и интервалы одной группы из её строк, идущих по возрастанию интервала."""
     count = sum(row["bucket_count"] for row in rows)
-    total = sum((row["bucket_sum"] for row in rows), Decimal(0))
+    with price_context():
+        total = sum((row["bucket_sum"] for row in rows), Decimal(0))
     # Локальная дата и момент в UTC упорядочены по-разному, если в группе магазины разных
     # часовых поясов: последнее наблюдение группы не обязано лежать в последнем интервале.
     last = max(rows, key=lambda row: (row["receipt__purchased_at"], row["receipt_id"], row["position"]))
@@ -165,7 +167,7 @@ def _group(rows, interval, value_field):
             "count": count,
             "min": common.price(min(row["bucket_min"] for row in rows)),
             "max": common.price(max(row["bucket_max"] for row in rows)),
-            "avg": common.price(total / count),
+            "avg": common.price(decimal_average(total, count)),
             "first": {"price": common.price(first_price), "purchased_on": common.iso_date(rows[0]["first_on"])},
             "last": {
                 "price": common.price(last_price),
@@ -179,7 +181,7 @@ def _group(rows, interval, value_field):
                 "count": row["bucket_count"],
                 "min": common.price(row["bucket_min"]),
                 "max": common.price(row["bucket_max"]),
-                "avg": common.price(row["bucket_sum"] / row["bucket_count"]),
+                "avg": common.price(decimal_average(row["bucket_sum"], row["bucket_count"])),
                 "last": common.price(row[value_field]),
             }
             for row in rows
