@@ -15,6 +15,7 @@ _INTEGER = re.compile(r"[0-9]{1,19}")
 _DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 _COUNTRY = re.compile(r"[A-Z]{2}")
 _CURRENCY = re.compile(r"[A-Z]{3}")
+_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")  # Unicode Cc: C0, DEL, C1
 
 
 class Params:
@@ -42,9 +43,15 @@ class Params:
         self.errors = {}
 
     def raw(self, name):
-        """Значение без пробелов по краям; ``None``, если параметра нет или он пуст."""
+        """Значение без пробелов по краям; управляющие символы — ошибка до нормализации."""
         value = self.query.get(name)
         if value is None:
+            return None
+        if _CONTROL.search(value):
+            # Проверяем исходное значение: strip() иначе молча уберёт, например, TAB/LF.
+            # Некоторые параметры (target_currency) читаются несколько раз.
+            if name not in self.errors:
+                self.error(name, "Управляющие символы недопустимы.")
             return None
         return value.strip() or None
 
@@ -90,7 +97,7 @@ class Params:
         return default
 
     def search(self, name="q"):
-        """Строка поиска от 2 до 100 символов без пробелов по краям."""
+        """Строка поиска от 2 до 100 символов без пробелов по краям и управляющих символов."""
         value = self.raw(name)
         if value is None:
             return None
