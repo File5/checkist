@@ -50,7 +50,7 @@ docker compose -p checkist_qa up -d --build --wait --wait-timeout 120 worker
 ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py check_services
 ```
 
-Ожидается exit 0, отсутствие новых миграций, 149 тестов без БД и 412 integration tests, затем JSON с `celery_task.result={"message":"pong"}`. На пустой БД `migrate` применяет 22 миграции: 18 стандартных и 4 собственных. Числа соответствуют текущему коду и могут измениться вместе с тестами. Команда без тега не использует БД и может выполняться при TCP-отказе; integration-команда не должна заменяться skip/eager. Django runner создаёт и затем удаляет **`test_checkist_qa`**; Redis integration использует отдельный QA Redis DB 2 и уникальные временные ключи.
+Ожидается exit 0, отсутствие новых миграций, 155 тестов без БД и 418 integration tests, затем JSON с `celery_task.result={"message":"pong"}`. На пустой БД `migrate` применяет 22 миграции: 18 стандартных и 4 собственных. Числа соответствуют текущему коду и могут измениться вместе с тестами. Команда без тега не использует БД и может выполняться при TCP-отказе; integration-команда не должна заменяться skip/eager. Django runner создаёт и затем удаляет **`test_checkist_qa`**; Redis integration использует отдельный QA Redis DB 2 и уникальные временные ключи.
 
 | Приложение | Без БД (`--exclude-tag=integration`) | С БД (`--tag=integration`) |
 | --- | --- | --- |
@@ -58,12 +58,14 @@ docker compose -p checkist_qa up -d --build --wait --wait-timeout 120 worker
 | `stores` | 14 | 31 |
 | `receipts` | 18 | 106 |
 | `health` | 21 | 2 |
-| `api` | 87 | 254 |
-| Всего | 149 | 412 |
+| `api` | 93 | 260 |
+| Всего | 155 | 418 |
 
 Unit/contract tests health покрывают точный 200, комбинации 503, сохранение независимых checks, анонимность, игнорирование query/Authorization, 405, 406, безопасный 500 при DEBUG, отсутствие публикации task из health, параллельность probes, cleanup кеша, bounded publication retries и негативную env-валидацию. Это не сетевой замер времени отказа.
 
 Тесты `api` покрывают точные тела эндпоинтов на образцах, фильтры и сортировки, анонимный доступ и игнорирование `Authorization`, 405 и 406, 400 на каждый параметр, 404 на объект, страницу и неизвестный путь, `range_too_large`, пустую БД, смешанные валюты и пересчёт по курсам из запроса, единицы и причины несравнимости, исключение залога, возвратов и скидки на весь чек, границы страниц, число запросов (`assertNumQueries`), отсутствие закрытых полей в ответах, цикл в категориях и сохранение редиректа `/api/health` без слэша. Тесты с тегом `integration` обращаются к views через тестовый клиент Django, без сети.
+
+Регрессии `api.tests.test_query_controls`: 6 тестов без БД и 6 integration. Проверяются NUL в начале, середине и конце `q`, все 65 символов Unicode Cc (C0, DEL, C1) до обрезки пробелов, соседние параметры (`country`, `currency`, `target_currency`, `rates`, `category`, `generic`, `brand`, `store`, `all`, `has_prices`, `ordering`, `interval`, `group_by`, `price`, `scope`, даты и пагинация), единый JSON `400`, `404` на NUL в идентификаторе пути, UTF-8 поиск, последнее повторённое значение и игнорирование неизвестных параметров. Для пяти поисковых списков на пустой БД `assertNumQueries(0)` подтверждает отказ до SQL. Запуск: `manage.py test api.tests.test_query_controls --noinput --verbosity=1` — 12 тестов.
 
 Регрессии `api.tests.test_read_resilience`: точные значения обоих маршрутов сравнения на границах моделей и курсов, отрицательная оплаченная цена при большой скидке, среднее и процент динамики нормализованных цен. Конкурентное удаление проверяет `TransactionTestCase` с autocommit: `connection.execute_wrapper` перед чтением последних цен коммитит удаление строки и чека через отдельное psycopg-соединение в тестовую БД; результаты SQL не подменяются. Покрыты `price_summary`, карточка и список товаров, оба сравнения (сравнимые и несравнимые предложения), сводка истории, карточка и список обобщённых продуктов, удаление единственной группы и сохранение более раннего наблюдения. Runner очищает данные через flush. Запуск: `manage.py test api.tests.test_read_resilience --tag=integration --noinput --verbosity=2` — 19 тестов.
 
@@ -117,7 +119,7 @@ docker compose -p checkist_qa exec -T worker celery -A config inspect ping --des
 docker compose -p checkist_qa ps
 ```
 
-Ожидается exit 0 для каждой команды; зависимости без конфликтов, check без ошибок, migrations применены/уже актуальны, `No changes detected`, 412 integration tests passed, реальный pong через task/results и отдельный control pong. `ps` должен показывать три healthy services с QA host-портами. Docker build может использовать cache: это не новая установка с нуля, но `pip check` проверяет реально установленные зависимости образа.
+Ожидается exit 0 для каждой команды; зависимости без конфликтов, check без ошибок, migrations применены/уже актуальны, `No changes detected`, 418 integration tests passed, реальный pong через task/results и отдельный control pong. `ps` должен показывать три healthy services с QA host-портами. Docker build может использовать cache: это не новая установка с нуля, но `pip check` проверяет реально установленные зависимости образа.
 
 ## HTTP: позитивные и негативные сценарии
 
@@ -209,6 +211,21 @@ curl.exe -i --max-time 15 http://127.0.0.1:18000/api/health
 | `/api/health` без слэша | `301` на `/api/health/` |
 
 Ответы — `Content-Type: application/json`, без `Cache-Control`. Curl exit 0 не подтверждает HTTP-статус: сверяйте статус и тело. Не-ASCII в query передавайте с percent-encoding, например `?q=%D0%BC%D0%BE%D0%BB%D0%BE%D1%87`: строку без кодирования `curl.exe` может отправить не в UTF-8, и поиск вернёт пустой список. Остальные эндпоинты (`countries`, `stores`, `brands`, `categories`, `generic-products`, карточки, точки истории, `comparison`) проверяются так же; точные тела — в контракте. `500` и `range_too_large` на настоящем сервере не провоцируются: первый потребовал бы правки кода, второй — больше 1000 интервалов данных; оба покрыты тестами.
+
+### Регрессия управляющих символов в поиске
+
+На пустой QA-БД после `migrate` и затем на образцах повторите на настоящем QA `runserver` (в другом project замените порт):
+
+```powershell
+foreach ($list in @("products", "stores", "brands", "generic-products", "categories")) {
+    curl.exe -i --max-time 15 "http://127.0.0.1:18000/api/$list/?q=%00a"
+    if ($LASTEXITCODE -ne 0) { throw "HTTP transport failed" }
+    curl.exe -i --max-time 15 "http://127.0.0.1:18000/api/$list/?q=%D0%BC%D0%BE%D0%BB"
+    if ($LASTEXITCODE -ne 0) { throw "HTTP transport failed" }
+}
+```
+
+Для NUL все пять списков должны вернуть `400`, `application/json`, `error.code=invalid_parameter` и `error.fields.q=["Управляющие символы недопустимы."]`; `q` не вырезается. UTF-8 «мол» — `200`, на пустой БД `results: []`, на образцах товары/обобщённые продукты/категории содержат совпадения. Дополнительно замените `%00` на `%09`, `%0A`, `%7F` и `%C2%85` и проверьте те же `400`; `?country=RU%00` и `?ordering=name%00` у `products` — `400` с соответствующим именем в `fields`. Curl exit 0 означает только транспортный успех, поэтому сверяйте статус и JSON.
 
 ## Сквозная проверка клиента через Vite proxy
 
@@ -318,6 +335,57 @@ for name in ('POSTGRES_PASSWORD', 'DJANGO_SECRET_KEY'):
 6. Страница честно отмечает каркас и планируемые фото/OCR/категории/дашборд. Рабочие бизнес-функции и распознанные чеки не представлены.
 
 Автоматический обход browser UI не выполняется. Скриншотов и результатов визуальной/интерактивной приёмки пока нет. После проверки остановить оба локальных процесса и QA Compose по разделу завершения ниже.
+
+## Фактические результаты исправления C1, 2026-10-04
+
+Причина `500`: `Params.search` проверял только длину, поэтому NUL попадал в PostgreSQL `text` через `icontains`/точное сравнение. Теперь общий `Params.raw`, которым пользуется поиск и остальные парсеры, отвергает Unicode Cc до `strip()` и возвращает ошибку параметра для последующего `check()`. Символы не вырезаются, сообщения не содержат входных значений. Все пять поисковых списков согласованы. Дополнительно прекращено молчаливое удаление управляющих пробельных символов на краях кодов, дат, перечислений, курсов и чисел. Доступ, JSON успешных ответов, модели, зависимости и миграции не менялись; ужесточение входа и откат описаны в [контракте](api-contract.md#общие-правила).
+
+Среда: Windows, Python 3.13.9, собственный `backend/.venv` с закреплённым `requirements.txt`. Собственные Compose project/БД `checkist_qa_mutompk71t`, новые тома, тестовая БД `test_checkist_qa_mutompk71t`; Postgres `17.11-alpine` на 25473, Redis `7.4.11-alpine` на 16420, HTTP на 18041. Dev, чужая QA и локальный Postgres не использовались. В каждом QA-вызове применялся полный environment-блок этого документа с указанными DB/портами/URL, `COMPOSE_PROJECT_NAME=checkist_qa_mutompk71t`, публичными `POSTGRES_USER/PASSWORD` из образца, `DJANGO_DEBUG=1`, `DJANGO_ALLOWED_HOSTS=127.0.0.1,localhost`, `VITE_API_BASE_URL=/api`, `DEV_API_PROXY_TARGET=http://127.0.0.1:18041`. Для UTF-8 Python stdin использовался `$OutputEncoding = [System.Text.UTF8Encoding]::new($false)`.
+
+### Проверено и прошло
+
+Все завершившиеся команды ниже — exit 0. Код и тесты в полном прогоне совпадают с итоговыми; последующие изменения — только документация.
+
+| Фактическая команда | Результат |
+| --- | --- |
+| `py -3.13 -m venv backend/.venv`; `./backend/.venv/Scripts/python.exe -X utf8 -m pip install -r backend/requirements.txt` | Собственный venv и закреплённые зависимости установлены |
+| `docker compose -p checkist_qa_mutompk71t config --quiet` | Без ошибок |
+| `docker compose -p checkist_qa_mutompk71t up -d --wait --wait-timeout 90 postgres redis` | Оба healthy; собственные сеть и тома |
+| Python stdin: `socket.create_connection(("127.0.0.1", port), timeout=2)` для 25473/16420 | Оба `TCP OK` до действий с БД |
+| `./backend/.venv/Scripts/python.exe -X utf8 -m pip check` | `No broken requirements found.` |
+| `… backend/manage.py check` | `System check identified no issues (0 silenced).` |
+| `… backend/manage.py makemigrations --check --dry-run` | `No changes detected` |
+| `… backend/manage.py migrate --noinput` | 22 существующие миграции применены в пустую собственную QA-БД |
+| `… backend/manage.py test api.tests.test_query_controls --noinput --verbosity=1` | 12 регрессий `OK`, 1.766 с; 6 без БД, 6 integration |
+| `… backend/manage.py test catalog stores receipts health api --exclude-tag=integration --verbosity=1` | 155 тестов `OK`, 3.869 с, без БД |
+| `… backend/manage.py test catalog stores receipts health api --tag=integration --noinput --verbosity=1` | 418 тестов `OK`, 33.596 с; runner создал и удалил `test_checkist_qa_mutompk71t` |
+| `docker compose -p checkist_qa_mutompk71t up -d --build --wait --wait-timeout 120 worker` | Linux/prefork worker healthy; установка зависимостей использовала build cache |
+| `… backend/manage.py check_services` | SQL/cache `ok`, настоящая очередь/results: `celery_task.result={"message":"pong"}` |
+
+Логи `Internal Server Error` внутри успешного набора без БД относятся к намеренным тестам безопасного обработчика ошибок.
+
+**Настоящий HTTP:** `./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py runserver 127.0.0.1:18041 --noreload` в управляемой PTY-сессии. На пустой БД `curl.exe -i --max-time 15 "http://127.0.0.1:18041/api/<список>/?q=%00a"` выполнен для `products`, `stores`, `brands`, `generic-products`, `categories`: каждый curl exit 0, каждый ответ — `400`, `application/json`, точное `invalid_parameter` с `fields.q=["Управляющие символы недопустимы."]`.
+
+Два Python stdin-скрипта (`… python.exe -X utf8 -`, `urllib.request.urlopen(..., timeout=15)` с обработкой `HTTPError`) проверили статус, Content-Type и JSON, оба exit 0:
+
+- На пустой БД: **45 HTTP-проверок** — 40 поисков с NUL в начале/середине/конце, TAB, LF, CR, DEL и C1 дают `400`; UTF-8 «мол» на всех пяти списках даёт `200`, `results: []`.
+- Образцы внесены один раз: `… backend/manage.py shell -c "from api.tests.factories import save_samples; d = save_samples(); print('QA samples: product', d.shop_milk.pk, 'generic', d.milk.pk, 'category', d.milk.category_id, 'store', d.shop_store.pk)"` — exit 0, product/generic/store `1`, category `2`.
+- На образцах: **126 HTTP-проверок** — те же 45 поисков; 75 случаев NUL/TAB/C1 на остальных читаемых параметрах справочников, товаров, истории, сводки и обоих сравнений дают `400` с именем параметра в `fields`; NUL в трёх идентификаторах пути даёт JSON `404 not_found`; последнее повторённое `q` и неизвестный параметр сохраняют прежнюю семантику (`200`); `scope` у `/comparison/` игнорируется (`200`) по контракту; health — `200`, `status=ok`. UTF-8 поиск даёт один товар, один обобщённый продукт и две категории (совпадение и предок).
+
+Уборка: Ctrl+C остановил runserver (exit 1 вследствие прерывания); `docker compose -p checkist_qa_mutompk71t down` — exit 0, свои контейнеры/сеть удалены, тома сохранены. Фильтр своего project в `docker ps -a` пуст; `Get-NetTCPConnection` не обнаружил LISTEN на 25473/16420/18041/15191. Временный `.env` удалён, venv игнорируется Git.
+
+### Проверено и не прошло
+
+- **До исправления:** `manage.py test api.tests.test_query_controls.QueryControlParamsTests.test_search_rejects_nul_at_every_position --exclude-tag=integration --verbosity=2` — exit 1, 1 тест, 4 failures: NUL в начале/середине/конце принимался, одиночный NUL давал лишь ошибку длины.
+- **До исправления:** `manage.py test api.tests.test_query_controls.EmptySearchControlTests.test_nul_search_returns_400_before_sql --tag=integration --noinput --verbosity=1` — exit 1, 1 тест, 15 failures: четыре SQL-списка давали `500`, категории — `200`. После исправления все эти сценарии входят в успешные целевой и полный прогоны; ожидания не ослаблялись.
+- Служебный сбой: `orca-board done --help` вместо справки выполнил преждевременную сдачу с пустой сводкой. Workflow сохранил код/тесты автоматическим коммитом `347c050`, затем начал удалять worktree; параллельный `manage.py check` прервался с exit 1, `ModuleNotFoundError: No module named 'celery.app'`. Задача возвращена в работу через `task reopen` без запуска другого воркера; восстановлен тот же worktree и та же ветка, пересоздан собственный venv. Полные проверки выше выполнены после восстановления. Это процедурный сбой, на итоговом коде failed-проверок нет.
+
+### Не проверено и почему
+
+- Визуальное/интерактивное поведение React проверяет человек. Frontend не менялся и API каталога пока не вызывает; browser automation и скриншотов нет. Для отдельной приёмки запустить QA API/Vite и выполнить [ручной сценарий](#ручная-ui-приёмка-человеком): загрузка, повтор, stop/recovery, Offline/timeout, клавиатура/screen reader, 375 px/zoom 200%.
+- Frontend lint/test/build, Vite proxy и stop/recovery зависимостей не повторялись: клиент/probes не менялись. Для отдельного прогона — команды [сквозной проверки](#сквозная-проверка-клиента-через-vite-proxy). Health покрыт полным набором, настоящим HTTP и `check_services`.
+- Нагрузка и замеры на больших данных не выполнялись; существующие `assertNumQueries` прошли, а отклонённый `q` проверен с нулём SQL-запросов. Для нагрузки нужен представительный набор в отдельной QA-БД.
+- Откат/восстановление БД не выполнялись: схема не менялась, существующие миграции применены в новую QA-БД. Для отдельной проверки миграций — [сценарий модели данных](#модель-данных-catalog-stores-receipts) на собственной одноразовой БД. Откат C1 не требует операций с БД.
 
 ## Фактические результаты исправлений B1, 2026-10-04
 
