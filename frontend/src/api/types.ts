@@ -11,6 +11,11 @@ export type ApiErrorReason =
   | 'invalid_parameter' | 'invalid_request' | 'range_too_large'
   | 'not_found' | 'page_out_of_range' | 'server'
   | 'network' | 'timeout' | 'invalid_response'
+export type LocalApiErrorReason = ApiErrorReason
+  | 'csrf_failed' | 'permission_denied'
+  | 'job_active' | 'job_terminal' | 'retry_not_allowed'
+  | 'upload_too_large' | 'unsupported_media_type' | 'unsupported_format' | 'invalid_image' | 'image_too_large'
+  | 'storage_unavailable' | 'database_unavailable' | 'method_not_allowed' | 'not_acceptable'
 export type ApiFailure = {
   kind: 'error'
   reason: ApiErrorReason
@@ -19,6 +24,9 @@ export type ApiFailure = {
   fields?: string[]
 }
 export type ApiResult<T> = { kind: 'ok'; data: T } | ApiFailure | { kind: 'aborted' }
+/** New errors do not widen the exhaustive catalog/price error handlers. */
+export type LocalApiFailure = Omit<ApiFailure, 'reason'> & { reason: LocalApiErrorReason }
+export type LocalApiResult<T> = { kind: 'ok'; data: T } | LocalApiFailure | { kind: 'aborted' }
 export type RequestOptions = { signal?: AbortSignal; baseUrl?: string }
 export type Results<T> = { results: T[] }
 export type Page<T> = Results<T> & { count: number; page: number; page_size: number; pages: number }

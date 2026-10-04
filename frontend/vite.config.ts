@@ -10,6 +10,10 @@ export default defineConfig(({ mode }) => {
       target: env.DEV_API_PROXY_TARGET || 'http://127.0.0.1:8000',
       changeOrigin: true,
     },
+    '/media': {
+      target: env.DEV_API_PROXY_TARGET || 'http://127.0.0.1:8000',
+      changeOrigin: true,
+    },
   }
 
   return {
