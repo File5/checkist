@@ -37,7 +37,7 @@ describe('catalog wire contract', () => {
       aliases: [], stores: [], attributes: null }
     reply(nullable)
     expect(await getProduct(9)).toEqual({ kind: 'ok', data: nullable })
-    const noNormalized = { ...product, package: { quantity: '0.000', unit: 'pcs' },
+    const noNormalized = { ...product, package: { quantity: '0.001', unit: 'pcs' },
       prices: [{ ...product.prices[0], last: { ...product.prices[0].last,
         paid_unit_price: '0.0000', normalized_price: null, normalized_unit: null, comparable: false } }] }
     reply(pageOf([noNormalized]))
@@ -73,6 +73,40 @@ describe('catalog wire contract', () => {
     expect(await getProducts()).toEqual({ kind: 'ok', data: pageOf([]) })
     reply(pageOf([]))
     expect(await getGenericProducts()).toEqual({ kind: 'ok', data: pageOf([]) })
+  })
+  it('accepts zero category/generic counters and empty detail lists', async () => {
+    const node = { ...categoryDetail, parent_id: null, depth: 0, children_count: 0,
+      generic_products_count: 0, products_count: 0, products_total: 0, children: [], generic_products: [] }
+    reply(node)
+    expect(await getCategory(2)).toEqual({ kind: 'ok', data: node })
+    const item = { ...generic, products_count: 0, countries: [] }
+    reply(item)
+    expect(await getGenericProduct(5)).toEqual({ kind: 'ok', data: item })
+  })
+  it('accepts empty product and alias text as serialized by backend', async () => {
+    const item = { ...detail, name: '', model: '', gtin: '', brand: { id: 3, name: '' },
+      aliases: [{ store_name: '', raw_name: '', store_item_code: '' }], stores: [] }
+    reply(item)
+    expect(await getProduct(9)).toEqual({ kind: 'ok', data: item })
+  })
+  it.each([['d', 'e'], ['de', 'eur'], ['1', '12'], ['Я', '¤'], ['😀😀', '😀😀😀']])(
+    'preserves stored country/currency codes %s/%s in catalog and product stores', async (country, currency) => {
+      const item = { ...generic, countries: [country] }
+      reply(item)
+      expect(await getGenericProduct(5)).toEqual({ kind: 'ok', data: item })
+      const body = { ...detail, prices: [{ ...product.prices[0], country, currency }],
+        stores: [{ ...detail.stores[0], country }] }
+      reply(body)
+      expect(await getProduct(9)).toEqual({ kind: 'ok', data: body })
+    },
+  )
+  it('accepts insertions after COUNT in a product list and on the last generic page', async () => {
+    const products = { ...pageOf([product]), count: 0, pages: 0 }
+    reply(products)
+    expect(await getProducts()).toEqual({ kind: 'ok', data: products })
+    const generics = { ...pageOf([generic, { ...generic, id: 6 }]), count: 51, page: 2, pages: 2 }
+    reply(generics)
+    expect(await getGenericProducts({ page: 2 })).toEqual({ kind: 'ok', data: generics })
   })
 })
 
@@ -114,6 +148,10 @@ describe('invalid catalog schemas', () => {
     { ...product, prices: [{ ...product.prices[0], last: { ...product.prices[0].last, paid_unit_price: '1e2' } }] },
     { ...product, prices: [{ ...product.prices[0], last: { ...product.prices[0].last, normalized_price: null } }] },
     { ...product, prices: [{ ...product.prices[0], last: { ...product.prices[0].last, comparable: false } }] },
+    ...[0, -1, 0.5, Number.MAX_SAFE_INTEGER + 1, '1'].map((observations) => ({ ...product,
+      prices: [{ ...product.prices[0], observations }] })),
+    { ...product, prices: [{ ...product.prices[0], currency: 'EURO' }] },
+    { ...product, prices: [{ ...product.prices[0], currency: null }] },
   ])('rejects product schema %#', async (body) => {
     reply(pageOf([body]))
     expect((await getProducts())).toMatchObject({ kind: 'error', reason: 'invalid_response' })
@@ -123,6 +161,8 @@ describe('invalid catalog schemas', () => {
     { ...detail, stores: [{ ...detail.stores[0], id: Number.MAX_SAFE_INTEGER + 1 }] },
     { ...detail, stores: [{ ...detail.stores[0], last_purchased_on: '2026-02-29' }] },
     { ...detail, alternatives_count: null },
+    ...[0, -1, 0.5, Number.MAX_SAFE_INTEGER + 1, '1'].map((observations) => ({ ...detail,
+      stores: [{ ...detail.stores[0], observations }] })),
   ])('rejects detail schema %#', async (body) => {
     reply(body)
     expect((await getProduct(9))).toMatchObject({ kind: 'error', reason: 'invalid_response' })
@@ -133,7 +173,7 @@ describe('invalid catalog schemas', () => {
     { ...pageOf([product]), pages: 2 }, { ...pageOf([]), page: 2 },
     { ...pageOf([product]), count: Number.MAX_SAFE_INTEGER + 1 },
     { ...pageOf([product]), results: {} },
-    { ...pageOf([product]), count: 51, page: 2, pages: 2, results: [product, product] },
+    { ...pageOf([product]), count: 51, page: 2, pages: 2, results: Array.from({ length: 51 }, () => product) },
   ])('rejects pagination envelope %#', async (body) => {
     reply(body)
     expect((await getProducts())).toMatchObject({ kind: 'error', reason: 'invalid_response' })
