@@ -71,7 +71,7 @@ function readResponse(status: number, body: unknown): HealthResult {
 
   if (isRecord(body) && hasKeys(body, ['error']) && isApiError(body.error)) {
     const expectedCodes: Record<number, string> = {
-      405: 'method_not_allowed', 406: 'not_acceptable', 500: 'internal_error',
+      400: 'invalid_request', 405: 'method_not_allowed', 406: 'not_acceptable', 500: 'internal_error',
     }
     if (expectedCodes[status] !== body.error.code) {
       return { kind: 'error', reason: 'inconsistent-response' }

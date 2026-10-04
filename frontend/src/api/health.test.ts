@@ -100,6 +100,7 @@ describe('health contract', () => {
   })
 
   it.each([
+    [400, 'invalid_request', 'http'],
     [405, 'method_not_allowed', 'http'],
     [406, 'not_acceptable', 'http'],
     [500, 'internal_error', 'server'],
@@ -142,6 +143,7 @@ describe('health contract', () => {
     [200, { error: { code: 'internal_error', message: 'Ошибка.' } }],
     [503, { error: { code: 'dependency_unavailable', message: 'Ошибка.' } }],
     [500, { error: { code: 'method_not_allowed', message: 'Ошибка.' } }],
+    [400, { error: { code: 'internal_error', message: 'Ошибка.' } }],
   ])('rejects inconsistent HTTP/body pair %#', async (status, body) => {
     reply(body, status)
     expect(await getHealth()).toEqual({ kind: 'error', reason: 'inconsistent-response' })
