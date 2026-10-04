@@ -59,11 +59,30 @@ class ReceiptLineAdminForm(EmptyJSONFormMixin, forms.ModelForm):
     def clean(self):
         cleaned = super().clean()
         parent = cleaned.get("parent")
-        if parent is None:
-            return cleaned
         # В inline чек приходит из формы чека, в отдельной админке — из поля receipt.
         receipt = cleaned.get("receipt") or self.instance.receipt_id
         receipt_id = getattr(receipt, "pk", receipt)
+        # POST changeform_view у ModelAdmin уже обёрнут в atomic: блокировка
+        # живёт от проверки до сохранения всех inline и commit. Создание связей
+        # блокирует ту же строку, поэтому после ожидания читаем её заново.
+        ids = [pk for pk in (self.instance.pk, getattr(parent, "pk", None)) if pk is not None]
+        locked = {line.pk: line for line in ReceiptLine.objects.select_for_update().filter(pk__in=ids).order_by("pk")}
+        original = locked.get(self.instance.pk)
+        if self.instance.pk is not None and original is None:
+            self.add_error(None, "Строка уже удалена. Откройте чек заново.")
+        elif original is not None and original.receipt_id != receipt_id:
+            if original.children.exists() or original.discounts.exists():
+                self.add_error("receipt", forms.ValidationError(
+                    "Нельзя перенести строку в другой чек: к ней привязаны залоги или скидки. "
+                    "Сначала удалите или отвяжите эти связи в исходном чеке.",
+                    code="receipt_has_dependents",
+                ))
+        if parent is None:
+            return cleaned
+        parent = locked.get(parent.pk)
+        if parent is None:
+            self.add_error("parent", "Родительская строка уже удалена. Откройте чек заново.")
+            return cleaned
         if parent.pk == self.instance.pk:
             self.add_error("parent", forms.ValidationError(
                 "Строка не может быть залогом к самой себе.", code="parent_is_self",
@@ -72,6 +91,25 @@ class ReceiptLineAdminForm(EmptyJSONFormMixin, forms.ModelForm):
             self.add_error("parent", forms.ValidationError(
                 "Родительская строка должна быть строкой этого же чека.", code="parent_other_receipt",
             ))
+        return cleaned
+
+
+class ReceiptDiscountAdminForm(forms.ModelForm):
+    class Meta:
+        model = ReceiptDiscount
+        fields = "__all__"
+
+    def clean(self):
+        cleaned = super().clean()
+        line = cleaned.get("line")
+        if line is not None:
+            # Список choices мог быть прочитан до конкурентного переноса.
+            line = ReceiptLine.objects.select_for_update().filter(pk=line.pk).first()
+            if line is None or line.receipt_id != self.instance.receipt_id:
+                self.add_error("line", forms.ValidationError(
+                    "Строка скидки должна быть строкой этого же чека. Откройте чек заново.",
+                    code="line_other_receipt",
+                ))
         return cleaned
 
 
@@ -137,6 +175,7 @@ class ReceiptLineInline(ReceiptLinesChoiceMixin, admin.StackedInline):
 
 class ReceiptDiscountInline(ReceiptLinesChoiceMixin, admin.TabularInline):
     model = ReceiptDiscount
+    form = ReceiptDiscountAdminForm
     extra = 0
     ordering = ("position",)
     line_fields = ("line",)

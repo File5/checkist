@@ -1,14 +1,19 @@
 import json
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.contrib import admin
 from django.contrib.auth import get_user_model
-from django.db import connection
-from django.test import Client, tag
+from django.db import connection, connections
+from django.test import Client, TransactionTestCase, tag
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
 from catalog.models import Product
+from receipts.admin import ReceiptDiscountAdminForm, ReceiptLineAdminForm
 from receipts.dedup import build_fiscal_key, name_key
 from receipts.models import ProductAlias, Receipt, ReceiptDiscount, ReceiptLine, ReceiptTax
 from receipts.tests.test_models import PURCHASED_AT, ReceiptTestCase, make_line, make_receipt
@@ -778,6 +783,228 @@ class ReceiptLineAdminTests(ReceiptsAdminTestCase):
         self.assertSaved(self.client.post(url, self.line_data(parent=self.line.pk, **data)), ReceiptLine)
         deposit.refresh_from_db()
         self.assertEqual(deposit.parent, self.line)
+
+
+@tag("integration")
+class ReceiptLineMoveTests(ReceiptsAdminTestCase):
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        cls.target = make_receipt(cls.store, cls.currency, receipt_number="200")
+
+    def move(self, line=None, **fields):
+        line = line or self.line
+        return self.client.post(admin_url(ReceiptLine, "change", line.pk), line_row(**{
+            "receipt": self.target.pk, "position": line.position, "kind": line.kind,
+            "parent": line.parent_id or "", "raw_name": line.raw_name, "product": line.product_id or "", **fields,
+        }))
+
+    def assertUnchanged(self, *objects):
+        for obj in objects:
+            with self.subTest(model=type(obj).__name__, pk=obj.pk):
+                saved = type(obj).objects.get(pk=obj.pk)
+                for field in obj._meta.concrete_fields:
+                    self.assertEqual(getattr(saved, field.attname), field.to_python(getattr(obj, field.attname)))
+
+    def test_move_with_child_is_rejected_and_data_unchanged(self):
+        child = make_line(self.receipt, position=2, kind="deposit", parent=self.line, raw_name="Залог")
+        self.assertFormError(self.move(), "receipt", "привязаны залоги или скидки")
+        self.assertUnchanged(self.line, child)
+
+    def test_move_with_discount_is_rejected_and_data_unchanged(self):
+        discount = ReceiptDiscount.objects.create(
+            receipt=self.receipt, line=self.line, position=1, name="Скидка", amount="1.00",
+        )
+        self.assertFormError(self.move(), "receipt", "привязаны залоги или скидки")
+        self.assertUnchanged(self.line, discount)
+
+    def test_move_without_dependencies_still_works(self):
+        self.assertSaved(self.move(), ReceiptLine)
+        self.line.refresh_from_db()
+        self.assertEqual(self.line.receipt_id, self.target.pk)
+        self.assertFalse(self.receipt.lines.exists())
+
+    def test_move_with_parent_in_source_is_rejected(self):
+        child = make_line(self.receipt, position=2, kind="deposit", parent=self.line, raw_name="Залог")
+        self.assertFormError(self.move(child), "parent", "этого же чека")
+        self.assertUnchanged(self.line, child)
+
+    def test_move_with_parent_in_target_is_allowed(self):
+        parent = make_line(self.target)
+        child = make_line(self.receipt, position=2, kind="deposit", parent=self.line, raw_name="Залог")
+        self.assertSaved(self.move(child, parent=parent.pk), ReceiptLine)
+        child.refresh_from_db()
+        self.assertEqual((child.receipt_id, child.parent_id), (self.target.pk, parent.pk))
+
+    def test_move_after_detaching_parent_is_allowed(self):
+        child = make_line(self.receipt, position=2, kind="deposit", parent=self.line, raw_name="Залог")
+        self.assertSaved(self.move(child, parent=""), ReceiptLine)
+        child.refresh_from_db()
+        self.assertEqual(child.receipt_id, self.target.pk)
+        self.assertIsNone(child.parent_id)
+
+    def test_delete_target_after_rejected_moves_preserves_source_dependencies(self):
+        child = make_line(self.receipt, position=2, kind="deposit", parent=self.line, raw_name="Залог")
+        discount = ReceiptDiscount.objects.create(
+            receipt=self.receipt, line=self.line, position=1, name="Скидка", amount="1.00",
+        )
+        # Повторный POST также не меняет данные.
+        for _ in range(2):
+            self.assertFormError(self.move(), "receipt")
+        response = self.client.post(admin_url(Receipt, "delete", self.target.pk), {"post": "yes"})
+        self.assertSaved(response, Receipt)
+        self.assertFalse(Receipt.objects.filter(pk=self.target.pk).exists())
+        self.assertTrue(Receipt.objects.filter(pk=self.receipt.pk).exists())
+        self.assertUnchanged(self.line, child, discount)
+
+    def test_inline_edit_preserves_receipt_and_dependencies(self):
+        child = make_line(self.receipt, position=2, kind="deposit", parent=self.line, raw_name="Залог")
+        discount = ReceiptDiscount.objects.create(
+            receipt=self.receipt, line=self.line, position=1, name="Скидка", amount="1.00",
+        )
+        data = self.receipt_data(
+            receipt_number="100", fiscal_key="test:fiscal:1", initial=(2, 1, 0),
+            lines=[
+                line_row(id=self.line.pk, receipt=self.receipt.pk, raw_name="После правки"),
+                line_row(id=child.pk, receipt=self.receipt.pk, position=2, kind="deposit",
+                         parent=self.line.pk, raw_name="Залог"),
+            ],
+            discounts=[discount_row(id=discount.pk, receipt=self.receipt.pk, line=self.line.pk, name="Скидка")],
+        )
+        self.assertSaved(self.client.post(admin_url(Receipt, "change", self.receipt.pk), data), Receipt)
+        self.line.refresh_from_db()
+        child.refresh_from_db()
+        discount.refresh_from_db()
+        self.assertEqual(self.line.raw_name, "После правки")
+        self.assertEqual((self.line.receipt_id, child.receipt_id, discount.receipt_id), (self.receipt.pk,) * 3)
+        self.assertEqual((child.parent_id, discount.line_id), (self.line.pk,) * 2)
+
+    def test_inline_receipt_tampering_is_rejected(self):
+        data = self.receipt_data(
+            receipt_number="100", fiscal_key="test:fiscal:1", initial=(1, 0, 0),
+            lines=[line_row(id=self.line.pk, receipt=self.target.pk)],
+        )
+        response = self.client.post(admin_url(Receipt, "change", self.receipt.pk), data)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("receipt", self.formset(response, "lines").errors[0])
+        self.assertUnchanged(self.line)
+
+    def test_staff_without_change_permission_cannot_move(self):
+        self.client.force_login(self.staff_user)
+        self.assertEqual(self.move().status_code, 403)
+        self.assertUnchanged(self.line)
+
+
+@tag("integration")
+class ReceiptLineConcurrencyTests(TransactionTestCase):
+    """Два настоящих admin POST на разных PostgreSQL-соединениях, без внешнего atomic теста."""
+
+    receipt_data = ReceiptsAdminTestCase.receipt_data
+
+    def setUp(self):
+        country = Country.objects.create(code="XA", name="Тестовая страна")
+        self.currency = Currency.objects.create(code="XTS", name="Тестовая валюта")
+        merchant = Merchant.objects.create(country=country, legal_name="Тестовый продавец")
+        self.store = Store.objects.create(
+            merchant=merchant, country=country, address_raw="Тестоград, Примерная, 1", timezone="UTC",
+        )
+        self.user = get_user_model().objects.create_superuser("race-user", password="test-only-password")
+        self.source = make_receipt(self.store, self.currency, receipt_number="100")
+        self.target = make_receipt(self.store, self.currency, receipt_number="200")
+        self.line = make_line(self.source)
+
+    def concurrent_requests(self, kind, first):
+        validated = threading.Event()
+        release = threading.Event()
+        waiting = threading.Event()
+        pids = {}
+        state = threading.local()
+        form_class = ReceiptLineAdminForm if first == "move" or kind == "child" else ReceiptDiscountAdminForm
+        original_clean = form_class.clean
+
+        def pause_after_validation(form):
+            cleaned = original_clean(form)
+            is_first_form = (
+                form.instance.pk == self.line.pk if first == "move"
+                else form.instance.pk is None
+            )
+            if state.action == first and is_first_form:
+                validated.set()
+                if not release.wait(10):
+                    raise AssertionError("Первый запрос не получил разрешение завершиться")
+            return cleaned
+
+        def post(action):
+            state.action = action
+            try:
+                client = Client()
+                client.force_login(self.user)
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT pg_backend_pid()")
+                    pids[action] = cursor.fetchone()[0]
+                if action != first:
+                    waiting.set()
+                if action == "move":
+                    return client.post(admin_url(ReceiptLine, "change", self.line.pk), line_row(receipt=self.target.pk))
+                data = self.receipt_data(
+                    receipt_number="100",
+                    lines=[line_row(position=2, kind="deposit", parent=self.line.pk, raw_name="Залог")]
+                    if kind == "child" else [],
+                    discounts=[discount_row(line=self.line.pk)] if kind == "discount" else [],
+                )
+                return client.post(admin_url(Receipt, "change", self.source.pk), data)
+            finally:
+                connections.close_all()
+
+        second = "create" if first == "move" else "move"
+        with patch.object(form_class, "clean", pause_after_validation), ThreadPoolExecutor(max_workers=2) as pool:
+            first_result = pool.submit(post, first)
+            try:
+                self.assertTrue(validated.wait(5), "Первый POST не дошёл до проверки")
+                second_result = pool.submit(post, second)
+                self.assertTrue(waiting.wait(5), "Второй POST не запущен")
+                deadline = time.monotonic() + 1
+                blocked = False
+                while time.monotonic() < deadline:
+                    with connection.cursor() as cursor:
+                        cursor.execute("SELECT %s = ANY(pg_blocking_pids(%s))", [pids[first], pids[second]])
+                        blocked = cursor.fetchone()[0]
+                    if blocked:
+                        break
+                    time.sleep(0.01)
+                self.assertTrue(blocked, "Второй POST не ожидал блокировку первого")
+            finally:
+                release.set()
+            responses = {first: first_result.result(timeout=10), second: second_result.result(timeout=10)}
+        self.assertNotEqual(pids[first], pids[second])
+        self.assertEqual(responses[first].status_code, 302)
+        self.assertEqual(responses[second].status_code, 200)
+        self.line.refresh_from_db()
+        if first == "move":
+            self.assertEqual(self.line.receipt_id, self.target.pk)
+            self.assertFalse(self.line.children.exists())
+            self.assertFalse(self.line.discounts.exists())
+            formsets = {item.formset.prefix: item.formset for item in responses["create"].context["inline_admin_formsets"]}
+            prefix, field = ("lines", "parent") if kind == "child" else ("discounts", "line")
+            self.assertIn(field, formsets[prefix].errors[0])
+        else:
+            self.assertEqual(self.line.receipt_id, self.source.pk)
+            errors = responses["move"].context["adminform"].form.errors
+            self.assertIn("receipt", errors)
+            related = self.line.children.get() if kind == "child" else self.line.discounts.get()
+            self.assertEqual(related.receipt_id, self.source.pk)
+
+    def test_child_creation_waits_for_move_and_is_rejected(self):
+        self.concurrent_requests("child", "move")
+
+    def test_discount_creation_waits_for_move_and_is_rejected(self):
+        self.concurrent_requests("discount", "move")
+
+    def test_move_waits_for_child_creation_and_is_rejected(self):
+        self.concurrent_requests("child", "create")
+
+    def test_move_waits_for_discount_creation_and_is_rejected(self):
+        self.concurrent_requests("discount", "create")
 
 
 @tag("integration")
