@@ -50,17 +50,17 @@ docker compose -p checkist_qa up -d --build --wait --wait-timeout 120 worker
 ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py check_services
 ```
 
-Ожидается exit 0, отсутствие новых миграций, 67 тестов без БД и 342 integration tests, затем JSON с `celery_task.result={"message":"pong"}`. На пустой БД `migrate` применяет 22 миграции: 18 стандартных и 4 собственных. Числа соответствуют текущему коду и могут измениться вместе с тестами. Команда без тега не использует БД и может выполняться при TCP-отказе; integration-команда не должна заменяться skip/eager. Django runner создаёт и затем удаляет **`test_checkist_qa`**; Redis integration использует отдельный QA Redis DB 2 и уникальные временные ключи.
+Ожидается exit 0, отсутствие новых миграций, 67 тестов без БД и 363 integration tests, затем JSON с `celery_task.result={"message":"pong"}`. На пустой БД `migrate` применяет 22 миграции: 18 стандартных и 4 собственных. Числа соответствуют текущему коду и могут измениться вместе с тестами. Команда без тега не использует БД и может выполняться при TCP-отказе; integration-команда не должна заменяться skip/eager. Django runner создаёт и затем удаляет **`test_checkist_qa`**; Redis integration использует отдельный QA Redis DB 2 и уникальные временные ключи.
 
 | Приложение | Без БД (`--exclude-tag=integration`) | С БД (`--tag=integration`) |
 | --- | --- | --- |
-| `catalog` | 9 | 73 |
+| `catalog` | 9 | 80 |
 | `stores` | 14 | 79 |
-| `receipts` | 18 | 183 |
+| `receipts` | 18 | 197 |
 | `health` | 26 | 7 |
-| Всего | 67 | 342 |
+| Всего | 67 | 363 |
 
-Числа — по фактическому прогону [2026-10-03](#фактические-результаты-проверки-админки-2026-10-03). Тесты админки — integration, кроме пяти тестов маршрута в `health/tests/test_admin_site.py`, которым БД не нужна. При прогоне тестов без БД в выводе дважды появляется `Internal Server Error: /api/health/`: это журнал контрактных тестов безопасного ответа 500, а не отказ.
+Числа после F1/F2 — см. [итоговый прогон F3](#фактические-результаты-исправлений-f1f2-2026-10-04). F1 добавил 14 integration-тестов `receipts`, F2 — 7 `catalog`; subtests внутри метода отдельно не считаются. Тесты админки — integration, кроме пяти тестов маршрута в `health/tests/test_admin_site.py`, которым БД не нужна. Гонки проверяются `TransactionTestCase` на разных Postgres-соединениях. При прогоне тестов без БД в выводе дважды появляется `Internal Server Error: /api/health/`: это журнал контрактных тестов безопасного ответа 500, а не отказ.
 
 Unit/contract tests health покрывают точный 200, комбинации 503, сохранение независимых checks, анонимность, игнорирование query/Authorization, 405, 406, безопасный 500 при DEBUG, отсутствие публикации task из health, параллельность probes, cleanup кеша, bounded publication retries и негативную env-валидацию. Это не сетевой замер времени отказа.
 
@@ -76,7 +76,7 @@ Unit/contract tests health покрывают точный 200, комбинац
 ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test catalog stores receipts --tag=integration --verbosity=2
 ```
 
-Ожидается exit 0 у каждой команды, `No changes detected`, 41 тест без БД и 335 integration tests (без `health`).
+Ожидается exit 0 у каждой команды, `No changes detected`, 41 тест без БД и 356 integration tests (без `health`).
 
 Что проверяют тесты трёх приложений:
 
@@ -104,6 +104,10 @@ docker compose -p checkist_qa exec -T worker python -X utf8 manage.py check
 - 200 у списка, добавления и правки; поиск, каждый фильтр, иерархию дат, сортировку; неизменность числа запросов списка при росте числа строк;
 - сохранение через POST, включая чек с позицией, скидкой и итогом по ставке;
 - ошибки формы вместо 500: дубликат адреса магазина, сопоставления и чека на каждом из трёх уровней, `gross != net + tax`, повтор `position`, нарушения check строк, цикл категорий, неизвестный часовой пояс, чужая родительская строка;
+- F1: запрет переноса строки с залогом/скидкой, неизменность данных и повторный POST, сохранность связей после удаления целевого чека; разрешённый перенос без зависимостей, перенос залога с очищенным/заменённым `parent`, обычная правка inline и отказ без прав;
+- F1: гонки переноса против создания залога/скидки в обоих порядках — второй POST ждёт блокировку строки, перечитывает её и получает ошибку формы;
+- F2: пустые/отсутствующие/null Attributes → `{}` на add/change, сохранение непустого JSON, отказ некорректному JSON без изменения товара;
+- F2: противоположные правки родителей на двух соединениях не сохраняют цикл; занятая advisory-блокировка немедленно отклоняет add/change корневой категории, после commit безопасный повтор сохраняется. Соединения гонок категорий проверяют штатный `statement_timeout=2s`;
 - вычисляемые `address_key`, `name_key`, `fiscal_key`; блок предупреждений `validate_receipt` и экранирование в нём сохранённого текста;
 - ответы автодополнения для каждого поля и его недоступность без `is_staff`.
 
@@ -151,7 +155,7 @@ docker compose -p checkist_qa exec -T worker celery -A config inspect ping --des
 docker compose -p checkist_qa ps
 ```
 
-Ожидается exit 0 для каждой команды; зависимости без конфликтов, check без ошибок, migrations применены/уже актуальны, `No changes detected`, 342 integration tests passed, реальный pong через task/results и отдельный control pong. `ps` должен показывать три healthy services с QA host-портами. Docker build может использовать cache: это не новая установка с нуля, но `pip check` проверяет реально установленные зависимости образа.
+Ожидается exit 0 для каждой команды; зависимости без конфликтов, check без ошибок, migrations применены/уже актуальны, `No changes detected`, 363 integration tests passed, реальный pong через task/results и отдельный control pong. `ps` должен показывать три healthy services с QA host-портами. Docker build может использовать cache: это не новая установка с нуля, но `pip check` проверяет реально установленные зависимости образа.
 
 ## HTTP: позитивные и негативные сценарии
 
@@ -329,12 +333,114 @@ for name in ('POSTGRES_PASSWORD', 'DJANGO_SECRET_KEY'):
 3. **Ввод чека.** Создать продавца (`Merchants`) и магазин (`Stores`): поле `Address key` недоступно для ввода и заполняется после сохранения. Создать категорию, обобщённый продукт и товар. В `Receipts` добавить чек: магазин, валюта, `purchased_at` в UTC, `purchased_on` — локальная дата, `receipt_number`, `total`; в inline — две позиции, скидку (без привязки к строке) и итог по ставке, у которого `gross = net + tax`. Сохранить. Открыть чек: блок «Предупреждения проверки» показывает «Нарушений не найдено.» либо список расхождений — намеренно ошибиться в `total` и убедиться, что предупреждение появилось, а чек всё равно сохраняется. Ввести тот же чек ещё раз (те же магазин, `purchased_on`, `shift_number`, `register_code` и `receipt_number`): ошибка формы на странице, а не страница сбоя сервера. Итог с `gross`, не равным `net + tax`, — тоже ошибка формы.
 4. **Автодополнение и сопоставление.** В форме чека поля магазина, товара и ставки ищут по вводу и подставляют значение. После сохранения чека в позиции-залоге поле `parent` и в скидке поле `line` предлагают только строки этого чека. Открыть `Receipt lines`, в фильтре по `product` выбрать «Пусто» (товар не задан), открыть строку, выбрать товар, сохранить: строка исчезает из отфильтрованного списка. В `Product aliases` добавить сопоставление: `Name key` заполняется сам; повтор того же названия у того же продавца — ошибка формы.
 5. **Удаление.** Удалить страну, в которой есть продавец: админка отказывает и перечисляет защищённые объекты. Удалить чек: страница подтверждения перечисляет его позиции, скидки и итоги по налогам; после подтверждения чек и они удалены, магазин и товары на месте.
+6. **Перенос строки с зависимостями (F1).** Создать два чека A/B с разными номерами. В A после первого сохранения привязать к товарной строке залог через `parent` и скидку через `line`. В `Receipt lines` открыть товарную строку, выбрать B в `receipt`, сохранить: ошибка поля `receipt` «Нельзя перенести строку…», обе связи и остальные поля остались в A. Повторить — тот же отказ. Удалить B и убедиться, что A, его строка, залог и скидка сохранились. Для отдельной проверки каждого вида зависимости повторить с одним залогом, затем с одной скидкой. Создать новый пустой B, отвязать залог (`parent` пустой) и скидку (`line` пустой) в A, сохранить A; перенести товарную строку в B со свободным `position` — успех. Отдельно проверить перенос самого залога: с `parent` из A отказ у `parent`, после очистки или выбора строки B — успех. Обычная правка названия/товара строки с зависимостями внутри A должна сохраняться.
+7. **Attributes товара (F2).** Создать товар с пустым `Attributes`, сохранить и открыть снова: `{}`, без страницы сбоя. Сохранить `{"fat_percent": 2.5}`, открыть, очистить поле и сохранить: прежний JSON заменён на `{}`. Повторить с текстом `null` — снова `{}`. Ввести незавершённый JSON `{"fat_percent":` вместе с изменением названия: ошибка `Attributes`, после нового открытия ни JSON, ни название не изменились. Валидный непустой JSON сохраняется.
+8. **Дерево категорий (F2).** Создать две корневые категории A/B. В двух вкладках открыть их правку до сохранения. Сохранить A с родителем B; в старой вкладке B выбрать родителем A и сохранить: ошибка `parent` о цикле, B остаётся корнем, A — ребёнком B. Проверить также выбор самой категории и более глубокого потомка — ошибка. Одновременные POST в браузере могут завершиться слишком быстро для воспроизведения `category_tree_busy`; для стабильной ручной проверки занятости используйте QA-блокировку ниже. Реальные гонки двух admin POST покрыты integration-тестами.
+
+Для шага 8, при открытой форме корневой категории, в отдельном QA-терминале запустите интерактивный psql (для другого project/БД/пользователя подставьте свои значения):
+
+```powershell
+docker compose -p checkist_qa exec postgres psql -U checkist -d checkist_qa
+```
+
+В psql выполните и оставьте транзакцию открытой:
+
+```sql
+BEGIN;
+SELECT pg_advisory_xact_lock(1129010004, 1);
+```
+
+В браузере поменяйте имя корневой категории, оставьте `parent` пустым и сохраните. Ожидается немедленная ошибка `parent` «Категории сейчас изменяются другим запросом. Повторите сохранение.», без HTTP 500 и без изменения имени. Так же проверить добавление новой корневой категории — она не создаётся. Блокировку можно удерживать дольше 2 с: запрос формы не ждёт её и не расходует на ожидание `statement_timeout`. В psql выполнить `ROLLBACK;`, затем `\q`; повторить безопасное сохранение/добавление — успех. Эта CLI-подготовка воспроизводит занятую блокировку, а не два browser POST; остальные SQL-запросы админки сохраняют таймаут 2000 мс. Граница гарантий и ожидающие блокировки строк F1 — в [data-model.md](data-model.md#конкурентные-правки).
 
 Дополнительно, по желанию: поменять `position` двух строк одним сохранением — ожидается ошибка формы (переставлять через свободный номер); выйти и убедиться, что `/admin/` снова требует входа.
 
 После приёмки удалить введённые записи либо помнить, что они остались в томе `checkist_qa`; суперпользователь тоже остаётся в этой БД. Завершение — по разделу [«Завершение QA»](#завершение-qa).
 
+## Фактические результаты исправлений F1/F2, 2026-10-04
+
+Задача F3 (`task_mutmy8f5c`), код ветки `d99787e` после слияния F1 (`7aa388d`) и F2 (`c895168`). В F3 меняются только `.md`; модели, тесты, настройки, зависимости и миграции сохранены. HTTP API, аутентификация и права не меняются. Изменения поведения форм: перенос строки с зависимостями теперь отклоняется; пустые/null Attributes при правке очищают прежнее значение; конкурирующий POST категории может получить `category_tree_busy` и требует явного повтора.
+
+Среда: Windows Python 3.13.9, Docker 29.8.1 / Linux daemon, Compose 5.5.1, worker Python 3.13.16. Выделены новый Compose project и БД `checkist_qa_f3`, новые тома, тестовая БД `test_checkist_qa_f3`, Postgres 25435, Redis 16382, Django 18003; Vite не запускался (15176 зарезервирован для возможной ручной приёмки). Общие QA-проекты были заняты; их контейнеры, процессы и данные не затрагивались. Применён весь QA-блок выше с заменами `POSTGRES_DB=checkist_qa_f3`, `POSTGRES_PORT=25435`, `REDIS_PORT=16382`, портов во всех трёх Redis URL и `DEV_API_PROXY_TARGET=http://127.0.0.1:18003`; все Compose-команды — с `-p checkist_qa_f3`.
+
+### Проверено и прошло
+
+Ниже `manage.py` означает точный префикс `./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py`. Все завершившиеся команды таблицы — exit 0. Перед зависимым шагом проверялся exit предыдущего.
+
+| Фактическая команда | Наблюдаемый результат |
+| --- | --- |
+| `Copy-Item .env.example .env` при отсутствии файла; `py -3.13 -m venv backend/.venv`; `./backend/.venv/Scripts/python.exe -X utf8 -m pip install -r backend/requirements.txt` | Подготовлены только игнорируемые env/venv, установлен закреплённый набор |
+| `docker compose -p checkist_qa_f3 config --quiet`; `docker compose -p checkist_qa_f3 up -d --wait --wait-timeout 90 postgres redis` | Созданы отдельные тома/сеть, оба сервиса healthy |
+| `socket.create_connection(('127.0.0.1', port), timeout=2)` через `./backend/.venv/Scripts/python.exe -X utf8 -`, порты 25435/16382 | Оба Windows TCP OK до локальных действий с БД |
+| `./backend/.venv/Scripts/python.exe -X utf8 -m pip check` | `No broken requirements found.` |
+| `manage.py check` | `System check identified no issues (0 silenced).` |
+| `manage.py makemigrations --check --dry-run` | `No changes detected` |
+| `manage.py migrate --noinput` | 22 миграции применены на пустой QA-БД: 18 стандартных и 4 собственных |
+| `docker compose -p checkist_qa_f3 up -d --build --wait --wait-timeout 120 worker` | Worker healthy, prefork/concurrency 2; установка зависимостей образа использовала cache |
+| `manage.py test catalog stores receipts health --exclude-tag=integration --noinput --verbosity=2` | 67 tests OK за 4.379 с, `Skipping setup of unused database(s): default.` |
+| `manage.py test catalog stores receipts health --tag=integration --noinput --verbosity=2` | 363 tests OK за 51.987 с, без skipped tests; runner создал/мигрировал/удалил `test_checkist_qa_f3` |
+| `docker compose -p checkist_qa_f3 exec -T worker python -m pip check` | Зависимости образа без конфликтов |
+| `docker compose -p checkist_qa_f3 exec -T worker python -X utf8 manage.py check` | 0 issues, в том числе импорт и конфигурация админок в Linux |
+| `docker compose -p checkist_qa_f3 exec -T worker python -X utf8 manage.py makemigrations --check --dry-run` | `No changes detected` |
+| `manage.py check_services`; `docker compose -p checkist_qa_f3 exec -T worker python -X utf8 manage.py check_services` | Оба: database/redis OK, `celery_task.status=ok`, настоящий результат `message=pong` через очередь/results, eager не использовался |
+| `docker compose -p checkist_qa_f3 exec -T worker celery -A config inspect ping --destination=checkist@worker --timeout=2` | Control pong, `1 node online.` |
+| `docker compose -p checkist_qa_f3 ps` | Все три сервиса healthy, host-порты 25435/16382 |
+| `manage.py runserver 127.0.0.1:18003 --noreload`, HTTP-валидатор ниже | Настоящие ответы: `/admin/` 302 с точным Location, `/admin/login/` 200 HTML с русским заголовком, CSS 200 text/css, health 200 с точным JSON и no-store |
+| `docker compose -p checkist_qa_f3 down`; `docker ps -a --filter label=com.docker.compose.project=checkist_qa_f3 --format '{{.Names}} {{.Status}}'`; `Get-NetTCPConnection -State Listen` с фильтром 25435/16382/18003/15176 | Контейнеры/сеть удалены, фильтр пуст, слушателей нет; тома сохранены |
+
+Числа по приложениям получены из фактически выполненных test IDs в verbose-логах, сверены с полным `Ran … / OK` и отдельно с discovery через `django.test.utils.iter_test_cases`: `catalog` **9/80**, `stores` **14/79**, `receipts` **18/197**, `health` **26/7** (без БД / integration), итого **67/363**. В этих 363 тестах прошли 10 сценариев переноса и 4 гонки F1; 4 сценария Attributes и 3 гонки категорий F2. Subtests отдельными тестами не считаются.
+
+HTTP-валидатор выполнялся с Windows после запуска runserver; это HTTP, без обхода browser UI:
+
+```powershell
+$OutputEncoding = [System.Text.UTF8Encoding]::new()
+@'
+import json
+from urllib.request import build_opener, HTTPRedirectHandler
+from urllib.error import HTTPError
+class NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+opener = build_opener(NoRedirect)
+for path, status, content_type in [('/admin/', 302, 'text/html'), ('/admin/login/', 200, 'text/html'), ('/static/admin/css/base.css', 200, 'text/css'), ('/api/health/', 200, 'application/json')]:
+    try:
+        response = opener.open('http://127.0.0.1:18003' + path, timeout=15)
+    except HTTPError as error:
+        response = error
+    with response:
+        body = response.read()
+        assert response.status == status, (path, response.status)
+        assert response.headers.get_content_type() == content_type
+        if path == '/admin/':
+            assert response.headers['Location'] == '/admin/login/?next=/admin/'
+        elif path == '/admin/login/':
+            assert 'Checkist — администрирование' in body.decode('utf-8')
+        elif path == '/api/health/':
+            assert json.loads(body) == {'status': 'ok', 'checks': {name: {'status': 'ok'} for name in ('database', 'redis', 'celery')}}
+            assert response.headers['Cache-Control'] == 'no-store'
+        print(path, status, content_type, 'OK')
+'@ | ./backend/.venv/Scripts/python.exe -X utf8 -
+```
+
+После HTTP runserver остановлен Ctrl+C в управляемой PTY-сессии (exit 1 вследствие прерывания). QA была остановлена, затем поднята повторно для исправленной HTTP-проверки командой `docker compose -p checkist_qa_f3 up -d --wait --wait-timeout 120 postgres redis worker` (exit 0); финальный `down` снова exit 0. Журналы полного тестового прогона хранились во временной папке вне репозитория; реальные данные/секреты в документы не переносились.
+
+### Проверено и не прошло
+
+Упавших тестов продукта и обязательных проверок нет. Сохранены три сбоя вспомогательных скриптов; код приложения не менялся, ожидания тестов не ослаблялись:
+
+- Discovery: `manage.py shell -c 'from collections import Counter; from django.test.runner import DiscoverRunner; runner = DiscoverRunner(verbosity=0); suite = runner.build_suite(["catalog", "stores", "receipts", "health"]); tests = list(runner._flatten_suite(suite)) if hasattr(runner, "_flatten_suite") else []; print(len(tests))'` — exit 1, `NameError: name 'catalog' is not defined`. PowerShell потерял внутренние кавычки native-аргумента. Исправлено передачей Python через here-string/stdin и использованием `iter_test_cases`; discovery вернул текущие числа, exit 0. Это не запуск тестов.
+- Первый подсчёт verbose-лога через `./backend/.venv/Scripts/python.exe -X utf8 -` и regex `\((catalog|stores|receipts|health)\.tests\.[^)]+\) \.\.\. ok` — exit 1, `AssertionError`: найдено 63 вместо 67. PowerShell форматирует перенаправленный stderr с переносами строк, а тест безопасного 500 вставляет журнал между ID и `ok`. Исправленный подсчёт уникальных полных test IDs без требования соседства `ok` подтвердил 67 и 363, сверив `Ran … / OK`, exit 0. Сам runner обе команды завершил с exit 0.
+- Первый запуск HTTP-валидатора выше **без** строки `$OutputEncoding = …` — exit 1 на сравнении русского заголовка login. Диагностика показала `OutputEncoding=us-ascii` и поступившую в Python строку `Checkist ? ?????????????????`. При явном UTF-8 тот же валидатор с прежними assertions прошёл все четыре URL, exit 0. Этот отказ не был отказом страницы: сервер оба раза вернул 200 HTML.
+
+### Не проверено и почему
+
+- Визуальная/интерактивная приёмка админки и SPA, реальный вход с паролем, скриншоты — по правилам выполняет человек. Подготовить QA, `createsuperuser`, runserver на QA-порту; пройти [сценарий админки](#ручная-приёмка-админки-человеком), особенно шаги 6–8. Для SPA дополнительно запустить QA Vite и пройти [отдельный сценарий](#ручная-ui-приёмка-человеком). HTTP и `django.test.Client` этих результатов не подтверждают.
+- Frontend lint/unit/build, Vite proxy и stop/recovery зависимостей в F3 не повторялись: код frontend/health/Compose не менялся, задача — документация F1/F2 и полный серверный прогон. Воспроизводимые команды и прежние результаты сохранены выше; текущий health подтверждён contract/integration-тестами и HTTP 200.
+- Полная копия тестового прогона внутри Linux worker не выполнялась: host TCP работал, все 430 тестов выполнены на Windows против QA Postgres/Redis; контейнер проверен командами таблицы. Linux-раздел выше — воспроизводимый fallback при недоступности host-пути.
+- Откат/revert F1/F2, восстановление `pg_dump`, нагрузка и длительная блокировка строк F1 сверх 2 с не выполнялись; схема не менялась, revert вернул бы исправленные дефекты. Для нагрузки/таймаутов нужна отдельная QA-проверка с представительным объёмом и управляемой блокировкой; пределы описаны в [data-model.md](data-model.md#конкурентные-правки). При необходимости проверки миграционного отката — отдельный пустой QA-проект и команды раздела [модели данных](#модель-данных-catalog-stores-receipts), восстановление дампа — в новую БД со сравнением строк.
+
 ## Фактические результаты проверки админки, 2026-10-03
+
+Исторический прогон до F1/F2: числа 67/342 и 73/183 ниже не являются текущими. Актуальные результаты — в [прогоне F3](#фактические-результаты-исправлений-f1f2-2026-10-04).
 
 Задача T5 (`task_musmfb796y`): состояние ветки после слияния T1–T4 (`f164bad`) плюс правки документов; код и тесты в этой задаче не менялись. Windows-хост: Python 3.13.9, Docker/Linux daemon. Использованы только Compose project и БД `checkist_qa`, тестовая `test_checkist_qa`, Postgres 25432, Redis 16379, Django 18000 — полный QA environment выше. Перед запуском контейнеров project и слушателей на QA-портах не было. Том `checkist_qa` существовал от прежних прогонов. Dev-контейнеры `checkist_dev` работали параллельно и не затрагивались.
 
@@ -453,7 +559,7 @@ console.log('Stopped API: proxy empty 502; real adapter returns network error')
 
 ## Фактические результаты проверки модели данных, 2026-10-03
 
-Числа тестов в этом разделе (62 и 158) относятся к состоянию до появления админки; актуальные — в [результатах проверки админки](#фактические-результаты-проверки-админки-2026-10-03). Источник: задача T5 (`task_musd0fst2t`), состояние ветки после слияния T0–T4; код и тесты в этой задаче не менялись. Windows-хост: Python 3.13.9, Docker 29.8.1 (Linux daemon), Postgres 17.11. Использован отдельный Compose project `checkist_qa_t5` с новыми томами, БД `checkist_qa_t5`, тестовая БД `test_checkist_qa_t5`, Postgres 25432, Redis 16379: том `checkist_qa` уже существовал и не гарантировал пустую БД. Dev-данные и локальный Postgres не затронуты. Environment — блок выше с `POSTGRES_DB = "checkist_qa_t5"`.
+Числа тестов в этом разделе (62 и 158) относятся к состоянию до появления админки; актуальные — в [прогоне F3](#фактические-результаты-исправлений-f1f2-2026-10-04). Источник: задача T5 (`task_musd0fst2t`), состояние ветки после слияния T0–T4; код и тесты в этой задаче не менялись. Windows-хост: Python 3.13.9, Docker 29.8.1 (Linux daemon), Postgres 17.11. Использован отдельный Compose project `checkist_qa_t5` с новыми томами, БД `checkist_qa_t5`, тестовая БД `test_checkist_qa_t5`, Postgres 25432, Redis 16379: том `checkist_qa` уже существовал и не гарантировал пустую БД. Dev-данные и локальный Postgres не затронуты. Environment — блок выше с `POSTGRES_DB = "checkist_qa_t5"`.
 
 ### Проверено и прошло
 
