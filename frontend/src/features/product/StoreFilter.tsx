@@ -48,7 +48,7 @@ export default function StoreFilter({ country, value, initial, error, onChange, 
       <p id="product-store-note" className="product-note">{unavailable ? 'Фильтр магазина недоступен. История и остальные фильтры работают; выбранный магазин можно убрать кнопкой ниже.' : 'Начальные варианты из карточки могут быть неполными (до 50). Поиск охватывает все магазины выбранной страны, в том числе без покупок этого товара.'}</p>
       {error && <p className="product-field-error" id="product-store-error">{error}</p>}
       {value && <button type="button" className="product-secondary" onClick={() => onChange('')}>Убрать магазин</button>}
-      <label htmlFor="product-store-search">Найти магазин по названию, городу или адресу</label>
+      <label htmlFor="product-store-search">Найти магазин по названию или городу</label>
       <div className="product-store-search">
         <input id="product-store-search" type="search" value={text} onChange={(event) => { setText(event.target.value); setSearchError('') }}
           onKeyDown={(event) => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); find() } }}

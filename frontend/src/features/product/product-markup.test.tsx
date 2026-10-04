@@ -77,6 +77,6 @@ describe('price content and semantic markup (SSR in Node, not browser acceptance
     expect(html).toContain('Налоговая база цен не указана')
     expect(html).toContain('Скидка всего чека не распределена')
     expect(html).toContain('for="product-date_from"')
-    expect(html).toContain('for="product-store-search"')
+    expect(html).toContain('<label for="product-store-search">Найти магазин по названию или городу</label>')
   })
 })

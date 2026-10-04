@@ -102,7 +102,7 @@ Feature-экраны рендерятся под общим h1, собствен
 
 ## Каталог, карточка и история: подключение F5
 
-Frontend рассчитан на backend-ветку `feature/run_musab3irq-sdelay-bekend-api-dlya-prosmotra-produkt`, снимок `5e1adfa`. Она **не слита** в текущую ветку: её backend сейчас обслуживает только health. Схемы и семантика API принадлежат [контракту backend](api-contract.md#реализовано-api-чтения-каталога-и-цен); до слияния читать его через `git show 5e1adfa:docs/api-contract.md`. Подготовительные источники: `orca-board task answer --task task_mutu93ml5l` (§1–3, §6) и `orca-board task answer --task task_muttmo9x5b` (§3–5; его старый API-план заменён первым ответом). Исторический абзац об API ниже сохранён для минимального пересечения с backend-правкой; состояние подключённого каталога описано здесь.
+В F6 в текущую frontend-ветку слит `main` (`55b53af`): backend API каталога и Django admin теперь находятся в этом же worktree. Коммит слияния — `913fceac80c0a5bd336036671f0ef008cee4af2c`. Адаптеры F1 написаны против API `5e1adfa`; файлы `backend/api/**` в слитом `main` совпадают с этим снимком. Схемы и семантика API принадлежат [контракту backend в нашей ветке](api-contract.md#реализовано-api-чтения-каталога-и-цен). Подготовительные источники: `orca-board task answer --task task_mutu93ml5l` (§1–3, §6) и `orca-board task answer --task task_muttmo9x5b` (§3–5; его старый API-план заменён первым ответом). Реальные результаты F6 и доступные QA-данные — [отчёт приёмки](../frontend/F6_ACCEPTANCE.md).
 
 | Экран / владелец состояния | Данные и поведение |
 | --- | --- |
@@ -111,7 +111,7 @@ Frontend рассчитан на backend-ветку `feature/run_musab3irq-sdela
 | `features/product/ProductPage` | Данные конкретного Product, возврат в исходный список с query; прямой вход предлагает категорию. Detail, history, summary и магазины имеют отдельные запросы/ошибки/повторы |
 | `PriceHistory` | Семантическая таблица, новые покупки сначала, 50 наблюдений на страницу, фильтры магазина/страны/валюты/локального периода. При смене только page и локальном повторе фокус получает стабильный заголовок истории; смена фильтров оставляет фокус в форме |
 | `PriceSummary` | Серверные min/max/avg/первая/последняя цена/динамика по магазину, валюте и фактической единице, за весь выбранный период. Из страницы истории сводка не вычисляется |
-| `StoreFilter` | Начальные магазины из карточки плюс отдельный справочник: поиск названия/города/адреса, страна и страницы по 50. Поиск справочника локален; применённые фильтры истории записаны в URL |
+| `StoreFilter` | Начальные магазины из карточки плюс отдельный справочник: поиск названия/города, страна и страницы по 50. Адрес показывается в вариантах выбора, но в серверном поиске не участвует. Поиск справочника локален; применённые фильтры истории записаны в URL |
 
 Используемые GET с завершающим `/`: `/api/categories/`, `/api/categories/{id}/`, `/api/products/`, `/api/products/{id}/`, `/api/products/{id}/prices/`, `/api/products/{id}/prices/summary/`, `/api/stores/`. CLI дополнительно проверяет `/api/generic-products/` и `/api/generic-products/{id}/`; UI получает варианты generic из категории. Описание полей, ошибок и лимитов — только в контракте backend. Экран альтернатив и конвертация валют в этот интерфейс не входят.
 
@@ -149,7 +149,7 @@ node frontend/scripts/check_catalog_proxy.mjs healthy http://127.0.0.1:15174
 
 ## Health-экран
 
-`frontend/` — клиентский каркас React 19, TypeScript и Vite. Страница на русском языке показывает состояние настоящего анонимного `GET /api/health/`: API, базы данных, Redis и Celery. Заглушек, пользовательского входа и бизнес-данных в приложении нет. Контракт принадлежит backend: [api-contract.md](api-contract.md).
+Health-страница React 19, TypeScript и Vite на русском языке показывает состояние настоящего анонимного `GET /api/health/`: API, базы данных, Redis и Celery. На этой технической странице бизнес-данные не выводятся; каталог и история доступны на отдельных маршрутах выше. Заглушек и пользовательского входа в SPA нет. Контракт принадлежит backend: [api-contract.md](api-contract.md).
 
 Компонент `src/pages/HealthPage.tsx` владеет состоянием технической страницы и кнопкой повтора, `src/api/health.ts` — запросом и runtime-проверкой JSON. Перенос из App сохраняет state/effect, AbortController, generation guard, словари статусов и повтор. Навигация реализована локально, глобальное состояние, UI-библиотеки, внешние шрифты и изображения не используются.
 
@@ -173,10 +173,9 @@ node frontend/scripts/check_catalog_proxy.mjs healthy http://127.0.0.1:15174
 
 - База данных фото чеков.
 - Распознавание магазина и адреса, товаров и их стоимостей.
-- Категории товаров.
 - Дашборд со статистикой.
 
-Эти функции на странице представлены только текстовым списком. OCR-провайдер и пользовательское разграничение не выбраны. Предметная модель данных чеков реализована и описана в [data-model.md](data-model.md); к ней есть HTTP API только на чтение ([api-contract.md](api-contract.md#реализовано-api-чтения-каталога-и-цен)), но страница его не использует.
+Health-экран сохраняет исторический список будущих функций scaffold, включая категории; реализованный каталог находится на `/catalog`. Фото, OCR и дашборд пока не реализованы. OCR-провайдер и пользовательское разграничение не выбраны. Предметная модель данных чеков реализована и описана в [data-model.md](data-model.md); её HTTP API только на чтение ([api-contract.md](api-contract.md#реализовано-api-чтения-каталога-и-цен)) используют экраны каталога и товара.
 
 ## Версии и установка
 
@@ -275,7 +274,7 @@ docker compose -p checkist_qa up -d --build --wait --wait-timeout 120 worker
 ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py check_services
 ```
 
-Каждый шаг должен завершиться с exit 0. Тестовые пользователи, фотографии и чеки не нужны: endpoint анонимный, достаточно стандартных технических таблиц Django. Доступа к бизнес-объектам этот каркас не предоставляет.
+Каждый шаг должен завершиться с exit 0. Для health тестовые пользователи, фотографии и чеки не нужны: endpoint анонимный. Для каталога нужны данные предметной модели; подготовка и проверка описаны ниже. Django admin доступен напрямую на API-порту `/admin/`, как описано в development.md; Vite проксирует только `/api`.
 
 Терминал API (QA overrides применены):
 
@@ -303,29 +302,36 @@ curl.exe -i --max-time 15 http://127.0.0.1:15173/api/health/
 
 Ожидается **200 → 503 → 200**; в 503 БД/Redis `ok`, Celery `worker_unavailable`. Curl exit 0 сам по себе не доказывает 200 — сверить HTTP и тело.
 
-## Реальная проверка каталога до слияния backend
+## Реальная проверка каталога в нашей ветке
 
-Это команды для **человека / следующего этапа**, в F5 они не выполнялись. Они соответствуют §3 ответа `task_mutu93ml5l`: QA API читает соседний worktree, Vite — наш frontend. Соседние файлы/ветку не менять, не устанавливать туда зависимости и не создавать там pycache. В каждом терминале применить весь QA environment выше; credentials задать процессом по выделенному QA-тому. При занятой `checkist_qa` согласовать отдельные project/БД/порты; CLI имеет guard именно `checkist_qa`, его не ослаблять и не выдавать за успешный прогон в другой БД.
+API и Vite запускаются из **нашего worktree**, с `backend/manage.py`. В каждом терминале применить весь QA environment выше; credentials задать процессом по выделенному QA-тому. Перед запуском проверить отсутствие чужой проверки `checkist_qa` и занятых портов; чужие контейнеры и данные не останавливать и не очищать. CLI имеет guard именно `checkist_qa`, его не ослаблять и не выдавать за успешный прогон в другой БД. Порядок и ограничения — [verification.md](verification.md#изолированная-qa-среда) и [development.md](development.md).
 
-Подготовить собственные venv/.env по development.md; существующий .env не перезаписывать. Нужна свободная **пустая выделенная** QA. Путь к backend-worktree задаёт человек (например, worktree `run_musab3irq`); сверить его HEAD с владельцем и снимком `5e1adfa`, зафиксировать оба SHA в отчёте. Из нашего корня:
+Подготовить собственные venv/.env по development.md; существующий .env не перезаписывать. Из нашего корня:
 
 ```powershell
-$backendWorktree = Read-Host "Абсолютный путь к backend worktree run_musab3irq"
-git -C $backendWorktree rev-parse HEAD
-$qaManage = Join-Path $backendWorktree "backend/manage.py"
 docker compose -p checkist_qa config --quiet
 docker compose -p checkist_qa up -d --wait --wait-timeout 90 postgres redis
 # Теперь ограниченные TCP-пробы 25432/16379 по development.md.
 # Только если они прошли:
-./backend/.venv/Scripts/python.exe -B -X utf8 $qaManage check
-./backend/.venv/Scripts/python.exe -B -X utf8 $qaManage migrate --noinput
-./backend/.venv/Scripts/python.exe -B -X utf8 $qaManage shell -c "from django.db import transaction; from api.tests.factories import save_samples; transaction.atomic()(save_samples)()"
-./backend/.venv/Scripts/python.exe -B -X utf8 $qaManage runserver 127.0.0.1:18000 --noreload
+./backend/.venv/Scripts/python.exe -X utf8 -m pip check
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py check
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py makemigrations --check --dry-run
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py migrate --noinput
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test catalog stores receipts health api --exclude-tag=integration --verbosity=2
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test catalog stores receipts health api --tag=integration --verbosity=2
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py shell -c "from catalog.models import Product; from receipts.models import Receipt; print('products', Product.objects.count(), 'receipts', Receipt.objects.count())"
 ```
 
-Exit каждого шага проверить отдельно; после ошибки зависимые шаги не выполнять. Загрузка `save_samples` транзакционная, **не идемпотентная**: выполнять один раз в пустой QA, повтор даёт дубликаты/IntegrityError. После backend merge заменить `$qaManage` на `backend/manage.py`. Не очищать чужие тома ради образцов. Базовый набор даёт три товара/магазина и шесть покупок Lidl, достаточных для CLI; расширенная ручная приёмка требует дополнительных данных.
+Exit каждого шага проверить отдельно; после ошибки зависимые шаги не выполнять. Если образцы уже есть, использовать их. Только при подтверждённо пустом каталоге/чеках внести образцы способом из [verification.md](verification.md#http-api-чтения), с транзакцией на весь вызов:
 
-Для расширенного сценария в этой же новой QA через ORM и существующие `api.tests.factories` добавить: пустую категорию, Product без покупок (`make_product`), вторую валюту (`second_currency`), наблюдение одного Product в другой точке (`observe`), несовместимую единицу (`unit_mismatch`) и длинные названия/адреса. ID получить из ORM/API. Один процесс транзакционной подготовки должен использовать один набор фабрик; не выдавать многократные отдельные shell-вызовы с повторяющимися factory-номерами за идемпотентный seed. Для >50 магазинов и UI-пагинации товаров/истории нужны представительные дополнительные записи; базовые образцы эти объёмы не подтверждают.
+```powershell
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py shell -c "from django.db import connection, transaction; from catalog.models import Product; from receipts.models import Receipt; from api.tests.factories import save_samples; assert connection.settings_dict['NAME'] == 'checkist_qa'; assert not Product.objects.exists() and not Receipt.objects.exists(); transaction.atomic()(save_samples)()"
+docker compose -p checkist_qa up -d --build --wait --wait-timeout 120 worker
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py check_services
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py runserver 127.0.0.1:18000 --noreload
+```
+
+**Пропустить только первую команду**, если данные уже есть. Загрузка `save_samples` **не идемпотентная**: повтор даёт IntegrityError. Тома ради образцов не очищать. В F6 базовые образцы и дополнения загружены в `checkist_qa` и сохранены после `down`; повторная загрузка для ручной приёмки не нужна. Состав, реальные ID, цены и воспроизводимая подготовка — [отчёт F6](../frontend/F6_ACCEPTANCE.md). Через существующие фабрики `observe`/`make_product` и ORM добавлены один товар во второй точке/валюте, Product без покупок и пустая категория. Для >50 магазинов и UI-пагинации товаров/истории нужны представительные дополнительные записи; этот небольшой QA-набор такие объёмы не подтверждает.
 
 Во втором терминале (полный QA-блок, корень нашего worktree):
 
@@ -339,7 +345,11 @@ npm.cmd run dev -- --port 15173
 
 ```powershell
 node frontend/scripts/check_catalog_proxy.mjs healthy
-curl.exe -i --max-time 15 "http://127.0.0.1:15173/api/products/?page_size=2"
+node backend/scripts/check_health_proxy.mjs healthy
+# Дополнительные пробы требуют сохранённых образцов и дополнений F6:
+node frontend/scripts/check_catalog_samples.mjs
+curl.exe -i --max-time 15 "http://127.0.0.1:15173/api/products/?page_size=1&page=1"
+curl.exe -i --max-time 15 "http://127.0.0.1:15173/api/products/?page_size=1&page=2"
 ```
 
 Curl exit 0 не подтверждает HTTP 200: сверить статус и тело. Отдельные проверки отказов: остановка **своего** QA Postgres даёт catalog `500 internal_error`, остановка своего API — ошибку соединения либо не-JSON proxy-ответ; восстановить и повторить `healthy`. Catalog GET должен работать при недоступных Redis/worker. Для health-регрессии поднять QA worker из своего Compose, выполнить `check_services` и `node backend/scripts/check_health_proxy.mjs healthy`; worker/postgres/redis stop/recovery — строго по verification.md, по одному отказу. Скрипт health не менялся. Контрактные mocks и сборка не заменяют эти проверки.
@@ -440,11 +450,13 @@ console.log('SPA fallback: 9 paths / 18 GETs passed; React/browser behavior not 
 ### Не проверено и почему
 
 - Browser runtime, реальные Back/Forward/reload, focus/keyboard/screen reader, адаптив/zoom и взаимодействие с кнопкой повтора — выполняет человек по сценариям выше. Автоматический обход UI не использовался; скриншотов нет. In-memory History и HTML через Node этого не подтверждают.
-- Настоящие API каталога/цен отсутствуют в этой ветке (backend 5e1adfa не слит); F2 не реализует feature-экраны и не запускает соседний backend. HTTP/QA-данные и приёмка каталога — F5 после подключения F1/F3/F4. Health через настоящие QA-сервисы в F2 не прогонялся; его адаптерные tests и статическая сверка переноса прошли, ручной сценарий сохранён.
+- На этапе F2 каталог ещё не был подключён к API; feature-экраны и настоящий HTTP в F2 не проверялись. Это историческое ограничение: актуальные результаты после подключения F1/F3/F4 и слияния main — в [отчёте F6](../frontend/F6_ACCEPTANCE.md). Health через настоящие QA-сервисы в F2 не прогонялся; его адаптерные tests и статическая сверка переноса прошли, ручной сценарий сохранён.
 - В F2 RequestState error/loading и Pagination не выводились в каталог-заглушки ради демонстрации. В F5 они подключены настоящими feature-экранами; их поведение с настоящими запросами принимает человек по новому сценарию выше.
 - Production hosting/fallback, публикация и merge не выполнялись и не обещаются.
 
 ## Фактическая проверка F5, 2026-10-04
+
+Это исторический отчёт до слияния main. Актуальный прогон F6: [frontend/F6_ACCEPTANCE.md](../frontend/F6_ACCEPTANCE.md) — 179 backend-тестов без БД, 671 integration-тест, настоящий каталог/health через proxy, 472 frontend-теста и финальные lint/build. Визуальную и интерактивную приёмку выполняет человек.
 
 Windows / PowerShell, Node **24.18.0**, npm **11.16.0**; свой frontend-worktree. БД, Docker/Compose, соседний backend и браузер не запускались. Проверки Node не обращались к dev/QA-БД. Изменены подключение в App, CLI, его Node-проверки подключения и этот документ. Минимальное исправление внутри F4 — только `PriceHistory.tsx`: стабильный фокус заголовка при пагинации/повторе вместо исчезающей ссылки/кнопки. Экраны каталога, адаптеры, схема backend, зависимости и lock не менялись.
 
@@ -467,7 +479,7 @@ Windows / PowerShell, Node **24.18.0**, npm **11.16.0**; свой frontend-workt
 
 ### Не проверено и почему
 
-- Настоящие категории/товары/detail/prices/summary/stores, две страницы и 400/404 через живой API/proxy **не проверены**: backend `5e1adfa` не слит, наш API таких маршрутов не имеет. Команды реального прогона до merge — раздел «Реальная проверка каталога до слияния backend». Наличие CLI и его negative-результат не закрывают интеграционную приёмку.
+- На этапе F5 настоящий каталог/HTTP/proxy-прогон ещё не выполнялся; negative-результат F5 не закрывал интеграционную приёмку. Актуальные команды — раздел «Реальная проверка каталога в нашей ветке», результаты после слияния main — [отчёт F6](../frontend/F6_ACCEPTANCE.md).
 - QA-данные, Postgres `500 internal_error`, независимость каталога от Redis/worker, настоящий health stop/recovery не проверены: QA-сервисы не запускались. Воспроизведение — тот же раздел плюс verification.md; health-адаптерные tests прошли.
 - Что **человеку проверить глазами и действиями**: основной путь и возврат с query/фокусом, прямые URL/Back/Forward/reload, загрузка/пустые/ошибочные/частичные состояния и повтор, Slow network/Offline/timeout/гонки, клавиатура и screen reader, переносы/таблица/scroll на 320/375/768/1280 px и zoom 200%, затем health-сценарий. Точные шаги — раздел «Ручная приёмка каталога человеком». Скриншотов, автоматического browser runtime и визуальной приёмки нет; показанный markdown — документация и сценарий, не макет или подтверждение внешнего вида.
 - Production hosting, deployment, release и merge не выполнялись. Созданных серверных процессов/QA-контейнеров нет, поэтому останавливать их или делать Compose down в F5 не потребовалось.
