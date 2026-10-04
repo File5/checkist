@@ -1,11 +1,15 @@
+from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
+from threading import Event
+from unittest.mock import patch
 
 from django.contrib import admin
 from django.contrib.auth import get_user_model
-from django.db import connection
-from django.test import Client, TestCase, tag
+from django.db import connection, connections
+from django.test import Client, TestCase, TransactionTestCase, tag
 from django.test.utils import CaptureQueriesContext
 
+from catalog.admin import CategoryAdminForm
 from catalog.models import Brand, Category, GenericProduct, Product
 from catalog.units import BaseUnit, Unit
 
@@ -398,10 +402,52 @@ class SaveTests(CatalogAdminTestCase):
             (self.product.package_quantity, self.product.package_unit), (Decimal("900"), Unit.ML),
         )
 
+    def test_add_product_with_empty_attributes(self):
+        for index, attributes in enumerate(("", None, "null")):
+            with self.subTest(attributes=attributes):
+                name = f"Молоко без атрибутов {index}"
+                data = self.product_data(name=name, attributes=attributes)
+                if attributes is None:
+                    del data["attributes"]
+                response = self.client.post(admin_url(Product, "add"), data)
+                self.assert_saved(response, Product)
+                self.assertEqual(Product.objects.get(name=name).attributes, {})
+
+    def test_change_product_with_empty_attributes(self):
+        for attributes in ("", None, "null"):
+            with self.subTest(attributes=attributes):
+                Product.objects.filter(pk=self.product.pk).update(attributes={"fat_percent": 2.5})
+                data = self.product_data(name="Молоко без атрибутов", attributes=attributes)
+                if attributes is None:
+                    del data["attributes"]
+                response = self.client.post(admin_url(Product, self.product.pk, "change"), data)
+                self.assert_saved(response, Product)
+                self.product.refresh_from_db()
+                self.assertEqual(self.product.attributes, {})
+                self.assertEqual(self.product.name, "Молоко без атрибутов")
+
 
 @tag("integration")
 class ConstraintErrorTests(CatalogAdminTestCase):
     """A violated unique or check constraint is a form error, not a server error."""
+
+    def test_invalid_product_attributes_on_add(self):
+        response = self.client.post(
+            admin_url(Product, "add"), self.product_data(attributes='{"fat_percent":'),
+        )
+        self.assert_form_error(response, "attributes", "JSON")
+        self.assertEqual(Product.objects.count(), 1)
+
+    def test_invalid_product_attributes_on_change_preserve_object(self):
+        Product.objects.filter(pk=self.product.pk).update(attributes={"fat_percent": 2.5})
+        self.product.refresh_from_db()
+        original = Product.objects.values().get(pk=self.product.pk)
+        response = self.client.post(
+            admin_url(Product, self.product.pk, "change"),
+            self.product_data(name="Не сохранять", attributes='{"fat_percent":'),
+        )
+        self.assert_form_error(response, "attributes", "JSON")
+        self.assertEqual(Product.objects.values().get(pk=self.product.pk), original)
 
     def test_duplicate_category_within_parent(self):
         response = self.client.post(
@@ -574,6 +620,139 @@ class CategoryCycleTests(CatalogAdminTestCase):
             {"name": "Йогурты", "parent": first.pk},
         )
         self.assertRedirects(response, admin_url(Category), fetch_redirect_response=False)
+
+
+@tag("integration")
+class CategoryConcurrencyTests(TransactionTestCase):
+    """Real commits and separate Postgres connections are essential for the race."""
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_superuser(
+            "tree-admin", password="test-only-password",
+        )
+        self.first = Category.objects.create(name="Раздел A")
+        self.second = Category.objects.create(name="Раздел B")
+        self.first_client = Client()
+        self.first_client.force_login(self.user)
+        self.second_client = Client()
+        self.second_client.force_login(self.user)
+
+    def post_on_separate_connection(self, client, url, data):
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT pg_backend_pid()")
+                backend_pid = cursor.fetchone()[0]
+                cursor.execute("SHOW statement_timeout")
+                self.assertEqual(cursor.fetchone()[0], "2s")
+            return backend_pid, client.post(url, data)
+        finally:
+            # Thread-local connections must close before the runner drops the DB.
+            connections.close_all()
+
+    def assert_parent_error(self, response, code):
+        self.assertEqual(response.status_code, 200)
+        errors = response.context["adminform"].form.errors.as_data()
+        self.assertIn("parent", errors)
+        self.assertIn(code, [error.code for error in errors["parent"]])
+
+    def test_opposite_parent_changes_recheck_after_the_other_commit(self):
+        first_checked, second_checked, first_committed = Event(), Event(), Event()
+        original_clean = CategoryAdminForm.clean_parent
+
+        def coordinated_clean(form):
+            parent = original_clean(form)
+            if form.instance.pk == self.first.pk:
+                first_checked.set()
+                self.assertTrue(second_checked.wait(10), "Second parent check did not run")
+            elif form.instance.pk == self.second.pk:
+                second_checked.set()
+                self.assertTrue(first_committed.wait(10), "First request did not commit")
+            return parent
+
+        def change_first():
+            try:
+                return self.post_on_separate_connection(
+                    self.first_client, admin_url(Category, self.first.pk, "change"),
+                    {"name": self.first.name, "parent": self.second.pk},
+                )
+            finally:
+                first_committed.set()
+
+        with patch.object(CategoryAdminForm, "clean_parent", coordinated_clean):
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                first_future = executor.submit(change_first)
+                try:
+                    self.assertTrue(first_checked.wait(10), "First parent check did not run")
+                    second_future = executor.submit(
+                        self.post_on_separate_connection,
+                        self.second_client, admin_url(Category, self.second.pk, "change"),
+                        {"name": "Не сохранять", "parent": self.first.pk},
+                    )
+                    first_pid, first_response = first_future.result(timeout=15)
+                    second_pid, second_response = second_future.result(timeout=15)
+                finally:
+                    second_checked.set()
+                    first_committed.set()
+        self.assertNotEqual(first_pid, second_pid)
+        self.assertEqual(first_response.status_code, 302)
+        self.assert_parent_error(second_response, "category_cycle")
+        self.first.refresh_from_db()
+        self.second.refresh_from_db()
+        self.assertEqual(self.first.parent_id, self.second.pk)
+        self.assertIsNone(self.second.parent_id)
+        self.assertEqual(self.second.name, "Раздел B")
+
+    def assert_busy_tree_rejects_post(self, url, data, adding):
+        validated, release_save = Event(), Event()
+        category_admin = admin.site.get_model_admin(Category)
+        original_save = category_admin.save_model
+
+        def paused_save(request, obj, form, change):
+            if obj.pk == self.first.pk:
+                validated.set()
+                self.assertTrue(release_save.wait(10), "First save was not released")
+            return original_save(request, obj, form, change)
+
+        with patch.object(category_admin, "save_model", paused_save):
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                first_future = executor.submit(
+                    self.post_on_separate_connection,
+                    self.first_client, admin_url(Category, self.first.pk, "change"),
+                    {"name": "Раздел A обновлён", "parent": self.second.pk},
+                )
+                try:
+                    self.assertTrue(validated.wait(10), "First request did not validate")
+                    second_future = executor.submit(
+                        self.post_on_separate_connection, self.second_client, url, data,
+                    )
+                    second_pid, response = second_future.result(timeout=5)
+                    self.assert_parent_error(response, "category_tree_busy")
+                    self.assertEqual(Category.objects.count(), 2)
+                    self.second.refresh_from_db()
+                    self.assertEqual(self.second.name, "Раздел B")
+                    self.assertIsNone(self.second.parent_id)
+                finally:
+                    release_save.set()
+                first_pid, first_response = first_future.result(timeout=15)
+        self.assertNotEqual(first_pid, second_pid)
+        self.assertEqual(first_response.status_code, 302)
+        # The transaction lock is released on commit; a safe retry can save.
+        response = self.second_client.post(url, data)
+        self.assertEqual(response.status_code, 302)
+        saved = Category.objects.get(name=data["name"])
+        self.assertIsNone(saved.parent_id)
+        self.assertEqual(Category.objects.count(), 3 if adding else 2)
+
+    def test_add_root_is_rejected_while_another_category_is_being_saved(self):
+        self.assert_busy_tree_rejects_post(
+            admin_url(Category, "add"), {"name": "Раздел C", "parent": ""}, adding=True,
+        )
+
+    def test_change_root_is_rejected_while_another_category_is_being_saved(self):
+        self.assert_busy_tree_rejects_post(
+            admin_url(Category, self.second.pk, "change"),
+            {"name": "Раздел B обновлён", "parent": ""}, adding=False,
+        )
 
 
 @tag("integration")
