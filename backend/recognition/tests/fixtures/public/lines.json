@@ -1,0 +1,39 @@
+{
+  "count": 1,
+  "page": 1,
+  "page_size": 50,
+  "pages": 1,
+  "results": [
+    {
+      "id": 101,
+      "position": 1,
+      "kind": "product",
+      "parent_id": null,
+      "name": "MILCH 1 L",
+      "name_i18n": {},
+      "store_item_code": "M1",
+      "barcode": "",
+      "quantity": "2.000",
+      "unit": "pcs",
+      "unit_price": "1.2900",
+      "amount": "2.58",
+      "discount_amount": "0.20",
+      "paid_amount": "2.38",
+      "product": {
+        "id": 61,
+        "name": "Молоко 1 л"
+      },
+      "matching_status": "matched",
+      "tax_rate": {
+        "id": 1,
+        "country": "DE",
+        "kind": "vat",
+        "rate": "7.00"
+      },
+      "tax_code": "A",
+      "tax_amount": null,
+      "is_excise": false,
+      "is_marked": false
+    }
+  ]
+}

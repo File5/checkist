@@ -472,6 +472,166 @@ D1 меняет прежние 500/HTML-отказы клиентского вв
 
 `get(timeout=5)` ограничивает ожидание результата, но не всю команду вместе с SQL/cache/connect. Истечение timeout не отменяет принятую task. Позднее выполнение безопасно для ping; для будущих пользовательских задач понадобится отдельное решение об идемпотентности. HTTP health не ставит task в очередь и не читает results DB 1.
 
+## Реализовано: локальный API распознавания и чеков (облегчённая v1, С5)
+
+Потребитель — клиент загрузки фото, опроса заданий и просмотра чеков. HTTP-слой использует модели и сервисы `recognition` С1; провайдер из HTTP не вызывается. Pipeline и импорт принадлежат С3/С4 и проверяются отдельно. Существующие 13 GET каталога/цен и health сохраняют свои формы и анонимный доступ.
+
+### Доступ, CSRF, тело и пагинация
+
+Все новые маршруты доступны только при `DEBUG=True`, `ALLOW_LOCAL_RECOGNITION_API=True` и loopback `REMOTE_ADDR` (`127.0.0.1`, `::1`); иначе `403 permission_denied`. `X-Forwarded-For` не учитывается. Это единое локальное пространство данных: пользователей, владельцев объектов и разграничения чеков нет. Session/Basic не используются (`authentication_classes=[]`).
+
+Любой небезопасный метод проходит явную CSRF-проверку **для анонимного запроса тоже**, до разбора тела: Django проверяет cookie, заголовок `X-CSRFToken`, Origin и HTTPS Referer. Token в multipart-поле не принимается. Отказ — `403 csrf_failed` без причины Django и пользовательских значений. Получить token и cookie: `GET /api/recognition/csrf/`. Клиент отправляет `credentials: "same-origin"`, `Accept: application/json`, `X-CSRFToken`; Vite Origin должен входить в `DJANGO_CSRF_TRUSTED_ORIGINS`. CORS не добавлен.
+
+Загрузка — `multipart/form-data`, ровно один бинарный `file`; дополнительные поля — `400 invalid_request`, отсутствующий, строковый или повторённый `file` — `400 invalid_parameter` с `fields.file`. Cancel/retry принимают ровно JSON `{}` в UTF-8; пустое тело, массив, null, неизвестные/повторные ключи, NaN и неверная кодировка — `400 invalid_request`; неподходящий Content-Type — `415 unsupported_media_type`. Тело этих действий ограничено 4096 байтами. GET не читает тело. HEAD/OPTIONS стандартные DRF; действия поддерживают POST/OPTIONS. Все ответы новых views имеют `Cache-Control: no-store`, только JSONRenderer. Отказы общего middleware до view сохраняют существующие заголовки/формат.
+
+Завершающий `/` обязателен; запись без него получает существующий `400 invalid_request`, без перенаправления и повторного чтения тела. Неизвестные канонические пути в новых пространствах дают JSON `404 not_found`; `/recognition/drafts/` отсутствует. Идентификаторы в пути — положительные целые до `2^63-1`, иначе 404. ID фильтра, отсутствующий в БД, даёт пустой список.
+
+Query разбирается существующим `Params`: неизвестные параметры игнорируются, пустые равны отсутствующим, из повторённых берётся последнее значение; даты включительны, коды страны/валюты проверяются по справочнику. Ошибки — существующий `400 invalid_parameter` с `fields`. Все списки имеют `{count,page,page_size,pages,results}`, default 50/max 200. Пустая первая страница — `pages:0`; недостижимая — `404 page_out_of_range`. Порядок всегда заканчивается id с соответствующим направлением.
+
+### Эндпоинты
+
+В таблице пути имеют префикс `/api`. Каждый detail возвращает объект, каждый список — Page с объектами в `results`.
+
+| Метод / путь | Query / тело | Ответ |
+| --- | --- | --- |
+| GET `/recognition/csrf/` | нет | 200 `{csrf_token,limits,executor}`, cookie |
+| POST `/recognition/photos/` | multipart `file`, без Idempotency-Key | 202 `{reused:false,photo,job}`; точный повтор — 200 `{reused:true,photo,job}`; `Location` на job |
+| GET `/recognition/photos/` | page/page_size, ordering ±created_at, default -created_at | Page Photo |
+| GET `/recognition/photos/{id}/` | нет | Photo |
+| GET `/recognition/jobs/` | photo ID, status, page/page_size, ordering ±created_at | Page Job без `items` |
+| GET `/recognition/jobs/{id}/` | нет | Job с `items`, до 10 вырезок |
+| POST `/recognition/jobs/{id}/cancel/` | JSON `{}` | 202 Job cancel_requested; 200 Job cancelled; 409 job_terminal |
+| POST `/recognition/jobs/{id}/retry/` | JSON `{}`, без Idempotency-Key | 202 новый Job; 409 job_active / retry_not_allowed |
+| GET `/recognition/receipt-images/` | photo/job/receipt ID (AND), page/page_size, ordering ±created_at | Page ReceiptImage без quad/rotation_degrees |
+| GET `/recognition/receipt-images/{id}/` | нет | ReceiptImage detail |
+| GET `/receipts/` | store/product ID, country/currency, operation, date_from/date_to, q, page/page_size, ordering ±purchased_at | Page Receipt, default -purchased_at |
+| GET `/receipts/{id}/` | нет | Receipt header, дочерние массивы отдельными страницами |
+| GET `/receipts/{id}/lines/` | page/page_size, kind, matching=matched/unmatched | Page Line, position/id |
+| GET `/receipts/{id}/discounts/` | page/page_size | Page Discount, position/id |
+| GET `/receipts/{id}/taxes/` | page/page_size | Page Tax, tax_rate_id/id |
+
+Допустимые Job.status: `queued`, `running`, `cancel_requested`, `cancelled`, `succeeded`, `partial_succeeded`, `failed`. Stage: `waiting`, `prepare`, `detect`, `crop`, `recognize`, `validate`, `import`, `finished`. ReceiptImage.status: `pending`, `running`, `imported`, `reused`, `updated`, `needs_review`, `failed`, `cancelled`. Operation sale/refund; kind product/service/deposit/deposit_return.
+
+Поиск чеков `q` — по напечатанным названиям строк, имени товара, вывеске продавца и названию магазина; закрытые поля не участвуют. Product-фильтр использует EXISTS и не дублирует чек при нескольких совпавших строках. `unmatched_products_count` считает только kind=product с product=null; остальные несопоставленные строки тоже видны в `/lines/`. Валюты не складываются, курсами эти эндпоинты не занимаются.
+
+### Photo, приём файла и повтор
+
+SHA-256 считается по фактическим байтам; имя файла, MIME и UploadedFile.size не определяют формат/размер. Поддерживаются одиночные JPEG/PNG/WebP, до **20 MiB включительно** и **40 000 000 пикселей включительно**. Битые/пустые/анимированные/multipage изображения не принимаются. Multipart целиком ограничен 21 MiB: заявленный больший Content-Length отклоняется сразу, чтение дополнительно ограничено фактическими байтами. Превышение файлового лимита проверяется сервисом хранения по прочитанным байтам.
+
+Точные байты возвращают прежний Photo и **последний** Job, включая terminal; новая обработка запускается явным retry. Пропавшее/нечитаемое original_file существующего Photo — `503 storage_unavailable`. При Photo без Job создаётся queued Job. Повтор файла после отмены не запускает его заново. Идемпотентность retry по ключу отсутствует: повтор запроса при active Job даёт 409. Header Idempotency-Key игнорируется.
+
+Photo имеет поля `id,created_at,content_type,bytes,raw_width,raw_height,width,height,original_url,preview_url,latest_job_id,receipt_images_count`. `preview_url` — очищенная upright-копия, до подготовки null. `original_url` — исходные байты. `receipt_images_count` включает вырезки всех попыток/заданий этого фото. Имя пользователя, SHA-256, EXIF и внутренние пути не сериализуются.
+
+```json
+{"id":11,"created_at":"2026-10-04T12:35:00Z","content_type":"image/png","bytes":80,"raw_width":10,"raw_height":20,"width":10,"height":20,"original_url":"/media/originals/test/source.png","preview_url":null,"latest_job_id":31,"receipt_images_count":2}
+```
+
+Полные transport-примеры: [новая загрузка](../backend/recognition/tests/fixtures/public/upload-new.json), [повтор](../backend/recognition/tests/fixtures/public/upload-reused.json), [Photo](../backend/recognition/tests/fixtures/public/photo.json), [страница Photo](../backend/recognition/tests/fixtures/public/photos.json), [CSRF/лимиты](../backend/recognition/tests/fixtures/public/csrf.json). `bytes` в эталоне определяется синтетической PNG-картинкой теста (не приведённым сокращённым примером).
+
+**Граница транзакции С1:** accept_upload отдельно durable-коммитит Photo и файл, затем API под блокировкой Photo выбирает последний Job или создаёт первый. Гонки upload/retry сериализуются на Photo; одновременно повторённый файл не создаёт второй Photo или Job. Ошибка/обрыв между двумя коммитами может оставить Photo без Job: следующий upload этих байтов восстанавливает Job. Нельзя трактовать любой 503 как доказательство отсутствия сохранённого Photo. Между публикацией файла и коммитом при аварии возможен orphan-файл; cleanup в v1 отсутствует. API не удаляет фото при отмене.
+
+### Job: progress, действия и наблюдение воркера
+
+```json
+{"id":31,"photo_id":11,"retry_of":null,"status":"partial_succeeded","stage":"finished","version":1,"created_at":"2026-10-04T12:35:00Z","started_at":null,"finished_at":"2026-10-04T12:35:00Z","cancel_requested_at":null,"heartbeat_at":null,"stalled":false,"executor":{"available":false,"last_seen_at":null},"progress":{"detected":2,"current_position":null,"completed":2,"imported":1,"reused":0,"review":1,"failed":0,"cancelled":0},"review_required":true,"error":null,"actions":{"can_cancel":false,"can_retry":true},"items_count":2,"items":[{"image_id":41,"position":1,"status":"imported","receipt_id":71},{"image_id":42,"position":2,"status":"needs_review","receipt_id":null}]}
+```
+
+`detected` до детекции null. Счётчики — сохранённые С1 исходы; imported/reused считаются после commit. `version` изменяет сервис очереди; heartbeat может обновиться с той же version. `items_count` есть и в списке, `items` — только в detail. Items содержат ровно image_id,position,status,receipt_id; поля черновиков отсутствуют. `review_required` — наличие вырезки needs_review или issues, либо геометрическая ошибка задания (`geometry_requires_review`, `clipped`, `overlap`); отдельного процесса разрешения review нет. Terminal progress не пересчитывается API.
+
+С1 не хранит heartbeat простаивающего воркера. `executor.available=true` означает наличие running/cancel_requested Job с ещё действующей lease; `last_seen_at` — его heartbeat. При отсутствии выполняющегося Job — false/null, **доступность простаивающего воркера неизвестна**. False не запрещает загрузку/retry; это не проверка Codex auth/сети и не Celery health. После terminal С1 очищает heartbeat/lease. `stalled=true` только у выполняющегося Job с истёкшей lease; API не восстанавливает и не отменяет его на GET.
+
+Queued cancel сразу даёт cancelled/200; running — cancel_requested/202. Повтор cancel_requested — 202 с той же version, повтор cancelled — 200. Cancel остальных terminal — 409 job_terminal. API только запрашивает отмену, остановку дерева процессов и acknowledgement делает С4.
+
+Retry разрешён failed/partial_succeeded/cancelled, создаёт новое queued задание с retry_of, старое не меняется. **Любой active Job этого Photo проверяется первым** и даёт 409 job_active, включая повтор retry старого Job; иначе succeeded — 409 retry_not_allowed. `actions.can_retry` учитывает active Job того же фото. `can_cancel=true` только queued/running. Действия — подсказки текущего снимка; сервер проверяет состояния снова под блокировкой.
+
+Технический отказ после принятия 202 виден в HTTP 200 Job.error (`{code,message}`) и/или ReceiptImage.issues. Это не браузерный HTTP 401. Разрешённые error/issue коды: `missing_required`, `invalid_value`, `total_mismatch`, `tax_mismatch`, `timezone_unknown`, `time_ambiguous`, `weak_identity`, `identity_conflict`, `product_unmatched`, `product_ambiguous`, `product_conflict`, `geometry_requires_review`, `clipped`, `overlap`, `timeout`, `worker_lost`, `storage_unavailable`, `provider_error`, `invalid_output`, `auth_required`, `rate_limited`, `provider_unavailable`, `network_unavailable`, `configuration_error`, `invalid_input`, `cancelled`, `no_receipts`, `too_many_receipts`. Сообщения фиксированные русские; неизвестный job error заменяется provider_error, неизвестный issue code — invalid_value. API не публикует stderr, raw_payload, invalid_output_text, provider notes, run_token, lease/deadline или exception text. `retryable` отдельным полем в К2 Job не задан и не добавлен; возможность повторить — actions.can_retry.
+
+Эталоны: [Job detail](../backend/recognition/tests/fixtures/public/job.json), [страница Job](../backend/recognition/tests/fixtures/public/jobs.json), [running](../backend/recognition/tests/fixtures/public/job-running.json), [cancel_requested](../backend/recognition/tests/fixtures/public/job-cancel-requested.json).
+
+### ReceiptImage и безопасный результат needs_review
+
+Общие поля списка/detail: `id,photo_id,job_id,position,created_at,status,receipt_id,receipt_deleted,image_url,width,height,bbox,clipped,issues,normalized_result`. Detail дополнительно содержит `quad,rotation_degrees`. Bbox/quad на upright-фото; геометрия проверяется перед сериализацией, повреждённая геометрия — null. Transform остаётся внутренним, как в примере §5.2 К2. `receipt_deleted=true` при SET_NULL и историческом receipt ID в snapshot; сам исторический ID наружу не возвращается.
+
+`issues` — список `{code,field,message}` с фиксированными сообщениями. Допускаются только известные безопасные JSON pointers полей шапки/позиции/геометрии; закрытые/неизвестные пути заменяются `/`. Значения provider message/note и произвольные JSON-ключи не копируются.
+
+`normalized_result` присутствует в обеих формах, null вне needs_review; при needs_review это безопасная проекция сохранённого нормализованного DTO, **не** сырой ответ провайдера и **не** черновик для редактирования:
+
+```json
+{"proposed_receipt":{"store":null,"store_display_name":"Тестовый магазин","address_display":"Teststrasse 12","currency":"EUR","operation":"sale","purchased_on":"2026-10-04","local_time":"14:35","total":"4.52","discount_total":null,"prices_include_tax":true},"lines":[{"position":1,"parent_position":null,"kind":"product","name":"МОЛОКО","unit":"pcs","quantity":null,"unit_price":"1.2900","amount":null,"discount_amount":null,"tax_amount":null,"store_item_code":null,"barcode":null,"tax_code":null,"is_excise":null,"is_marked":null,"tax_rate":{"kind":null,"rate":null}}],"discounts":[],"taxes":[]}
+```
+
+`proposed_receipt.store` всегда null: кандидатов и разрешения справочников HTTP не придумывает; вывеска берётся только из brand_name/name, без legal_name fallback. Непрочитанное число/строка/boolean остаётся null. Числа — decimal strings с тем же количеством знаков, что у канонического чека. Нормализованные строки используют position/parent_position (не ID ещё не созданных строк), без product/product_hint, matching_status, paid_amount, id/name_i18n. Tax rate — `{kind,rate}`, без ID/страны ещё не разрешённого справочника. Нормализованные скидки `{position,line_position,name,amount}`, налоги `{tax_rate,tax_code,net,tax,gross}`. Максимумы массивов: 1000 строк, 1000 скидок, 100 налогов; issues — до 1000. Поля confidence, fields/warnings, fiscal, номера, timestamps, произвольные extra не публикуются.
+
+Полные эталоны: [ReceiptImage detail needs_review](../backend/recognition/tests/fixtures/public/receipt-image.json), [страница вырезок](../backend/recognition/tests/fixtures/public/receipt-images.json).
+
+### Receipt, Line, Discount, Tax
+
+Receipt содержит ровно `id,store,currency,operation,purchased_on,purchased_at,total,discount_total,prices_include_tax,origin,review_required,lines_count,unmatched_products_count,receipt_images_count,preview_image_url,created_at,updated_at,lines_url,discounts_url,taxes_url,images_url`. Store — прежний `api.common.store_object`, без вложенного Merchant. `origin="recognized"` при наличии связанной вырезки, иначе `"legacy/manual"`: это вычисляемый индикатор связи, без новой provenance-модели. Preview — последняя связанная вырезка по created_at/id, при отсутствии null. `review_required` — несопоставленный товар или связанная вырезка needs_review/с issues. Canonical Receipt не содержит непринятый результат: его смотрят через ReceiptImage.
+
+```json
+{"id":101,"position":1,"kind":"product","parent_id":null,"name":"MILCH 1 L","name_i18n":{},"store_item_code":"M1","barcode":"","quantity":"2.000","unit":"pcs","unit_price":"1.2900","amount":"2.58","discount_amount":"0.20","paid_amount":"2.38","product":{"id":61,"name":"Молоко 1 л"},"matching_status":"matched","tax_rate":{"id":3,"country":"DE","kind":"vat","rate":"7.00"},"tax_code":"A","tax_amount":null,"is_excise":false,"is_marked":false}
+```
+
+Line.product=null → matching_status=unmatched; ambiguous здесь отсутствует (отдельных draft assignment нет). `name` — напечатанное raw_name, не весь raw_text; `parent_id` — ID строки, legacy position=0 допустима при чтении. name_i18n содержит только строковые значения с ключами языков. paid_amount = amount - discount_amount, без распределения скидки чека и без float, независимо от Decimal-контекста вызывающего кода. В ответах деньги имеют 2 знака, unit_price 4, quantity 3, tax rate 2; неизвестное значение — null. Валюты не смешиваются.
+
+```json
+{"id":201,"position":1,"line_id":101,"name":"Rabatt MILCH","amount":"0.20"}
+```
+
+```json
+{"id":301,"tax_rate":{"id":3,"country":"DE","kind":"vat","rate":"7.00"},"tax_code":"A","net":"2.22","tax":"0.16","gross":"2.38"}
+```
+
+Ни один объект/ошибка не содержит raw_text, fiscal/fiscal_key, extra, Merchant.legal_name/tax_id, номера чека/кассы/смены, сырой provider output или stderr. Эталоны: [Receipt](../backend/recognition/tests/fixtures/public/receipt.json), [Page Receipt](../backend/recognition/tests/fixtures/public/receipts.json), [Page Line](../backend/recognition/tests/fixtures/public/lines.json), [Page Discount](../backend/recognition/tests/fixtures/public/discounts.json), [Page Tax](../backend/recognition/tests/fixtures/public/taxes.json).
+
+### HTTP-ошибки, запросы и клиентская проверка
+
+Прежний envelope ошибок не изменён: `{"error":{"code":"…","message":"…","fields?":{…}}}`.
+
+| HTTP | code | Условие |
+| --- | --- | --- |
+| 400 | invalid_request | структура/кодировка, неизвестные поля тела, malformed multipart/JSON, повторные JSON keys, slash/общий request guard |
+| 400 | invalid_parameter | query или отсутствующий/повторный/строковый file, с fields |
+| 400 | unsupported_format | фактический формат вне JPEG/PNG/WebP, включая HEIC |
+| 400 | invalid_image | битое, пустое, анимированное/multipage изображение |
+| 400 | image_too_large | более 40 MP |
+| 403 | permission_denied / csrf_failed | локальный режим/peer либо CSRF/Origin |
+| 404 | not_found / page_out_of_range | маршрут/объект/родитель либо страница |
+| 405 | method_not_allowed | неподдерживаемый метод; Allow по маршруту |
+| 406 | not_acceptable | неподходящий Accept |
+| 409 | job_active / job_terminal / retry_not_allowed | конфликт состояния |
+| 413 | upload_too_large | файл >20 MiB или multipart >21 MiB |
+| 415 | unsupported_media_type | неверный Content-Type тела |
+| 503 | storage_unavailable / database_unavailable | известный отказ хранения; OperationalError/InterfaceError БД только в новых views |
+| 500 | internal_error | неизвестный дефект реализации, безопасный общий handler |
+
+Неподдерживаемый unsafe метод сначала проходит permission/CSRF, поэтому без CSRF возможен 403 до 405. Структурные отказы общего middleware до view, 414/431 HTTP-сервера и не-JSON proxy 502 сохраняют существующие границы. SQL timeout/разрыв БД в новом API — 503; старые views не переопределены. Неизвестные SQL/IntegrityError остаются безопасным 500, без скрытого retry.
+
+На непустых списках без справочных фильтров тесты фиксируют: photos — 2 SQL; jobs — 3 (один общий executor); receipt-images — 2; receipts — 2; lines/discounts/taxes — 3 с проверкой родителя. Размер страницы 1/5 не увеличивает число запросов. Country/currency добавляют по одному запросу справочника. Связи/счётчики получаются select_related/EXISTS/подзапросами; число выборок не зависит от количества строк. Многозапросное чтение не является общим снимком БД; действия снова проверяют состояние в транзакции. Замеров на больших данных нет.
+
+Эталонные файлы в `backend/recognition/tests/fixtures/public/` получены из настоящих APIClient HTTP-ответов на вымышленных данных в QA test DB. `api.tests.test_recognition_public` сравнивает полные JSON, включая ключи/nullable значения: CSRF token заменяется явным маркером; в новой загрузке заменяются только сгенерированные значения IDs/timestamps/storage URL. Остальные ответы сравниваются целиком без нормализации. Эти файлы предназначены для runtime-схем клиента. Проверка выполняется командой после полного QA environment из verification.md:
+
+```powershell
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test api.tests.test_recognition_api api.tests.test_receipts_api api.tests.test_recognition_public api.tests.test_recognition_concurrency --tag=integration --noinput --verbosity=2
+```
+
+Для клиента: применить QA environment, отдельный MEDIA_ROOT вне dev, DEBUG=1, ALLOW_LOCAL_RECOGNITION_API=1, выполнить migrate и `manage.py runserver 127.0.0.1:18000 --noreload`. `/media/` Django раздаёт только при DEBUG; Vite пока проксирует только `/api`, поэтому для media в клиенте нужен отдельный proxy на тот же Django (зона клиента/интегратора). С4 запускает host `recognition_worker` в том же QA environment/MEDIA; fake/настоящий pipeline принимаются отдельно, настоящий Codex этими автотестами не вызывается.
+
+Ручной сценарий для человека: получить CSRF, загрузить синтетический JPEG/PNG/WebP → 202 и queued; опрашивать detail раз в 2 с; проверить original/preview/crops напрямую на QA Django; открыть чек и все три дочерние страницы, включая unmatched. Повтор тех же байтов → 200 с теми же IDs/последним Job; queued cancel → 200, running cancel → 202 до подтверждения С4; retry failed/partial/cancelled → новое задание, повтор retry пока active →409. Проверить needs_review и issues без закрытых данных, выключенный флаг и отсутствие CSRF →403. Визуальную/интерактивную проверку SPA и админки делает человек по [verification.md](verification.md#ручная-ui-приёмка-человеком); HTTP/unit не подтверждают браузерное поведение.
+
+### Все отличия от К2 §5 и откат С5
+
+- Решение облегчённой v1: нет `/recognition/drafts/`, ReceiptDraft/MutationRequest, review/revision/proposal/кандидатов, ручного подтверждения/редактирования результата через API. Нет draft_id, review_state, identity_strength ни в Job.items, ни в ReceiptImage/Receipt.
+- Нет Idempotency-Key/idempotency_conflict. Upload повторяется по SHA-256 и возвращает последний Job; retry создаёт новое задание либо 409, replay с 200 по ключу отсутствует.
+- ReceiptImage получает **новое** nullable `normalized_result` для needs_review вместо Draft. Его форма — описанная безопасная проекция DTO с position-связями; без candidate IDs, time_precision/timestamps, полей канонического Line, не применимых к ещё не импортированному результату. В списке и detail проекция одинакова.
+- Line.matching_status/filter: только matched/unmatched, без ambiguous. Неоднозначности представлены issues вырезки. review_required означает текущие issues/needs_review/несопоставленный товар, без состояний разрешения Draft.
+- Origin вычисляется по живой связи ReceiptImage: recognized либо буквальное `legacy/manual`. Отдельного provenance состояния и защиты ручных правок нет.
+- Executor основан только на executing Job heartbeat/lease С1; idle availability неизвестна, terminal last_seen_at=null. Слот воркера/его постоянный heartbeat в С5 не добавлялись.
+- SourcePhoto и первоначальный Job не имеют общего атомарного commit: граница задана durable accept_upload С1; повтор восстанавливает Photo без Job. Нет cleanup; аварийные orphan-файлы остаются ограничением С1/v1.
+- Нормализованные provider notes/произвольные сообщения и неизвестные коды/пути не копируются; для неизвестных сохранённых кодов предусмотрены безопасные заменители. `/media/` только DEBUG напрямую на Django; Vite media proxy пока не добавлен в этой зоне.
+
+Другие формы К2 Photo/Job/Receipt/Line/Discount/Tax сохранены; успешные формы прежних 13 GET и health не меняются. Новых миграций, настроек и зависимостей С5 нет. Откат С5 — revert его кода/тестов/docs: записи С1 и файлы сохраняются, очистка БД/томов не нужна; откат миграции recognition принадлежит С1 и требует отдельной процедуры/backup.
+
 ## Планируется
 
-API фото чеков, распознавания магазина/адреса и товаров/стоимостей, ввода чеков, сопоставления позиций с товарами и статистического дашборда ещё нет. К предметной модели (приложения `stores`, `catalog`, `receipts`, [data-model.md](data-model.md)) есть только [API чтения](#реализовано-api-чтения-каталога-и-цен): записи через HTTP нет, данные вводятся через Django admin или кодом. Хранение курсов валют на сервере не реализовано. OCR-провайдер, авторизация и контракты этих функций не выбраны. Endpoint публикации задач и получения их результатов по HTTP не входит в реализованный scaffold.
+Пользовательская авторизация и разграничение данных, API ручного редактирования/сопоставления, статистический дашборд, хранение курсов и production hosting не реализованы. Сквозное выполнение OCR/import/worker и реальные фото требуют приёмки С3/С4 и общего серверного этапа; этот контракт фиксирует HTTP-слой С5.
