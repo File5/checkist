@@ -6,6 +6,8 @@ import argparse
 from collections import Counter
 import http.client
 import json
+from pathlib import Path
+import re
 from urllib.parse import urlencode
 
 INVALID_REQUEST = {"error": {"code": "invalid_request", "message": "Некорректный запрос."}}
@@ -17,7 +19,9 @@ def main():
     parser.add_argument("--product-id", type=int, required=True)
     parser.add_argument("--generic-id", type=int, required=True)
     parser.add_argument("--category-id", type=int, required=True)
+    parser.add_argument("--server-log", type=Path, help="Файл stderr runserver для проверки редактирования access log")
     args = parser.parse_args()
+    log_offset = args.server_log.stat().st_size if args.server_log else None
     urls = (
         "/api/countries/", "/api/stores/", "/api/brands/", "/api/categories/",
         f"/api/categories/{args.category_id}/", "/api/generic-products/",
@@ -44,6 +48,7 @@ def main():
                     if wanted_code:
                         assert data["error"]["code"] == wanted_code
                     assert b"private-value" not in payload
+                    assert b"review-private-marker" not in payload
                     assert b"TooManyFieldsSent" not in payload
                     assert b"Traceback" not in payload
                     if expected == 400 and data["error"]["code"] == "invalid_request":
@@ -51,6 +56,12 @@ def main():
             counts[expected] += 1
         finally:
             connection.close()
+
+    access_statuses = []
+    for path in ("/api/products/", "/%61pi/products/", "/api%2Fproducts/", "/api%2fproducts/", "//api/products/"):
+        for query, status in (("unknown=review-private-marker", 200), ("q=%00review-private-marker", 400)):
+            check(path + "?" + query, status, error_code="invalid_parameter" if status == 400 else None)
+            access_statuses.append(status)
 
     for url in urls:
         check(url, 200)
@@ -104,7 +115,20 @@ def main():
     check("/api/products/", 431, headers={"X-Client-Test": "a" * 65536}, server_rejection=True)
     check("/api/products/", 431, headers={f"X-Test-{i}": "1" for i in range(101)}, server_rejection=True)
     check("/api/health/", 200)
-    print(json.dumps({"checks": sum(counts.values()), "statuses": dict(sorted(counts.items()))}))
+    # Последующие HTTP-проверки уже прошли через тот же синхронный logging
+    # handler: записи первых запросов должны быть в файле, без sleep/retry.
+    if args.server_log:
+        log = args.server_log.read_bytes()[log_offset:]
+        assert b"review-private-marker" not in log, "Query marker leaked into server log"
+        lines = re.findall(rb'"GET [^\r\n]* HTTP/1\.1" \d{3} \d+', log)
+        expected = [f'"GET /api/[redacted] HTTP/1.1" {status} '.encode() for status in access_statuses]
+        assert len(lines) >= len(expected), "Missing access log records"
+        assert all(line.startswith(prefix) for line, prefix in zip(lines, expected)), "Unredacted or unexpected access log records"
+    print(json.dumps({
+        "checks": sum(counts.values()), "statuses": dict(sorted(counts.items())),
+        "access_log": "passed" if args.server_log else "not_checked (use --server-log)",
+        "access_log_requests": len(access_statuses),
+    }))
 
 
 if __name__ == "__main__":

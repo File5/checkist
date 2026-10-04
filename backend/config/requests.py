@@ -98,9 +98,31 @@ class ApiCommonMiddleware(CommonMiddleware):
 class SafeApiTargetFilter(logging.Filter):
     """runserver не пишет query/идентификаторы API в access log, в том числе при 400."""
 
+    @staticmethod
+    def redact_target(target):
+        path = target.split("?", 1)[0]
+        if not path.startswith("/"):
+            # Пустой/нестандартный target (включая absolute-form): скрываем
+            # при сомнении, не пытаемся угадать нормализацию другого сервера.
+            return True
+        try:
+            # BaseHTTPRequestHandler убирает начальные // ДО percent-декодирования;
+            # WSGIRequestHandler затем декодирует ровно один раз. Dot segments
+            # runserver не сворачивает. Request line читается как ISO-8859-1.
+            raw_path = ("/" + path.lstrip("/")).encode("iso-8859-1")
+            if _BAD_PERCENT.search(raw_path):
+                return True
+            decoded_path = unquote_to_bytes(raw_path).decode("utf-8", errors="strict")
+        except UnicodeError:
+            # Django repercent-encodes битый UTF-8; для журнала безопаснее скрыть.
+            return True
+        return is_api_path(decoded_path)
+
     def filter(self, record):
         if isinstance(record.args, tuple) and record.args and isinstance(record.args[0], str):
             parts = record.args[0].split()
-            if len(parts) >= 2 and is_api_path(parts[1].split("?", 1)[0]):
+            if len(parts) not in (2, 3) or (len(parts) == 3 and not re.fullmatch(r"HTTP/[0-9]+\.[0-9]+", parts[2])):
+                record.args = ("/api/[redacted]", *record.args[1:])
+            elif self.redact_target(parts[1]):
                 record.args = (f"{parts[0]} /api/[redacted] {' '.join(parts[2:])}", *record.args[1:])
         return True
