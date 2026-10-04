@@ -1,13 +1,95 @@
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
-import { history, point, store, total } from '../../api/test-support'
-import type { PriceSummary as SummaryData } from '../../api/types'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { detail, history, pageOf, point, store, total } from '../../api/test-support'
+import type { ApiFailure, ApiResult, Page, PriceSummary as SummaryData, Store, StoreEntry } from '../../api/types'
 import PriceHistory from './PriceHistory'
 import PriceSummary from './PriceSummary'
 import ProductPage from './ProductPage'
+import StoreFilter from './StoreFilter'
+import * as requests from './useProductRequest'
 
 const noop = () => {}
 const buildPageHref = (page: number) => ({ kind: 'product' as const, productId: 9, query: { country: 'DE', currency: 'EUR', page } })
+
+afterEach(() => { vi.restoreAllMocks() })
+
+const firstFiftyStores = Array.from({ length: 50 }, (_, index) => ({
+  ...detail.stores[0], id: index + 1, name: 'Same Chain', city: 'Berlin', address: `Example Street ${index + 1}`,
+}))
+const laterPoints = [51, 52].map((id) => ({
+  ...point, receipt_id: id, store: { id, name: 'Same Chain', city: 'Berlin', country: 'DE' },
+}))
+const laterHistory = { ...history, count: 52, page: 2, page_size: 50, pages: 2, results: laterPoints }
+const rowLabels = (html: string) => [...html.matchAll(/<th scope="row">([^<]+)<\/th>/g)].map((match) => match[1])
+
+function renderLaterProduct(stores: Store[], directory: ApiResult<Page<StoreEntry>>, summaryFailure?: ApiFailure) {
+  const summary: SummaryData = { product: history.product, group_by: 'store', price: 'paid', interval: 'none',
+    groups: stores.map((store) => ({ store, currency: 'EUR', unit: 'pcs', total, buckets: [] })) }
+  vi.spyOn(requests, 'useProductRequest')
+    .mockReturnValueOnce({ state: { kind: 'ok', data: { ...detail, stores: firstFiftyStores } }, retry: noop })
+    .mockReturnValueOnce({ state: { kind: 'ok', data: laterHistory }, retry: noop })
+    .mockReturnValueOnce({ state: summaryFailure ?? { kind: 'ok', data: summary }, retry: noop })
+    .mockReturnValueOnce({ state: directory.kind === 'aborted' ? { kind: 'loading' } : directory, retry: noop })
+  return renderToStaticMarkup(<ProductPage productId={9} query={{ page: 2 }} />)
+}
+
+describe('store identities beyond the first 50 (SSR in Node)', () => {
+  it('distinguishes identical chain/city/country points on the second history page without enrichment', () => {
+    const html = renderToStaticMarkup(<PriceHistory state={{ kind: 'ok', data: laterHistory }} query={{ page: 2 }}
+      stores={firstFiftyStores} retry={noop} reset={noop} buildPageHref={buildPageHref} />)
+    const labels = rowLabels(html)
+    expect(labels).toHaveLength(2)
+    expect(labels[0]).not.toBe(labels[1])
+    expect(labels).toEqual([51, 52].map((id) => `ID ${id} · Same Chain · Berlin · DE · адрес неизвестен`))
+    expect(html).toContain('Наблюдений: 52')
+  })
+  it('keeps the card, both history rows and summary when the directory fails, with distinct fallback labels', () => {
+    const html = renderLaterProduct(laterPoints.map(({ store }) => ({ ...store, address: '', timezone: '' })),
+      { kind: 'error', reason: 'network' })
+    const labels = rowLabels(html)
+    expect(labels).toEqual([51, 52].map((id) => `ID ${id} · Same Chain · Berlin · DE · адрес неизвестен`))
+    expect(labels[0]).not.toBe(labels[1])
+    expect(html).toContain(detail.name)
+    expect(html).toContain('Сводка по магазинам')
+    for (const label of labels) expect(html).toContain(`<h3>${label}</h3>`)
+    expect(html).toMatch(/<select id="product-store"[^>]*disabled=""/)
+    expect(html).toContain('Фильтр магазина недоступен')
+    expect(html).toContain('Не удалось загрузить справочник магазинов')
+  })
+  it('enriches later history by ID from the full summary stores', () => {
+    const stores = laterPoints.map(({ store }) => ({ ...store, address: `Example Street ${store.id}`, timezone: 'Europe/Berlin' }))
+    const html = renderLaterProduct(stores, { kind: 'ok', data: pageOf(firstFiftyStores.map((store) => ({ ...store, receipts_count: 1 }))) })
+    const labels = rowLabels(html)
+    expect(labels).toEqual(stores.map((store) => `ID ${store.id} · Same Chain · ${store.address} · Berlin · DE`))
+    for (const label of labels) expect(html).toContain(`<h3>${label}</h3>`)
+    expect(html).not.toContain('адрес неизвестен')
+    expect(html).not.toContain('UTC')
+  })
+  it('keeps distinct history even when both summary and directory fail', () => {
+    const html = renderLaterProduct([], { kind: 'error', reason: 'network' }, { kind: 'error', reason: 'server', status: 500 })
+    const labels = rowLabels(html)
+    expect(labels).toEqual([51, 52].map((id) => `ID ${id} · Same Chain · Berlin · DE · адрес неизвестен`))
+    expect(html).toContain(detail.name)
+    expect(html).toContain('Не удалось загрузить данные из-за ошибки сервера')
+    expect(html).toContain('Фильтр магазина недоступен')
+  })
+  it('keeps the selected brief store recognizable when the directory fails and its ID is outside the options', () => {
+    vi.spyOn(requests, 'useProductRequest').mockReturnValue({ state: { kind: 'error', reason: 'network' }, retry: noop })
+    const html = renderToStaticMarkup(<StoreFilter country="DE" value="51" initial={firstFiftyStores}
+      known={firstFiftyStores} selected={laterPoints[0].store} onChange={noop} onStores={noop} />)
+    expect(html).toContain('<option value="51" selected="">ID 51 · Same Chain · Berlin · DE · адрес неизвестен</option>')
+    expect(html).toMatch(/<select id="product-store"[^>]*disabled=""/)
+    expect(html).toContain('Убрать магазин')
+  })
+  it('uses the same full store label for selected and available filter options, including an empty address', () => {
+    const stores = laterPoints.map(({ store }, index) => ({ ...store, address: index === 0 ? 'Example Street 51' : '', timezone: 'Europe/Berlin' }))
+    vi.spyOn(requests, 'useProductRequest').mockReturnValue({ state: { kind: 'ok', data: pageOf([{ ...stores[1], receipts_count: 1 }]) }, retry: noop })
+    const html = renderToStaticMarkup(<StoreFilter country="DE" value="51" initial={firstFiftyStores}
+      known={stores} onChange={noop} onStores={noop} />)
+    expect(html).toContain('<option value="51" selected="">ID 51 · Same Chain · Example Street 51 · Berlin · DE</option>')
+    expect(html).toContain('<option value="52">ID 52 · Same Chain · Berlin · DE · адрес неизвестен</option>')
+  })
+})
 
 describe('price content and semantic markup (SSR in Node, not browser acceptance)', () => {
   it('renders row prices, unknown normalization, UTC fallback and a keyboard scroll region', () => {

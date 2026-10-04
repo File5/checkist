@@ -1,13 +1,13 @@
 import { useCallback, useState } from 'react'
 import { getStores } from '../../api/stores'
-import type { Store } from '../../api/types'
+import type { Store, StoreBrief } from '../../api/types'
 import { parseCatalogQuery } from '../../navigation/routes'
 import RequestState from '../../components/RequestState'
 import { errorMessage, mergeStores, storeLabel, storeParams } from './state'
 import { useProductRequest } from './useProductRequest'
 
-export default function StoreFilter({ country, value, initial, error, onChange, onStores }: {
-  country: string; value: string; initial: Store[]; error?: string
+export default function StoreFilter({ country, value, initial, known = [], selected, error, onChange, onStores }: {
+  country: string; value: string; initial: Store[]; known?: Store[]; selected?: StoreBrief; error?: string
   onChange: (value: string) => void; onStores: (stores: Store[]) => void
 }) {
   const [text, setText] = useState('')
@@ -22,6 +22,8 @@ export default function StoreFilter({ country, value, initial, error, onChange, 
   const { state, retry } = useProductRequest(load)
   const unavailable = state.kind === 'error'
   const options = mergeStores(initial, state.kind === 'ok' ? state.data.results : []).filter((store) => !country || store.country === country)
+  const knownStores = new Map(known.map((store) => [store.id, store]))
+  const selectedStore = knownStores.get(Number(value)) ?? (String(selected?.id) === value ? selected : undefined)
   const find = () => {
     const parsed = parseCatalogQuery(new URLSearchParams({ q: text }))
     if (parsed.invalidFields.length) {
@@ -42,8 +44,8 @@ export default function StoreFilter({ country, value, initial, error, onChange, 
       <select id="product-store" value={value} onChange={(event) => onChange(event.target.value)} disabled={unavailable}
         aria-invalid={Boolean(error)} aria-describedby={`product-store-note${error ? ' product-store-error' : ''}`}>
         <option value="">Все магазины</option>
-        {value && !options.some((store) => String(store.id) === value) && <option value={value}>Магазин № {value}</option>}
-        {options.map((store) => <option key={store.id} value={store.id}>{storeLabel(store)}</option>)}
+        {value && !options.some((store) => String(store.id) === value) && <option value={value}>{storeLabel(selectedStore ?? { id: Number(value) })}</option>}
+        {options.map((store) => <option key={store.id} value={store.id}>{storeLabel(knownStores.get(store.id) ?? store)}</option>)}
       </select>
       <p id="product-store-note" className="product-note">{unavailable ? 'Фильтр магазина недоступен. История и остальные фильтры работают; выбранный магазин можно убрать кнопкой ниже.' : 'Начальные варианты из карточки могут быть неполными (до 50). Поиск охватывает все магазины выбранной страны, в том числе без покупок этого товара.'}</p>
       {error && <p className="product-field-error" id="product-store-error">{error}</p>}

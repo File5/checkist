@@ -87,8 +87,15 @@ describe('store enrichment and fallback', () => {
     expect(merged[1].id).toBe(8)
   })
   it('retains name/city/country when address and timezone are unavailable', () => {
-    expect(storeLabel({ id: 7, name: 'Магазин', city: 'Берлин', country: 'DE' })).toBe('Магазин · Берлин · DE')
-    expect(storeLabel({ id: 7, name: '', city: '', country: 'DE' })).toBe('Не указано · DE')
+    expect(storeLabel({ id: 7, name: 'Магазин', city: 'Берлин', country: 'DE' })).toBe('ID 7 · Магазин · Берлин · DE · адрес неизвестен')
+    expect(storeLabel({ id: 7, name: '', city: '', country: 'DE' })).toBe('ID 7 · Не указано · DE · адрес неизвестен')
+  })
+  it('retains the ID and missing-address note for empty addresses and ID-only selections', () => {
+    expect(storeLabel({ ...storeEntry, address: '   ' })).toBe('ID 7 · Учебный магазин · DE · адрес неизвестен')
+    expect(storeLabel({ id: 51 })).toBe('ID 51 · Не указано · адрес неизвестен')
+  })
+  it('keeps a known address alongside the same visible ID', () => {
+    expect(storeLabel(storeEntry)).toBe('ID 7 · Учебный магазин · Учебная улица, 1 · DE')
   })
 })
 
