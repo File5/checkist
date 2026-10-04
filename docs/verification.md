@@ -50,7 +50,7 @@ docker compose -p checkist_qa up -d --build --wait --wait-timeout 120 worker
 ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py check_services
 ```
 
-Ожидается exit 0, отсутствие новых миграций, 155 тестов без БД и 418 integration tests, затем JSON с `celery_task.result={"message":"pong"}`. На пустой БД `migrate` применяет 22 миграции: 18 стандартных и 4 собственных. Числа соответствуют текущему коду и могут измениться вместе с тестами. Команда без тега не использует БД и может выполняться при TCP-отказе; integration-команда не должна заменяться skip/eager. Django runner создаёт и затем удаляет **`test_checkist_qa`**; Redis integration использует отдельный QA Redis DB 2 и уникальные временные ключи.
+Ожидается exit 0, отсутствие новых миграций, 169 тестов без БД и 425 integration tests, затем JSON с `celery_task.result={"message":"pong"}`. На пустой БД `migrate` применяет 22 миграции: 18 стандартных и 4 собственных. Числа соответствуют текущему коду и могут измениться вместе с тестами. Команда без тега не использует БД и может выполняться при TCP-отказе; integration-команда не должна заменяться skip/eager. Django runner создаёт и затем удаляет **`test_checkist_qa`**; Redis integration использует отдельный QA Redis DB 2 и уникальные временные ключи.
 
 | Приложение | Без БД (`--exclude-tag=integration`) | С БД (`--tag=integration`) |
 | --- | --- | --- |
@@ -58,14 +58,16 @@ docker compose -p checkist_qa up -d --build --wait --wait-timeout 120 worker
 | `stores` | 14 | 31 |
 | `receipts` | 18 | 106 |
 | `health` | 21 | 2 |
-| `api` | 93 | 260 |
-| Всего | 155 | 418 |
+| `api` | 107 | 267 |
+| Всего | 169 | 425 |
 
 Unit/contract tests health покрывают точный 200, комбинации 503, сохранение независимых checks, анонимность, игнорирование query/Authorization, 405, 406, безопасный 500 при DEBUG, отсутствие публикации task из health, параллельность probes, cleanup кеша, bounded publication retries и негативную env-валидацию. Это не сетевой замер времени отказа.
 
 Тесты `api` покрывают точные тела эндпоинтов на образцах, фильтры и сортировки, анонимный доступ и игнорирование `Authorization`, 405 и 406, 400 на каждый параметр, 404 на объект, страницу и неизвестный путь, `range_too_large`, пустую БД, смешанные валюты и пересчёт по курсам из запроса, единицы и причины несравнимости, исключение залога, возвратов и скидки на весь чек, границы страниц, число запросов (`assertNumQueries`), отсутствие закрытых полей в ответах, цикл в категориях и сохранение редиректа `/api/health` без слэша. Тесты с тегом `integration` обращаются к views через тестовый клиент Django, без сети.
 
 Регрессии `api.tests.test_query_controls`: 6 тестов без БД и 6 integration. Проверяются NUL в начале, середине и конце `q`, все 65 символов Unicode Cc (C0, DEL, C1) до обрезки пробелов, соседние параметры (`country`, `currency`, `target_currency`, `rates`, `category`, `generic`, `brand`, `store`, `all`, `has_prices`, `ordering`, `interval`, `group_by`, `price`, `scope`, даты и пагинация), единый JSON `400`, `404` на NUL в идентификаторе пути, UTF-8 поиск, последнее повторённое значение и игнорирование неизвестных параметров. Для пяти поисковых списков на пустой БД `assertNumQueries(0)` подтверждает отказ до SQL. Запуск: `manage.py test api.tests.test_query_controls --noinput --verbosity=1` — 12 тестов.
+
+Регрессии D1: `api.tests.test_request_errors` — 19 тестов (12 без БД, 7 integration); два дополнительных теста в `test_errors` проверяют семейство Django request exceptions и безопасный 415. Граница 1000/1001 проверена на всех 13 маршрутах при обоих DEBUG, с точным JSON, без SQL при отказе. Проверяются percent-кодирование/UTF-8/суррогаты, Host, Accept/Content-Type, конструкторы настоящих WSGI/ASGI request, длинные значения, повторения/пустые имена/массивы, ID, отсутствие чтения body при GET/405, запись без слэша и редактирование access log. Неизвестные `RuntimeError`, `ValueError`, `LookupError`, `UnicodeDecodeError` из view остаются безопасным 500. Запуск: `manage.py test api.tests.test_request_errors api.tests.test_errors --noinput --verbosity=0` — 44 теста. Полный WSGI-вызов с SQL использует `TransactionTestCase`: сигнал `request_started` закрывает соединение в атомарном обычном `TestCase`.
 
 Регрессии `api.tests.test_read_resilience`: точные значения обоих маршрутов сравнения на границах моделей и курсов, отрицательная оплаченная цена при большой скидке, среднее и процент динамики нормализованных цен. Конкурентное удаление проверяет `TransactionTestCase` с autocommit: `connection.execute_wrapper` перед чтением последних цен коммитит удаление строки и чека через отдельное psycopg-соединение в тестовую БД; результаты SQL не подменяются. Покрыты `price_summary`, карточка и список товаров, оба сравнения (сравнимые и несравнимые предложения), сводка истории, карточка и список обобщённых продуктов, удаление единственной группы и сохранение более раннего наблюдения. Runner очищает данные через flush. Запуск: `manage.py test api.tests.test_read_resilience --tag=integration --noinput --verbosity=2` — 19 тестов.
 
@@ -119,7 +121,7 @@ docker compose -p checkist_qa exec -T worker celery -A config inspect ping --des
 docker compose -p checkist_qa ps
 ```
 
-Ожидается exit 0 для каждой команды; зависимости без конфликтов, check без ошибок, migrations применены/уже актуальны, `No changes detected`, 418 integration tests passed, реальный pong через task/results и отдельный control pong. `ps` должен показывать три healthy services с QA host-портами. Docker build может использовать cache: это не новая установка с нуля, но `pip check` проверяет реально установленные зависимости образа.
+Ожидается exit 0 для каждой команды; зависимости без конфликтов, check без ошибок, migrations применены/уже актуальны, `No changes detected`, 425 integration tests passed, реальный pong через task/results и отдельный control pong. `ps` должен показывать три healthy services с QA host-портами. Docker build может использовать cache: это не новая установка с нуля, но `pip check` проверяет реально установленные зависимости образа.
 
 ## HTTP: позитивные и негативные сценарии
 
@@ -336,6 +338,72 @@ for name in ('POSTGRES_PASSWORD', 'DJANGO_SECRET_KEY'):
 
 Автоматический обход browser UI не выполняется. Скриншотов и результатов визуальной/интерактивной приёмки пока нет. После проверки остановить оба локальных процесса и QA Compose по разделу завершения ниже.
 
+## Фактические результаты исправления D1, 2026-10-04
+
+Причина исходного 500: DRF content negotiation читает `request.query_params` до `Params`, Django поднимает `TooManyFieldsSent`, а общий handler раньше относил его к внутренним ошибкам. Теперь handler возвращает фиксированный `400 invalid_request` для всего семейства `SuspiciousOperation`, `BadRequest`, `UnreadablePostError`, `MultiPartParserError`. Дополнительно общий `config.requests` защищает Host и декодирование query/заголовков до DRF и Content-Type в конструкторе WSGI/ASGIRequest; предотвращает RuntimeError записи без слэша; не пишет exception text/значения в security log и скрывает request target в `django.server`. Неизвестные ошибки реализации сохраняют 500. Штатные 1000 полей, модели, зависимости и миграции сохранены. Несовместимость и откат описаны в [контракте](api-contract.md#производительность-и-откат).
+
+Среда: Windows, Python 3.13.9, собственный `backend/.venv` с закреплённым requirements.txt. Собственные Compose project/БД `checkist_qa_d1_mutq000l2q`, новые тома, тестовая БД `test_checkist_qa_d1_mutq000l2q`; Postgres 25486, Redis 16433, runserver DEBUG=1 на 18054 и DEBUG=0 на 18055. Dev, чужая QA и локальный Postgres не использовались. В каждом QA-процессе применялся полный блок environment выше с этими именем/портами/URL и публичными реквизитами образца; для DEBUG=0 использован отдельный тестовый secret key, отличный от placeholder. Environment передавался прямо в команды, системная ExecutionPolicy не менялась.
+
+### Проверено и прошло
+
+Команды Python — `./backend/.venv/Scripts/python.exe -X utf8 …`, из корня worktree. Все завершившиеся проверочные команды таблицы — exit 0; runserver работал до явной остановки своих процессов после HTTP-аудита, его завершение не объявляется проверкой с exit 0. Финальный полный прогон повторён после последней правки кода, тестов и HTTP-скрипта; после него менялась только документация. Прежние числа 155/418 в исторических отчётах ниже относятся к их состоянию ветки.
+
+| Фактическая команда | Результат |
+| --- | --- |
+| `py -3.13 -m venv backend/.venv`; `… -m pip install -r backend/requirements.txt` | Собственный venv, закреплённые зависимости установлены |
+| `docker compose -p checkist_qa_d1_mutq000l2q config --quiet`; `… up -d --wait --wait-timeout 90 postgres redis` | Оба healthy, собственные контейнеры/сеть/тома |
+| Python stdin: `socket.create_connection(("127.0.0.1", port), timeout=2)` для 25486/16433 | Оба TCP OK до записей/миграций |
+| `… -m pip check` | No broken requirements found |
+| `… backend/manage.py check` | 0 issues |
+| `… backend/manage.py makemigrations --check --dry-run` | No changes detected |
+| `… backend/manage.py migrate --noinput` | 22 существующие миграции в пустую собственную QA-БД |
+| `… backend/manage.py test api.tests.test_request_errors api.tests.test_errors --noinput --verbosity=0` | 44 OK, 1.449 с |
+| `… backend/manage.py test catalog stores receipts health api --exclude-tag=integration --verbosity=1` | **169 OK**, 3.789 с, без БД; повтор полного набора после уточнения HTTP-скрипта |
+| `… backend/manage.py test catalog stores receipts health api --tag=integration --noinput --verbosity=1` | **425 OK**, 25.624 с; runner создал/удалил тестовую БД; повтор полного набора после уточнения HTTP-скрипта |
+| `docker compose -p checkist_qa_d1_mutq000l2q up -d --build --wait --wait-timeout 120 worker` | Linux/prefork worker healthy; build использовал cache |
+| `… backend/manage.py check_services` | SQL/cache ok, реальная Celery broker/results: `{"message":"pong"}` |
+| `… backend/manage.py runserver 127.0.0.1:18054 --noreload`; аналогично 18055 при `DJANGO_DEBUG=0` | Два настоящих HTTP-сервера; health 200 при обоих DEBUG |
+| `… backend/scripts/check_request_errors.py --port 18054 --product-id 1 --generic-id 1 --category-id 2`; аналогично `--port 18055` | **686 HTTP-проверок на каждом сервере, 1372 всего**, без 500; распределение на каждом: 200×226, 400×296, 404×56, 405×53, 406×52, 414×1, 431×2 |
+
+Данные HTTP — вымышленные `api.tests.factories.save_samples()`, внесённые Python stdin только в собственную QA-БД; ID получены из результата функции, не предполагаются равными 1 в других БД. HTTP-скрипт данные не меняет. Серверные SQL-запросы не подменялись; ноль SQL при отказе подтверждён integration-тестами, а не HTTP-счётчиком. Логи намеренных 500 в успешных тестах handler не являются отказом тестов.
+
+| Вход / участок класса | Что именно проверено и результат |
+| --- | --- |
+| 1000 / 1001 query-полей | Все 13 маршрутов × DEBUG 0/1: 200 / точный JSON 400. HTTP также повторяет границу с Content-Type charset=utf-8 и base64; 1001 до 405 — 400. Integration: SQL=0 при отказе, никаких exception text/значений в JSON |
+| Семейство request exceptions | Все классы `SuspiciousOperation`/`BadRequest` из django.core.exceptions плюс UnreadablePostError/MultiPartParserError поднимаются тестовой DRF-view и дают точный 400 при обоих DEBUG; защитный middleware отдельно проверен. ParseError DRF — существующий безопасный 400; неподдерживаемый media type — 415 без деталей |
+| Body/form/files | Реальный HTTP: GET с невалидным JSON/multipart — 200; POST — 405; 101 multipart-файл не читается (GET 200 / POST 405), Content-Length 3 MiB на GET не вызывает чтения/лимита. WSGI-регрессия со stream.read, который поднимает UnreadablePostError, подтверждает отсутствие чтения на GET и всех 405. RequestDataTooBig/TooManyFilesSent/ошибки парсера на штатных read-only view недостижимы; общий handler проверен через явное поднятие исключений |
+| Percent/UTF-8/суррогаты query | На всех маршрутах `%ff`, одиночный `%`, `%0`, `%gg`, `%ed%a0%80`, `%c0%80`, ошибочные неизвестные значения/имена — JSON 400; обычный UTF-8 и `%25` допустимы. ASGI application: raw invalid byte и surrogate path — безопасный 400. Params отвергает суррогаты до передачи в БД |
+| Очень длинные значения/query | В пределах runserver: q=60000 символов на пяти списках — 400 invalid_parameter; известные числа/коды/сортировка/дата — 400 в тестах. Unknown=60000 символов — 200. Большой query с 1001 коротким полем — 400 по числу, а не байтам |
+| Повторы/пустые имена/массивы | Последнее q применяется, пустое последнее q игнорируется; `=…`, `q[]`, `q[a]` — 200 как неизвестные имена. Повторы учитываются в лимите |
+| Host / Accept / Content-Type | DisallowedHost — JSON 400, без Django security log. Ошибка charset расширенного параметра Accept/Content-Type — 400 до view, в том числе конструктор WSGI/ASGI. Несовместимые Accept — 406; безопасные формы, принятые DRF, — 200. Charset тела не меняет UTF-8 поиска. Accept indent=60000 цифр, длинный список Accept и X-header=60000 символов — 200 без исключений |
+| ID / путь | Все семь маршрутов объектов: 2^63, 0, отрицательное число, 5000 цифр, NUL, `%ff`, `%`, `%ed%a0%80` — JSON 404. WSGI/Django repercent-encodes недопустимые байты пути; числовой маршрут не совпадает. Уже декодированный surrogate ASGI path — 400 |
+| Запись без слэша | Все 13 путей × четыре метода × DEBUG 0/1 — JSON 400 до CommonMiddleware; GET-редирект и health-тесты без правок сохранены |
+| Граница до Django | Настоящий runserver: request line >65536 байт — 414 HTML; header line >65536 или пакет из 101 дополнительного заголовка (плюс служебные http.client) — 431 HTML. Django/DRF и JSON-handler не вызываются; эти ответы проверены отдельно, не названы JSON |
+| Внутренние ошибки | RuntimeError, ValueError, LookupError, UnicodeDecodeError и DRF APIException из view — безопасный 500 при обоих DEBUG; не превращаются в 4xx |
+
+Уборка: оба runserver остановлены, `docker compose -p checkist_qa_d1_mutq000l2q down` без `-v`; контейнеры/сеть удалены, тома сохранены. Фильтр своего project в `docker ps -a` и LISTEN на 25486/16433/18054/18055 пусты. После финального коммита рабочее дерево чистое.
+
+### Проверено и не прошло
+
+- До исправления: `manage.py test api.tests.test_request_errors --tag=integration --noinput --verbosity=1` — exit 1, один тест, **26 failures** (`500 != 400` на всех маршрутах при обоих DEBUG). Граница 1000 проходила. Это исходная падающая регрессия; теперь проходит.
+- `manage.py test api.tests.test_errors.ErrorFormatTests.test_django_request_errors_are_safe_400_even_in_debug --verbosity=0` до handler-правки — exit 1, **22 failures** (`500 != 400`). После исправления входит в успешный полный набор.
+- `manage.py test api.tests.test_request_errors.RequestSyntaxTests.test_content_type_constructor_error_is_safe_wsgi_400 --verbosity=0` до подключения safe request — exit 1, **2 errors**, `LookupError: unknown encoding` в Django constructor. После исправления проходит.
+- Во время расширения аудита новые тесты выявили отказы Host, malformed query и записи без слэша; затем две ошибки самого сценария: `date_from` на products по контракту игнорируется (перенесён на prices), DRF допускает незакрытую кавычку после JSON media type (ожидание согласовано с фактическим безопасным разбором). Полный WSGIHandler внутри обычного TestCase закрывал транзакционное соединение сигналом request_started и провоцировал тестовые 500: сценарий перенесён в TransactionTestCase, без подмены SQL/сигналов. Эти промежуточные неуспешные прогоны исправлены; тесты не отключались, ожидание отсутствия 500 не ослаблялось.
+- Процедурный сбой подготовки QA: загрузка временного `.ps1` отвергнута ExecutionPolicy, хотя общая shell-команда закончилась exit 0. Созданный собственный project `checkist_qa_mutq000l2q` с defaults остановлен до миграций/записей; тома сохранены. Новый отдельный project `checkist_qa_d1_mutq000l2q` запущен с environment непосредственно в командах. Dev/чужие контейнеры не менялись, системные настройки не менялись.
+
+На окончательном состоянии неуспешных обязательных проверок нет.
+
+### Не проверено и почему
+
+- UI — по правилам проекта только человек. Автоматического browser-обхода и скриншотов нет. Для ручной приёмки поднять собственные QA API/Vite и пройти [сценарий UI](#ручная-ui-приёмка-человеком): загрузка, повтор, stop/recovery, Offline/timeout, клавиатура, screen reader, узкая ширина и масштаб.
+- Frontend lint/test/build, Vite proxy и stop/recovery не повторялись: frontend/probes не менялись; health подтверждён неизменёнными тестами, настоящим HTTP и check_services. Воспроизводимые команды — [сквозная проверка](#сквозная-проверка-клиента-через-vite-proxy).
+- ASGI проверен прямым вызовом настоящего application в регрессиях; отдельный сетевой ASGI-сервер не запускался, его нет в зависимостях проекта. HTTP выполнен на принятом WSGI/runserver.
+- Реальное отключение upload-сокета не провоцировалось: read-only view не читает тело, поэтому UnreadablePostError проверен явным исключением и unreadable stream; шаг для будущего API записи — отдельный QA endpoint с реальным body parser и отменой upload, с собственным контрактом.
+- Нагрузка/большая БД, внешние серверы/proxy и их лимиты/журналы не проверялись; текущие assertNumQueries прошли. Для отдельного прогона нужен представительный QA-набор и конкретная конфигурация сервера.
+- Rollback/restore БД не выполнялся: схема не менялась. Миграции применены в новую QA и повторно runner к тестовой БД; откат D1 — revert коммита без операций с БД. Проверка отката модели — отдельная QA по [сценарию](#модель-данных-catalog-stores-receipts).
+
+Повтор HTTP-аудита: после QA-блока запустить runserver с `DJANGO_DEBUG=1`, внести `save_samples()` в собственную QA и получить его ID, затем `… backend/scripts/check_request_errors.py --port <QA-port> --product-id <id> --generic-id <id> --category-id <id>`. Остановить сервер и повторить при `DJANGO_DEBUG=0` с неплейсхолдерным тестовым secret key; скрипт не пишет данные и ожидает healthy worker для health. После проверки остановить сервер и только свой Compose project без удаления томов.
+
 ## Фактические результаты исправления C1, 2026-10-04
 
 Причина `500`: `Params.search` проверял только длину, поэтому NUL попадал в PostgreSQL `text` через `icontains`/точное сравнение. Теперь общий `Params.raw`, которым пользуется поиск и остальные парсеры, отвергает Unicode Cc до `strip()` и возвращает ошибку параметра для последующего `check()`. Символы не вырезаются, сообщения не содержат входных значений. Все пять поисковых списков согласованы. Дополнительно прекращено молчаливое удаление управляющих пробельных символов на краях кодов, дат, перечислений, курсов и чисел. Доступ, JSON успешных ответов, модели, зависимости и миграции не менялись; ужесточение входа и откат описаны в [контракте](api-contract.md#общие-правила).
@@ -494,7 +562,7 @@ HTTP на настоящем сервере, `curl.exe -i --max-time 15 …` (cu
 
 Тесты и сценарии контракта прошли. Зафиксированы два наблюдения, код не менялся:
 
-- **`POST` / `PUT` / `PATCH` на путь `/api/…` без завершающего `/` при `DJANGO_DEBUG=1` отдаёт HTML `500`**, а не JSON. Воспроизведение: `curl.exe -i --max-time 15 -X POST http://127.0.0.1:18052/api/nope` (так же `/api/products`, `/api/health`) — `500`, `Content-Type: text/html`, отладочная страница Django `RuntimeError at /api/nope` с traceback. Причина: `CommonMiddleware` с `APPEND_SLASH` отказывается перенаправлять запрос с телом в режиме отладки; запрос до DRF и его обработчика ошибок не доходит. Для `/api/health` поведение существовало и раньше, запасной маршрут `api.urls` распространил его на любой путь под `/api/`. При `DJANGO_DEBUG=0` (второй сервер на 18053 с временным `DJANGO_SECRET_KEY`) те же запросы дают `301` на путь со слэшем. Контракт описывает это как [известное ограничение](api-contract.md#известное-ограничение-запись-без-завершающего-слэша); `GET` и все пути со слэшем не затронуты.
+- **На момент этого отчёта `POST` / `PUT` / `PATCH` на путь `/api/…` без завершающего `/` при `DJANGO_DEBUG=1` отдавал HTML `500`**, а не JSON. Воспроизведение: `curl.exe -i --max-time 15 -X POST http://127.0.0.1:18052/api/nope` (так же `/api/products`, `/api/health`) — `500`, `Content-Type: text/html`, отладочная страница Django `RuntimeError at /api/nope` с traceback. Причина: `CommonMiddleware` с `APPEND_SLASH` отказывался перенаправлять запрос с телом в режиме отладки; запрос до DRF и его обработчика ошибок не доходил. Для `/api/health` поведение существовало и раньше, запасной маршрут `api.urls` распространил его на любой путь под `/api/`. При `DJANGO_DEBUG=0` (второй сервер на 18053 с временным `DJANGO_SECRET_KEY`) те же запросы давали `301` на путь со слэшем. Это ограничение **устранено в D1**: теперь [JSON 400 при обоих DEBUG](api-contract.md#запись-без-завершающего-слэша); `GET` и все пути со слэшем сохранены.
 - Первый запрос `curl.exe "…/api/categories/?q=молоч"` из Git Bash вернул `200` с пустым `results`: кириллица ушла не в UTF-8. Тот же запрос с percent-encoding (`?q=%D0%BC%D0%BE%D0%BB%D0%BE%D1%87`) вернул обе ожидаемые категории. Это особенность клиента командной строки, а не сервера.
 
 ### Не проверено и почему

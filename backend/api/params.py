@@ -16,6 +16,7 @@ _DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 _COUNTRY = re.compile(r"[A-Z]{2}")
 _CURRENCY = re.compile(r"[A-Z]{3}")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")  # Unicode Cc: C0, DEL, C1
+_SURROGATE = re.compile(r"[\ud800-\udfff]")
 
 
 class Params:
@@ -52,6 +53,10 @@ class Params:
             # Некоторые параметры (target_currency) читаются несколько раз.
             if name not in self.errors:
                 self.error(name, "Управляющие символы недопустимы.")
+            return None
+        if _SURROGATE.search(value):
+            if name not in self.errors:
+                self.error(name, "Недопустимый Unicode.")
             return None
         return value.strip() or None
 
