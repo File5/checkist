@@ -1,8 +1,7 @@
-import { useEffect, useRef } from 'react'
-import { buildHistoryQuery } from '../../navigation'
 import type { HistoryQuery, NavigationTarget } from '../../navigation'
 import type { PriceHistory as HistoryData, Store } from '../../api/types'
 import RequestState from '../../components/RequestState'
+import { useLocalRequestFocus } from '../../components/useLocalRequestFocus'
 import Pagination from '../../components/Pagination'
 import { formatObservedAt, formatPrice, formatPurchasedOn } from '../../lib/format'
 import ProductRequestState from './ProductRequestState'
@@ -13,23 +12,13 @@ export default function PriceHistory({ state, query, stores, retry, reset, build
   state: LoadState<HistoryData>; query: HistoryQuery; stores: Store[]; retry: () => void; reset: () => void
   buildPageHref: (page: number) => NavigationTarget
 }) {
-  const heading = useRef<HTMLHeadingElement>(null)
-  const previousQuery = useRef(query)
-  useEffect(() => {
-    const previous = previousQuery.current
-    previousQuery.current = query
-    // Pagination links disappear during loading; filters keep focus in the form.
-    if (previous.page !== query.page
-      && buildHistoryQuery({ ...previous, page: 1 }) === buildHistoryQuery({ ...query, page: 1 })) {
-      heading.current?.focus()
-    }
-  }, [query])
+  const block = useLocalRequestFocus(state)
   const knownStores = new Map(stores.map((store) => [store.id, store]))
   return (
-    <section className="product-panel" aria-labelledby="product-history-heading" aria-busy={state.kind === 'loading'}>
-      <h2 id="product-history-heading" ref={heading} tabIndex={-1}>История цен</h2>
+    <section ref={block} className="product-panel" aria-labelledby="product-history-heading" aria-busy={state.kind === 'loading'}>
+      <h2 id="product-history-heading" tabIndex={-1} data-request-focus-target>История цен</h2>
       {state.kind === 'loading' && <RequestState kind="loading" message="Загружаем историю покупок…" />}
-      {state.kind === 'error' && <ProductRequestState failure={state} retry={() => { heading.current?.focus(); retry() }} reset={reset} firstPage={buildPageHref(1)} />}
+      {state.kind === 'error' && <ProductRequestState failure={state} retry={retry} reset={reset} firstPage={buildPageHref(1)} />}
       {state.kind === 'ok' && (state.data.results.length === 0
         ? <RequestState kind="empty" message={hasFilters(query) ? 'Нет записей по выбранным фильтрам' : 'Покупок этого товара пока нет'} action={hasFilters(query) && <button type="button" onClick={reset}>Сбросить фильтры</button>} />
         : <>

@@ -3,6 +3,7 @@ import { getStores } from '../../api/stores'
 import type { Store, StoreBrief } from '../../api/types'
 import { parseCatalogQuery } from '../../navigation/routes'
 import RequestState from '../../components/RequestState'
+import { useLocalRequestFocus } from '../../components/useLocalRequestFocus'
 import { errorMessage, mergeStores, storeLabel, storeParams } from './state'
 import { useProductRequest } from './useProductRequest'
 
@@ -20,6 +21,7 @@ export default function StoreFilter({ country, value, initial, known = [], selec
     return result
   }, [country, search.q, search.page, onStores])
   const { state, retry } = useProductRequest(load)
+  const block = useLocalRequestFocus<HTMLFieldSetElement>(state)
   const unavailable = state.kind === 'error'
   const options = mergeStores(initial, state.kind === 'ok' ? state.data.results : []).filter((store) => !country || store.country === country)
   const knownStores = new Map(known.map((store) => [store.id, store]))
@@ -38,8 +40,8 @@ export default function StoreFilter({ country, value, initial, known = [], selec
     ? 'Исправьте поиск: от 2 до 100 символов или пустое поле.' : '')
 
   return (
-    <fieldset className="product-store-filter" aria-busy={state.kind === 'loading'}>
-      <legend>Магазин</legend>
+    <fieldset ref={block} className="product-store-filter" aria-busy={state.kind === 'loading'}>
+      <legend data-request-focus-target tabIndex={-1}>Магазин</legend>
       <label htmlFor="product-store">Магазин для фильтра истории</label>
       <select id="product-store" value={value} onChange={(event) => onChange(event.target.value)} disabled={unavailable}
         aria-invalid={Boolean(error)} aria-describedby={`product-store-note${error ? ' product-store-error' : ''}`}>
@@ -64,7 +66,7 @@ export default function StoreFilter({ country, value, initial, known = [], selec
         <p className="product-field-error" role="status">Не удалось загрузить справочник магазинов. {errorMessage(state)}</p>
         {state.status === 400 ? <button type="button" onClick={() => { setText(''); setSearchError(''); setSearch({ country, q: '', page: 1 }) }}>Сбросить поиск магазинов</button>
           : state.reason === 'page_out_of_range' ? <button type="button" onClick={() => setSearch({ ...search, page: 1 })}>Первая страница магазинов</button>
-            : <button type="button" onClick={retry}>Повторить</button>}
+            : <button type="button" data-request-retry onClick={retry}>Повторить</button>}
       </>}
       {state.kind === 'ok' && <>
         <p className="product-note" role="status">{state.data.count === 0 ? 'Магазины по этому поиску не найдены.' : `Найдено магазинов: ${state.data.count.toLocaleString('ru-RU')}. Страница ${state.data.page.toLocaleString('ru-RU')} из ${state.data.pages.toLocaleString('ru-RU')}. Варианты доступны в поле выбора выше.`}</p>

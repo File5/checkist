@@ -6,6 +6,7 @@ import type { ProductPageProps } from '../../pages/types'
 import { buildHistoryQuery, Link, navigate } from '../../navigation'
 import type { HistoryQuery } from '../../navigation'
 import RequestState from '../../components/RequestState'
+import { useLocalRequestFocus } from '../../components/useLocalRequestFocus'
 import { formatQuantity } from '../../lib/format'
 import PriceHistory from './PriceHistory'
 import PriceSummary from './PriceSummary'
@@ -91,6 +92,7 @@ function ProductScreen({ productId, query, returnTo }: ProductPageProps) {
       ? { kind: 'error', reason: 'invalid_response' } : result
   }, [productId, store, country, currency, date_from, date_to])
   const productRequest = useProductRequest(loadProduct)
+  const productBlock = useLocalRequestFocus(productRequest.state)
   const historyRequest = useProductRequest(loadHistory)
   const summaryRequest = useProductRequest(loadSummary)
   const [directoryStores, setDirectoryStores] = useState<Store[]>([])
@@ -106,13 +108,11 @@ function ProductScreen({ productId, query, returnTo }: ProductPageProps) {
   const stores = mergeStores(mergeStores(directoryStores, product?.stores ?? []), summaryStores)
   const selectedStore = historyRequest.state.kind === 'ok'
     ? historyRequest.state.data.results.find((point) => point.store.id === query.store)?.store : undefined
-  if (productRequest.state.kind === 'error' && productRequest.state.reason === 'not_found') {
-    return <div className="product-page"><RequestState kind="empty" message="Товар не найден" action={<Link className="action-link" to="/catalog">В каталог</Link>} /></div>
-  }
+  const missing = productRequest.state.kind === 'error' && productRequest.state.reason === 'not_found'
   return (
     <div className="product-page">
-      <section className="product-panel" aria-labelledby="product-heading" aria-busy={productRequest.state.kind === 'loading'}>
-        <h2 id="product-heading">{product?.name.trim() || (product ? 'Не указано' : 'Карточка товара')}</h2>
+      <section ref={productBlock} className="product-panel" aria-labelledby="product-heading" aria-busy={productRequest.state.kind === 'loading'}>
+        <h2 id="product-heading" data-request-focus-target tabIndex={-1}>{missing ? 'Товар не найден' : product?.name.trim() || (product ? 'Не указано' : 'Карточка товара')}</h2>
         {productRequest.state.kind === 'loading' && <RequestState kind="loading" message="Загружаем карточку товара…" />}
         {productRequest.state.kind === 'error' && <ProductRequestState failure={productRequest.state} retry={productRequest.retry} />}
         {product && <>
@@ -132,16 +132,18 @@ function ProductScreen({ productId, query, returnTo }: ProductPageProps) {
             <Link className="action-link" to={{ kind: 'category', categoryId: product.category.id, query: { page: 1 } }}>Назад в категорию</Link>
           </div>
         </>}
-        {!product && <Link className="action-link" to={returnTo ?? '/catalog'}>Назад в каталог</Link>}
+        {!product && !missing && <Link className="action-link" to={returnTo ?? '/catalog'}>Назад в каталог</Link>}
       </section>
-      <aside className="product-limitations" aria-label="Ограничения данных о ценах">
-        <p>Это наблюдения покупок из чеков, а не текущие цены магазинов. Скидка всего чека не распределена по товарам. Налоговая база цен не указана.</p>
-        <p>Сопоставимость обозначает совместимость единиц; она не подтверждает одинаковую налоговую базу. Валюты и единицы не объединяются.</p>
-      </aside>
-      <FilterForm query={query} product={product} stores={stores} selectedStore={selectedStore}
-        failures={failures} apply={apply} reset={reset} onStores={onStores} />
-      <PriceHistory state={historyRequest.state} query={query} stores={stores} retry={historyRequest.retry} reset={reset} buildPageHref={buildPageHref} />
-      <PriceSummary state={summaryRequest.state} retry={summaryRequest.retry} reset={reset} />
+      {!missing && <>
+        <aside className="product-limitations" aria-label="Ограничения данных о ценах">
+          <p>Это наблюдения покупок из чеков, а не текущие цены магазинов. Скидка всего чека не распределена по товарам. Налоговая база цен не указана.</p>
+          <p>Сопоставимость обозначает совместимость единиц; она не подтверждает одинаковую налоговую базу. Валюты и единицы не объединяются.</p>
+        </aside>
+        <FilterForm query={query} product={product} stores={stores} selectedStore={selectedStore}
+          failures={failures} apply={apply} reset={reset} onStores={onStores} />
+        <PriceHistory state={historyRequest.state} query={query} stores={stores} retry={historyRequest.retry} reset={reset} buildPageHref={buildPageHref} />
+        <PriceSummary state={summaryRequest.state} retry={summaryRequest.retry} reset={reset} />
+      </>}
     </div>
   )
 }

@@ -14,7 +14,7 @@ export default function RequestState(props: RequestStateProps) {
   return (
     <div className={`request-state request-state-${props.kind}`} aria-live="polite" aria-busy={props.kind === 'loading'}>
       <p>{message}</p>
-      {props.kind === 'error' && <button type="button" onClick={props.onRetry} disabled={props.retryDisabled}>Повторить</button>}
+      {props.kind === 'error' && <button type="button" data-request-retry onClick={props.onRetry} disabled={props.retryDisabled}>Повторить</button>}
       {props.kind === 'empty' && props.action && <div className="request-state-action">{props.action}</div>}
     </div>
   )
