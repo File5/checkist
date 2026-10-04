@@ -141,7 +141,8 @@ class JobPipeline:
                 *self.fence, phase=phase, image_id=image.pk if image else None,
                 provider=settings.RECEIPT_OCR_PROVIDER,
                 model=settings.RECEIPT_OCR_MODEL if settings.RECEIPT_OCR_PROVIDER == "codex_cli" else "",
-                provider_version="1", cli_version=getattr(self.provider, "cli_version", ""), prompt_version="1",
+                provider_version="1", cli_version=getattr(self.provider, "cli_version", ""),
+                prompt_version="1" if phase == AttemptPhase.DETECT else "2",
                 schema_version="1" if phase == AttemptPhase.DETECT else "2",
                 input_sha256=prepared.sha256,
             )
@@ -222,7 +223,7 @@ class JobPipeline:
 
     def _outcome(self, error_code=""):
         images = list(self.job.images.order_by("position"))
-        success = images and all(image.status in {ImageStatus.IMPORTED, ImageStatus.REUSED, ImageStatus.UPDATED} and not image.issues for image in images)
+        success = images and all(image.status in {ImageStatus.IMPORTED, ImageStatus.REUSED, ImageStatus.UPDATED} for image in images)
         usable = any(image.import_effect != ImportEffect.NONE or (image.status == ImageStatus.NEEDS_REVIEW and image.normalized_result is not None) for image in images)
         complete = self.job.detected_count == len(images)
         status = JobStatus.SUCCEEDED if success and complete else JobStatus.PARTIAL_SUCCEEDED if usable and complete else JobStatus.FAILED

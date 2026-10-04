@@ -52,6 +52,8 @@ PUBLIC_POINTER = re.compile(
     r"raw_name|name|product|quantity|unit|unit_price|amount|discount_amount|tax_amount|"
     r"tax_code|tax_rate|net|tax|gross|line_position|barcode|store_item_code|is_excise|is_marked))?)?)\Z"
 )
+REVIEW_IMAGES = (Q(status="needs_review")
+                | (~Q(issues=[]) & ~Q(status__in=["imported", "reused", "updated"])))
 
 
 def public_issues(issues):
@@ -109,7 +111,7 @@ def jobs_queryset():
     return ProcessingJob.objects.annotate(
         items_count=Count("images"),
         has_review=Exists(ReceiptImage.objects.filter(job_id=OuterRef("pk"))
-                         .filter(Q(status="needs_review") | ~Q(issues=[]))),
+                         .filter(REVIEW_IMAGES)),
         has_active_sibling=Exists(ProcessingJob.objects.filter(photo_id=OuterRef("photo_id"),
                                   status__in=["queued", "running", "cancel_requested"])),
     )
@@ -252,7 +254,7 @@ def receipts_queryset():
         unmatched_products_count=related_count(lines.filter(kind="product", product__isnull=True), "receipt_id"),
         image_count=related_count(images, "receipt_id"),
         preview_file=Subquery(images.order_by("-created_at", "-id").values("file")[:1]),
-        has_review=Exists(images.filter(Q(status="needs_review") | ~Q(issues=[]))),
+        has_review=Exists(images.filter(REVIEW_IMAGES)),
     )
 
 

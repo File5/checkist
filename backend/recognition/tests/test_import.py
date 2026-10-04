@@ -15,6 +15,7 @@ from receipts.models import ProductAlias, Receipt, ReceiptDiscount, ReceiptLine,
 from receipts.validation import validate_receipt
 from recognition import importer
 from recognition.importer import ImportBusy, import_receipt
+from recognition.dto import FieldObservation
 from recognition.models import ProcessingJob, ReceiptImage
 from recognition.providers.fake import receipt_payload
 from recognition.queue import FenceLost, db_now, request_cancel
@@ -65,12 +66,94 @@ class ImportTests(TestCase):
         self.assertEqual(result.job_version, result.image.job.version)
         self.assertEqual(result.image.job.imported_count, 1)
 
+    def test_c6_codex_null_operation_and_ambiguous_optional_fiscal_autoimport(self):
+        payload = receipt_payload()
+        payload["operation"] = None
+        payload["fiscal"]["register_serial"] = None
+        obs = observation(payload)
+        obs = replace(obs, fields=obs.fields + (
+            FieldObservation("/operation", "absent", None, None),
+            FieldObservation("/fiscal/register_serial", "ambiguous", None, None),
+        ))
+        image, job = live_image()
+        result = import_receipt(image, obs, run_token=job.run_token, version=job.version)
+        self.assertEqual(result.outcome, "created")
+        self.assertEqual(result.image.status, "imported")
+        self.assertEqual(result.receipt.operation, "sale")
+        self.assertEqual(result.receipt.total, Decimal("4.42"))
+        self.assertEqual((result.receipt.lines.count(), Product.objects.count()), (4, 3))
+        self.assertEqual(result.receipt.fiscal_key, "")
+        self.assertNotIn("register_serial", result.receipt.fiscal)
+        self.assertIsNone(result.image.normalized_result["operation"])
+        self.assertIn("operation_defaulted", [v["code"] for v in result.issues])
+        self.assertIn("optional_omitted", [v["code"] for v in result.issues])
+
     def test_second_k1_receipt_is_independently_imported(self):
         self.run_import()
         result = self.run_import(receipt_payload(2))
         self.assertEqual(result.outcome, "created")
         self.assertEqual(result.receipt.total, Decimal("6.00"))
         self.assertEqual((Receipt.objects.count(), Store.objects.count(), Product.objects.count()), (2, 2, 5))
+
+    def test_optional_invalid_fields_import_and_do_not_create_tax_or_false_product_facts(self):
+        payload = receipt_payload()
+        payload["taxes"][0].update(net="3.00")
+        payload["lines"][3].update(parent_position=999)
+        payload["discounts"][0].update(line_position=999)
+        payload["merchant"].update(tax_id="INVALID", tax_id_type="vat_id")
+        result = self.run_import(payload)
+        self.assertEqual(result.outcome, "created")
+        self.assertEqual(result.receipt.lines.count(), 4)
+        self.assertEqual(result.receipt.taxes.count(), 0)
+        self.assertIsNone(result.receipt.lines.get(position=4).parent_id)
+        self.assertIsNone(result.receipt.discounts.get().line_id)
+        self.assertEqual(result.receipt.store.merchant.tax_id, "")
+        self.assertTrue(result.issues)
+
+    def test_uncertain_numbers_and_fiscal_use_exact_weak_key_for_new_photo(self):
+        obs = observation()
+        uncertain = {"/receipt_number", "/register_code", "/shift_number", "/fiscal/register_serial"}
+        obs = replace(obs, fields=tuple(replace(f, status="ambiguous") if f.path in uncertain else f for f in obs.fields))
+        image, job = live_image()
+        first = import_receipt(image, obs, run_token=job.run_token, version=job.version)
+        image, job = live_image()
+        second = import_receipt(image, obs, run_token=job.run_token, version=job.version)
+        self.assertEqual((first.outcome, second.outcome), ("created", "linked"))
+        self.assertEqual(first.receipt.pk, second.receipt.pk)
+        self.assertEqual((first.receipt.fiscal_key, first.receipt.receipt_number), ("", ""))
+        self.assertEqual((Receipt.objects.count(), ReceiptLine.objects.count(), Product.objects.count()), (1, 4, 3))
+        different = another_receipt()
+        different["receipt_number"] = different["shift_number"] = different["register_code"] = None
+        different["fiscal"] = {k: None for k in different["fiscal"]}
+        self.assertEqual(self.run_import(different).outcome, "created")
+        self.assertEqual(Receipt.objects.count(), 2)
+
+    def test_two_complete_number_keys_conflict_at_same_weak_identity(self):
+        payload = receipt_payload()
+        payload["fiscal"] = {k: None for k in payload["fiscal"]}
+        first = self.run_import(payload)
+        payload["receipt_number"] = "OTHER-NUMBER"
+        second = self.run_import(payload)
+        self.assertEqual(second.outcome, "needs_review")
+        self.assertIsNone(second.receipt)
+        self.assertEqual(second.issues[0]["code"], "identity_conflict")
+        self.assertEqual(Receipt.objects.count(), 1)
+        first.receipt.refresh_from_db()
+        self.assertEqual(first.receipt.receipt_number, "000123")
+
+    def test_rounding_cent_is_nonblocking_but_gross_total_mismatch_blocks(self):
+        payload = receipt_payload()
+        payload["total"] = "4.43"
+        result = self.run_import(payload)
+        self.assertEqual(result.outcome, "created")
+        self.assertEqual(result.receipt.total, Decimal("4.43"))
+        self.assertIn("receipt_invalid", [v["code"] for v in result.issues])
+        payload = another_receipt()
+        payload["total"] = "5.00"
+        result = self.run_import(payload)
+        self.assertEqual(result.outcome, "needs_review")
+        self.assertIsNone(result.receipt)
+        self.assertEqual(Receipt.objects.count(), 1)
 
     def test_same_receipt_new_photo_links_without_duplicate_graph(self):
         first = self.run_import()
@@ -125,13 +208,13 @@ class ImportTests(TestCase):
         self.assertEqual(ProductAlias.objects.count(), 3)
         self.assertEqual(Store.objects.count(), 1)
 
-    def test_ambiguous_good_imports_null_product_and_review(self):
+    def test_ambiguous_good_imports_null_product_with_nonblocking_notice(self):
         category = Category.objects.create(name="Молочные продукты")
         generic = GenericProduct.objects.create(category=category, name="Молоко", base_unit="l")
         for qty in ("1.000", "2.000"):
             Product.objects.create(generic=generic, name="MILCH 1 L", package_quantity=qty, package_unit="l")
         result = self.run_import()
-        self.assertEqual(result.outcome, "needs_review")
+        self.assertEqual(result.outcome, "created")
         self.assertIsNotNone(result.receipt)
         self.assertEqual(result.image.import_effect, "created")
         self.assertIsNone(result.receipt.lines.get(position=1).product_id)
@@ -162,7 +245,7 @@ class ImportTests(TestCase):
         payload["taxes"][0]["net"] = "3.36"
         payload["raw_text"] = "A new photograph"
         second = self.run_import(payload)
-        self.assertEqual(second.outcome, "needs_review")
+        self.assertEqual(second.outcome, "linked")
         self.assertEqual(second.receipt.pk, first.receipt.pk)
         self.assertEqual(second.image.import_effect, "linked")
         self.assertIn("receipt_conflict", [v["code"] for v in second.issues])
@@ -179,7 +262,7 @@ class ImportTests(TestCase):
         payload["lines"][0]["raw_name"] = "CHANGED PRODUCT"
         payload["lines"][0]["product_hint"]["name"] = "CHANGED PRODUCT"
         second = self.run_import(payload)
-        self.assertEqual(second.outcome, "needs_review")
+        self.assertEqual(second.outcome, "linked")
         self.assertEqual(second.image.import_effect, "linked")
         self.assertEqual(Product.objects.count(), 3)
         self.assertEqual(first.receipt.lines.get(position=1).raw_name, "MILCH 1 L")
@@ -198,14 +281,14 @@ class ImportTests(TestCase):
     def test_incomplete_or_inconsistent_observation_preserved_without_domain_rows(self):
         mutations = [
             lambda p: p.update(total=None),
+            lambda p: p.update(purchased_on=None),
+            lambda p: (p["merchant"].update(legal_name=None, brand_name=None), p["store"].update(name=None)),
+            lambda p: p.update(lines=[]),
             lambda p: p.update(local_time=None),
             lambda p: p["lines"][0].update(quantity=None),
             lambda p: p.update(total="123.45"),
-            lambda p: p["lines"][3].update(parent_position=999),
-            lambda p: p["discounts"][0].update(line_position=999),
             lambda p: p["lines"][0].update(quantity="-2.000", amount="-2.58"),
             lambda p: p.update(currency_code="XTS"),
-            lambda p: p["taxes"][0].update(net="3.00"),
         ]
         for mutate in mutations:
             with self.subTest(mutate=mutate):
@@ -226,18 +309,18 @@ class ImportTests(TestCase):
         self.assertEqual(result.receipt.store.country_id, "DE")
         self.assertEqual(result.receipt.extra["recognition"]["country_source"], "fallback")
 
-    def test_clipped_receipt_is_not_imported(self):
+    def test_clipped_but_readable_receipt_imports_with_notice(self):
         result = self.run_import(clipped=True)
-        self.assertEqual(result.outcome, "needs_review")
-        self.assertEqual(result.issues[0]["code"], "receipt_clipped")
-        self.assert_no_domain()
+        self.assertEqual(result.outcome, "created")
+        self.assertEqual(result.issues[0]["code"], "clipped")
+        self.assertEqual(result.receipt.lines.count(), 4)
 
-    def test_validator_failure_rolls_back_all_domain_rows(self):
+    def test_secondary_validator_warning_preserves_import_and_hides_facts(self):
         rates_before = TaxRate.objects.count()
         with patch.object(importer, "validate_receipt", return_value=["PRIVATE: detail"]):
             result = self.run_import()
-        self.assertEqual(result.outcome, "needs_review")
-        self.assert_no_domain()
+        self.assertEqual(result.outcome, "created")
+        self.assertEqual(result.receipt.lines.count(), 4)
         self.assertEqual(TaxRate.objects.count(), rates_before)
         self.assertNotIn("PRIVATE", str(result.issues))
         self.assertEqual(result.image.normalized_result["total"], "4.42")
@@ -331,15 +414,15 @@ class ImportTests(TestCase):
         self.assertEqual(result.issues[0]["code"], "ambiguous_value")
         self.assert_no_domain()
 
-    def test_ambiguous_product_hint_preserves_line_without_creating_product(self):
+    def test_ambiguous_product_hint_uses_readable_raw_name_without_guessing_hint(self):
         image, job = live_image()
         obs = observation()
         obs = replace(obs, fields=tuple(replace(f, status="ambiguous") if f.path == "/lines/0/product_hint/name" else f for f in obs.fields))
         result = import_receipt(image, obs, run_token=job.run_token, version=job.version)
-        self.assertEqual(result.outcome, "needs_review")
-        self.assertEqual(result.issues[0]["code"], "product_ambiguous")
-        self.assertIsNone(result.receipt.lines.get(position=1).product_id)
-        self.assertEqual(Product.objects.count(), 2)
+        self.assertEqual(result.outcome, "created")
+        self.assertEqual(result.issues[0]["code"], "optional_omitted")
+        self.assertEqual(result.receipt.lines.get(position=1).product.name, "MILCH 1 L")
+        self.assertEqual(Product.objects.count(), 3)
 
     def test_filled_product_reference_preserved_but_package_conflict_reported(self):
         first = self.run_import()
@@ -347,7 +430,7 @@ class ImportTests(TestCase):
         payload = receipt_payload()
         payload["lines"][0]["product_hint"].update(package_quantity="2.000", package_unit="l")
         result = self.run_import(payload)
-        self.assertEqual(result.outcome, "needs_review")
+        self.assertEqual(result.outcome, "linked")
         self.assertEqual(result.issues[0]["code"], "product_conflict")
         self.assertEqual(result.issues[0]["field"], "/lines/0/product_hint")
         self.assertEqual(result.receipt.lines.get(position=1).product_id, product_id)
@@ -360,12 +443,12 @@ class ImportTests(TestCase):
         more = receipt_payload()
         more["fiscal"]["register_serial"] = "DIFFERENT-KASSE"
         result = self.run_import(more)
-        self.assertEqual(result.outcome, "needs_review")
+        self.assertEqual(result.outcome, "linked")
         self.assertEqual(result.receipt.fiscal_key, "")
         first.receipt.refresh_from_db()
         self.assertEqual(first.receipt.fiscal["register_serial"], "TEST-KASSE-02")
 
-    def test_empty_header_fill_that_collides_with_another_key_links_without_mutation(self):
+    def test_incomplete_number_is_not_filled_as_a_strong_identity(self):
         first = self.run_import()
         Receipt.objects.filter(pk=first.receipt.pk).update(receipt_number="", shift_number="", register_code="")
         other = another_receipt()
@@ -376,12 +459,28 @@ class ImportTests(TestCase):
         incoming = receipt_payload()
         incoming["register_code"] = None
         result = self.run_import(incoming)
-        self.assertEqual(result.outcome, "needs_review")
-        self.assertEqual(result.image.import_effect, "linked")
+        self.assertEqual(result.outcome, "updated")
+        self.assertEqual(result.image.import_effect, "updated")
         self.assertEqual(result.receipt.pk, first.receipt.pk)
         first.receipt.refresh_from_db()
         self.assertEqual(first.receipt.receipt_number, "")
         self.assertEqual(Receipt.objects.count(), 2)
+
+    def test_partial_number_without_fiscal_key_uses_only_exact_time_total(self):
+        payload = receipt_payload()
+        payload["register_code"] = payload["shift_number"] = None
+        payload["fiscal"] = {key: None for key in payload["fiscal"]}
+        first = self.run_import(payload)
+        second = self.run_import(payload)
+        payload["local_time"] = "15:35:20"
+        payload["timestamps"]["header"]["time"] = payload["local_time"]
+        third = self.run_import(payload)
+        self.assertEqual((first.outcome, second.outcome, third.outcome), ("created", "linked", "created"))
+        self.assertEqual(first.receipt.pk, second.receipt.pk)
+        self.assertNotEqual(first.receipt.pk, third.receipt.pk)
+        self.assertEqual((Receipt.objects.count(), ReceiptLine.objects.count(), Product.objects.count()), (2, 8, 3))
+        self.assertEqual(first.receipt.receipt_number, "")
+        self.assertEqual(first.image.normalized_result["receipt_number"], "000123")
 
     def test_global_fiscal_match_with_different_shop_does_not_leave_unused_store(self):
         first = self.run_import()
@@ -389,7 +488,7 @@ class ImportTests(TestCase):
         payload["merchant"].update(legal_name="OTHER SYNTHETIC SELLER", brand_name="OTHER")
         payload["store"]["address_raw"] = "OTHER SYNTHETIC ADDRESS 12"
         result = self.run_import(payload)
-        self.assertEqual(result.outcome, "needs_review")
+        self.assertEqual(result.outcome, "linked")
         self.assertEqual(result.receipt.pk, first.receipt.pk)
         self.assertEqual(result.issues[0]["field"], "/store")
         self.assertEqual((Merchant.objects.count(), Store.objects.count(), Product.objects.count()), (1, 1, 3))
@@ -401,10 +500,34 @@ class ImportTests(TestCase):
         obs = replace(obs, fields=tuple(f for f in obs.fields if not f.path.startswith("/lines/0/tax_rate/")))
         image, job = live_image()
         result = import_receipt(image, obs, run_token=job.run_token, version=job.version)
-        self.assertEqual(result.outcome, "needs_review")
-        self.assertEqual(result.issues[0]["code"], "tax_rate_unconfirmed")
+        self.assertEqual(result.outcome, "created")
+        self.assertEqual(result.issues[0]["code"], "optional_omitted")
         self.assertFalse(TaxRate.objects.filter(country="DE", rate="9.00").exists())
-        self.assert_no_domain()
+        self.assertIsNone(result.receipt.lines.get(position=1).tax_rate)
+
+    def test_dropping_tax_row_keeps_original_evidence_for_later_confirmed_rate(self):
+        payload = receipt_payload()
+        payload["taxes"][0].update(net=None, tax=None)
+        payload["taxes"][1].update(net="4.00", tax="0.42", gross="4.42")
+        payload["taxes"][1]["tax_rate"]["rate"] = "10.50"
+        result = self.run_import(payload)
+        self.assertEqual(result.outcome, "created")
+        self.assertEqual(result.receipt.taxes.count(), 1)
+        self.assertEqual(result.receipt.taxes.get().tax_rate.rate, Decimal("10.50"))
+        self.assertEqual(validate_receipt(result.receipt), [])
+
+    def test_conflicting_optional_merchant_tax_type_does_not_block_known_seller(self):
+        payload = receipt_payload()
+        payload["merchant"].update(tax_id="DE999999999", tax_id_type="other")
+        first = self.run_import(payload)
+        payload["merchant"]["tax_id_type"] = "vat_id"
+        second = self.run_import(payload)
+        self.assertEqual(second.outcome, "linked")
+        self.assertEqual(second.receipt.pk, first.receipt.pk)
+        self.assertIn("merchant_conflict", [v["code"] for v in second.issues])
+        self.assertEqual(Merchant.objects.count(), 1)
+        first.receipt.store.merchant.refresh_from_db()
+        self.assertEqual(first.receipt.store.merchant.tax_id_type, "other")
 
     def test_unexpected_write_error_is_failed_with_no_partial_graph(self):
         original = importer.clean_save

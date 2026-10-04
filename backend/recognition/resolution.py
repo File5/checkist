@@ -95,8 +95,6 @@ def resolve_store(observation, country):
             raise ResolutionError(issue("store_ambiguous", "/store"))
     if candidates:
         merchant = candidates[0]
-        if incoming.tax_id_type and merchant.tax_id_type and incoming.tax_id_type != merchant.tax_id_type:
-            raise ResolutionError(issue("merchant_conflict", "/merchant/tax_id_type"))
     else:
         merchant = clean_save(Merchant(
             country=registration, legal_name=legal_name, brand_name=incoming.brand_name or "",

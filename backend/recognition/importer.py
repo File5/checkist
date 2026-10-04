@@ -19,6 +19,7 @@ from receipts.models import Receipt, ReceiptDiscount, ReceiptLine, ReceiptTax
 from receipts.validation import validate_receipt
 
 from .dto import ReceiptObservation
+from .import_policy import optional_field, prepare_observation
 from .models import ReceiptImage
 from .queue import fenced_job, save_image_result
 from .resolution import (
@@ -84,6 +85,8 @@ def _domain_observation(observation):
 
 def _preflight(observation):
     issues = [issue(v["code"], v["path"]) for v in observation_issues(observation)]
+    notices = [v for v in issues if v["code"] == "total_mismatch" and v["field"] != "/total"]
+    issues = [v for v in issues if v not in notices]
     # C3 explicitly permits country inference. Store name can come from merchant,
     # and an existing branch may be resolved without reprinting its address.
     allowed = {"/store/country_code"}
@@ -93,7 +96,7 @@ def _preflight(observation):
         allowed.add("/store/address_raw")
     issues = [v for v in issues if not (v["code"] == "missing_required" and v["field"] in allowed)]
     for evidence in observation.fields:
-        if evidence.status == "ambiguous" and "/product_hint/" not in evidence.path and evidence.path not in {"/confidence", "/raw_text"}:
+        if evidence.status == "ambiguous" and not optional_field(evidence.path) and evidence.path not in {"/confidence", "/raw_text"}:
             issues.append(issue("ambiguous_value", evidence.path))
     for i, discount in enumerate(observation.discounts):
         if not discount.name:
@@ -106,19 +109,9 @@ def _preflight(observation):
     for i, line in enumerate(observation.lines):
         if line.unit_price is not None and line.unit_price < 0:
             issues.append(issue("invalid_value", f"/lines/{i}/unit_price"))
-        if line.kind == "product" and observation.operation == "sale" and line.quantity is not None and line.quantity < 0:
-            issues.append(issue("invalid_value", f"/lines/{i}/quantity"))
-        if line.kind == "product" and observation.operation == "refund" and line.quantity is not None and line.quantity > 0:
-            issues.append(issue("invalid_value", f"/lines/{i}/quantity"))
     if issues:
         raise ResolutionError(*issues)
-
-
-def _product_issues(observation, index):
-    prefix = f"/lines/{index}/product_hint/"
-    if any(f.status == "ambiguous" and f.path.startswith(prefix) for f in observation.fields):
-        return [issue("product_ambiguous", prefix.rstrip("/"))]
-    return []
+    return notices
 
 
 def _header(observation, country, store, currency):
@@ -126,7 +119,7 @@ def _header(observation, country, store, currency):
     try:
         fiscal_key = build_fiscal_key(country.pk, fiscal)
     except ValueError:
-        raise ResolutionError(issue("identity_conflict", "/fiscal")) from None
+        fiscal_key = ""  # Too long for the model; fall back to exact weak identity.
     return dict(
         store=store, currency=currency, operation=observation.operation,
         purchased_at=purchased_at(observation, store), purchased_on=date.fromisoformat(observation.purchased_on),
@@ -151,9 +144,19 @@ def _duplicate(header):
         if fiscal or number or exact:
             if header["fiscal_key"] and candidate.fiscal_key and header["fiscal_key"] != candidate.fiscal_key:
                 raise ResolutionError(issue("identity_conflict", "/fiscal"))
+            if exact and all(header[k] and getattr(candidate, k) for k in ("receipt_number", "register_code", "shift_number")):
+                if any(header[k] != getattr(candidate, k) for k in ("receipt_number", "register_code", "shift_number")):
+                    raise ResolutionError(issue("identity_conflict", "/identity"))
             selected.append(candidate)
     if len(selected) > 1:
-        raise ResolutionError(issue("receipt_ambiguous", "/"))
+        # Exact weak matches denote the same receipt in v1. Prefer the actual
+        # strong match; never choose between contradictory strong identities.
+        keys = {c.fiscal_key for c in selected if c.fiscal_key}
+        numbers = {(c.store_id, c.purchased_on, c.receipt_number, c.register_code, c.shift_number)
+                   for c in selected if c.receipt_number and c.register_code and c.shift_number}
+        if len(keys) > 1 or len(numbers) > 1:
+            raise ResolutionError(issue("identity_conflict", "/identity"))
+        selected.sort(key=lambda c: not (header["fiscal_key"] and c.fiscal_key == header["fiscal_key"]))
     return selected[0] if selected else None
 
 
@@ -165,22 +168,16 @@ def _create_graph(header, observation, country, derived):
         "timezone": header["store"].timezone, "utc_offset_printed": observation.utc_offset_printed,
     }}))
     issues, lines = [], {}
-    evidence = {f.path: f.status for f in observation.fields}
-
     def tax_rate(rate, field):
-        confirmed = evidence.get(field + "/kind") == "observed" and (
-            rate.rate is None or evidence.get(field + "/rate") == "observed"
-        )
-        return resolve_tax_rate(rate, country, field, confirmed=confirmed)
+        # prepare_observation already requires observed kind/rate, and may
+        # discard tax rows. Their new indexes need not match original evidence.
+        return resolve_tax_rate(rate, country, field, confirmed=True)
     # Parents may occur after their child in the printed order. Create all rows
     # first, then connect only the already validated references.
     for i, observed in enumerate(observation.lines):
-        product_issues = _product_issues(observation, i)
-        product = None
-        if not product_issues:
-            resolution = resolve_product(observed, header["store"].merchant, field=f"/lines/{i}/product_hint")
-            product, product_issues = resolution.product, resolution.issues
-        issues.extend(product_issues)
+        resolution = _resolve_product(observed, header["store"].merchant, field=f"/lines/{i}/product_hint")
+        product = resolution.product
+        issues.extend(resolution.issues)
         rate = tax_rate(observed.tax_rate, f"/lines/{i}/tax_rate")
         values = {k: getattr(observed, k) for k in (
             "position", "kind", "raw_name", "quantity", "unit", "unit_price", "amount",
@@ -205,8 +202,9 @@ def _create_graph(header, observation, country, derived):
         clean_save(ReceiptTax(receipt=receipt, tax_rate=rate, tax_code=observed.tax_code or "",
                               net=observed.net, tax=observed.tax, gross=observed.gross))
     if validate_receipt(receipt):
-        # Validator text contains private receipt facts: return safe reasons.
-        raise ResolutionError(issue("receipt_invalid", "/"))
+        # Core facts and total were checked before writes. Other invariants are
+        # warnings (e.g. rounded unit prices); never expose private validator text.
+        issues.append(issue("receipt_invalid", "/"))
     return receipt, ImportEffect.CREATED, issues
 
 
@@ -226,6 +224,18 @@ def _same_line(saved, observed):
         if (saved.tax_rate.kind, saved.tax_rate.rate) != (observed.tax_rate.kind, observed.tax_rate.rate):
             return False
     return True
+
+
+def _resolve_product(observed, merchant, *, field):
+    from .resolution import ProductResolution
+
+    try:
+        with transaction.atomic():
+            return resolve_product(observed, merchant, field=field)
+    except ValidationError:
+        # A bad optional catalogue hint must not discard the readable line or
+        # leave an unused partial catalogue graph behind.
+        return ProductResolution(None, [issue("product_package_invalid", field)])
 
 
 def _update_graph(receipt, header, observation):
@@ -250,17 +260,23 @@ def _update_graph(receipt, header, observation):
     for key, value in (header["fiscal"].items() if isinstance(receipt.fiscal, dict) else ()):
         if fiscal.get(key) not in (None, "", value):
             issues.append(issue("receipt_conflict", "/fiscal/" + key))
-        elif fiscal.get(key) in (None, ""):
+    fiscal_conflict = any(v["field"].startswith("/fiscal/") for v in issues)
+    for key, value in (header["fiscal"].items() if isinstance(receipt.fiscal, dict) else ()):
+        if not fiscal_conflict and fiscal.get(key) in (None, ""):
             fiscal[key] = value
             changed = True
     if isinstance(receipt.fiscal, dict):
         receipt.fiscal = fiscal
     if not receipt.fiscal_key and header["fiscal_key"]:
-        if isinstance(receipt.fiscal, dict) and build_fiscal_key(receipt.store.country_id, fiscal) == header["fiscal_key"]:
+        try:
+            consistent = isinstance(receipt.fiscal, dict) and build_fiscal_key(receipt.store.country_id, fiscal) == header["fiscal_key"]
+        except ValueError:
+            consistent = False
+        if consistent:
             receipt.fiscal_key = header["fiscal_key"]
             changed = True
         else:
-            issues.append(issue("identity_conflict", "/fiscal"))
+            issues.append(issue("receipt_conflict", "/fiscal"))
     if not receipt.raw_text and header["raw_text"]:
         receipt.raw_text = header["raw_text"]
         changed = True
@@ -275,12 +291,8 @@ def _update_graph(receipt, header, observation):
         if observed is None or not _same_line(line, observed):
             issues.append(issue("receipt_line_conflict", field))
             continue
-        product_issues = _product_issues(observation, line_indexes[line.position])
-        if product_issues:
-            issues.extend(product_issues)
-            continue
         if line.kind == "product" and line.product_id is None:
-            resolution = resolve_product(observed, receipt.store.merchant, field=field + "/product_hint")
+            resolution = _resolve_product(observed, receipt.store.merchant, field=field + "/product_hint")
             issues.extend(resolution.issues)
             if resolution.product:
                 line.product = resolution.product
@@ -307,11 +319,13 @@ def _update_graph(receipt, header, observation):
 
 
 def _import_domain(observation, derived, *, require_duplicate=False, link_only=False):
-    _preflight(observation)
+    notices = _preflight(observation)
     country = resolve_country(observation)
     currency = resolve_currency(observation)
     with transaction.atomic():
         store = resolve_store(observation, country)
+        if observation.merchant.tax_id_type and store.merchant.tax_id_type and observation.merchant.tax_id_type != store.merchant.tax_id_type:
+            notices.append(issue("merchant_conflict", "/merchant/tax_id_type"))
         header = _header(observation, country, store, currency)
         receipt = _duplicate(header)
         if receipt and receipt.store_id != store.pk:
@@ -320,11 +334,13 @@ def _import_domain(observation, derived, *, require_duplicate=False, link_only=F
             transaction.set_rollback(True)
     if receipt:
         if link_only:
-            return receipt, ImportEffect.LINKED, [issue("identity_conflict", "/fiscal")]
-        return _update_graph(receipt, header, observation)
+            return receipt, ImportEffect.LINKED, notices + [issue("receipt_conflict", "/")]
+        receipt, effect, issues = _update_graph(receipt, header, observation)
+        return receipt, effect, notices + issues
     if require_duplicate:
         raise ResolutionError(issue("identity_conflict", "/"))
-    return _create_graph(header, observation, country, derived)
+    receipt, effect, issues = _create_graph(header, observation, country, derived)
+    return receipt, effect, notices + issues
 
 
 def _constraint_name(error):
@@ -334,7 +350,7 @@ def _constraint_name(error):
 def import_receipt(image, observation, *, run_token, version, on_saved=None):
     """Returns created/linked/updated/needs_review/failed, receipt or None, issues.
 
-    Review may have a Receipt and non-none image.import_effect (e.g. an ambiguous
+    Non-blocking notices may accompany a successful Receipt (e.g. an ambiguous
     product). Domain failure rolls back the ENTIRE store/catalog/receipt graph;
     normalized input and safe issues are persisted outside that savepoint.
     A busy mutex or invalid fence raises without changing the image/version.
@@ -347,7 +363,12 @@ def import_receipt(image, observation, *, run_token, version, on_saved=None):
     image_id = image.pk
     normalized = observation.to_dict()
     with price_context():
-        effective, derived = _domain_observation(observation)
+        effective, notices = prepare_observation(observation)
+        effective, derived = _domain_observation(effective)
+        if any(v["code"] == "operation_defaulted" for v in notices):
+            derived.append("/operation")
+        if observation.prices_include_tax is None:
+            derived.append("/prices_include_tax")
         with transaction.atomic(durable=True):
             with connection.cursor() as cursor:
                 cursor.execute("SELECT pg_try_advisory_xact_lock(%s)", [IMPORT_LOCK])
@@ -366,8 +387,6 @@ def import_receipt(image, observation, *, run_token, version, on_saved=None):
                 status = None
                 try:
                     with transaction.atomic():
-                        if current.clipped:
-                            raise ResolutionError(issue("receipt_clipped", "/"))
                         receipt, effect, issues = _import_domain(effective, derived)
                 except IntegrityError as error:
                     if _constraint_name(error) in RECEIPT_UNIQUES:
@@ -400,10 +419,13 @@ def import_receipt(image, observation, *, run_token, version, on_saved=None):
                 except Exception:
                     status, issues = ImageStatus.FAILED, [issue("import_failed", "/", "Не удалось сохранить чек.")]
                 if status is None:
-                    status = ImageStatus.NEEDS_REVIEW if issues else {
+                    status = ImageStatus.NEEDS_REVIEW if receipt is None else {
                         ImportEffect.CREATED: ImageStatus.IMPORTED, ImportEffect.LINKED: ImageStatus.REUSED,
                         ImportEffect.UPDATED: ImageStatus.UPDATED,
                     }[effect]
+                issues = notices + issues
+                if current.clipped:
+                    issues.append(issue("clipped", "/clipped"))
                 saved, job = save_image_result(
                     job.pk, run_token, version, image_id, status=status, normalized_result=normalized,
                     issues=issues, receipt=receipt, import_effect=effect,

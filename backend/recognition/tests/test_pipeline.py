@@ -171,14 +171,35 @@ class PipelineTests(PipelineEnvironment):
         self.assertIsNotNone(result.attempts.get().raw_payload)
         self.assertEqual(Receipt.objects.count(), 0)
 
-    def test_clipped_crop_is_preserved_but_not_imported(self):
+    def test_clipped_readable_crop_imports_with_nonblocking_notice(self):
         class Clipped(FakeProvider):
             def detect(self, image, run):
                 result = super().detect(image, run)
                 return replace(result, receipts=(replace(result.receipts[0], clipped=True), result.receipts[1]))
         result = self.process(provider=Clipped())
+        self.assertEqual((result.status, result.imported_count, result.review_count), ("succeeded", 2, 0))
+        image = result.images.get(position=1)
+        self.assertEqual(image.status, "imported")
+        self.assertEqual(image.issues[0]["code"], "clipped")
+        self.assertEqual(image.receipt.lines.count(), 4)
+
+    def test_clipped_crop_with_unreadable_core_still_requires_review(self):
+        class Clipped(FakeProvider):
+            def detect(self, image, run):
+                result = super().detect(image, run)
+                return replace(result, receipts=(replace(result.receipts[0], clipped=True), result.receipts[1]))
+
+            def recognize(self, image, run):
+                result = super().recognize(image, run)
+                return replace(result, total=None, fields=tuple(
+                    replace(f, status="unreadable") if f.path == "/total" else f for f in result.fields
+                )) if image.position == 1 else result
+
+        result = self.process(provider=Clipped())
         self.assertEqual((result.status, result.imported_count, result.review_count), ("partial_succeeded", 1, 1))
-        self.assertEqual(result.images.get(position=1).status, "needs_review")
+        image = result.images.get(position=1)
+        self.assertEqual(image.status, "needs_review")
+        self.assertIsNone(image.receipt_id)
 
     def test_cancel_queued_is_never_claimed(self):
         job = self.new_job()

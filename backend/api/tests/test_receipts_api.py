@@ -54,6 +54,24 @@ class ReceiptsAPITests(TestCase):
         self.assertEqual(legacy["origin"], "legacy/manual")
         self.assertIsNone(legacy["preview_image_url"])
 
+    def test_successful_import_notices_do_not_request_job_or_receipt_review(self):
+        self.job.images.filter(status="needs_review").delete()
+        image = self.receipt.recognition_images.get()
+        image.issues = [{"code": "operation_defaulted", "field": "/operation", "message": "PRIVATE"},
+                        {"code": "optional_omitted", "field": "/fiscal/register_serial", "message": "PRIVATE"}]
+        image.save()
+        with self.assertNumQueries(1):
+            header = self.client.get("/api/receipts/71/").json()
+        self.assertFalse(header["review_required"])
+        job = self.client.get(f"/api/recognition/jobs/{self.job.pk}/").json()
+        self.assertFalse(job["review_required"])
+        result = self.client.get(f"/api/recognition/receipt-images/{image.pk}/").json()
+        self.assertEqual(result["status"], "imported")
+        self.assertIsNone(result["normalized_result"])
+        self.assertEqual([v["code"] for v in result["issues"]], ["invalid_value", "invalid_value"])
+        self.assertNotIn("PRIVATE", str(result))
+        self.assertEqual(result["issues"][1]["field"], "/")
+
     def test_receipt_filters_search_and_no_duplicate_product_matches(self):
         ReceiptLine.objects.create(receipt=self.receipt, position=2, kind="product", raw_name="MILCH", product=self.line.product,
             quantity="1", unit_price="1", amount="1")

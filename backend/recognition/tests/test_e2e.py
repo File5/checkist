@@ -29,6 +29,8 @@ from recognition import queue
 from recognition.models import ProcessingJob, ReceiptImage, SourcePhoto
 from recognition.pipeline import process_job
 from recognition.providers.fake import FakeProvider
+from recognition.tests.import_fixtures import observation
+from recognition.dto import FieldObservation
 from stores.models import Country, Currency
 
 
@@ -123,6 +125,34 @@ class RecognitionEndToEndTests(TransactionTestCase):
         finally:
             response.close()
         self.assertEqual(content, file.read_bytes())
+
+    def test_c6_observation_with_notices_finishes_succeeded_and_replays_without_duplicates(self):
+        class C6Provider(FakeProvider):
+            def recognize(self, crop, run):
+                value = observation()
+                return replace(value, operation=None, fiscal=replace(value.fiscal, register_serial=None),
+                               fields=tuple(f for f in value.fields if f.path not in {"/operation", "/fiscal/register_serial"}) + (
+                                   FieldObservation("/operation", "absent", None, None),
+                                   FieldObservation("/fiscal/register_serial", "ambiguous", None, None),
+                               ))
+
+        upload = self.upload(self.single)
+        job = process_job(queue.claim_job(), provider=C6Provider("one_receipt"))
+        self.assertEqual(job.status, "succeeded")
+        self.assertEqual((job.imported_count, job.review_count), (1, 0))
+        public = self.get(self.job_url(job.pk))
+        self.assertFalse(public["review_required"])
+        image = self.get(f"/api/recognition/receipt-images/{public['items'][0]['image_id']}/")
+        self.assertEqual(image["status"], "imported")
+        self.assertTrue(image["issues"])
+        self.assertFalse(self.get(f"/api/receipts/{image['receipt_id']}/")["review_required"])
+        replay = self.upload(self.single, expected=200)
+        self.assertEqual(replay["job"]["id"], upload["job"]["id"])
+        new = self.upload(self.another_photo())
+        job = process_job(queue.claim_job(), provider=C6Provider("one_receipt"))
+        self.assertEqual(job.pk, new["job"]["id"])
+        self.assertEqual((job.status, job.reused_count, job.review_count), ("succeeded", 1, 0))
+        self.assertEqual((Receipt.objects.count(), ReceiptLine.objects.count(), Product.objects.count()), (1, 4, 3))
 
     def test_upload_two_receipts_worker_media_lines_and_exact_replay(self):
         uploaded = self.upload()
