@@ -1,6 +1,5 @@
 from bisect import bisect_left
 from dataclasses import dataclass
-from decimal import Decimal
 
 from rest_framework.response import Response
 
@@ -11,6 +10,7 @@ from api.rates import parse_conversion
 from catalog.models import GenericProduct, Product
 from catalog.units import Unit
 from config.exceptions import ObjectNotFound
+from receipts.decimal_math import change_percent, decimal_mean
 from receipts.models import ReceiptLine
 from receipts.prices import PriceGroup, last_prices, price_groups
 
@@ -79,7 +79,7 @@ def _diff(value, reference):
     """Отклонение ``value`` от ``reference`` в процентах; без базы или при нулевой базе — ``None``."""
     if value is None or not reference:
         return None
-    return common.percent((value - reference) / reference * 100)
+    return common.percent(change_percent(reference, value))
 
 
 def _comparison(params, generic, base, products):
@@ -108,13 +108,15 @@ def _comparison(params, generic, base, products):
         offers.setdefault(group.product_id, []).append(_Offer(group, has_price))
     comparable_ids = [pk for pk in offers if any(offer.comparable for offer in offers[pk])]
     last = {_line_key(line): line for line in last_prices(comparable_ids, comparable_only=True, **filters)}
-    for product_offers in offers.values():
+    for pk, product_offers in offers.items():
         for offer in product_offers:
             if offer.comparable:
                 offer.last = last.get((offer.group.product_id, *offer.key))
+        # READ COMMITTED: группа могла исчезнуть после агрегатов.
+        offers[pk] = [offer for offer in product_offers if not offer.comparable or offer.last is not None]
 
     # Порядок: исходный товар, сравнимые по name, id, затем несравнимые (сортировка устойчива).
-    comparable = set(comparable_ids)
+    comparable = {pk for pk, product_offers in offers.items() if any(offer.comparable for offer in product_offers)}
     page = paginate(
         sorted((pk for pk, _ in rows), key=lambda pk: 0 if pk == base_id else 1 if pk in comparable else 2),
         page_params,
@@ -127,6 +129,7 @@ def _comparison(params, generic, base, products):
         for offer in offers[pk]:
             if not offer.comparable:
                 offer.last = last.get((pk, *offer.key))
+        offers[pk] = [offer for offer in offers[pk] if offer.last is not None]
 
     # Место и сводка — внутри пары «страна, валюта»: цены разных валют не смешиваются.
     priced = [offer for product_offers in offers.values() for offer in product_offers if offer.price is not None]
@@ -142,7 +145,7 @@ def _comparison(params, generic, base, products):
             "country": country, "currency": currency, "products_with_price": len(values),
             "min": common.price(values[0] if values else None),
             "max": common.price(values[-1] if values else None),
-            "avg": common.price(sum(values, Decimal(0)) / len(values) if values else None),
+            "avg": common.price(decimal_mean(values)),
         })
 
     def converted(offer):
@@ -170,7 +173,6 @@ def _comparison(params, generic, base, products):
     def serialize_offer(offer):
         group, line = offer.group, offer.last
         value = converted(offer)
-        rate = conversion and conversion.rate(group.currency)
         show = offer.comparable
         result = {
             "country": group.country,
@@ -190,9 +192,9 @@ def _comparison(params, generic, base, products):
             "converted": None if value is None else {
                 "currency": conversion.target_currency,
                 "last": common.price(value),
-                "min": common.price(group.normalized_min * rate),
-                "max": common.price(group.normalized_max * rate),
-                "avg": common.price(group.normalized_avg * rate),
+                "min": common.price(conversion.convert(group.normalized_min, group.currency)),
+                "max": common.price(conversion.convert(group.normalized_max, group.currency)),
+                "avg": common.price(conversion.convert(group.normalized_avg, group.currency)),
             },
         }
         if conversion:

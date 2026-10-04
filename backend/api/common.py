@@ -1,12 +1,10 @@
 from datetime import timezone
-from decimal import ROUND_HALF_UP, Decimal
 
 from catalog.models import Category
 from config.exceptions import ObjectNotFound
+from receipts.decimal_math import round_decimal
 
 MAX_CATEGORIES = 5000
-
-_QUANTA = {places: Decimal(1).scaleb(-places) for places in (2, 3, 4)}
 
 
 # --- числа и время ---
@@ -20,8 +18,7 @@ def decimal_string(value, places):
         return None
     if isinstance(value, (float, bool)):
         raise TypeError("Ожидается Decimal, int или строка с десятичным числом.")
-    quantum = _QUANTA.get(places) or Decimal(1).scaleb(-places)
-    return str(Decimal(value).quantize(quantum, rounding=ROUND_HALF_UP))
+    return str(round_decimal(value, places))
 
 
 def price(value):

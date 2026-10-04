@@ -1,5 +1,5 @@
 from datetime import date, datetime, timedelta, timezone
-from decimal import Decimal
+from decimal import Decimal, localcontext
 
 from django.test import SimpleTestCase, TestCase, tag
 
@@ -28,6 +28,16 @@ class NumberTests(SimpleTestCase):
         self.assertEqual(common.amount(D("0.125")), "0.13")
         self.assertEqual(common.price(D("2.99325")), "2.9933")
         self.assertEqual(common.percent(D("-0.005")), "-0.01")
+
+    def test_large_values_ignore_ambient_decimal_precision(self):
+        with localcontext() as context:
+            context.prec = 6
+            context.clear_flags()
+            self.assertEqual(common.price(D("9999999998990000000001000000")), "9999999998990000000001000000.0000")
+            self.assertEqual(common.percent(D("999999999999989999999999900")), "999999999999989999999999900.00")
+            self.assertEqual(common.price(D("999999999999990000000.00005")), "999999999999990000000.0001")
+            self.assertEqual(context.prec, 6)
+            self.assertFalse(any(context.flags.values()))
 
     def test_none_stays_none(self):
         for function in (common.price, common.amount, common.quantity, common.percent):

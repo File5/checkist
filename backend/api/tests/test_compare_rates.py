@@ -1,4 +1,4 @@
-from decimal import Decimal
+from decimal import Decimal, localcontext
 
 from django.test import SimpleTestCase
 
@@ -64,6 +64,16 @@ class ConversionTests(SimpleTestCase):
         self.assertIs(type(value), Decimal)
         self.assertEqual(value, D("0.3"))  # float: 0.30000000000000004
         self.assertEqual(self.conversion.convert(D("130.5882"), "KZT"), D("0.23505876"))
+
+    def test_maximum_price_and_rate_keep_all_product_digits(self):
+        conversion = Conversion("EUR", parse_rates("RUB:999999999999.999999999999"))
+        with localcontext() as context:
+            context.prec = 6
+            context.clear_flags()
+            value = conversion.convert(D("999999999999990000000.0000"), "RUB")
+            self.assertEqual(value, D("999999999999989999999999000000000.0000100000000000"))
+            self.assertEqual(context.prec, 6)
+            self.assertFalse(any(context.flags.values()))
 
     def test_target_currency_is_not_converted(self):
         self.assertEqual(self.conversion.convert(D("1.3900"), "EUR"), D("1.3900"))
