@@ -1,0 +1,113 @@
+# И2: загрузка фото и обработка
+
+Реализованы `/receipts/upload`, `/recognition/jobs`, `/recognition/jobs/{id}`. Это страницы существующей SPA на настоящих API-адаптерах И1. В интерфейсе нет встроенных демо-данных. Экспорты и props И1 сохранены; оболочка, навигация, API, Vite и `features/receipts` не менялись.
+
+Загрузка получает CSRF/лимиты, показывает один выбранный файл и освобождает object URL при замене/уходе. До отправки проверяются расширение, непустой файл и размер по лимиту сервера. Формат содержимого, пиксели, повреждения и анимацию окончательно проверяет сервер. Есть явное предупреждение об облачной модели, сообщения об очереди и повторно загруженном фото; reused открывает последнее задание без нового запуска. После csrf_failed токен обновляется, повтор POST выполняется только по нажатию пользователя.
+
+Список сохраняет фильтры и страницу в URL, показывает действия по серверным actions и опрашивает одним запросом видимую страницу, если на ней есть активные задания. Карточка показывает этап/счётчики без процентов, независимые блоки фото и вырезок, причины needs_review и распознанные строки/скидки/налоги без преобразования денег в Number. Ошибки изображений имеют отдельные заглушки. Cancel не подменяет серверный статус, retry открывает новое задание, 409 объясняет конфликт и запускает перечитывание. Подписи статуса объявляются при изменении текста; heartbeat не объявляется.
+
+Опрос активного detail — 2 с после ответа, скрытой вкладки — 10 с; возврат во вкладку запускает обновление сразу. Одновременно выполняется один запрос каждого блока. Backoff после ошибок — 2/4/8/15 с, последний снимок сохраняется с пометкой «Не удалось обновить» и ручным повтором. Конечный статус останавливает опрос, включая события видимости. AbortController, поколение запроса и проверка version защищают от поздних ответов и чтения, начатого до мутации.
+
+## Что показать человеку
+
+Этот документ — артефакт передачи работающих экранов и сценария проверки. Скриншоты и визуальная приёмка не выполнялись: правила проекта запрещают автоматический обход UI. Для просмотра фактических экранов запустите SPA и QA Django по шагам ниже. Отдельного макета, который подменял бы приложение, нет.
+
+Выполненный HTTP-прогон оставил в **QA**, только из синтетических `seed_recognition_demo`:
+
+| Объект | Данные |
+| --- | --- |
+| Photo 1 / Job 1 | double.png → succeeded, два импортированных чека, receipts 1/2 |
+| Photo 2 / Job 2 | single.png → queued cancel → cancelled |
+| Job 3 | retry_of=2 → running cancel → cancelled |
+| Job 4 | retry_of=3 → partial_succeeded, две вырезки needs_review с missing_required/quantity |
+
+БД/Compose `checkist_qa_i2_final`; Postgres 25482, Redis 16482, Django 18082, Vite 15182. Том БД и QA MEDIA сохранены, собственные процессы/контейнеры при сдаче остановлены. MEDIA из temp не переносится при merge: на другой машине/в новой QA среде повторите seed и сценарий. Настоящие фото, Codex auth, секреты и provider payload не использовались и не входят в артефакты.
+
+## Запуск для ручной приёмки
+
+Проверьте, что эти порты свободны и QA project не используется другим человеком. Для другой среды согласованно замените project/DB/порты/origins и отдельные MEDIA/scratch. Требуются Docker, существующий Python-стек из requirements.txt и Node/npm из проекта. `.env` подготовить из `.env.example`, если его ещё нет. В **каждом** терминале применить весь QA environment из docs/verification.md и следующие согласованные значения:
+
+```powershell
+$env:POSTGRES_DB='checkist_qa_i2_final'
+$env:POSTGRES_USER='checkist'
+$env:POSTGRES_PASSWORD='checkist_dev_only' # публичное значение только для локального QA
+$env:POSTGRES_HOST='127.0.0.1'
+$env:POSTGRES_PORT='25482'
+$env:REDIS_PORT='16482'
+$env:CELERY_BROKER_URL='redis://127.0.0.1:16482/0'
+$env:CELERY_RESULT_BACKEND='redis://127.0.0.1:16482/1'
+$env:DJANGO_CACHE_URL='redis://127.0.0.1:16482/2'
+$env:VITE_API_BASE_URL='/api'
+$env:DEV_API_PROXY_TARGET='http://127.0.0.1:18082'
+$env:DJANGO_DEBUG='1'
+$env:DJANGO_ALLOWED_HOSTS='127.0.0.1,localhost'
+$env:ALLOW_LOCAL_RECOGNITION_API='1'
+$env:DJANGO_CSRF_TRUSTED_ORIGINS='http://127.0.0.1:15182'
+$env:MEDIA_ROOT=Join-Path $env:TEMP 'checkist-qa-i2-final-media'
+$env:RECEIPT_OCR_TEMP_ROOT=Join-Path $env:TEMP 'checkist-qa-i2-final-scratch'
+$env:RECEIPT_OCR_PROVIDER='fake'
+```
+
+Из корня, отдельно с проверкой exit code каждого шага:
+
+```powershell
+docker compose -p checkist_qa_i2_final config --quiet
+docker compose -p checkist_qa_i2_final up -d --wait --wait-timeout 90 postgres redis
+# Ограниченные TCP-пробы по docs/development.md на 25482/16482 до host-команд с БД.
+./backend/.venv/Scripts/python.exe -X utf8 -m pip check
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py check
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py migrate --noinput
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py seed_recognition_demo
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py runserver 127.0.0.1:18082 --noreload
+```
+
+Другой терминал с тем же environment; для очереди сначала оставить worker остановленным:
+
+```powershell
+# frontend/
+npm.cmd ci
+npm.cmd run dev -- --port 15182
+```
+
+Открыть `http://127.0.0.1:15182/receipts/upload`. Новый API локальный/анонимный; staff-пользователь и вход не нужны. Unsafe методы требуют CSRF cookie/token даже анониму. `executor.available=false` не проверяет авторизацию модели и не доказывает, что idle-worker выключен. Для админки прежние правила/ручной сценарий из docs/verification.md, прямой порт Django 18082; И2 её код не меняет.
+
+## Ручные сценарии
+
+1. Открыть upload напрямую и после reload. До получения лимитов отправка недоступна. Выбрать синтетическое фото; проверить формат, байты/МиБ и предпросмотр. Заменить файл и уйти со страницы, убедиться в DevTools, что object URL освобождается. Без выбранного файла отправка недоступна. Не отправлять реальные фото.
+2. Через выбор всех файлов выбрать HEIC/неподдерживаемое расширение: совет сохранить JPEG/PNG и недоступная отправка. Пустой файл и PNG/JPEG размером выше server max_bytes: понятная ошибка до POST. Текстовый файл с расширением .png: отдельная ошибка предпросмотра, после отправки серверная ошибка повреждённого изображения. Для проверки пиксельного лимита использовать синтетическую картинку выше max_pixels. Сервер остаётся окончательным валидатором.
+3. Для **новой QA БД**, при остановленном worker выбрать demo/double.png → отправка без процента → карточка queued с предупреждением об очереди. Затем в третьем терминале с тем же env: `./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py recognition_worker --once --fake-scenario success2`. Дождаться succeeded, проверить preview/original, две вырезки и ссылки на чеки. На уже сохранённых данных final QA можно сразу открыть `/recognition/jobs/1` и связанные receipts 1/2; интерфейс чеков принадлежит И3.
+4. Снова загрузить те же байты double.png → сообщение «Это фото уже было загружено», последнее задание, новая обработка не запускается. У succeeded retry/cancel недоступны.
+5. Открыть `/recognition/jobs?page_size=1`; пройти страницы, фильтр статуса, Назад/Вперёд. Проверить пустой фильтр, страницу вне диапазона с переходом на первую, сохранение photo/status/page_size. Для активных заданий Network должен показывать один GET списка на цикл, без detail GET для каждой карточки. Из отфильтрованного списка открыть detail и вернуться — URL/фокус ссылки сохраняются.
+6. Новая queued загрузка → «Отменить» → кнопка недоступна, «Отменено» только после ответа. Затем retry → новый ID/retry_of. Для running cancel запустить fake `--once --fake-scenario pause_recognize` для этого нового queued задания: после running нажать отмену, проверить cancel_requested → cancelled. Уже импортированные чеки остаются доступны.
+7. Для needs_review повторить cancelled/partial задание и запустить `--once --fake-scenario partial_missing_quantity` или `inconsistent_total`. Проверить причины с понятными полями, распознанные данные с «Не прочитано», точные деньги и отсутствие ссылки на чек при receipt_id=null. На сохранённой final QA открыть `/recognition/jobs/4`. Ручного редактора/подтверждения в v1 нет.
+8. Открыть partial/failed/cancelled detail в двух вкладках. В первой retry, во второй нажать ещё доступный retry старого снимка → 409, объяснение и перечитывание; ссылка «Все задания этого фото» позволяет открыть уже активное задание. Для cancel 409 дать fake success закончить задание при задержанном GET в другой вкладке, затем отправить cancel старого снимка; статус должен перечитаться.
+9. У активного задания в DevTools включить Offline: последние данные сохраняются с «Не удалось обновить»; проверить backoff 2/4/8/15 с, ручной повтор и восстановление. После terminal новые GET detail не идут. Скрыть вкладку: интервал 10 с; вернуться: немедленное обновление, один запрос в полёте. На медленной сети быстро сменить страницу/задание: поздний ответ не должен заменить новые данные.
+10. В upload после получения токена удалить csrftoken в DevTools. Отправить файл: csrf_failed → обновление токена → предложение повторить, **без второго автоматического POST**. Для service unavailable остановить только свой QA API, проверить ошибку условий/фото/вырезок отдельно, затем запустить и повторить. Ошибка/таймаут POST сообщает, что результат мог сохраниться, и предлагает проверить обработку.
+11. Заблокировать в DevTools только один `/media/` URL: отдельная заглушка изображения; данные, причины и действия доступны. Отключить отдельно GET photos/{id} или receipt-images/: ошибка/retry только соответствующего блока, остальные данные остаются видны.
+12. Клавиатура: Tab/Shift+Tab/Enter/Space, видимый фокус у файла/select/buttons/summary/links, локальный retry и возврат фокуса после исчезновения/отключения действия. Скринридер объявляет изменение статуса, не каждый heartbeat. Проверить 320/540/920 px и 200% масштаб, длинные названия/ошибки, отсутствие горизонтального переполнения и доступность всех действий. Прокруткой владеет страница, анимаций нет.
+
+После приёмки Ctrl+C только своих процессов, затем `docker compose -p checkist_qa_i2_final down` без `-v`. Тома и MEDIA сохранить.
+
+## Воспроизводимый HTTP/CLI-прогон
+
+`http-check.mjs` — дополнительная проверка через настоящий Vite proxy, исходные адаптеры/машину загрузки/опроса, Django, PostgreSQL и host FakeProvider. Не запускается в Vitest. Перед ним создать **новый пустой** QA project/DB с суффиксом и отдельными MEDIA/scratch, применить environment выше с новым именем, migrate/seed и запустить Django. Убедиться, что порт 15182 свободен, Vite вручную не запускать — скрипт сам владеет им. Команда из корня:
+
+```powershell
+node frontend/src/features/recognition/http-check.mjs
+```
+
+Он отвергает dev DB/provider, непустой список jobs и неправильный origin до загрузки; запускает/завершает свои fake-worker `--once`. Проверяет 202 upload, succeeded/2 crops/2 receipts, байты original, preview и crop Content-Type, 200 reused, остановку terminal polling, queued cancel 200, running cancel 202 → cancelled, retry 202/409, needs_review/result/issues, страницы/фильтры, настоящую серверную CSRF 403. Cookies/Origin в Node передаются явно; это **не** проверка браузерного cookie/fetch/focus поведения React и не качество OCR. При ошибке не повторять против уже заполненной БД; выяснить отказ и взять новую изолированную QA DB для повторной проверки.
+
+## Проверки и ограничения
+
+Проверено и прошло: Windows, Node 24.18.0/npm 11.16.0, Python 3.13.9, Django 5.2.17, Docker 29.8.1. `npm.cmd ci` — exit 0, 188 пакетов, 0 vulnerabilities; `npm.cmd run lint` и `npm.cmd run build` — exit 0 на окончательном состоянии исходников. Feature Vitest/SSR проверяет polling/actions/upload и состояния, использует backend public fixtures: все **73 теста И2** прошли в полном прогоне.
+
+Настоящий HTTP: `node frontend/src/features/recognition/http-check.mjs` — exit 0, DB/Compose `checkist_qa_i2_final`, порты и окружение выше, синтетические single/double. Наблюдались Job 1 succeeded с imported=2, Job 2/3 cancelled, Job 4 partial_succeeded/needs_review; ожидаемые 403/409 прошли как негативные проверки. `pip check`, `manage.py check`, `migrate --noinput`, `seed_recognition_demo`, `docker compose ... config --quiet/up -d --wait --wait-timeout 90 postgres redis`, ограниченные TCP-пробы 25482/16482 — exit 0. Перед ним такой же временный HTTP-прогон прошёл на отдельной DB `checkist_qa_i2`. Redis запущен из общего QA шаблона, health/Celery эта задача не проверяет.
+
+Проверено и не прошло: **`npm.cmd run test` — exit 1: 839 passed / 2 failed, 841 тест / 29 файлов**. Оба отказа в `pages/recognition-shell.test.tsx`: ожидания прежних строк «Загрузка через интерфейс пока недоступна» и «Страница задания №31» расходятся с реализованными экранами («Получаем лимиты…» / «Задание №31»). Этот файл вне первоначальной зоны И2, вопрос `q_muuevbimd0` передан координатору для точечной актуализации. Файл, набор проверок оболочки и её ожидания h1/навигации/возврата не менялись; тесты не отключены. До решения координатора полный test не зелёный и критерий готовности всей подзадачи не выполнен.
+
+Промежуточные отказы: первая tsc-сборка выявила типовой export jobStatuses, неверное имя TaxKind и узкую типизацию состояния; lint выявил setState в effect и export helper из TSX; исправлено в своей зоне. Ошибки новых SSR ожиданий (экранирование regex и совпадение «Отменено» со счётчиком) исправлены, проверяется именно метка статуса. Начальная загрузка QA environment через .ps1 была отклонена ExecutionPolicy; из-за этого Compose попытался занять default dev-порт 15432 и получил port already allocated. Host-записи в БД не выполнялись; созданный отдельный QA project остановлен, environment затем задан как значения процесса через JSON без изменения ExecutionPolicy, запуск на QA-портах прошёл.
+
+Уборка: оба QA Django остановлены Ctrl+C (exit 1 из-за прерывания), `docker compose -p checkist_qa_i2 down` и `docker compose -p checkist_qa_i2_final down` — exit 0, тома сохранены. `docker ps -a --filter label=com.docker.compose.project=...` для обоих project пуст; `Get-NetTCPConnection -State Listen` не нашёл 25482/16482/18082/15182, `Get-CimInstance Win32_Process` не нашёл node/python/cmd с путём этого worktree после завершения проверок. Временный корневой `.env`, созданный И2 из образца, удалён после сравнения hash с `.env.example`; зависимости в игнорируемых node_modules/.venv остаются для повторной проверки.
+
+Не проверено: визуальное/интерактивное поведение React, фокус/скринридер/адаптив в браузере — принимает человек по сценарию выше, автоматический обход запрещён. HTTP/SSR/build этого не подтверждают. Настоящий Codex и реальные фото — не использовались, fake проверяет контракт и конвейер. Backend suites/Celery health/миграционный rollback/production — И2 их не меняет, отдельная приёмка по docs/verification.md. Исторические общие docs ещё описывают SPA как заглушки и Vite как proxy только `/api`; актуализация относится к интегратору вне моей зоны. Изменений публичного API и обнаруженных расхождений его форм с использованными endpoint/fixtures нет.
