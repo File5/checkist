@@ -1,6 +1,6 @@
 """Fenced, atomic import of one already schema-validated ReceiptObservation.
 
-import_receipt(image, observation, *, run_token, version) -> ImportResult.
+import_receipt(image, observation, *, run_token, version, on_saved=None) -> ImportResult.
 Pass result.job_version to subsequent queue writes. ImportBusy is a transient
 control signal: defer this crop and keep its fence alive; no result is written.
 FenceLost is propagated: cancelled/expired/stale work must not write anything.
@@ -331,13 +331,16 @@ def _constraint_name(error):
     return getattr(getattr(error.__cause__, "diag", None), "constraint_name", None)
 
 
-def import_receipt(image, observation, *, run_token, version):
+def import_receipt(image, observation, *, run_token, version, on_saved=None):
     """Returns created/linked/updated/needs_review/failed, receipt or None, issues.
 
     Review may have a Receipt and non-none image.import_effect (e.g. an ambiguous
     product). Domain failure rolls back the ENTIRE store/catalog/receipt graph;
     normalized input and safe issues are persisted outside that savepoint.
     A busy mutex or invalid fence raises without changing the image/version.
+    Optional on_saved(locked_job) -> job runs after linkage, inside the SAME
+    durable transaction. The worker uses it to terminalize the final import
+    atomically; it must only perform fenced DB writes, never provider/file I/O.
     """
     if not isinstance(observation, ReceiptObservation):
         raise TypeError("observation must be a schema-validated ReceiptObservation")
@@ -356,6 +359,8 @@ def import_receipt(image, observation, *, run_token, version):
                     # Recovery can replay a committed crop without new writes.
                     outcome = ("needs_review" if current.status == ImageStatus.NEEDS_REVIEW else
                                "failed" if current.status in {ImageStatus.FAILED, ImageStatus.CANCELLED} else current.import_effect)
+                    if on_saved is not None:
+                        job = on_saved(job)
                     return ImportResult(outcome, current.receipt, current.issues, current, job.version)
                 receipt, effect, issues = None, ImportEffect.NONE, []
                 status = None
@@ -403,5 +408,7 @@ def import_receipt(image, observation, *, run_token, version):
                     job.pk, run_token, version, image_id, status=status, normalized_result=normalized,
                     issues=issues, receipt=receipt, import_effect=effect,
                 )
+                if on_saved is not None:
+                    job = on_saved(job)
                 outcome = "needs_review" if status == ImageStatus.NEEDS_REVIEW else "failed" if status == ImageStatus.FAILED else effect
                 return ImportResult(outcome, receipt, issues, saved, job.version)
