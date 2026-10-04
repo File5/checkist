@@ -2,11 +2,15 @@
 import json
 import asyncio
 import logging
+from io import BytesIO
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from asgiref.sync import async_to_sync
 from django.core.exceptions import RequestDataTooBig
 from django.http import UnreadablePostError
+from django.core.servers.basehttp import WSGIRequestHandler
+from django.core.handlers.wsgi import WSGIRequest
 
 from django.conf import settings
 from django.test import RequestFactory, SimpleTestCase, TestCase, TransactionTestCase, override_settings, tag
@@ -126,6 +130,74 @@ class RequestSyntaxTests(SimpleTestCase):
         ), None)
         SafeApiTargetFilter().filter(record)
         self.assertEqual(record.getMessage(), '"GET /api/[redacted] HTTP/1.1" 400 99')
+
+    def test_api_access_log_decodes_path_once_like_runserver(self):
+        for path in ("/api", "/api/products/", "/%61pi/products/", "/api%2Fproducts/", "/api%2fproducts/", "//api/products/", "///%61pi/products/"):
+            for query in ("", "?", "?unknown=review-private-marker", "?q=%00review-private-marker"):
+                with self.subTest(path=path, query=query):
+                    record = self.access_record(f"GET {path}{query} HTTP/1.1")
+                    self.assertTrue(SafeApiTargetFilter().filter(record))
+                    self.assertEqual(record.getMessage(), '"GET /api/[redacted] HTTP/1.1" 400 99')
+                    self.assertNotIn("review-private-marker", record.getMessage())
+
+    def test_api_access_log_preserves_known_non_api_paths(self):
+        for path in ("/other/", "/apiculture/", "/API/products/", "/%2561pi/products/", "/api%252Fproducts/", "/./api/products/", "/%2Fapi/products/"):
+            for query in ("", "?unknown=review-private-marker"):
+                with self.subTest(path=path, query=query):
+                    line = f"GET {path}{query} HTTP/1.1"
+                    record = self.access_record(line)
+                    self.assertTrue(SafeApiTargetFilter().filter(record))
+                    self.assertEqual(record.getMessage(), f'"{line}" 400 99')
+
+    def test_api_access_log_redacts_uncertain_targets_without_raising(self):
+        for path in ("/%", "/%0", "/%gg", "/%ff", "/%c0%80", "/%ed%a0%80", "/\ud800", "", "*", "relative", "http://localhost/%61pi/products/", "http://[broken/api/"):
+            with self.subTest(path=repr(path)):
+                record = self.access_record(f"GET {path}?unknown=review-private-marker HTTP/1.1")
+                self.assertTrue(SafeApiTargetFilter().filter(record))
+                self.assertNotIn("review-private-marker", record.getMessage())
+                self.assertIn("[redacted]", record.getMessage())
+
+    def test_api_access_log_redacts_malformed_request_lines(self):
+        for line in ("", "review-private-marker", "GET  HTTP/1.1", "GET /api/?unknown=review-private-marker extra HTTP/1.1", "GET /api/?unknown=review-private-marker"):
+            with self.subTest(line=line):
+                record = self.access_record(line)
+                self.assertTrue(SafeApiTargetFilter().filter(record))
+                self.assertNotIn("review-private-marker", record.getMessage())
+                self.assertIn("[redacted]", record.getMessage())
+
+    def test_access_log_classification_matches_real_runserver_path(self):
+        cases = (
+            ("/api/products/", "/api/products/", True),
+            ("/%61pi/products/", "/api/products/", True),
+            ("/api%2Fproducts/", "/api/products/", True),
+            ("/api%2fproducts/", "/api/products/", True),
+            ("//api/products/", "/api/products/", True),
+            ("/%2561pi/products/", "/%61pi/products/", False),
+            ("/api%252Fproducts/", "/api%2Fproducts/", False),
+            ("/%2Fapi/products/", "//api/products/", False),
+            ("/./api/products/", "/./api/products/", False),
+            ("/other/", "/other/", False),
+            # runserver не выделяет path из absolute-form; журнал скрывает
+            # такой нестандартный target консервативно, без смены маршрута.
+            ("http://localhost/%61pi/products/", "http://localhost/api/products/", True),
+        )
+        for target, expected_path, redacted in cases:
+            with self.subTest(target=target):
+                handler = WSGIRequestHandler.__new__(WSGIRequestHandler)
+                handler.raw_requestline = f"GET {target}?unknown=review-private-marker HTTP/1.1\r\n".encode("ascii")
+                handler.rfile = BytesIO(b"\r\n")
+                handler.client_address = ("127.0.0.1", 12345)
+                handler.server = SimpleNamespace(base_environ=RequestFactory().get("/").environ)
+                self.assertTrue(handler.parse_request())
+                self.assertEqual(WSGIRequest(handler.get_environ()).path_info, expected_path)
+                record = self.access_record(handler.requestline)
+                SafeApiTargetFilter().filter(record)
+                self.assertEqual("[redacted]" in record.getMessage(), redacted)
+                self.assertEqual("review-private-marker" not in record.getMessage(), redacted)
+
+    @staticmethod
+    def access_record(line):
+        return logging.LogRecord("django.server", logging.INFO, "", 0, '"%s" %s %s', (line, "400", "99"), None)
 
     def test_malformed_query_is_400_before_view_or_sql(self):
         for debug in (False, True):

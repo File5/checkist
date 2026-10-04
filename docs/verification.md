@@ -50,7 +50,7 @@ docker compose -p checkist_qa up -d --build --wait --wait-timeout 120 worker
 ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py check_services
 ```
 
-Ожидается exit 0, отсутствие новых миграций, 169 тестов без БД и 425 integration tests, затем JSON с `celery_task.result={"message":"pong"}`. На пустой БД `migrate` применяет 22 миграции: 18 стандартных и 4 собственных. Числа соответствуют текущему коду и могут измениться вместе с тестами. Команда без тега не использует БД и может выполняться при TCP-отказе; integration-команда не должна заменяться skip/eager. Django runner создаёт и затем удаляет **`test_checkist_qa`**; Redis integration использует отдельный QA Redis DB 2 и уникальные временные ключи.
+Ожидается exit 0, отсутствие новых миграций, 174 теста без БД и 425 integration tests, затем JSON с `celery_task.result={"message":"pong"}`. На пустой БД `migrate` применяет 22 миграции: 18 стандартных и 4 собственных. Числа соответствуют текущему коду и могут измениться вместе с тестами. Команда без тега не использует БД и может выполняться при TCP-отказе; integration-команда не должна заменяться skip/eager. Django runner создаёт и затем удаляет **`test_checkist_qa`**; Redis integration использует отдельный QA Redis DB 2 и уникальные временные ключи.
 
 | Приложение | Без БД (`--exclude-tag=integration`) | С БД (`--tag=integration`) |
 | --- | --- | --- |
@@ -58,8 +58,8 @@ docker compose -p checkist_qa up -d --build --wait --wait-timeout 120 worker
 | `stores` | 14 | 31 |
 | `receipts` | 18 | 106 |
 | `health` | 21 | 2 |
-| `api` | 107 | 267 |
-| Всего | 169 | 425 |
+| `api` | 112 | 267 |
+| Всего | 174 | 425 |
 
 Unit/contract tests health покрывают точный 200, комбинации 503, сохранение независимых checks, анонимность, игнорирование query/Authorization, 405, 406, безопасный 500 при DEBUG, отсутствие публикации task из health, параллельность probes, cleanup кеша, bounded publication retries и негативную env-валидацию. Это не сетевой замер времени отказа.
 
@@ -67,7 +67,7 @@ Unit/contract tests health покрывают точный 200, комбинац
 
 Регрессии `api.tests.test_query_controls`: 6 тестов без БД и 6 integration. Проверяются NUL в начале, середине и конце `q`, все 65 символов Unicode Cc (C0, DEL, C1) до обрезки пробелов, соседние параметры (`country`, `currency`, `target_currency`, `rates`, `category`, `generic`, `brand`, `store`, `all`, `has_prices`, `ordering`, `interval`, `group_by`, `price`, `scope`, даты и пагинация), единый JSON `400`, `404` на NUL в идентификаторе пути, UTF-8 поиск, последнее повторённое значение и игнорирование неизвестных параметров. Для пяти поисковых списков на пустой БД `assertNumQueries(0)` подтверждает отказ до SQL. Запуск: `manage.py test api.tests.test_query_controls --noinput --verbosity=1` — 12 тестов.
 
-Регрессии D1: `api.tests.test_request_errors` — 19 тестов (12 без БД, 7 integration); два дополнительных теста в `test_errors` проверяют семейство Django request exceptions и безопасный 415. Граница 1000/1001 проверена на всех 13 маршрутах при обоих DEBUG, с точным JSON, без SQL при отказе. Проверяются percent-кодирование/UTF-8/суррогаты, Host, Accept/Content-Type, конструкторы настоящих WSGI/ASGI request, длинные значения, повторения/пустые имена/массивы, ID, отсутствие чтения body при GET/405, запись без слэша и редактирование access log. Неизвестные `RuntimeError`, `ValueError`, `LookupError`, `UnicodeDecodeError` из view остаются безопасным 500. Запуск: `manage.py test api.tests.test_request_errors api.tests.test_errors --noinput --verbosity=0` — 44 теста. Полный WSGI-вызов с SQL использует `TransactionTestCase`: сигнал `request_started` закрывает соединение в атомарном обычном `TestCase`.
+Регрессии D1 и E1: `api.tests.test_request_errors` — 24 теста (17 без БД, 7 integration); два дополнительных теста в `test_errors` проверяют семейство Django request exceptions и безопасный 415. Граница 1000/1001 проверена на всех 13 маршрутах при обоих DEBUG, с точным JSON, без SQL при отказе. Проверяются percent-кодирование/UTF-8/суррогаты, Host, Accept/Content-Type, конструкторы настоящих WSGI/ASGI request, длинные значения, повторения/пустые имена/массивы, ID, отсутствие чтения body при GET/405, запись без слэша и редактирование access log. E1 проверяет однократное декодирование пути, регистр hex, начальные //, двойное кодирование, dot segments, absolute-form, пустые/битые targets и сохранение обычных путей вне API; нормализация сверена с настоящими парсером runserver и WSGIRequest. Неизвестные `RuntimeError`, `ValueError`, `LookupError`, `UnicodeDecodeError` из view остаются безопасным 500. Запуск: `manage.py test api.tests.test_request_errors api.tests.test_errors --noinput --verbosity=0` — 49 тестов. Полный WSGI-вызов с SQL использует `TransactionTestCase`: сигнал `request_started` закрывает соединение в атомарном обычном `TestCase`.
 
 Регрессии `api.tests.test_read_resilience`: точные значения обоих маршрутов сравнения на границах моделей и курсов, отрицательная оплаченная цена при большой скидке, среднее и процент динамики нормализованных цен. Конкурентное удаление проверяет `TransactionTestCase` с autocommit: `connection.execute_wrapper` перед чтением последних цен коммитит удаление строки и чека через отдельное psycopg-соединение в тестовую БД; результаты SQL не подменяются. Покрыты `price_summary`, карточка и список товаров, оба сравнения (сравнимые и несравнимые предложения), сводка истории, карточка и список обобщённых продуктов, удаление единственной группы и сохранение более раннего наблюдения. Runner очищает данные через flush. Запуск: `manage.py test api.tests.test_read_resilience --tag=integration --noinput --verbosity=2` — 19 тестов.
 
@@ -337,6 +337,27 @@ for name in ('POSTGRES_PASSWORD', 'DJANGO_SECRET_KEY'):
 6. Страница честно отмечает каркас и планируемые фото/OCR/категории/дашборд. Рабочие бизнес-функции и распознанные чеки не представлены.
 
 Автоматический обход browser UI не выполняется. Скриншотов и результатов визуальной/интерактивной приёмки пока нет. После проверки остановить оба локальных процесса и QA Compose по разделу завершения ниже.
+
+## Фактические результаты исправления E1, 2026-10-04
+
+Причина обхода: access log классифицировал сырой target, Django — однократно декодированный путь. Фильтр теперь учитывает декодирование runserver и удаление начальных // до него; двойное кодирование и dot segments не нормализует повторно. Битые/неоднозначные targets скрывает консервативно, обычные пути вне API сохраняет. Контракт, модели, миграции и зависимости не менялись; откат — revert коммита без операций с БД (возвращает обход).
+
+Собственная Windows QA: Python 3.13.9, Compose project/БД `checkist_qa_e1_mutrq9fm46`, тестовая БД `test_checkist_qa_e1_mutrq9fm46`, новые тома, Postgres 25488, Redis 16435, runserver DEBUG=1/0 на 18056/18057. Каждый процесс получил полный QA environment выше с этими DB/портами/URL, публичными user/password из образца и отдельным тестовым ключом для DEBUG=0. Dev и чужие QA не затронуты.
+
+**Проверено и прошло:** команды ниже из корня, Python — `./backend/.venv/Scripts/python.exe -X utf8`; все exit 0. Полный набор выполнен дважды после последней правки кода/тестов; результаты последнего прогона:
+
+- `docker compose -p checkist_qa_e1_mutrq9fm46 config --quiet`; `… up -d --wait --wait-timeout 90 postgres redis`; TCP-пробы с Windows — оба порта доступны; `… up -d --build --wait --wait-timeout 120 worker` — Linux prefork worker healthy (build cache).
+- `… -m pip check` — No broken requirements found; `… backend/manage.py check` — 0 issues; `… backend/manage.py makemigrations --check --dry-run` — No changes detected. `… backend/manage.py migrate --noinput` применил 22 существующие миграции в новую QA-БД.
+- `… backend/manage.py test catalog stores receipts health api --exclude-tag=integration --verbosity=1` — **174 OK**, 6.002 с; `… backend/manage.py test catalog stores receipts health api --tag=integration --noinput --verbosity=1` — **425 OK**, 41.559 с, тестовая БД создана/удалена runner.
+- `… backend/manage.py check_services` — SQL/cache ok, настоящая task через broker/results вернула `{"message":"pong"}`. `save_samples()` внесён только в собственную QA: product=1, generic=1, category=2.
+- `… backend/manage.py runserver 127.0.0.1:18056 --noreload` и аналогично 18057 при DEBUG=0; stderr записан напрямую Python subprocess в UTF-8. `… backend/scripts/check_request_errors.py --port 18056 --product-id 1 --generic-id 1 --category-id 2 --server-log backend/.venv/e1-debug1.stderr.log` и аналогично 18057/`e1-debug0.stderr.log` — **696 проверок на каждом сервере**, 1392 всего: на каждом 200×231, 400×301, 404×56, 405×53, 406×52, 414×1, 431×2; без 500, health 200. Первые 10 запросов — пять путей (`/api/`, `/%61pi/`, `/api%2F`, `/api%2f`, `//api/`) × 200/400: все записи `/api/[redacted]`, маркер отсутствует в журнале, `access_log=passed`. 414/431 — ожидаемые отказы до Django.
+- Уборка: свои runserver остановлены; `docker compose -p checkist_qa_e1_mutrq9fm46 down` — exit 0, контейнеры/сеть удалены, тома сохранены. Фильтр project в `docker ps -a` и LISTEN на четырёх своих портах пусты; временный `.env` удалён. Полные UTF-8 журналы обоих серверов повторно проверены: маркера нет.
+
+**Проверено и не прошло:** до исправления `… backend/manage.py test api.tests.test_request_errors.RequestSyntaxTests.test_api_access_log_decodes_path_once_like_runserver --verbosity=1` — exit 1, 20 failures, target/маркер оставались в журнале; теперь регрессия входит в успешный набор. Подготовительный запуск через `Start-Process` отвергнут политикой CLI; заменён управляемой сессией с Python subprocess. Первая проверка владельца процесса перед остановкой — exit 1: venv использует системный executable; после проверки полного пути venv в command line остановлены только свои серверы. На окончательном состоянии проваленных обязательных проверок нет.
+
+**Не проверено и почему:** UI — только человек, автоматического обхода/скриншотов нет; [ручной сценарий](#ручная-ui-приёмка-человеком). Frontend/proxy, stop/recovery, нагрузка, журналы внешних серверов и rollback/restore БД не повторялись: эти участки и схема не менялись; для отдельной проверки использовать QA-сценарии этого документа. Сетевой ASGI-сервер не запускался: проверен принятый WSGI/runserver, ASGI application покрыт существующим полным набором.
+
+Повтор HTTP: в собственной QA после `save_samples()` запустить runserver отдельно при DEBUG=1/0, сохранить stderr в обычный UTF-8 файл (например, `subprocess.run([...], stderr=open(log_path, "wb"))`), затем вызвать расширенный скрипт с фактическими ID и `--server-log <файл>`. Без этой опции скрипт явно сообщает `access_log=not_checked`. После проверки остановить свои серверы и выполнить `docker compose -p <свой-project> down` без `-v`.
 
 ## Фактические результаты исправления D1, 2026-10-04
 
