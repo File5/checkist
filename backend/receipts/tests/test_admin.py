@@ -7,13 +7,13 @@ from unittest.mock import patch
 
 from django.contrib import admin
 from django.contrib.auth import get_user_model
-from django.db import connection, connections, transaction
+from django.db import IntegrityError, connection, connections, transaction
 from django.test import Client, TransactionTestCase, tag
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
 from catalog.models import Product
-from receipts.admin import ReceiptDiscountAdminForm, ReceiptLineAdminForm
+from receipts.admin import ReceiptDiscountAdminForm, ReceiptInlineFormSet, ReceiptLineAdminForm
 from receipts.dedup import build_fiscal_key, name_key
 from receipts.models import ProductAlias, Receipt, ReceiptDiscount, ReceiptLine, ReceiptTax
 from receipts.tests.test_models import PURCHASED_AT, ReceiptTestCase, make_line, make_receipt
@@ -1368,6 +1368,283 @@ class ReceiptInlineTransactionTests(TransactionTestCase):
             "initial": (0, 0, 1), "taxes": [tax_row(id=tax.pk, tax_rate=self.tax_rate.pk, DELETE="on")],
         }, "taxes")
         self.assertTrue(ReceiptTax.objects.filter(pk=tax.pk, receipt=self.receipt).exists())
+
+
+@tag("integration")
+class ReceiptInlineUniqueTests(TransactionTestCase):
+    """F6: временные дубли и гонки unique, без внешнего atomic TestCase."""
+
+    setUp = ReceiptInlineTransactionTests.setUp
+    receipt_data = ReceiptsAdminTestCase.receipt_data
+    formset = ReceiptsAdminTestCase.formset
+    post = ReceiptInlineTransactionTests.post
+    child = ReceiptInlineTransactionTests.child
+    child_row = ReceiptInlineTransactionTests.child_row
+    discount = ReceiptInlineTransactionTests.discount
+
+    def snapshot(self):
+        from django.contrib.admin.models import LogEntry
+
+        return tuple(list(model.objects.order_by("pk").values()) for model in (
+            Receipt, ReceiptLine, ReceiptDiscount, ReceiptTax, LogEntry,
+        ))
+
+    def assertUniqueRejected(self, response, prefix, before):
+        self.assertEqual(response.status_code, 200)
+        formset = self.formset(response, prefix)
+        codes = [error.code for error in formset.non_form_errors().as_data()]
+        for form in formset.forms:
+            codes.extend(error.code for errors in form.errors.as_data().values() for error in errors)
+        self.assertIn("receipt_inline_unique", codes)
+        self.assertEqual(self.snapshot(), before, "Весь POST, включая журнал, должен остаться без записей")
+
+    def reject(self, prefix, **fields):
+        before = self.snapshot()
+        for _ in range(2):
+            self.assertUniqueRejected(self.post(receipt_number="changed", **fields), prefix, before)
+
+    def test_delete_and_update_line_to_deleted_position(self):
+        other = make_line(self.receipt, position=2)
+        self.reject("lines", initial=(2, 0, 0), lines=[
+            line_row(id=self.line.pk, DELETE="on"), line_row(id=other.pk, position=1),
+        ], discounts=[discount_row()], taxes=[tax_row(tax_rate=self.tax_rate.pk)])
+
+    def test_detach_child_and_reuse_deleted_parent_position(self):
+        child = self.child()
+        self.discount(line=child)
+        self.reject("lines", initial=(2, 0, 0), lines=[
+            line_row(id=self.line.pk, DELETE="on"), self.child_row(child, parent="", position=1),
+        ])
+
+    def test_swap_line_positions(self):
+        other = make_line(self.receipt, position=2)
+        self.reject("lines", initial=(2, 0, 0), lines=[
+            line_row(id=self.line.pk, position=2), line_row(id=other.pk, position=1),
+        ])
+
+    def test_update_line_to_position_of_omitted_initial_row(self):
+        make_line(self.receipt, position=2)
+        self.reject("lines", initial=(1, 0, 0), lines=[line_row(id=self.line.pk, position=2)])
+
+    def test_new_line_cannot_reuse_deleted_or_cascaded_position(self):
+        child = self.child()
+        for position in (self.line.position, child.position):
+            with self.subTest(position=position):
+                self.reject("lines", initial=(2, 0, 0), lines=[
+                    line_row(id=self.line.pk, DELETE="on"), self.child_row(child),
+                    line_row(position=position),
+                ])
+
+    def test_duplicate_new_lines_are_formset_errors(self):
+        before = self.snapshot()
+        response = self.post(lines=[line_row(position=3), line_row(position=3)])
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(self.formset(response, "lines").non_form_errors())
+        self.assertEqual(self.snapshot(), before)
+
+    def test_duplicate_final_updates_are_formset_errors(self):
+        other = make_line(self.receipt, position=2)
+        before = self.snapshot()
+        response = self.post(initial=(2, 0, 0), lines=[
+            line_row(id=self.line.pk, position=3), line_row(id=other.pk, position=3),
+        ])
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(self.formset(response, "lines").non_form_errors())
+        self.assertEqual(self.snapshot(), before)
+
+    def test_discount_delete_update_swap_and_new_replacement(self):
+        first = self.discount()
+        second = ReceiptDiscount.objects.create(receipt=self.receipt, position=2, name="Другая", amount="1.00")
+        for rows in (
+            [discount_row(id=first.pk, DELETE="on"), discount_row(id=second.pk, position=1)],
+            [discount_row(id=first.pk, position=2), discount_row(id=second.pk, position=1)],
+            [discount_row(id=first.pk, DELETE="on"), discount_row(id=second.pk, position=2), discount_row()],
+        ):
+            with self.subTest(rows=rows):
+                self.reject("discounts", initial=(0, 2, 0), discounts=rows)
+
+    def test_tax_delete_update_swap_and_new_replacement(self):
+        rate = TaxRate.objects.create(country_id="XA", kind="vat", rate="19.00", name="Другая ставка")
+        first = ReceiptTax.objects.create(receipt=self.receipt, tax_rate=self.tax_rate, net=1, tax=0, gross=1)
+        second = ReceiptTax.objects.create(receipt=self.receipt, tax_rate=rate, net=1, tax=0, gross=1)
+        for rows in (
+            [tax_row(id=first.pk, tax_rate=self.tax_rate.pk, DELETE="on"),
+             tax_row(id=second.pk, tax_rate=self.tax_rate.pk)],
+            [tax_row(id=first.pk, tax_rate=rate.pk), tax_row(id=second.pk, tax_rate=self.tax_rate.pk)],
+            [tax_row(id=first.pk, tax_rate=self.tax_rate.pk, DELETE="on"),
+             tax_row(id=second.pk, tax_rate=rate.pk), tax_row(tax_rate=self.tax_rate.pk)],
+        ):
+            with self.subTest(rows=rows):
+                self.reject("taxes", initial=(0, 0, 2), taxes=rows)
+
+    def test_duplicate_new_discounts_and_taxes_are_formset_errors(self):
+        for prefix, rows in (
+            ("discounts", [discount_row(), discount_row()]),
+            ("taxes", [tax_row(tax_rate=self.tax_rate.pk), tax_row(tax_rate=self.tax_rate.pk)]),
+        ):
+            with self.subTest(prefix=prefix):
+                before = self.snapshot()
+                response = self.post(**{prefix: rows})
+                self.assertEqual(response.status_code, 200)
+                self.assertTrue(self.formset(response, prefix).non_form_errors())
+                self.assertEqual(self.snapshot(), before)
+
+    def test_swap_through_free_position_in_separate_posts(self):
+        other = make_line(self.receipt, position=2)
+        for first, second in ((3, 2), (3, 1), (2, 1)):
+            response = self.post(initial=(2, 0, 0), lines=[
+                line_row(id=self.line.pk, position=first), line_row(id=other.pk, position=second),
+            ])
+            self.assertEqual(response.status_code, 302)
+        self.line.refresh_from_db()
+        other.refresh_from_db()
+        self.assertEqual((self.line.position, other.position), (2, 1))
+
+    def test_delete_then_reuse_position_in_separate_posts(self):
+        other = make_line(self.receipt, position=2)
+        self.assertEqual(self.post(initial=(2, 0, 0), lines=[
+            line_row(id=self.line.pk, DELETE="on"), line_row(id=other.pk, position=2),
+        ]).status_code, 302)
+        self.assertEqual(self.post(initial=(1, 0, 0), lines=[line_row(id=other.pk, position=1)]).status_code, 302)
+        other.refresh_from_db()
+        self.assertEqual(other.position, 1)
+
+    def test_multiple_updates_to_free_positions_still_save(self):
+        other = make_line(self.receipt, position=2)
+        self.assertEqual(self.post(initial=(2, 0, 0), lines=[
+            line_row(id=self.line.pk, position=4), line_row(id=other.pk, position=3),
+        ]).status_code, 302)
+        self.assertEqual(list(self.receipt.lines.order_by("position").values_list("position", flat=True)), [3, 4])
+
+    def test_unrelated_integrity_error_is_not_hidden_as_unique_conflict(self):
+        before = self.snapshot()
+        original_save = ReceiptInlineFormSet.save_existing
+
+        def invalid_save(formset, form, obj, commit=True):
+            if formset.model is ReceiptLine:
+                obj.quantity = 0  # Настоящий check violation после успешного clean.
+                obj.save()
+            return original_save(formset, form, obj, commit=commit)
+
+        with patch.object(ReceiptInlineFormSet, "save_existing", invalid_save):
+            with self.assertRaises(IntegrityError) as caught:
+                self.post(receipt_number="changed", initial=(1, 0, 0), lines=[line_row(id=self.line.pk)])
+        self.assertEqual(caught.exception.__cause__.sqlstate, "23514")
+        self.assertEqual(self.snapshot(), before)
+
+    def concurrent_unique(self, model, *, update=False, hold=False):
+        prefix = {ReceiptLine: "lines", ReceiptDiscount: "discounts", ReceiptTax: "taxes"}[model]
+        reached, release, inserted, finish = (threading.Event() for _ in range(4))
+        original_save = ReceiptInlineFormSet.save
+        pids = []
+        created = []
+        values = {"receipt": self.receipt}
+        fields = {"receipt_number": "changed"}
+        if model is ReceiptLine:
+            values.update(position=3, raw_name="Конкурентная строка")
+            fields.update(discounts=[discount_row()], taxes=[tax_row(tax_rate=self.tax_rate.pk)])
+            fields["lines"] = [line_row(id=self.line.pk if update else "", position=3)]
+        elif model is ReceiptDiscount:
+            values.update(position=3, name="Конкурентная скидка", amount="1.00")
+            obj = self.discount() if update else None
+            fields["discounts"] = [discount_row(id=obj.pk if obj else "", position=3)]
+        else:
+            values.update(tax_rate=self.tax_rate, net=1, tax=0, gross=1)
+            fields["discounts"] = [discount_row()]
+            obj = None
+            if update:
+                rate = TaxRate.objects.create(country_id="XA", kind="vat", rate="19.00", name="Другая ставка")
+                obj = ReceiptTax.objects.create(receipt=self.receipt, tax_rate=rate, net=1, tax=0, gross=1)
+            fields["taxes"] = [tax_row(id=obj.pk if obj else "", tax_rate=self.tax_rate.pk)]
+        fields["initial"] = tuple(int(update and name == prefix) for name in INLINE_PREFIXES)
+
+        def paused_save(formset, commit=True):
+            if formset.model is model:
+                reached.set()
+                if not release.wait(10):
+                    raise AssertionError("Save не освобождён")
+            return original_save(formset, commit=commit)
+
+        def post():
+            try:
+                client = Client()
+                client.force_login(self.user)
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT pg_backend_pid()")
+                    pids.append(cursor.fetchone()[0])
+                    cursor.execute("SHOW statement_timeout")
+                    self.assertEqual(cursor.fetchone()[0], "2s")
+                return client.post(admin_url(Receipt, "change", self.receipt.pk), self.receipt_data(**fields))
+            finally:
+                connections.close_all()
+
+        def insert():
+            try:
+                with transaction.atomic():
+                    if model is ReceiptLine:
+                        obj = make_line(**values)
+                    else:
+                        obj = model.objects.create(**values)
+                    created.append(obj.pk)
+                    inserted.set()
+                    if hold and not finish.wait(10):
+                        raise AssertionError("Конкурентная транзакция не освобождена")
+            finally:
+                connections.close_all()
+
+        with patch.object(ReceiptInlineFormSet, "save", paused_save), ThreadPoolExecutor(max_workers=2) as pool:
+            pending = pool.submit(post)
+            try:
+                self.assertTrue(reached.wait(5))
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT pg_backend_pid()")
+                    self.assertNotEqual(pids[0], cursor.fetchone()[0])
+                competing = pool.submit(insert)
+                self.assertTrue(inserted.wait(5))
+                if not hold:
+                    competing.result(timeout=5)  # Настоящий commit между clean и save.
+                before = self.snapshot()
+                release.set()
+                response = pending.result(timeout=8)
+                if hold:
+                    self.assertEqual(response.status_code, 200)
+                    errors = self.formset(response, prefix).non_form_errors().as_data()
+                    self.assertEqual(errors[0].code, "receipt_inline_busy")
+                    self.assertEqual(self.snapshot(), before)
+                else:
+                    self.assertUniqueRejected(response, prefix, before)
+            finally:
+                release.set()
+                finish.set()
+            competing.result(timeout=5)
+        self.assertTrue(model.objects.filter(pk=created[0], receipt=self.receipt).exists())
+
+    def test_concurrent_insert_line_after_clean(self):
+        self.concurrent_unique(ReceiptLine)
+
+    def test_concurrent_update_line_after_clean(self):
+        self.concurrent_unique(ReceiptLine, update=True)
+
+    def test_concurrent_insert_discount_after_clean(self):
+        self.concurrent_unique(ReceiptDiscount)
+
+    def test_concurrent_update_discount_after_clean(self):
+        self.concurrent_unique(ReceiptDiscount, update=True)
+
+    def test_concurrent_insert_tax_after_clean(self):
+        self.concurrent_unique(ReceiptTax)
+
+    def test_concurrent_update_tax_after_clean(self):
+        self.concurrent_unique(ReceiptTax, update=True)
+
+    def test_uncommitted_unique_conflict_times_out_as_form_error(self):
+        for model in (ReceiptLine, ReceiptDiscount, ReceiptTax):
+            with self.subTest(model=model.__name__):
+                self.concurrent_unique(model, hold=True)
+                model.objects.filter(receipt=self.receipt).delete()
+                # Следующий subtest снова начинает с одной строкой.
+                if model is ReceiptLine:
+                    self.line = make_line(self.receipt)
 
 
 @tag("integration")
