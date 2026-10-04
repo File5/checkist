@@ -1,8 +1,10 @@
 import { useEffect, useLayoutEffect, useRef } from 'react'
-import { Link, useNavigation } from './navigation'
+import { buildRoute, Link, useNavigation } from './navigation'
 import type { NavigationSnapshot, Route } from './navigation'
 import HealthPage from './pages/HealthPage'
-import { CatalogPlaceholder, CategoryPlaceholder, ProductPlaceholder } from './pages/CatalogPlaceholder'
+import CatalogPage from './features/catalog/CatalogPage'
+import CategoryPage from './features/catalog/CategoryPage'
+import ProductPage from './features/product/ProductPage'
 import RequestState from './components/RequestState'
 
 function pageTitle(route: Route) {
@@ -16,12 +18,11 @@ function pageTitle(route: Route) {
   }
 }
 
-/** F5 replaces the three placeholders here with the F3/F4 screens using the same props. */
 function pageContent({ route, returnTo }: NavigationSnapshot) {
   switch (route.kind) {
-    case 'catalog': return <CatalogPlaceholder query={route.query} />
-    case 'category': return <CategoryPlaceholder categoryId={route.categoryId} query={route.query} />
-    case 'product': return <ProductPlaceholder productId={route.productId} query={route.query} returnTo={returnTo} />
+    case 'catalog': return <CatalogPage query={route.query} />
+    case 'category': return <CategoryPage categoryId={route.categoryId} query={route.query} />
+    case 'product': return <ProductPage productId={route.productId} query={route.query} returnTo={returnTo} />
     case 'health': return <HealthPage />
     case 'invalid-query': return <RequestState kind="empty" message="В адресе указаны некорректные фильтры или номер страницы. Сбросьте параметры и попробуйте снова." action={<Link className="action-link" to={route.resetTo} replace>Сбросить параметры</Link>} />
     case 'not-found': return <RequestState kind="empty" message="Такой страницы нет. Перейдите в каталог продуктов." action={<Link className="action-link" to="/catalog">В каталог</Link>} />
@@ -32,12 +33,39 @@ export default function App() {
   const navigation = useNavigation()
   const { route } = navigation
   const heading = useRef<HTMLHeadingElement>(null)
+  const content = useRef<HTMLElement>(null)
+  const previousNavigation = useRef<NavigationSnapshot | undefined>(undefined)
   const pathname = navigation.href.split(/[?#]/)[0]
   const title = pageTitle(route)
 
   useLayoutEffect(() => {
+    const previous = previousNavigation.current
+    previousNavigation.current = navigation
+    if (previous?.href.split(/[?#]/)[0] === pathname) return
     heading.current?.focus()
-  }, [pathname])
+    if (previous?.route.kind !== 'product' || !previous.returnTo
+      || (route.kind !== 'catalog' && route.kind !== 'category')
+      || buildRoute(route) !== previous.returnTo || !content.current) return
+
+    // The list loads asynchronously. Restore the selected link only while the
+    // user has left focus on the transition heading; never interrupt their work.
+    const productHref = buildRoute({ kind: 'product', productId: previous.route.productId, query: { page: 1 } })
+    const stop = () => {
+      observer.disconnect()
+      document.removeEventListener('focusin', cancelOnFocus)
+    }
+    const cancelOnFocus = () => { if (document.activeElement !== heading.current) stop() }
+    const restore = () => {
+      if (document.activeElement !== heading.current) { stop(); return }
+      const link = content.current?.querySelector<HTMLAnchorElement>(`a[href="${productHref}"]`)
+      if (link) { stop(); link.focus() }
+    }
+    const observer = new MutationObserver(restore)
+    observer.observe(content.current, { childList: true, subtree: true })
+    document.addEventListener('focusin', cancelOnFocus)
+    restore()
+    return stop
+  }, [navigation, pathname, route])
 
   useEffect(() => {
     document.title = `Checkist — ${title}`
@@ -61,7 +89,7 @@ export default function App() {
         </nav>
       </header>
 
-      <main id="main">
+      <main id="main" ref={content}>
         <div className="intro">
           <p className="eyebrow">От чека к понятным покупкам</p>
           <h1 id="page-heading" ref={heading} tabIndex={-1}>{title}</h1>
