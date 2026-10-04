@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from django.contrib import admin
 from django.contrib.auth import get_user_model
-from django.db import connection, connections
+from django.db import connection, connections, transaction
 from django.test import Client, TransactionTestCase, tag
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
@@ -1005,6 +1005,369 @@ class ReceiptLineConcurrencyTests(TransactionTestCase):
 
     def test_move_waits_for_discount_creation_and_is_rejected(self):
         self.concurrent_requests("discount", "create")
+
+
+@tag("integration")
+class ReceiptInlineTransactionTests(TransactionTestCase):
+    """DELETE проверяется с настоящим commit, а гонки — на отдельных соединениях."""
+
+    receipt_data = ReceiptsAdminTestCase.receipt_data
+    formset = ReceiptsAdminTestCase.formset
+
+    def setUp(self):
+        country = Country.objects.create(code="XA", name="Тестовая страна")
+        self.currency = Currency.objects.create(code="XTS", name="Тестовая валюта")
+        merchant = Merchant.objects.create(country=country, legal_name="Тестовый продавец")
+        self.store = Store.objects.create(
+            merchant=merchant, country=country, address_raw="Тестоград, Примерная, 1", timezone="UTC",
+        )
+        self.tax_rate = TaxRate.objects.create(country=country, kind="vat", rate="7.00", name="Тестовый НДС")
+        self.user = get_user_model().objects.create_superuser("inline-user", password="test-only-password")
+        self.client.force_login(self.user)
+        self.receipt = make_receipt(self.store, self.currency, receipt_number="100")
+        self.target = make_receipt(self.store, self.currency, receipt_number="200")
+        self.line = make_line(self.receipt)
+
+    def post(self, **fields):
+        return self.client.post(
+            admin_url(Receipt, "change", self.receipt.pk), self.receipt_data(**{"receipt_number": "100", **fields}),
+        )
+
+    def child(self, **fields):
+        return make_line(self.receipt, position=2, kind="deposit", parent=self.line, raw_name="Залог", **fields)
+
+    def discount(self, **fields):
+        return ReceiptDiscount.objects.create(
+            receipt=self.receipt, position=1, name="Скидка", amount="1.00", **fields,
+        )
+
+    def child_row(self, child, **fields):
+        return line_row(**{
+            "id": child.pk, "receipt": self.receipt.pk, "position": child.position,
+            "kind": "deposit", "raw_name": child.raw_name, "parent": child.parent_id or "", **fields,
+        })
+
+    def assertRejected(self, response, prefix, field=None, index=0):
+        self.assertEqual(response.status_code, 200)
+        formset = self.formset(response, prefix)
+        if field:
+            self.assertIn(field, formset.forms[index].errors)
+            self.assertEqual(formset.forms[index].errors.as_data()[field][0].code, f"{field}_deleted")
+        else:
+            self.assertTrue(formset.non_form_errors())
+            self.assertEqual(formset.non_form_errors().as_data()[0].code, "receipt_inline_conflict")
+        self.receipt.refresh_from_db()
+        self.assertEqual(self.receipt.receipt_number, "100")
+
+    def test_delete_parent_and_edit_child_is_rejected_at_commit(self):
+        child = self.child()
+        response = self.post(
+            receipt_number="changed", initial=(2, 0, 0), lines=[
+                line_row(id=self.line.pk, DELETE="on"),
+                self.child_row(child, raw_name="Изменённый залог"),
+            ],
+        )
+        self.assertRejected(response, "lines", "parent", 1)
+        child.refresh_from_db()
+        self.assertEqual((child.raw_name, child.parent_id), ("Залог", self.line.pk))
+        self.assertTrue(ReceiptLine.objects.filter(pk=self.line.pk).exists())
+
+    def test_delete_line_and_edit_discount_is_rejected_at_commit(self):
+        discount = self.discount(line=self.line)
+        response = self.post(
+            receipt_number="changed", initial=(1, 1, 0),
+            lines=[line_row(id=self.line.pk, DELETE="on")],
+            discounts=[discount_row(id=discount.pk, line=self.line.pk, name="Изменённая скидка")],
+        )
+        self.assertRejected(response, "discounts", "line")
+        discount.refresh_from_db()
+        self.assertEqual((discount.name, discount.line_id), ("Скидка", self.line.pk))
+        self.assertTrue(ReceiptLine.objects.filter(pk=self.line.pk).exists())
+
+    def test_delete_line_and_create_child_is_rejected(self):
+        response = self.post(
+            receipt_number="changed", initial=(1, 0, 0), lines=[
+                line_row(id=self.line.pk, DELETE="on"),
+                line_row(position=2, kind="deposit", parent=self.line.pk, raw_name="Новый залог"),
+            ],
+        )
+        self.assertRejected(response, "lines", "parent", 1)
+        self.assertEqual(self.receipt.lines.count(), 1)
+
+    def test_delete_line_and_create_discount_is_rejected(self):
+        response = self.post(
+            receipt_number="changed", initial=(1, 0, 0),
+            lines=[line_row(id=self.line.pk, DELETE="on")],
+            discounts=[discount_row(line=self.line.pk)],
+        )
+        self.assertRejected(response, "discounts", "line")
+        self.assertTrue(ReceiptLine.objects.filter(pk=self.line.pk).exists())
+        self.assertFalse(self.receipt.discounts.exists())
+
+    def test_delete_parent_and_edit_cascaded_grandchild_is_rejected(self):
+        child = self.child()
+        grandchild = make_line(self.receipt, position=3, kind="deposit", parent=child, raw_name="Второй залог")
+        response = self.post(initial=(3, 0, 0), lines=[
+            line_row(id=self.line.pk, DELETE="on"), self.child_row(child),
+            self.child_row(grandchild, raw_name="Изменённый залог"),
+        ])
+        self.assertRejected(response, "lines", "parent", 2)
+        self.assertEqual(self.receipt.lines.count(), 3)
+        grandchild.refresh_from_db()
+        self.assertEqual(grandchild.raw_name, "Второй залог")
+
+    def test_delete_parent_and_edit_discount_of_cascaded_child_is_rejected(self):
+        child = self.child()
+        discount = self.discount(line=child)
+        response = self.post(
+            initial=(2, 1, 0), lines=[line_row(id=self.line.pk, DELETE="on"), self.child_row(child)],
+            discounts=[discount_row(id=discount.pk, line=child.pk, name="Изменённая скидка")],
+        )
+        self.assertRejected(response, "discounts", "line")
+        self.assertEqual(self.receipt.lines.count(), 2)
+        discount.refresh_from_db()
+        self.assertEqual(discount.name, "Скидка")
+
+    def test_detach_child_and_discounts_before_deleting_parent(self):
+        child = self.child()
+        child_discount = self.discount(line=child)
+        parent_discount = ReceiptDiscount.objects.create(
+            receipt=self.receipt, line=self.line, position=2, name="Скидка товара", amount="1.00",
+        )
+        response = self.post(
+            initial=(2, 2, 0), lines=[
+                line_row(id=self.line.pk, DELETE="on"), self.child_row(child, parent=""),
+            ], discounts=[
+                discount_row(id=child_discount.pk, line=child.pk, name="Скидка"),
+                discount_row(id=parent_discount.pk, position=2, line="", name="Скидка товара"),
+            ],
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(ReceiptLine.objects.filter(pk=self.line.pk).exists())
+        child.refresh_from_db()
+        parent_discount.refresh_from_db()
+        child_discount.refresh_from_db()
+        self.assertIsNone(child.parent_id)
+        self.assertIsNone(parent_discount.line_id)
+        self.assertEqual(child_discount.line_id, child.pk)
+
+    def test_delete_line_child_and_discount_together(self):
+        child = self.child()
+        discount = self.discount(line=self.line)
+        response = self.post(
+            initial=(2, 1, 0), lines=[
+                line_row(id=self.line.pk, DELETE="on"), self.child_row(child, DELETE="on"),
+            ], discounts=[discount_row(id=discount.pk, line=self.line.pk, DELETE="on")],
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(self.receipt.lines.exists())
+        self.assertFalse(self.receipt.discounts.exists())
+
+    def test_delete_line_cascades_unchanged_dependents(self):
+        child = self.child()
+        discount = self.discount(line=self.line)
+        response = self.post(
+            initial=(2, 1, 0), lines=[line_row(id=self.line.pk, DELETE="on"), self.child_row(child)],
+            discounts=[discount_row(id=discount.pk, line=self.line.pk, name="Скидка")],
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(self.receipt.lines.exists())
+        self.assertFalse(self.receipt.discounts.exists())
+
+    def test_delete_discount_and_tax_without_changing_lines(self):
+        discount = self.discount()
+        tax = ReceiptTax.objects.create(
+            receipt=self.receipt, tax_rate=self.tax_rate, tax_code="A", net="8.41", tax="0.59", gross="9.00",
+        )
+        response = self.post(
+            initial=(1, 1, 1), lines=[line_row(id=self.line.pk)],
+            discounts=[discount_row(id=discount.pk, DELETE="on")],
+            taxes=[tax_row(id=tax.pk, tax_rate=self.tax_rate.pk, DELETE="on")],
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(ReceiptLine.objects.filter(pk=self.line.pk).exists())
+        self.assertFalse(self.receipt.discounts.exists())
+        self.assertFalse(self.receipt.taxes.exists())
+
+    def stale_delete(self, model, form_class, prefix, obj, row, concurrent_change):
+        reached, release = threading.Event(), threading.Event()
+        state = threading.local()
+        original_clean = form_class.clean
+        pids = []
+
+        def paused_clean(form):
+            if getattr(state, "deleting", False) and isinstance(form.instance, model) and form.instance.pk == obj.pk:
+                reached.set()
+                if not release.wait(10):
+                    raise AssertionError("Устаревший DELETE не получил разрешение продолжиться")
+            return original_clean(form)
+
+        def delete_source():
+            state.deleting = True
+            try:
+                client = Client()
+                client.force_login(self.user)
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT pg_backend_pid()")
+                    pids.append(cursor.fetchone()[0])
+                counts = tuple(int(name == prefix) for name in INLINE_PREFIXES)
+                data = self.receipt_data(receipt_number="changed", initial=counts, **{prefix: [row]})
+                return client.post(admin_url(Receipt, "change", self.receipt.pk), data)
+            finally:
+                connections.close_all()
+
+        with patch.object(form_class, "clean", paused_clean), ThreadPoolExecutor(max_workers=1) as pool:
+            pending = pool.submit(delete_source)
+            try:
+                self.assertTrue(reached.wait(5), "DELETE не прочитал initial inline")
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT pg_backend_pid()")
+                    self.assertNotEqual(pids[0], cursor.fetchone()[0])
+                    cursor.execute("SHOW statement_timeout")
+                    self.assertEqual(cursor.fetchone()[0], "2s")
+                concurrent_change()
+            finally:
+                release.set()
+            response = pending.result(timeout=10)
+        self.assertRejected(response, prefix)
+        # Повтор того же устаревшего POST уже после commit также не должен
+        # удалять запись по скрытому id, даже если её нет в queryset чека A.
+        counts = tuple(int(name == prefix) for name in INLINE_PREFIXES)
+        self.assertRejected(self.post(receipt_number="changed", initial=counts, **{prefix: [row]}), prefix)
+
+    def moved_line_delete(self, with_dependents):
+        saved_ids = {}
+
+        def move_and_create():
+            response = self.client.post(
+                admin_url(ReceiptLine, "change", self.line.pk), line_row(receipt=self.target.pk),
+            )
+            self.assertEqual(response.status_code, 302)
+            if with_dependents:
+                data = self.receipt_data(
+                    receipt_number="200", initial=(1, 0, 0), lines=[
+                        line_row(id=self.line.pk, receipt=self.target.pk),
+                        line_row(position=2, kind="deposit", parent=self.line.pk, raw_name="Залог B"),
+                    ], discounts=[discount_row(line=self.line.pk)],
+                )
+                response = self.client.post(admin_url(Receipt, "change", self.target.pk), data)
+                self.assertEqual(response.status_code, 302)
+                saved_ids["child"] = self.target.lines.get(position=2).pk
+                saved_ids["discount"] = self.target.discounts.get().pk
+
+        self.stale_delete(
+            ReceiptLine, ReceiptLineAdminForm, "lines", self.line,
+            line_row(id=self.line.pk, DELETE="on"), move_and_create,
+        )
+        self.line.refresh_from_db()
+        self.assertEqual(self.line.receipt_id, self.target.pk)
+        if with_dependents:
+            child = ReceiptLine.objects.get(pk=saved_ids["child"])
+            discount = ReceiptDiscount.objects.get(pk=saved_ids["discount"])
+            self.assertEqual((child.receipt_id, discount.receipt_id), (self.target.pk,) * 2)
+            self.assertEqual((child.parent_id, discount.line_id), (self.line.pk,) * 2)
+
+    def test_stale_delete_moved_line_with_new_target_dependents(self):
+        self.moved_line_delete(with_dependents=True)
+
+    def test_stale_delete_moved_line_without_dependents(self):
+        self.moved_line_delete(with_dependents=False)
+
+    def test_stale_delete_moved_discount(self):
+        discount = self.discount()
+        self.stale_delete(
+            ReceiptDiscount, ReceiptDiscountAdminForm, "discounts", discount,
+            discount_row(id=discount.pk, DELETE="on"),
+            lambda: ReceiptDiscount.objects.filter(pk=discount.pk).update(receipt=self.target),
+        )
+        discount.refresh_from_db()
+        self.assertEqual(discount.receipt_id, self.target.pk)
+
+    def test_stale_delete_moved_tax(self):
+        from django.forms import ModelForm
+
+        tax = ReceiptTax.objects.create(
+            receipt=self.receipt, tax_rate=self.tax_rate, tax_code="A", net="8.41", tax="0.59", gross="9.00",
+        )
+        self.stale_delete(
+            ReceiptTax, ModelForm, "taxes", tax,
+            tax_row(id=tax.pk, tax_rate=self.tax_rate.pk, DELETE="on"),
+            lambda: ReceiptTax.objects.filter(pk=tax.pk).update(receipt=self.target),
+        )
+        tax.refresh_from_db()
+        self.assertEqual(tax.receipt_id, self.target.pk)
+
+    def test_stale_delete_already_deleted_line(self):
+        self.stale_delete(
+            ReceiptLine, ReceiptLineAdminForm, "lines", self.line,
+            line_row(id=self.line.pk, DELETE="on"),
+            lambda: ReceiptLine.objects.filter(pk=self.line.pk).delete(),
+        )
+        self.assertFalse(ReceiptLine.objects.filter(pk=self.line.pk).exists())
+
+    def busy_object(self, obj, fields, prefix):
+        locked, release = threading.Event(), threading.Event()
+
+        def hold_lock():
+            try:
+                with transaction.atomic():
+                    type(obj).objects.select_for_update().get(pk=obj.pk)
+                    with connection.cursor() as cursor:
+                        cursor.execute("SHOW statement_timeout")
+                        self.assertEqual(cursor.fetchone()[0], "2s")
+                    locked.set()
+                    if not release.wait(10):
+                        raise AssertionError("Блокировка строки не освобождена")
+            finally:
+                connections.close_all()
+
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            pending = pool.submit(hold_lock)
+            try:
+                self.assertTrue(locked.wait(5))
+                response = self.post(receipt_number="changed", **fields)
+            finally:
+                release.set()
+            pending.result(timeout=10)
+        self.assertEqual(response.status_code, 200)
+        formset = self.formset(response, prefix)
+        self.assertTrue(formset.non_form_errors() or any(formset.errors))
+        codes = [error.code for error in formset.non_form_errors().as_data()]
+        for form in formset.forms:
+            codes.extend(error.code for errors in form.errors.as_data().values() for error in errors)
+        self.assertIn("receipt_inline_busy", codes)
+        self.receipt.refresh_from_db()
+        self.assertEqual(self.receipt.receipt_number, "100")
+        self.assertTrue(ReceiptLine.objects.filter(pk=self.line.pk).exists())
+
+    def test_delete_busy_line_returns_conflict_instead_of_timeout_500(self):
+        self.busy_object(self.line, {"initial": (1, 0, 0), "lines": [line_row(id=self.line.pk, DELETE="on")]}, "lines")
+
+    def test_create_discount_on_busy_line_returns_error_instead_of_timeout_500(self):
+        self.busy_object(self.line, {"discounts": [discount_row(line=self.line.pk)]}, "discounts")
+        self.assertFalse(self.receipt.discounts.exists())
+
+    def test_create_child_of_busy_line_returns_error_instead_of_timeout_500(self):
+        self.busy_object(self.line, {
+            "lines": [line_row(position=2, kind="deposit", parent=self.line.pk, raw_name="Залог")],
+        }, "lines")
+        self.assertEqual(self.receipt.lines.count(), 1)
+
+    def test_delete_busy_discount_is_rejected_without_waiting_for_timeout(self):
+        discount = self.discount()
+        self.busy_object(discount, {
+            "initial": (0, 1, 0), "discounts": [discount_row(id=discount.pk, DELETE="on")],
+        }, "discounts")
+        self.assertTrue(ReceiptDiscount.objects.filter(pk=discount.pk, receipt=self.receipt).exists())
+
+    def test_delete_busy_tax_is_rejected_without_waiting_for_timeout(self):
+        tax = ReceiptTax.objects.create(
+            receipt=self.receipt, tax_rate=self.tax_rate, tax_code="A", net="8.41", tax="0.59", gross="9.00",
+        )
+        self.busy_object(tax, {
+            "initial": (0, 0, 1), "taxes": [tax_row(id=tax.pk, tax_rate=self.tax_rate.pk, DELETE="on")],
+        }, "taxes")
+        self.assertTrue(ReceiptTax.objects.filter(pk=tax.pk, receipt=self.receipt).exists())
 
 
 @tag("integration")
