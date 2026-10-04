@@ -1,6 +1,6 @@
-import type { ApiFailure, ApiResult, RequestOptions } from './types.ts'
+import type { ApiFailure, ApiResult, LocalApiFailure, LocalApiResult, RequestOptions } from './types.ts'
 
-type Query = Record<string, string | number | boolean | undefined>
+export type Query = Record<string, string | number | boolean | undefined>
 type Validator<T> = (value: unknown) => value is T
 
 /** Same public prefix normalization as health; encode every query value exactly once. */
@@ -14,8 +14,8 @@ export function apiUrl(base: string, path: string, query: Query = {}): string {
   return `${normalized}/${path}${search ? `?${search}` : ''}`
 }
 
-function readError(status: number, body: unknown): ApiFailure {
-  const invalid: ApiFailure = { kind: 'error', reason: 'invalid_response', status }
+function readError(status: number, body: unknown, local: boolean): LocalApiFailure {
+  const invalid: LocalApiFailure = { kind: 'error', reason: 'invalid_response', status }
   if (typeof body !== 'object' || body === null || Array.isArray(body) || !('error' in body)) return invalid
   const error = body.error
   if (typeof error !== 'object' || error === null || Array.isArray(error)
@@ -32,6 +32,17 @@ function readError(status: number, body: unknown): ApiFailure {
   if ((status === 400 && (code === 'invalid_parameter' || code === 'invalid_request' || code === 'range_too_large'))
     || (status === 404 && (code === 'not_found' || code === 'page_out_of_range'))) {
     return { kind: 'error', reason: code, status, ...(fields ? { fields } : {}) }
+  }
+  const localCodes = {
+    400: ['unsupported_format', 'invalid_image', 'image_too_large'],
+    403: ['csrf_failed', 'permission_denied'],
+    405: ['method_not_allowed'], 406: ['not_acceptable'],
+    409: ['job_active', 'job_terminal', 'retry_not_allowed'],
+    413: ['upload_too_large'], 415: ['unsupported_media_type'],
+    503: ['storage_unavailable', 'database_unavailable'],
+  }
+  if (local && typeof code === 'string' && localCodes[status as keyof typeof localCodes]?.includes(code)) {
+    return { kind: 'error', reason: code as LocalApiFailure['reason'], status, ...(fields ? { fields } : {}) }
   }
   if (status === 500 && code === 'internal_error') return { kind: 'error', reason: 'server', status }
   return invalid
@@ -51,19 +62,47 @@ export async function getJson<T>(
   validate: Validator<T>,
   { signal, baseUrl = import.meta.env.VITE_API_BASE_URL || '/api' }: RequestOptions = {},
 ): Promise<ApiResult<T>> {
+  return requestJson(path, query, validate, { signal, baseUrl })
+}
+
+export type JsonRequest = {
+  local?: boolean
+  method?: 'GET' | 'POST'
+  body?: BodyInit
+  headers?: Record<string, string>
+  credentials?: RequestCredentials
+  successStatuses?: readonly number[]
+  timeoutMs?: number
+}
+
+/** A single deadline covers fetch and body, even when either ignores abort. */
+export function requestJson<T>(
+  path: string, query: Query, validate: Validator<T>, options: RequestOptions | undefined,
+  requestOptions: JsonRequest & { local: true },
+): Promise<LocalApiResult<T>>
+export function requestJson<T>(
+  path: string, query: Query, validate: Validator<T>, options?: RequestOptions,
+  requestOptions?: JsonRequest & { local?: false },
+): Promise<ApiResult<T>>
+export async function requestJson<T>(
+  path: string, query: Query, validate: Validator<T>,
+  { signal, baseUrl = import.meta.env.VITE_API_BASE_URL || '/api' }: RequestOptions = {},
+  requestOptions: JsonRequest = {},
+): Promise<LocalApiResult<T>> {
   if (signal?.aborted) return { kind: 'aborted' }
+  const { timeoutMs = 15_000, successStatuses = [200], credentials = 'omit', headers = {}, local = false, ...init } = requestOptions
   const controller = new AbortController()
-  const deadline = Date.now() + 15_000
+  const deadline = Date.now() + timeoutMs
   let timedOut = false
-  let settleAbort!: (result: ApiResult<T>) => void
-  const stopped = new Promise<ApiResult<T>>((resolve) => { settleAbort = resolve })
+  let settleAbort!: (result: LocalApiResult<T>) => void
+  const stopped = new Promise<LocalApiResult<T>>((resolve) => { settleAbort = resolve })
   const cancel = () => {
     controller.abort()
     settleAbort(timedOut ? { kind: 'error', reason: 'timeout' } : { kind: 'aborted' })
   }
   signal?.addEventListener('abort', cancel, { once: true })
-  const timeout = setTimeout(() => { timedOut = true; cancel() }, 15_000)
-  const interrupted = (): ApiResult<T> | undefined => {
+  const timeout = setTimeout(() => { timedOut = true; cancel() }, timeoutMs)
+  const interrupted = (): LocalApiResult<T> | undefined => {
     if (controller.signal.aborted) return timedOut ? { kind: 'error', reason: 'timeout' } : { kind: 'aborted' }
     if (Date.now() >= deadline) {
       timedOut = true
@@ -71,10 +110,10 @@ export async function getJson<T>(
       return { kind: 'error', reason: 'timeout' }
     }
   }
-  const request = async (): Promise<ApiResult<T>> => {
+  const request = async (): Promise<LocalApiResult<T>> => {
     try {
       const response = await fetch(apiUrl(baseUrl, path, query), {
-        headers: { Accept: 'application/json' }, credentials: 'omit', cache: 'no-store', signal: controller.signal,
+        ...init, headers: { Accept: 'application/json', ...headers }, credentials, cache: 'no-store', signal: controller.signal,
       })
       const afterFetch = interrupted()
       if (afterFetch) return afterFetch
@@ -89,11 +128,11 @@ export async function getJson<T>(
       }
       const afterBody = interrupted()
       if (afterBody) return afterBody
-      if (response.status !== 200) return readError(response.status, body)
+      if (!successStatuses.includes(response.status)) return readError(response.status, body, local)
       try {
-        return validate(body) ? { kind: 'ok', data: body } : { kind: 'error', reason: 'invalid_response', status: 200 }
+        return validate(body) ? { kind: 'ok', data: body } : { kind: 'error', reason: 'invalid_response', status: response.status }
       } catch {
-        return { kind: 'error', reason: 'invalid_response', status: 200 }
+        return { kind: 'error', reason: 'invalid_response', status: response.status }
       }
     } catch {
       return interrupted() ?? { kind: 'error', reason: 'network' }

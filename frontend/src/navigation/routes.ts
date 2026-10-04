@@ -1,3 +1,7 @@
+import { jobStatuses } from '../api/recognition-types'
+import type { JobStatus } from '../api/recognition-types'
+import type { ReceiptOperation } from '../api/receipts-types'
+
 export interface CatalogQuery {
   q?: string
   generic?: number
@@ -13,6 +17,22 @@ export interface HistoryQuery {
   page: number
 }
 
+export interface ReceiptsQuery extends HistoryQuery {
+  product?: number
+  q?: string
+  operation?: ReceiptOperation
+  page_size?: number
+  ordering?: 'purchased_at' | '-purchased_at'
+}
+
+export interface JobsQuery {
+  photo?: number
+  status?: JobStatus
+  page: number
+  page_size?: number
+  ordering?: 'created_at' | '-created_at'
+}
+
 export type CatalogRoute =
   | { kind: 'catalog'; query: CatalogQuery }
   | { kind: 'category'; categoryId: number; query: CatalogQuery }
@@ -20,6 +40,11 @@ export type CatalogRoute =
 export type NavigableRoute = CatalogRoute
   | { kind: 'product'; productId: number; query: HistoryQuery }
   | { kind: 'health' }
+  | { kind: 'receipts'; query: ReceiptsQuery }
+  | { kind: 'upload' }
+  | { kind: 'receipt'; receiptId: number }
+  | { kind: 'jobs'; query: JobsQuery }
+  | { kind: 'job'; jobId: number }
 
 export type Route = NavigableRoute
   | { kind: 'not-found'; path: string }
@@ -68,7 +93,18 @@ function queryReader(search: string | URLSearchParams) {
     if (result === undefined) invalid(name)
     return result
   }
-  return { read, integer, invalid, invalidFields }
+  const choice = <T extends string>(name: string, values: readonly T[]): T | undefined => {
+    const value = read(name)
+    if (value === undefined) return undefined
+    if (!values.includes(value as T)) { invalid(name); return undefined }
+    return value as T
+  }
+  const pageSize = () => {
+    const size = integer('page_size')
+    if (size !== undefined && size > 200) invalid('page_size')
+    return size
+  }
+  return { read, integer, choice, pageSize, invalid, invalidFields }
 }
 
 export function parseCatalogQuery(search: string | URLSearchParams): ParsedQuery<CatalogQuery> {
@@ -111,6 +147,30 @@ export function parseHistoryQuery(search: string | URLSearchParams): ParsedQuery
   }
 }
 
+export function parseReceiptsQuery(search: string | URLSearchParams): ParsedQuery<ReceiptsQuery> {
+  const history = parseHistoryQuery(search)
+  const reader = queryReader(search)
+  const product = reader.integer('product')
+  const q = reader.read('q')
+  if (q !== undefined && ([...q].length < 2 || [...q].length > 100)) reader.invalid('q')
+  const operation = reader.choice('operation', ['sale', 'refund'] as const)
+  const page_size = reader.pageSize()
+  const ordering = reader.choice('ordering', ['purchased_at', '-purchased_at'] as const)
+  return { query: { ...history.query, ...(product && { product }), ...(q && { q }), ...(operation && { operation }),
+    ...(page_size && { page_size }), ...(ordering && { ordering }) }, invalidFields: [...history.invalidFields, ...reader.invalidFields] }
+}
+
+export function parseJobsQuery(search: string | URLSearchParams): ParsedQuery<JobsQuery> {
+  const reader = queryReader(search)
+  const photo = reader.integer('photo')
+  const status = reader.choice('status', jobStatuses)
+  const page = reader.integer('page') ?? 1
+  const page_size = reader.pageSize()
+  const ordering = reader.choice('ordering', ['created_at', '-created_at'] as const)
+  return { query: { ...(photo && { photo }), ...(status && { status }), page, ...(page_size && { page_size }),
+    ...(ordering && { ordering }) }, invalidFields: reader.invalidFields }
+}
+
 function buildQuery<T>(query: T, keys: (keyof T)[], parse: (search: URLSearchParams) => ParsedQuery<T>): string {
   const params = new URLSearchParams()
   for (const key of keys) {
@@ -137,6 +197,14 @@ export function buildHistoryQuery(query: HistoryQuery): string {
   return buildQuery(query, ['store', 'country', 'currency', 'date_from', 'date_to', 'page'], parseHistoryQuery)
 }
 
+export function buildReceiptsQuery(query: ReceiptsQuery): string {
+  return buildQuery(query, ['store', 'product', 'country', 'currency', 'operation', 'date_from', 'date_to', 'q', 'page', 'page_size', 'ordering'], parseReceiptsQuery)
+}
+
+export function buildJobsQuery(query: JobsQuery): string {
+  return buildQuery(query, ['photo', 'status', 'page', 'page_size', 'ordering'], parseJobsQuery)
+}
+
 function buildId(id: number): string {
   if (!Number.isSafeInteger(id) || id <= 0) throw new RangeError('Invalid route ID')
   return String(id)
@@ -148,6 +216,11 @@ export function buildRoute(route: NavigableRoute): string {
     case 'category': return `/catalog/categories/${buildId(route.categoryId)}${buildCatalogQuery(route.query)}`
     case 'product': return `/catalog/products/${buildId(route.productId)}${buildHistoryQuery(route.query)}`
     case 'health': return '/health'
+    case 'receipts': return `/receipts${buildReceiptsQuery(route.query)}`
+    case 'upload': return '/receipts/upload'
+    case 'receipt': return `/receipts/${buildId(route.receiptId)}`
+    case 'jobs': return `/recognition/jobs${buildJobsQuery(route.query)}`
+    case 'job': return `/recognition/jobs/${buildId(route.jobId)}`
   }
 }
 
@@ -161,6 +234,20 @@ export function parseRoute(input: string | URL): Route {
   const path = url.pathname
   const normalizedPath = path === '/' ? path : path.replace(/\/$/, '')
   if (normalizedPath === '/health') return { kind: 'health' }
+  if (normalizedPath === '/receipts/upload') return { kind: 'upload' }
+  if (normalizedPath === '/receipts' || normalizedPath === '/recognition/jobs') {
+    const receipts = normalizedPath === '/receipts'
+    const parsed = receipts ? parseReceiptsQuery(url.searchParams) : parseJobsQuery(url.searchParams)
+    if (parsed.invalidFields.length) return { kind: 'invalid-query', path, fields: parsed.invalidFields, resetTo: normalizedPath }
+    return receipts ? { kind: 'receipts', query: parsed.query as ReceiptsQuery } : { kind: 'jobs', query: parsed.query as JobsQuery }
+  }
+  const detail = /^\/(receipts|recognition\/jobs)\/([^/]+)$/.exec(normalizedPath)
+  if (detail) {
+    let id: number | undefined
+    try { id = positiveInteger(decodeURIComponent(detail[2])) } catch { /* Invalid path encoding. */ }
+    if (id === undefined) return { kind: 'not-found', path }
+    return detail[1] === 'receipts' ? { kind: 'receipt', receiptId: id } : { kind: 'job', jobId: id }
+  }
 
   let route: NavigableRoute
   let invalidFields: string[]

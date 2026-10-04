@@ -7,6 +7,7 @@ import type {
 
 type Check = (value: unknown) => boolean
 type Guard<T> = (value: unknown) => value is T
+export type { Check, Guard }
 const text: Check = (value) => typeof value === 'string'
 const bool: Check = (value) => typeof value === 'boolean'
 export const isId: Guard<number> = (value): value is number => Number.isSafeInteger(value) && (value as number) > 0
@@ -39,6 +40,8 @@ function object<T>(shape: { [K in keyof T]-?: Check }): Guard<T> {
     ([key, check]) => Object.hasOwn(value, key) && check(value[key]),
   )
 }
+
+export { text, bool, nonNegativeInteger, nullable, array, choice, country, currency, decimal, amount, price, quantity, record, object, named, store, unit }
 
 export function isISODate(value: unknown): value is string {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
