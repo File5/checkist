@@ -1,12 +1,38 @@
 from django import forms
 from django.contrib import admin
-from django.db import OperationalError, transaction
+from django.db import IntegrityError, OperationalError, router, transaction
 from django.forms.models import BaseInlineFormSet
 from django.utils.html import format_html, format_html_join
 
 from receipts.dedup import build_fiscal_key, name_key
 from receipts.models import ProductAlias, Receipt, ReceiptDiscount, ReceiptLine, ReceiptTax
 from receipts.validation import validate_receipt
+
+
+INLINE_UNIQUE_KEYS = {
+    ReceiptLine: ("position", "receipts_receiptline_receipt_position_uniq"),
+    ReceiptDiscount: ("position", "receipts_receiptdiscount_receipt_position_uniq"),
+    ReceiptTax: ("tax_rate", "receipts_receipttax_receipt_tax_rate_uniq"),
+}
+
+
+def inline_unique_error(model):
+    message = (
+        "Номер позиции уже занят. Используйте свободный номер; удаление или перенос "
+        "занимающей его записи сохраните отдельно."
+        if model is not ReceiptTax else
+        "Эта ставка уже указана в чеке. Удаление или смену ставки занимающей её записи сохраните отдельно."
+    )
+    return forms.ValidationError(message, code="receipt_inline_unique")
+
+
+class ReceiptInlineSaveError(Exception):
+    """Выходит из savepoint всего POST до повторной сборки формы с ошибкой."""
+
+    def __init__(self, model, error):
+        self.model = model
+        self.error = error
+        super().__init__(str(error))
 
 
 def lock_inline_objects(queryset, *, nowait=False):
@@ -162,6 +188,9 @@ class ReceiptInlineFormSet(BaseInlineFormSet):
     """Принадлежность проверяется и для DELETE: ошибки отдельных форм Django игнорирует."""
 
     def clean(self):
+        if getattr(self, "save_conflict", None) is not None:
+            # Только повторная валидация/рендер после rollback, без повтора save.
+            raise self.save_conflict
         ids = []
         for form in self.initial_forms:
             submitted = form.cleaned_data.get(self.model._meta.pk.name)
@@ -184,7 +213,42 @@ class ReceiptInlineFormSet(BaseInlineFormSet):
                 "Запись уже перенесена в другой чек или удалена. Откройте чек заново.",
                 code="receipt_inline_conflict",
             )
+        # Inline FK исключён Django из validate_constraints(). Проверяем и
+        # занятые в БД ключи, включая DELETE и перенос на другой номер в POST:
+        # итоговая уникальность formset не исключает временный дубль при UPDATE.
+        field, _ = INLINE_UNIQUE_KEYS[self.model]
+        active = [
+            form for form in self.forms if not form.errors
+            and not (self.can_delete and self._should_delete_form(form))
+            and field in form.cleaned_data
+        ]
+        desired = {getattr(form.cleaned_data[field], "pk", form.cleaned_data[field]) for form in active}
+        occupied = dict(self.model._default_manager.filter(
+            receipt=self.instance, **{f"{field}__in": desired},
+        ).values_list(field, "pk")) if self.instance.pk is not None else {}
+        for form in active:
+            key = getattr(form.cleaned_data[field], "pk", form.cleaned_data[field])
+            if key in occupied and occupied[key] != form.instance.pk:
+                form.add_error(field, inline_unique_error(self.model))
         super().clean()
+
+    def save(self, commit=True):
+        try:
+            return super().save(commit=commit)
+        except IntegrityError as error:
+            cause = error.__cause__
+            if (getattr(cause, "sqlstate", None) != "23505"
+                    or getattr(getattr(cause, "diag", None), "constraint_name", None)
+                    != INLINE_UNIQUE_KEYS[self.model][1]):
+                raise
+            raise ReceiptInlineSaveError(self.model, inline_unique_error(self.model)) from error
+        except OperationalError as error:
+            if getattr(error.__cause__, "sqlstate", None) not in {"55P03", "57014", "40P01"}:
+                raise
+            raise ReceiptInlineSaveError(self.model, forms.ValidationError(
+                "Строки чека сейчас изменяются другим запросом. Откройте чек заново и повторите сохранение.",
+                code="receipt_inline_busy",
+            )) from error
 
 
 class ReceiptLineInlineFormSet(ReceiptInlineFormSet):
@@ -343,10 +407,29 @@ class ReceiptAdmin(admin.ModelAdmin):
     readonly_fields = ("created_at", "updated_at", "validation_warnings")
     inlines = (ReceiptLineInline, ReceiptDiscountInline, ReceiptTaxInline)
 
+    def _changeform_view(self, request, object_id, form_url, extra_context):
+        if request.method != "POST":
+            return super()._changeform_view(request, object_id, form_url, extra_context)
+        try:
+            # Внешний atomic Django остаётся; этот savepoint откатывает также
+            # поля чека и уже сохранённые inline, если уникальный ключ занят
+            # другой транзакцией между clean и save.
+            with transaction.atomic(using=router.db_for_write(self.model)):
+                return super()._changeform_view(request, object_id, form_url, extra_context)
+        except ReceiptInlineSaveError as conflict:
+            request._receipt_inline_save_conflict = conflict
+            try:
+                return super()._changeform_view(request, object_id, form_url, extra_context)
+            finally:
+                del request._receipt_inline_save_conflict
+
     def _create_formsets(self, request, obj, change):
         formsets, inlines = super()._create_formsets(request, obj, change)
         lines = next((formset for formset in formsets if formset.model is ReceiptLine), None)
         for formset in formsets:
+            conflict = getattr(request, "_receipt_inline_save_conflict", None)
+            if conflict is not None and formset.model is conflict.model:
+                formset.save_conflict = conflict.error
             if formset.model is ReceiptDiscount:
                 formset.line_formset = lines
         return formsets, inlines

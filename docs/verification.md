@@ -50,17 +50,17 @@ docker compose -p checkist_qa up -d --build --wait --wait-timeout 120 worker
 ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py check_services
 ```
 
-Ожидается exit 0, отсутствие новых миграций, 67 тестов без БД и 383 integration tests, затем JSON с `celery_task.result={"message":"pong"}`. На пустой БД `migrate` применяет 22 миграции: 18 стандартных и 4 собственных. Числа соответствуют текущему коду и могут измениться вместе с тестами. Команда без тега не использует БД и может выполняться при TCP-отказе; integration-команда не должна заменяться skip/eager. Django runner создаёт и затем удаляет **`test_checkist_qa`**; Redis integration использует отдельный QA Redis DB 2 и уникальные временные ключи.
+Ожидается exit 0, отсутствие новых миграций, 67 тестов без БД и 404 integration tests, затем JSON с `celery_task.result={"message":"pong"}`. На пустой БД `migrate` применяет 22 миграции: 18 стандартных и 4 собственных. Числа соответствуют текущему коду и могут измениться вместе с тестами. Команда без тега не использует БД и может выполняться при TCP-отказе; integration-команда не должна заменяться skip/eager. Django runner создаёт и затем удаляет **`test_checkist_qa`**; Redis integration использует отдельный QA Redis DB 2 и уникальные временные ключи.
 
 | Приложение | Без БД (`--exclude-tag=integration`) | С БД (`--tag=integration`) |
 | --- | --- | --- |
 | `catalog` | 9 | 80 |
 | `stores` | 14 | 79 |
-| `receipts` | 18 | 217 |
+| `receipts` | 18 | 238 |
 | `health` | 26 | 7 |
-| Всего | 67 | 383 |
+| Всего | 67 | 404 |
 
-Числа после F1/F2/F4 — см. [итоговый прогон F5](#фактические-результаты-после-f4-2026-10-04). F1 добавил 14 integration-тестов `receipts`, F2 — 7 `catalog`, F4 — ещё 20 `receipts` в `ReceiptInlineTransactionTests`; subtests внутри метода отдельно не считаются. Тесты админки — integration, кроме пяти тестов маршрута в `health/tests/test_admin_site.py`, которым БД не нужна. Гонки проверяются `TransactionTestCase` на разных Postgres-соединениях, ошибки удаления — с настоящим commit. При прогоне тестов без БД в выводе дважды появляется `Internal Server Error: /api/health/`: это журнал контрактных тестов безопасного ответа 500, а не отказ.
+Числа после F1/F2/F4/F6 — см. [итоговый прогон F6](#фактические-результаты-f6-2026-10-04). F6 добавил 21 integration-тест `receipts` в `ReceiptInlineUniqueTests`. F1 добавил 14 integration-тестов `receipts`, F2 — 7 `catalog`, F4 — ещё 20 `receipts` в `ReceiptInlineTransactionTests`; subtests внутри метода отдельно не считаются. Тесты админки — integration, кроме пяти тестов маршрута в `health/tests/test_admin_site.py`, которым БД не нужна. Гонки проверяются `TransactionTestCase` на разных Postgres-соединениях, ошибки удаления — с настоящим commit. При прогоне тестов без БД в выводе дважды появляется `Internal Server Error: /api/health/`: это журнал контрактных тестов безопасного ответа 500, а не отказ.
 
 Unit/contract tests health покрывают точный 200, комбинации 503, сохранение независимых checks, анонимность, игнорирование query/Authorization, 405, 406, безопасный 500 при DEBUG, отсутствие публикации task из health, параллельность probes, cleanup кеша, bounded publication retries и негативную env-валидацию. Это не сетевой замер времени отказа.
 
@@ -76,7 +76,7 @@ Unit/contract tests health покрывают точный 200, комбинац
 ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test catalog stores receipts --tag=integration --verbosity=2
 ```
 
-Ожидается exit 0 у каждой команды, `No changes detected`, 41 тест без БД и 376 integration tests (без `health`).
+Ожидается exit 0 у каждой команды, `No changes detected`, 41 тест без БД и 397 integration tests (без `health`).
 
 Что проверяют тесты трёх приложений:
 
@@ -111,6 +111,8 @@ docker compose -p checkist_qa exec -T worker python -X utf8 manage.py check
 - F4: устаревший DELETE перенесённой строки с новыми зависимостями в B и без них, перенесённых скидки/итога по налогу, уже удалённой строки — HTTP 200 с `receipt_inline_conflict`, без правок чека A; повтор того же POST также отклоняется. Гонка проходит на отдельных Postgres-соединениях, перенос строки и создание зависимостей B — настоящими admin POST;
 - F4: DELETE с правкой/созданием залога или скидки к удаляемой строке, включая каскадные потомки, — ошибки `parent_deleted`/`line_deleted`, без HTTP 500 и частичных записей; разрешены отвязка зависимости, совместный DELETE и каскад неизменённых зависимостей, отдельное удаление скидки/итога по налогу;
 - F4: занятые строка/скидка/итог по налогу при DELETE и занятый `parent`/`line` при создании зависимости — HTTP 200 с `receipt_inline_busy` при штатном `statement_timeout=2s`, без сохранения. SQLSTATE `40P01` обработан в коде, отдельной регрессии настоящего deadlock в этом наборе нет;
+- F6: DELETE+UPDATE, перестановка, повторное занятие ключа удаляемой/каскадной записи, дубли новых/изменённых форм, включая скидки и налоги — HTTP 200 без записей; отдельные сохранения через свободный номер разрешены;
+- F6: INSERT/UPDATE на ключ, занятый другой транзакцией после clean, — полный rollback и `receipt_inline_unique`; незавершённая вставка при штатных 2 с — `receipt_inline_busy`; журнал и уже сохранённые inline не меняются, конкурентная запись остаётся; неизвестный check violation не скрывается как unique;
 - вычисляемые `address_key`, `name_key`, `fiscal_key`; блок предупреждений `validate_receipt` и экранирование в нём сохранённого текста;
 - ответы автодополнения для каждого поля и его недоступность без `is_staff`.
 
@@ -158,7 +160,7 @@ docker compose -p checkist_qa exec -T worker celery -A config inspect ping --des
 docker compose -p checkist_qa ps
 ```
 
-Ожидается exit 0 для каждой команды; зависимости без конфликтов, check без ошибок, migrations применены/уже актуальны, `No changes detected`, 383 integration tests passed, реальный pong через task/results и отдельный control pong. `ps` должен показывать три healthy services с QA host-портами. Docker build может использовать cache: это не новая установка с нуля, но `pip check` проверяет реально установленные зависимости образа.
+Ожидается exit 0 для каждой команды; зависимости без конфликтов, check без ошибок, migrations применены/уже актуальны, `No changes detected`, 404 integration tests passed, реальный pong через task/results и отдельный control pong. `ps` должен показывать три healthy services с QA host-портами. Docker build может использовать cache: это не новая установка с нуля, но `pip check` проверяет реально установленные зависимости образа.
 
 ## HTTP: позитивные и негативные сценарии
 
@@ -342,6 +344,22 @@ for name in ('POSTGRES_PASSWORD', 'DJANGO_SECRET_KEY'):
 9. **Устаревший inline DELETE после переноса (F4).** Создать чеки A/B с разными номерами и строку L в A без зависимостей; позиция L свободна в B. Открыть форму A в первой вкладке и оставить её открытой. Во второй вкладке через `Receipt lines` перенести L в B, затем в форме B добавить залог с `parent=L` и скидку с `line=L`, сохранить. В старой вкладке A отметить L на DELETE, изменить также номер A на уникальный и сохранить: HTTP 200, общая ошибка inline «Запись уже перенесена в другой чек или удалена. Откройте чек заново.». Заново открыть A/B: номер A не изменён, L и обе зависимости остались в B. Повторить отправку прежней формы — снова отказ. Повторить на новых A/B без зависимостей в B, а затем с удалением L во второй вкладке вместо переноса — тот же конфликт. Эта проверка подтверждает устаревшую форму; точный порядок двух POST с переносом после чтения initial inline проверяется `ReceiptInlineTransactionTests`, без автоматического обхода браузера.
 10. **DELETE и правка/создание зависимости (F4).** В сохранённом QA-чеке создать строку L и залог D с `parent=L`. В одном сохранении отметить L на DELETE, изменить `raw_name` D, оставить `parent=L` и изменить также номер чека: HTTP 200 с ошибкой у `parent` «Родительская строка удаляется в этом сохранении…». Заново открыть чек: L/D, связь, название D и номер чека прежние. Отдельно повторить со скидкой S: изменить её имя при DELETE L и оставить `line=L` — HTTP 200 с ошибкой `line` «Строка скидки удаляется в этом сохранении…», данные прежние. Повторить с созданием нового залога/скидки к L в том же POST; проверить также правку залога или скидки каскадного потомка L. Контроли на отдельных копиях чека: очистить `parent` D и `line` S одновременно с DELETE L — успешное сохранение (302), D/S остаются отвязанными; выбрать другую сохраняемую строку этого чека — связи сохраняются с ней; отметить L/D/S на DELETE — все удалены; удалить только L без содержательных правок D/S — они удалены каскадом. Страница сбоя сервера ни в одном из этих сценариев не ожидается.
 11. **Занятая строка и таймаут (F4).** Открыть форму сохранённого чека, узнать id L и в QA-psql удержать её блокировку по инструкции ниже. Пока транзакция открыта, сохранить форму с DELETE L либо с новым залогом/скидкой к L: HTTP 200 с сообщением «Строки чека сейчас изменяются другим запросом. Откройте чек заново и повторите сохранение.», без изменений. Затем `ROLLBACK`, заново открыть чек и повторить разрешённую операцию — успех. Это проверка конкретной блокировки, не гарантия отсутствия 500 у всех SQL-запросов; границы — в [data-model.md](data-model.md#конкурентные-правки).
+12. **Занятые позиции и ставки (F6).** Создать QA-чек со строками L1(position=1), L2(position=2). Отметить L1 DELETE, L2.position=1, изменить также номер чека: ошибка у `position` «Номер позиции уже занят…», HTTP 200. Заново открыть: строки, позиции и номер чека прежние. Повторить с L2 как залогом L1, очистив `parent` при DELETE L1 и смене позиции на 1: тот же отказ, исходная связь остаётся. Повторить перестановку 1↔2 без DELETE и создание новой строки на номер удаляемой: отказ без записей. Контроли: отвязать залог без смены номера одновременно с DELETE родителя — успех; после этого отдельным сохранением присвоить ему 1 — успех. Для перестановки выполнить три сохранения L1→свободный 3, L2→1, L1→2. Аналогично проверить две скидки: DELETE+UPDATE, перестановка и новая скидка на удаляемый номер отклоняются; освобождение номера отдельным сохранением разрешено. Для двух итогов по разным ставкам проверить смену на ставку удаляемого итога и обмен ставок — ошибка `tax_rate` «Эта ставка уже указана в чеке…»; отдельное освобождение ставки разрешено. Никакой страницы HTTP 500 и частичных записей.
+13. **Незавершённая вставка на unique-ключ (F6).** В отдельном QA-терминале запустить `manage.py shell` с тем же environment. Открыть транзакцию и вставить строку на свободный номер по примеру ниже. Не завершать shell. В браузере добавить inline на этот же номер и изменить номер чека: примерно после штатного SQL-таймаута 2 с HTTP 200 с сообщением о занятости строк, весь POST без сохранения. В CLI выполнить rollback, заново открыть чек и повторить ввод — успех. Аналогично можно удержать новую скидку или итог по ставке. Настоящее конкурентное занятие ключа с commit строго между clean и save подтверждают шесть автоматических гонок; browser-сценарий проверяет ожидание незавершённой вставки.
+
+Пример подготовки шага 13, только в QA: подставить id чека и свободный номер; реквизиты вымышленные. После браузерного отказа обязательно выполнить две последние строки:
+
+```python
+from decimal import Decimal
+from django.db import transaction
+from receipts.models import Receipt, ReceiptLine
+transaction.set_autocommit(False)
+r = Receipt.objects.get(pk=<QA_RECEIPT_ID>)
+ReceiptLine.objects.create(receipt=r, position=<FREE_POSITION>, raw_name="Тестовая гонка", quantity=Decimal("1"), unit="pcs", unit_price=Decimal("1"), amount=Decimal("1"))
+# После проверки браузером:
+transaction.rollback()
+transaction.set_autocommit(True)
+```
 
 Для шага 8, при открытой форме корневой категории, в отдельном QA-терминале запустите интерактивный psql (для другого project/БД/пользователя подставьте свои значения):
 
@@ -372,7 +390,86 @@ SELECT id FROM receipts_receiptline WHERE id = :line_id FOR UPDATE;
 
 После приёмки удалить введённые записи либо помнить, что они остались в томе `checkist_qa`; суперпользователь тоже остаётся в этой БД. Завершение — по разделу [«Завершение QA»](#завершение-qa).
 
+## Фактические результаты F6, 2026-10-04
+
+Задача `task_mutqy7fa3d`, база `835cbd5`. Изменены `backend/receipts/admin.py`, `backend/receipts/tests/test_admin.py` и шесть Markdown-файлов: `AGENTS.md`, `CLAUDE.md`, `README.md`, `docs/data-model.md`, `docs/development.md`, этот документ. Модели, settings, миграции, зависимости, публичный API и авторизация не менялись. Выбрано отклонение занятых ключей до save: HTTP 200 с ошибкой формы, без записей; освобождение номера/ставки сохраняется отдельно. Известные конфликты unique и ожидания при save откатывают весь POST и показывают ошибку без повторного сохранения. F1/F4 по связям и каскадам сохранены.
+
+Среда: Windows Python 3.13.9, Docker 29.8.1 / Linux daemon, Compose 5.5.1; worker из `python:3.13.16-slim-bookworm`, Linux/prefork/concurrency 2. Новый Compose project `checkist_qa_f6_run`, БД `checkist_qa_f6`, тестовая БД `test_checkist_qa_f6`, отдельные сеть и тома; Postgres 25437, Redis 16384. API 18005 и Vite 15178 свободны, серверы не запускались. До запуска этих QA портов LISTEN отсутствовал. Dev и другие QA-контейнеры не изменялись. `.env` создан из образца, venv — из закреплённых зависимостей; оба игнорируются Git.
+
+В каждом терминале задавать environment напрямую (PowerShell не разрешает dot-source `.ps1` в этой среде):
+
+```powershell
+$env:POSTGRES_DB = 'checkist_qa_f6'
+$env:POSTGRES_HOST = '127.0.0.1'
+$env:POSTGRES_PORT = '25437'
+$env:REDIS_PORT = '16384'
+$env:CELERY_BROKER_URL = 'redis://127.0.0.1:16384/0'
+$env:CELERY_RESULT_BACKEND = 'redis://127.0.0.1:16384/1'
+$env:DJANGO_CACHE_URL = 'redis://127.0.0.1:16384/2'
+$env:VITE_API_BASE_URL = '/api'
+$env:DEV_API_PROXY_TARGET = 'http://127.0.0.1:18005'
+```
+
+### Проверено и прошло
+
+Ниже `manage.py` — точный префикс `./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py`. Все команды таблицы — **exit 0**. Тесты выполнены на окончательном коде; после них дописан фактический отчёт. Записи и задачи выполнялись только в QA.
+
+| Команда | Фактический результат |
+| --- | --- |
+| `py -3.13 -m venv backend/.venv`; `./backend/.venv/Scripts/python.exe -X utf8 -m pip install -r backend/requirements.txt` | Venv создан, закреплённые зависимости установлены |
+| `docker compose -p checkist_qa_f6_run config --quiet`; `… up -d --wait --wait-timeout 90 postgres redis` | Конфигурация валидна, отдельные Postgres/Redis healthy |
+| `socket.create_connection(('127.0.0.1', port), timeout=2)` через venv Python, порты 25437/16384 | Оба Windows TCP OK до работы с БД |
+| `./backend/.venv/Scripts/python.exe -X utf8 -m pip check` | No broken requirements found |
+| `manage.py check` | 0 issues |
+| `manage.py makemigrations --check --dry-run` | No changes detected |
+| `manage.py migrate --noinput` | На пустой QA-БД применены 22 миграции; окончательный повтор — No migrations to apply |
+| `manage.py test catalog stores receipts health --exclude-tag=integration --noinput --verbosity=2` | **67 OK**, 3.568 с; БД не использовалась |
+| `manage.py test catalog stores receipts health --tag=integration --noinput --verbosity=2` | **404 OK**, 92.510 с; реальный Postgres/Redis, `test_checkist_qa_f6` создана и удалена |
+| `./backend/.venv/Scripts/python.exe -X utf8 "$env:TEMP/checkist-f6/edge_review.py"` | Оригинальный runner `task_mutq6zvv31`: **3/3 OK**, 1.852 с; все HTTP 200, все записи чека/строк/скидок/налогов неизменны |
+| `./backend/.venv/Scripts/python.exe -X utf8 "$env:TEMP/checkist-f6/extra_review.py"` | Runner из ответа `task_mutnyh9k1e`: **8/8 OK**, 3.583 с; ожидания не менялись; отвязка+DELETE HTTP 302, устаревший DELETE HTTP 200 и сохранность зависимостей B |
+| `docker compose -p checkist_qa_f6_run up -d --build --wait --wait-timeout 120 worker` | Worker healthy, часть слоёв сборки из cache |
+| `… exec -T worker python -m pip check`; `… exec -T worker python -X utf8 manage.py check`; `… exec -T worker python -X utf8 manage.py makemigrations --check --dry-run` | Зависимости без конфликтов, 0 issues, No changes detected; импорт админок в Linux |
+| `manage.py check_services`; `… exec -T worker python -X utf8 manage.py check_services` | С Windows и из Linux: database/redis OK, настоящая Celery task/result `{"message":"pong"}` |
+| `… exec -T worker celery -A config inspect ping --destination=checkist@worker --timeout=2`; `… ps` | Control pong, один worker; три healthy services |
+| Анализ verbose-логов venv Python | 67/404 уникальных test IDs, суммы по приложениям совпадают; F1 **14**, F4 **20**, F6 **21**, skips/errors/failures нет |
+| `docker compose -p checkist_qa_f6_run down` | Созданные контейнеры и сеть удалены, тома сохранены, `down -v` не выполнялся |
+| `docker ps -a --filter label=com.docker.compose.project=checkist_qa_f6_run --format '{{.Names}} {{.Status}}'`; `docker network ls --filter name=checkist_qa_f6_run_default --format '{{.Name}}'`; `Get-NetTCPConnection -State Listen` с фильтром 25437/16384/18005/15178 | Пусто: контейнеров, сети и слушателей QA нет |
+| `git diff --check` | Ошибок whitespace нет |
+
+Числа реально выполненных тестов:
+
+| Приложение | Без БД | Integration |
+| --- | --- | --- |
+| `catalog` | 9 | 80 |
+| `stores` | 14 | 79 |
+| `receipts` | 18 | 238 |
+| `health` | 26 | 7 |
+| Всего | **67** | **404** |
+
+F6 добавил 21 метод в `ReceiptInlineUniqueTests` (`TransactionTestCase`): три исходных сценария, повтор отказа, дубли итогового состояния, INSERT/UPDATE и каскадные позиции, скидки/налоги, успешные отдельные сохранения и свободные номера, шесть гонок на отдельных соединениях с настоящим commit после clean, три subtest ожидания незавершённого unique при штатных 2 с. Snapshot включает также журнал действий. Отдельный тест настоящего check violation после clean подтверждает узкую обработку IntegrityError. Пользователи только вымышленные в тестовой БД, постоянного суперпользователя агент не создавал.
+
+`orca-board task answer --task task_mutq6zvv31` возвращал только id без текста; задан штатный вопрос `q_mutr1ev43i` (ответ «Передать runner»). Оригинальный runner найден в оставленной проверяющим временной папке и скопирован без изменений. SHA-256 исходника и копии `edge_review.py`: `8CBEE122A4DBFBE04BD107D4915B50DB2D71019EF12E8E4D0D09FB3C896D654F`. Старый runner извлечён из Python-блока полного ответа `task_mutnyh9k1e` без изменения ожиданий. Raw-логи и оба runner находятся вне репозитория в `$env:TEMP/checkist-f6`.
+
+### Проверено и не прошло
+
+- **До исправления:** `./backend/.venv/Scripts/python.exe -X utf8 "$env:TEMP/checkist-f6/edge_review.py"` — exit 1, **3 FAIL**, 1.675 с: все HTTP 500, IntegrityError `receipts_receiptline_receipt_position_uniq`. Runner подтвердил rollback, но статус нарушал контракт. На окончательном коде та же команда — 3/3 OK, без изменения ожиданий.
+- **Первый локальный прогон F6:** `manage.py test receipts.tests.test_admin.ReceiptInlineUniqueTests --noinput --verbosity=2` — exit 1, 19 тестов, один subtest FAIL: для каскадной занятой позиции стандартная проверка дублей Django сработала до новой проверки и вернула код None. Проверка занятых ключей перенесена перед `super().clean()`, ожидание сохранено. Затем F1/F4/F6 — 53/53 OK; после двух дополнительных контролей окончательный полный набор — 404/404 OK.
+- **Подготовка environment:** dot-source временного `qa.ps1` — `PSSecurityException` из-за ExecutionPolicy. Команда оболочки продолжилась и создала только наш отдельный project `checkist_qa_f6` с defaults и собственными пустыми томами, до БД-команд. Он сразу остановлен `docker compose -p checkist_qa_f6 down`, exit 0. Для правильных overrides создан новый `checkist_qa_f6_run`; env в каждом вызове задавался напрямую, системная политика не менялась. Никаких тестовых записей/миграций в первом project не было; его пустые тома сохранены, контейнеров/сети нет.
+- Вспомогательные скрипты обработки Markdown/логов первоначально завершались exit 1: UTF-8 stdin PowerShell не был задан, затем parser не учитывал сообщения журнала и переносы длинных test IDs. Исправлены кодировка передачи и разбор; окончательная запись документов и сверка всех 67/404 IDs — exit 0. Код продукта и ожидания тестов ради этих служебных ошибок не менялись.
+
+На окончательном коде ни одна обязательная проверка не упала. Ожидаемый журнал HTTP 500 контрактных health-тестов и искусственного check violation не является отказом их проверок.
+
+### Не проверено и почему
+
+- **Визуальная/интерактивная приёмка, настоящий успешный вход и виджеты:** только человек по правилам проекта. Поднять QA с environment выше, `migrate`, человеком выполнить `createsuperuser`, `runserver 127.0.0.1:18005`, пройти шаги 1–13 на `/admin/`. Автоматического обхода browser UI, скриншотов и отдельного макета нет. Для SPA — существующий ручной сценарий с Vite `--port 15178`, proxy на 18005.
+- **Полная копия 471 штатного теста в Linux:** host TCP доступен, весь набор выполнен на Windows с настоящими QA Postgres/Redis; worker отдельно проверен. При отдельной Linux-приёмке повторить `docker compose -p checkist_qa_f6_run exec -T worker python -X utf8 manage.py test catalog stores receipts health --tag=integration --noinput --verbosity=2` и вариант с `--exclude-tag=integration`.
+- **Настоящий deadlock, другие SQLSTATE, прямые ORM/SQL-инварианты, нагрузка:** F6 покрывает конфликт с прямой конкурентной вставкой, но не добавляет гарантий целостности связей произвольным писателям. SQLSTATE `40P01` — обработка по коду, без отдельного настоящего deadlock. Остальные сценарии требуют отдельной задачи/представительных QA-данных; их нельзя считать проверенными.
+- **Revert, миграционный откат, backup restore, production:** схема не менялась, новых миграций нет; эти побочные действия не требовались. Revert F6 описан в data-model.md, фактически не выполнялся. Миграционный откат — на отдельной пустой QA-БД; восстановление дампа — в новую БД со сравнением данных.
+- **Живой runserver smoke, frontend lint/unit/build, Vite proxy, stop/recovery:** соответствующий код не менялся, не запускались. HTTP админки проверен Django Client с commit/rollback, очередь — настоящим `check_services`. Для повторения использовать команды HTTP/proxy и ручную приёмку выше.
+
 ## Фактические результаты после F4, 2026-10-04
+
+Исторический прогон F5 до F6: его 67/383 и 18/217 у `receipts` сохранены как фактические результаты того состояния. Последующее ревью выявило конфликты позиций; актуальное поведение и результаты — в [прогоне F6](#фактические-результаты-f6-2026-10-04).
 
 Задача F5 (`task_mutomytj20`), исходный HEAD `fb11b87` после слияния F4 (`a686413`). Код и тесты F4 сверены с `git log`, `git show a686413 -- backend/receipts/admin.py`, `backend/receipts/tests/test_admin.py` и полным отчётом ревью `orca-board task answer --task task_mutnyh9k1e`. В F5 изменены только шесть Markdown-файлов: этот документ, `data-model.md`, `development.md`, корневые `AGENTS.md`, `CLAUDE.md`, `README.md`. Код, тесты, модели, настройки, миграции, Compose и зависимости не менялись. Публичный health API, его потребители и правила доступа сохранены; F4 меняет валидацию и порядок сохранения HTML-форм админки, как описано выше.
 
