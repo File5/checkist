@@ -1,5 +1,6 @@
-from django.core.exceptions import PermissionDenied as DjangoPermissionDenied
-from django.http import Http404
+from django.core.exceptions import BadRequest, PermissionDenied as DjangoPermissionDenied, SuspiciousOperation
+from django.http import Http404, UnreadablePostError
+from django.http.multipartparser import MultiPartParserError
 from rest_framework import exceptions, status
 from rest_framework.response import Response
 from rest_framework.views import exception_handler as drf_exception_handler
@@ -47,6 +48,16 @@ class PageOutOfRange(ApiError):
     message = "Страница за пределами диапазона."
 
 
+class InvalidRequest(ApiError):
+    """Отказ разбора запроса до проверки отдельных параметров, без деталей клиента."""
+
+    code = "invalid_request"
+    message = "Некорректный запрос."
+
+
+REQUEST_ERRORS = (SuspiciousOperation, BadRequest, UnreadablePostError, MultiPartParserError)
+
+
 def _error(code, message, http_status, *, fields=None, headers=None):
     error = {"code": code, "message": message}
     if fields:
@@ -65,6 +76,10 @@ def _validation_fields(detail):
 
 
 def exception_handler(exc, context):
+    if isinstance(exc, REQUEST_ERRORS):
+        # DRF читает QueryDict уже при negotiation, до Params. Не вызываем
+        # Django handler: он может записать exception text и значения в security log.
+        return _error(InvalidRequest.code, InvalidRequest.message, status.HTTP_400_BAD_REQUEST)
     if isinstance(exc, Http404):
         exc = exceptions.NotFound()
     elif isinstance(exc, DjangoPermissionDenied):
@@ -76,6 +91,8 @@ def exception_handler(exc, context):
         return _error("method_not_allowed", "Метод не поддерживается.", status.HTTP_405_METHOD_NOT_ALLOWED)
     if isinstance(exc, exceptions.NotAcceptable):
         return _error("not_acceptable", "Доступен только JSON.", status.HTTP_406_NOT_ACCEPTABLE)
+    if isinstance(exc, exceptions.UnsupportedMediaType):
+        return _error("unsupported_media_type", "Тип содержимого не поддерживается.", status.HTTP_415_UNSUPPORTED_MEDIA_TYPE)
     if isinstance(exc, exceptions.NotFound):
         return _error(ObjectNotFound.code, ObjectNotFound.message, status.HTTP_404_NOT_FOUND)
     if isinstance(exc, (exceptions.NotAuthenticated, exceptions.AuthenticationFailed)):

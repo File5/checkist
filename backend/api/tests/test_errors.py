@@ -1,7 +1,9 @@
 from unittest.mock import patch
 
 from django.core.exceptions import PermissionDenied as DjangoPermissionDenied
-from django.http import Http404
+from django.core import exceptions as django_exceptions
+from django.http import Http404, UnreadablePostError
+from django.http.multipartparser import MultiPartParserError
 from django.test import SimpleTestCase, override_settings
 from django.urls import path
 from rest_framework import exceptions
@@ -49,6 +51,7 @@ urlpatterns = [
     path("drf-validation/", raising(exceptions.ValidationError({"name": ["Обязательное поле."], "size": "Мало."}))),
     path("drf-validation-list/", raising(exceptions.ValidationError([SECRET]))),
     path("drf-parse/", raising(exceptions.ParseError(SECRET))),
+    path("drf-media-type/", raising(exceptions.UnsupportedMediaType(SECRET))),
     path("drf-denied/", raising(exceptions.PermissionDenied(SECRET))),
     path("django-denied/", raising(DjangoPermissionDenied(SECRET))),
     path("protected/", ProtectedView.as_view()),
@@ -56,7 +59,17 @@ urlpatterns = [
     path("throttled/", raising(exceptions.Throttled(wait=7))),
     path("crash/", raising(RuntimeError(SECRET))),
     path("api-crash/", raising(exceptions.APIException(SECRET))),
+    path("value-crash/", raising(ValueError(SECRET))),
+    path("lookup-crash/", raising(LookupError(SECRET))),
+    path("unicode-crash/", raising(UnicodeDecodeError("utf-8", b"\xff", 0, 1, SECRET))),
 ]
+
+
+REQUEST_ERRORS = tuple(
+    cls for cls in vars(django_exceptions).values()
+    if isinstance(cls, type) and issubclass(cls, (django_exceptions.SuspiciousOperation, django_exceptions.BadRequest))
+) + (UnreadablePostError, MultiPartParserError)
+urlpatterns += [path(f"request-error-{index}/", raising(cls(SECRET))) for index, cls in enumerate(REQUEST_ERRORS)]
 
 
 @override_settings(ROOT_URLCONF=__name__)
@@ -101,6 +114,11 @@ class ErrorFormatTests(SimpleTestCase):
             with self.subTest(url=url):
                 self.assert_error(self.client.get(url), 400, INVALID)
 
+    def test_415_without_media_type_detail(self):
+        self.assert_error(self.client.get("/drf-media-type/"), 415, {
+            "code": "unsupported_media_type", "message": "Тип содержимого не поддерживается.",
+        })
+
     def test_permission_denied_from_drf_and_django(self):
         for url in ("/drf-denied/", "/django-denied/"):
             with self.subTest(url=url):
@@ -141,10 +159,18 @@ class ErrorFormatTests(SimpleTestCase):
 
     def test_500_has_no_exception_text_even_in_debug(self):
         for debug in (True, False):
-            for url in ("/crash/", "/api-crash/"):
+            for url in ("/crash/", "/api-crash/", "/value-crash/", "/lookup-crash/", "/unicode-crash/"):
                 with self.subTest(debug=debug, url=url), override_settings(DEBUG=debug):
                     self.assert_error(self.client.get(url), 500, {
                         "code": "internal_error", "message": "Внутренняя ошибка сервера.",
+                    })
+
+    def test_django_request_errors_are_safe_400_even_in_debug(self):
+        for debug in (False, True):
+            for index, cls in enumerate(REQUEST_ERRORS):
+                with self.subTest(debug=debug, exception=cls.__name__), override_settings(DEBUG=debug):
+                    self.assert_error(self.client.get(f"/request-error-{index}/"), 400, {
+                        "code": "invalid_request", "message": "Некорректный запрос.",
                     })
 
     def test_read_only_view_is_anonymous_and_ignores_authorization(self):
