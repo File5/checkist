@@ -1,5 +1,6 @@
 import type { PriceSummary as SummaryData } from '../../api/types'
 import RequestState from '../../components/RequestState'
+import { useLocalRequestFocus } from '../../components/useLocalRequestFocus'
 import { formatPercent, formatPrice, formatPurchasedOn, formatUnit } from '../../lib/format'
 import ProductRequestState from './ProductRequestState'
 import { storeLabel } from './state'
@@ -8,9 +9,10 @@ import type { RequestState as LoadState } from './state'
 export default function PriceSummary({ state, retry, reset }: {
   state: LoadState<SummaryData>; retry: () => void; reset: () => void
 }) {
+  const block = useLocalRequestFocus(state)
   return (
-    <section className="product-panel" aria-labelledby="product-summary-heading" aria-busy={state.kind === 'loading'}>
-      <h2 id="product-summary-heading">Сводка по магазинам</h2>
+    <section ref={block} className="product-panel" aria-labelledby="product-summary-heading" aria-busy={state.kind === 'loading'}>
+      <h2 id="product-summary-heading" data-request-focus-target tabIndex={-1}>Сводка по магазинам</h2>
       <p className="product-note">Цены после скидок строки за весь выбранный период. Каждая валюта и единица показаны отдельно. Средняя — невзвешенная.</p>
       {state.kind === 'loading' && <RequestState kind="loading" message="Загружаем сводку цен…" />}
       {state.kind === 'error' && <ProductRequestState failure={state} retry={retry} reset={reset} />}
