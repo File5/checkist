@@ -54,6 +54,17 @@ describe('receipt screens (Vitest/SSR, not browser visual acceptance)', () => {
     expect(html).not.toContain('private provider text')
     expect(html).not.toContain('aria-live')
   })
+  it('keeps the order of line rates, tax totals and requisites for a reversed answer with a foreign group between them', () => {
+    const clipped = issue('clipped', 'warning', { entity: 'geometry', attribute: 'clipped' }, { code: 'clipped', field: '/clipped' })
+    const [first, ...rest] = taxEvidenceMissingIssues().reverse()
+    const image = { ...images.results[0], status: 'imported' as const, receipt_id: 71, normalized_result: null, issues: [first, clipped, ...rest] }
+    const html = renderToStaticMarkup(<ReceiptImages images={[image]} receiptId={71} />)
+    expect(html.match(/<summary>[^<]*<\/summary>|<p class="rec-issues-title">[^<]*<\/p>/g)).toEqual([
+      '<summary>НДС не использован в 25 строках</summary>', '<summary>Пропущены 2 налоговых итога</summary>', '<summary>Не прочитаны 2 реквизита</summary>',
+      '<p class="rec-issues-title">Часть чека обрезана · Обрезанный чек</p>'])
+    expect(html).toContain(`Строки: ${Array.from({ length: 25 }, (_, index) => index + 1).join(', ')}`)
+    expect(html).toContain('Налоговые итоги №: 1, 2')
+  })
   it('separates always visible review causes from collapsed notes on the receipt card', () => {
     const image = { ...images.results[0], status: 'needs_review' as const, issues: [
       issue('optional_omitted', 'warning', { entity: 'line', index: 4, attribute: 'tax_rate' }, { field: '/lines/4/tax_rate' }),

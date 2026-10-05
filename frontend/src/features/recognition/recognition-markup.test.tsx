@@ -86,6 +86,15 @@ describe('recognition SSR markup (interactive UI remains manual)', () => {
     expect(html).not.toContain('private issue message'); expect(html).not.toContain('Значение не прошло проверку')
     expect(html).not.toContain('aria-live'); expect(html).not.toContain('Распознанные данные для проверки')
   })
+  it('shows line rates, tax totals and requisites in one order for a reversed answer with a foreign group between them', () => {
+    const clipped = issue('clipped', 'warning', { entity: 'geometry', attribute: 'clipped' }, { code: 'clipped', field: '/clipped' })
+    const [first, ...rest] = taxEvidenceMissingIssues().reverse()
+    const html = renderToStaticMarkup(<ReceiptImages images={[{ ...image(), status: 'imported', normalized_result: null, issues: [first, clipped, ...rest] }]} />)
+    expect(html.match(/<summary>[^<]*<\/summary>|<p class="rec-issues-title">[^<]*<\/p>/g)).toEqual([
+      '<summary>НДС не использован в 25 строках</summary>', '<summary>Пропущены 2 налоговых итога</summary>', '<summary>Не прочитаны 2 реквизита</summary>',
+      '<p class="rec-issues-title">Часть чека обрезана · Обрезанный чек</p>'])
+    expect(html).toContain(`Строки: ${Array.from({ length: 25 }, (_, index) => index + 1).join(', ')}`); expect(html).toContain('Налоговые итоги №: 1, 2')
+  })
   it('keeps review causes always visible and apart from collapsed notes, with unchanged review data', () => {
     const data = image()
     data.issues = [issue('optional_omitted', 'warning', { attribute: 'receipt_metadata' }), ...data.issues,

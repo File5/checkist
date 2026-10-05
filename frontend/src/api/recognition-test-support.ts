@@ -15,12 +15,12 @@ export function issue(reason: string, severity: IssueSeverity, context: Partial<
     context: { entity: 'receipt', index: null, position: null, attribute: null, ...context }, ...base,
   }
 }
-/** API issues of the fake scenario tax_evidence_missing: 25 line rates, 2 tax totals, 2 private requisites. */
+/** API issues of the fake scenario tax_evidence_missing in the order of the real server: 2 private requisites, 25 line rates, 2 tax totals. */
 export function taxEvidenceMissingIssues(): FullIssue[] {
   return [
+    ...[0, 1].map(() => issue('optional_omitted', 'warning', { attribute: 'receipt_metadata' })),
     ...Array.from({ length: 25 }, (_, index) => issue('optional_omitted', 'warning',
       { entity: 'line', index, position: index + 1, attribute: 'tax_rate' }, { field: `/lines/${index}/tax_rate` })),
     ...[0, 1].map((index) => issue('optional_omitted', 'warning', { entity: 'tax', index }, { field: `/taxes/${index}` })),
-    ...[0, 1].map(() => issue('optional_omitted', 'warning', { attribute: 'receipt_metadata' })),
   ]
 }

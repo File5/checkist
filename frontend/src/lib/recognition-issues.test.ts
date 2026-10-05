@@ -81,6 +81,43 @@ describe('groupIssues', () => {
         explanation: 'Необязательные реквизиты чека не прочитаны уверенно и не сохранены. Значения не показываются.', locations: [] },
     ])
   })
+  it('reads the fixture in the order of the real server: 2 requisites, 25 line rates, 2 tax totals', () => {
+    expect(taxEvidenceMissingIssues().map((item) => item.field)).toEqual([
+      '/', '/', ...Array.from({ length: 25 }, (_, index) => `/lines/${index}/tax_rate`), '/taxes/0', '/taxes/1'])
+  })
+  it('puts line rates, tax totals and requisites in this order for any order of the answer', () => {
+    const issues = taxEvidenceMissingIssues()
+    const [requisites, lines, taxes] = [issues.slice(0, 2), issues.slice(2, 27), issues.slice(27)]
+    const mixed = [lines[24], taxes[1], requisites[0], ...lines.slice(0, 24).reverse(), requisites[1], taxes[0]]
+    for (const order of [issues, [...issues].reverse(), [...taxes, ...requisites, ...lines], [...lines, ...taxes, ...requisites], mixed]) {
+      const groups = groupIssues(order, 'imported')
+      expect(groups.map((group) => group.title)).toEqual(['НДС не использован в 25 строках', 'Пропущены 2 налоговых итога', 'Не прочитаны 2 реквизита'])
+      expect(groups.map((group) => group.locations)).toEqual([
+        [`Строки: ${Array.from({ length: 25 }, (_, index) => index + 1).join(', ')}`], ['Налоговые итоги №: 1, 2'], []])
+    }
+  })
+  it('keeps other groups after the three known ones by first occurrence, inside each severity block', () => {
+    const clipped = issue('clipped', 'warning', { entity: 'geometry', attribute: 'clipped' }, { code: 'clipped', field: '/clipped' })
+    const barcode = issue('optional_omitted', 'warning', { entity: 'line', index: 0, position: 1, attribute: 'barcode' }, { field: '/lines/0/barcode' })
+    const groups = groupIssues([
+      issue('operation_defaulted', 'info', { attribute: 'operation' }),
+      issue('optional_omitted', 'info', { attribute: 'receipt_metadata' }),
+      issue('optional_omitted', 'warning', { attribute: 'receipt_metadata' }),
+      clipped,
+      issue('optional_omitted', 'warning', { entity: 'tax', index: 0 }, { field: '/taxes/0' }),
+      barcode,
+      issue('optional_omitted', 'warning', { entity: 'line', index: 0, position: 1, attribute: 'tax_rate' }, { field: '/lines/0/tax_rate' }),
+      issue('total_mismatch', 'error', { attribute: 'total' }, { code: 'total_mismatch', field: '/total' }),
+      issue('optional_omitted', 'info', { entity: 'line', index: 1, position: 2, attribute: 'tax_rate' }, { field: '/lines/1/tax_rate' }),
+    ], 'needs_review')
+    expect(groups.map((group) => [group.severity, group.title])).toEqual([
+      ['error', 'Сумма строк не совпадает с итогом · Итого'],
+      ['warning', 'НДС не использован в 1 строке'], ['warning', 'Пропущен 1 налоговый итог'], ['warning', 'Не прочитан 1 реквизит'],
+      ['warning', 'Часть чека обрезана · Обрезанный чек'], ['warning', 'Необязательное поле не использовано · Штрихкод'],
+      ['info', 'НДС не использован в 1 строке'], ['info', 'Не прочитан 1 реквизит'], ['info', 'Тип операции определён автоматически · Операция'],
+    ])
+    expect(titles([barcode, clipped])).toEqual(['Необязательное поле не использовано · Штрихкод', 'Часть чека обрезана · Обрезанный чек'])
+  })
   it('orders error, warning, info and keeps the first occurrence inside a block', () => {
     const groups = groupIssues([
       issue('currency_inferred', 'info', { attribute: 'currency' }),
