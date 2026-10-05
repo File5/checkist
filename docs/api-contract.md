@@ -546,7 +546,7 @@ Queued cancel сразу даёт cancelled/200; running — cancel_requested/20
 
 Retry разрешён failed/partial_succeeded/cancelled, создаёт новое queued задание с retry_of, старое не меняется. **Любой active Job этого Photo проверяется первым** и даёт 409 job_active, включая повтор retry старого Job; иначе succeeded — 409 retry_not_allowed. `actions.can_retry` учитывает active Job того же фото. `can_cancel=true` только queued/running. Действия — подсказки текущего снимка; сервер проверяет состояния снова под блокировкой.
 
-Технический отказ после принятия 202 виден в HTTP 200 Job.error (`{code,message}`) и/или ReceiptImage.issues. Это не браузерный HTTP 401. Разрешённые error/issue коды: `missing_required`, `invalid_value`, `total_mismatch`, `tax_mismatch`, `timezone_unknown`, `time_ambiguous`, `weak_identity`, `identity_conflict`, `product_unmatched`, `product_ambiguous`, `product_conflict`, `geometry_requires_review`, `clipped`, `overlap`, `timeout`, `worker_lost`, `storage_unavailable`, `provider_error`, `invalid_output`, `auth_required`, `rate_limited`, `provider_unavailable`, `network_unavailable`, `configuration_error`, `invalid_input`, `cancelled`, `no_receipts`, `too_many_receipts`. Сообщения фиксированные русские; неизвестный job error заменяется provider_error, неизвестный issue code — invalid_value. API не публикует stderr, raw_payload, invalid_output_text, provider notes, run_token, lease/deadline или exception text. `retryable` отдельным полем в К2 Job не задан и не добавлен; возможность повторить — actions.can_retry.
+Технический отказ после принятия 202 виден в HTTP 200 Job.error (`{code,message}`) и/или ReceiptImage.issues. Это не браузерный HTTP 401. Разрешённые error/issue коды: `missing_required`, `invalid_value`, `total_mismatch`, `tax_mismatch`, `timezone_unknown`, `time_ambiguous`, `weak_identity`, `identity_conflict`, `product_unmatched`, `product_ambiguous`, `product_conflict`, `geometry_requires_review`, `clipped`, `overlap`, `timeout`, `worker_lost`, `storage_unavailable`, `provider_error`, `invalid_output`, `auth_required`, `rate_limited`, `provider_unavailable`, `network_unavailable`, `configuration_error`, `invalid_input`, `cancelled`, `no_receipts`, `too_many_receipts`. Сообщения фиксированные русские; неизвестный job error заменяется provider_error, неизвестный issue code — invalid_value (исходная причина из закрытого перечня остаётся в `reason`, см. [issues вырезки](#issues-вырезки-reason-severity-context)). API не публикует stderr, raw_payload, invalid_output_text, provider notes, run_token, lease/deadline или exception text. `retryable` отдельным полем в К2 Job не задан и не добавлен; возможность повторить — actions.can_retry.
 
 Эталоны: [Job detail](../backend/recognition/tests/fixtures/public/job.json), [страница Job](../backend/recognition/tests/fixtures/public/jobs.json), [running](../backend/recognition/tests/fixtures/public/job-running.json), [cancel_requested](../backend/recognition/tests/fixtures/public/job-cancel-requested.json).
 
@@ -564,11 +564,91 @@ Quad задаётся TL, TR, BR, BL относительно текста бу�
 а не к пикселям вырезки. Тот же угол передаётся OCR; выпрямления нет. Корректные повёрнутые
 quad больше не отвергаются и не превращаются в null при сериализации detail.
 
-`issues` — список `{code,field,message}` с фиксированными сообщениями. Допускаются только известные безопасные JSON pointers полей шапки/позиции/геометрии; закрытые/неизвестные пути заменяются `/`. Значения provider message/note и произвольные JSON-ключи не копируются.
+`issues` — список `{code,field,message,reason,severity,context}` с фиксированными сообщениями. Для `code`/`field`/`message` допускаются только известные безопасные JSON pointers полей шапки/позиции/геометрии; закрытые/неизвестные пути заменяются `/`. Значения provider message/note и произвольные JSON-ключи не копируются.
 
-И4 сохраняет публичные формы, эталоны и список кодов. Успешная вырезка тоже может иметь issues: default operation=sale, валюта из страны существующего магазина, пропущенные необязательные реквизиты/налоги, конфликт товарной подсказки или несовместимая часть повторного фото. Внутренние operation_defaulted/optional_omitted/currency_inferred и прочие неизвестные коды проходят прежний allowlist как invalid_value; закрытый fiscal pointer заменяется `/`. Нового severity-поля нет. Клиент определяет исход по status/progress, а не по одному наличию issues. Перед needs_review импортёр применяет безопасные арифметические выводы недостающего значения строки из двух observed чисел и pcs для штучной строки без признаков веса. Непригодное наблюдение (обязательные данные после этих выводов, грубая сумма или конфликт сильных ключей) остаётся needs_review. Исходный DTO не переписывается, новые поля ответа не добавлены. Правила импорта и причины — [модель данных](data-model.md#recognition-фотографии-и-очередь), [проверка И4](verification.md#фактические-результаты-и4).
+#### Issues вырезки: reason, severity, context
 
-Р2 также сохраняет публичные формы, доступ и список кодов. Два разных фото с одинаковыми совместимыми данными чека, но с ИНН продавца только на одном из них, используют один однозначно известный Store и Receipt; обе ReceiptImage связаны с ним, строки/товары/скидки/налоги не дублируются. Пустой ИНН известного Merchant дополняется только при однозначном совпадении страны, точных названий и адреса/филиала. Разные непустые ИНН не объединяются; несколько совместимых точек требуют needs_review. Внутренние merchant_conflict/store_ambiguous/store_conflict проходят существующий allowlist как invalid_value; закрытый `/merchant/tax_id` заменяется `/`, значения ИНН наружу не передаются. Полные правила и ограничения — [модель данных](data-model.md#recognition-фотографии-и-очередь), [приёмка Р2](verification.md#р2-полнота-инн-и-идентичность-магазина).
+List и detail `/api/recognition/receipt-images/` отдают у **каждого** issue шесть ключей; `reason`, `severity`, `context` присутствуют всегда все три. `code`, `field`, `message` и их правила не изменились.
+
+```json
+{"code": "invalid_value", "field": "/lines/0/tax_rate", "message": "Значение не прошло проверку.",
+ "reason": "optional_omitted", "severity": "warning",
+ "context": {"entity": "line", "index": 0, "position": 1, "attribute": "tax_rate"}}
+```
+
+| Поле | Тип | Значения |
+| --- | --- | --- |
+| `reason` | string | закрытый перечень из 50 значений ниже |
+| `severity` | string | `info` \| `warning` \| `error` |
+| `context` | object, не null | всегда ровно 4 ключа |
+| `context.entity` | string | `receipt` \| `line` \| `tax` \| `discount` \| `geometry` \| `unknown` |
+| `context.index` | int \| null | 0..9999, индекс исходного массива с нуля |
+| `context.position` | int \| null | 1..32767, только для `line` и `discount` |
+| `context.attribute` | string \| null | закрытый набор ниже; `null` — замечание ко всей сущности |
+
+**`reason`** — исходный код из БД, если он входит в перечень, иначе `unknown`:
+
+- 28 кодов из списка выше (тогда `reason` совпадает с `code`);
+- 21 внутренний, у которого `code` остаётся `invalid_value`: `optional_omitted`, `operation_defaulted`, `currency_inferred`, `ambiguous_value`, `country_unknown`, `currency_unknown`, `import_busy`, `import_failed`, `merchant_conflict`, `merchant_tax_id_invalid`, `product_package_invalid`, `receipt_conflict`, `receipt_invalid`, `receipt_line_conflict`, `receipt_structure_conflict`, `store_ambiguous`, `store_conflict`, `tax_rate_invalid`, `tax_rate_unconfirmed`, `timestamp_ambiguous`, `timestamp_conflict`;
+- `unknown` — всё остальное: прочие коды (в том числе коды проверки файла `invalid_image`, `file_too_large`) и нестроковые значения.
+
+**`severity`** зависит от причины и статуса вырезки:
+
+| Причина | Важность |
+| --- | --- |
+| `operation_defaulted`, `currency_inferred` | `info` |
+| `optional_omitted`, `clipped`, `cancelled` | `warning` |
+| все остальные, включая `unknown` | `error`, если статус вырезки `needs_review` или `failed`; иначе `warning` |
+
+`severity` — подсказка для показа. Она не влияет на `status`, `progress`, `review_required`.
+
+**`context`** вычисляется из сохранённого `field` до его замены на `/`:
+
+| Сохранённый `field` | entity | attribute |
+| --- | --- | --- |
+| `/` | `receipt` | `null` |
+| `/geometry`, `/bbox`, `/quad`, `/rotation_degrees`, `/clipped` | `geometry` | `null` для `/geometry`, иначе `bbox`, `quad`, `rotation_degrees`, `clipped` |
+| остальные публичные пути шапки | `receipt` | путь без первого `/`, вложенный через `_`: `identity`, `merchant`, `store`, `operation`, `currency` (также для `/currency_code`), `purchased_on`, `local_time`, `total`, `discount_total`, `prices_include_tax`, `merchant_country_code`, `merchant_brand_name`, `store_country_code`, `store_name`, `store_address_raw`, `store_city` |
+| публичные `/lines`, `/discounts`, `/taxes` — без индекса, с индексом, с индексом и полем | `line` / `discount` / `tax` | третий сегмент: `position`, `kind`, `parent_position`, `name` (также для `raw_name`), `product`, `quantity`, `unit`, `unit_price`, `amount`, `discount_amount`, `tax_amount`, `tax_code`, `tax_rate`, `net`, `tax`, `gross`, `line_position`, `barcode`, `store_item_code`, `is_excise`, `is_marked`; без третьего сегмента `null` |
+| закрытый путь внутри строки `/lines/N/…` (N — 1–4 цифры, далее 1–4 сегмента `[a-z0-9_]+`) | `line` | `product`, если третий сегмент — `product_hint`; иначе `unknown` |
+| любой другой закрытый путь вида `^/[a-z0-9_]+(/[a-z0-9_]+){0,3}$` (номер чека, смена, касса, `/fiscal/*`, ИНН, юридическое название и т. п.; сюда же попадают непубличные подпути `/discounts/N/…` и `/taxes/N/…`) | `receipt` | `receipt_metadata` |
+| не строка или не похоже на путь | `unknown` | `unknown` |
+
+`receipt_metadata` — единая метка «закрытый реквизит чека»: ни имя поля, ни значение не раскрываются, два таких замечания неразличимы. У закрытых путей публичный `field` по-прежнему `/`.
+
+`index` и `position`:
+
+- `index` — целое из второго сегмента пути как есть (`/lines/0007/amount` → 7); для `receipt`, `geometry`, `unknown` и для пути без индекса — `null`.
+- `position` — `normalized_result[коллекция][index]["position"]` сохранённого DTO вырезки, если DTO — объект, коллекция — список, индекс в границах, элемент — объект, значение — целое (не boolean) в 1..32767. Иначе `null`. Берётся из сохранённого DTO при любом статусе вырезки, хотя публичное поле `normalized_result` остаётся только у `needs_review`.
+- Для `tax` `position` всегда `null`.
+- Повреждённый DTO, индекс вне границ, нестроковые `code`/`field` исключений не дают: HTTP 200, `position: null` либо `unknown`. Элементы `issues`, не являющиеся объектами, пропускаются, как и раньше.
+
+Ещё примеры (остальные ключи вырезки опущены):
+
+```json
+{"code":"invalid_value","field":"/taxes/1","message":"Значение не прошло проверку.",
+ "reason":"optional_omitted","severity":"warning",
+ "context":{"entity":"tax","index":1,"position":null,"attribute":null}}
+
+{"code":"invalid_value","field":"/","message":"Значение не прошло проверку.",
+ "reason":"optional_omitted","severity":"warning",
+ "context":{"entity":"receipt","index":null,"position":null,"attribute":"receipt_metadata"}}
+
+{"code":"invalid_value","field":"/","message":"Значение не прошло проверку.",
+ "reason":"unknown","severity":"error",
+ "context":{"entity":"unknown","index":null,"position":null,"attribute":"unknown"}}
+```
+
+Совместимость и границы:
+
+- Изменение аддитивное. Клиент, который читает только `code`/`field`/`message` и допускает добавочные ключи объекта, работает без правок; несовместимых изменений нет. Новому клиенту следует принимать незнакомые значения `reason`, `entity`, `attribute` как `unknown`: перечни могут пополняться.
+- Не раскрываются: значения и имена закрытых полей (номер чека, смена, касса, fiscal, ИНН и его тип, юридическое название), `raw_text`, `fields`/`warnings`/notes провайдера, тексты исключений, сохранённые `message`, `line_id`. Одноимённые ключи `reason`/`severity`/`context`, если они оказались в сохранённом issue, игнорируются. Новые поля содержат только значения закрытых перечней и целые числа.
+- Не меняются: лимит 1000 issues, URL, фильтры, пагинация, `normalized_result` только у `needs_review`, число SQL-запросов list/detail (используются уже загруженные поля вырезки), Job, Receipt, Line, Discount, Tax, upload/cancel/retry, прежние 13 GET и `/api/health/`, доступ (DEBUG + флаг + loopback, CSRF).
+- Миграций схемы нет: это проекция сохранённых JSON-полей. Исторические вырезки получают `reason`/`context` из уже сохранённых issues без повторного распознавания. Откат — revert кода и тестов, данные не затрагиваются.
+
+И4 сохраняет публичные формы, эталоны и список кодов. Успешная вырезка тоже может иметь issues: default operation=sale, валюта из страны существующего магазина, пропущенные необязательные реквизиты/налоги, конфликт товарной подсказки или несовместимая часть повторного фото. Внутренние operation_defaulted/optional_omitted/currency_inferred и прочие неизвестные коды проходят прежний allowlist как invalid_value; закрытый fiscal pointer заменяется `/`. Сам И4 поля важности не добавлял; позже к issue добавлены `reason`/`severity`/`context` ([описание](#issues-вырезки-reason-severity-context)), которые различают эти причины без изменения `code`/`field`/`message`. Клиент по-прежнему определяет исход по status/progress, а не по одному наличию issues. Перед needs_review импортёр применяет безопасные арифметические выводы недостающего значения строки из двух observed чисел и pcs для штучной строки без признаков веса. Непригодное наблюдение (обязательные данные после этих выводов, грубая сумма или конфликт сильных ключей) остаётся needs_review. Исходный DTO не переписывается, И4 новых полей ответа не добавлял. Правила импорта и причины — [модель данных](data-model.md#recognition-фотографии-и-очередь), [проверка И4](verification.md#фактические-результаты-и4).
+
+Р2 также сохраняет публичные формы, доступ и список кодов. Два разных фото с одинаковыми совместимыми данными чека, но с ИНН продавца только на одном из них, используют один однозначно известный Store и Receipt; обе ReceiptImage связаны с ним, строки/товары/скидки/налоги не дублируются. Пустой ИНН известного Merchant дополняется только при однозначном совпадении страны, точных названий и адреса/филиала. Разные непустые ИНН не объединяются; несколько совместимых точек требуют needs_review. Внутренние merchant_conflict/store_ambiguous/store_conflict проходят существующий allowlist как invalid_value (в `reason` — исходная причина); закрытый `/merchant/tax_id` заменяется `/` с `context.attribute=receipt_metadata`, значения ИНН наружу не передаются. Полные правила и ограничения — [модель данных](data-model.md#recognition-фотографии-и-очередь), [приёмка Р2](verification.md#р2-полнота-инн-и-идентичность-магазина).
 
 Ф2+Ф3 сохраняет JSON-формы, доступ, список кодов и схему БД. Печатные LF/CR/tab в адресе и текстовых названиях observation нормализуются до проверки (адрес — через `, `, остальные разрешённые поля — через пробел), `Z`/`z` в смещениях времени — в `+00:00`. Иные управляющие символы/неверные offsets отклоняются. Успешный импорт строки product/deposit с observed amount и отсутствующими quantity/unit_price использует quantity=1, unit=pcs, unit_price=amount; отрицательный deposit_return — quantity=−1, unit_price=abs(amount). Для целого напечатанного количества без unit используется pcs независимо от весовой строки другого товара. Нечитаемые/неоднозначные поля и признаки веса в самой строке не получают это умолчание. При отсутствии суммы и операндов сохраняется needs_review; напечатанные числа/скидки не заменяются. Derived pointers остаются внутренними в extra, публичный Receipt/Line выдаёт обычные Decimal-строки. Нормализованный DTO сохраняет null вместо выведенных количества/цены, но канонический адрес/offset; raw_text и timestamps по-прежнему закрыты. Повторы не создают дублей. Старый terminal needs_review требует штатного retry; откат кода не удаляет уже импортированные данные. Точные условия — [модель данных](data-model.md#recognition-фотографии-и-очередь). Несовместимых изменений HTTP нет.
 

@@ -71,6 +71,16 @@ class ReceiptsAPITests(TestCase):
         self.assertEqual([v["code"] for v in result["issues"]], ["invalid_value", "invalid_value"])
         self.assertNotIn("PRIVATE", str(result))
         self.assertEqual(result["issues"][1]["field"], "/")
+        message = "Значение не прошло проверку."
+        self.assertEqual(result["issues"], [
+            {"code": "invalid_value", "field": "/operation", "message": message, "reason": "operation_defaulted",
+             "severity": "info", "context": {"entity": "receipt", "index": None, "position": None,
+                                             "attribute": "operation"}},
+            {"code": "invalid_value", "field": "/", "message": message, "reason": "optional_omitted",
+             "severity": "warning", "context": {"entity": "receipt", "index": None, "position": None,
+                                                "attribute": "receipt_metadata"}}])
+        for hidden in ("fiscal", "register_serial"):
+            self.assertNotIn(hidden, str(result))
 
     def test_receipt_filters_search_and_no_duplicate_product_matches(self):
         ReceiptLine.objects.create(receipt=self.receipt, position=2, kind="product", raw_name="MILCH", product=self.line.product,

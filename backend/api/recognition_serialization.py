@@ -54,18 +54,77 @@ PUBLIC_POINTER = re.compile(
 )
 REVIEW_IMAGES = (Q(status="needs_review")
                 | (~Q(issues=[]) & ~Q(status__in=["imported", "reused", "updated"])))
+# Internal codes stay behind code=invalid_value; reason names them from this closed list.
+ISSUE_REASONS = frozenset(ISSUE_MESSAGES) | {
+    "optional_omitted", "operation_defaulted", "currency_inferred", "ambiguous_value", "country_unknown",
+    "currency_unknown", "import_busy", "import_failed", "merchant_conflict", "merchant_tax_id_invalid",
+    "product_package_invalid", "receipt_conflict", "receipt_invalid", "receipt_line_conflict",
+    "receipt_structure_conflict", "store_ambiguous", "store_conflict", "tax_rate_invalid",
+    "tax_rate_unconfirmed", "timestamp_ambiguous", "timestamp_conflict",
+}
+INFO_REASONS = frozenset({"operation_defaulted", "currency_inferred"})
+WARNING_REASONS = frozenset({"optional_omitted", "clipped", "cancelled"})
+ISSUE_COLLECTIONS = {"lines": "line", "discounts": "discount", "taxes": "tax"}
+GEOMETRY_ATTRIBUTES = {"geometry": None, "bbox": "bbox", "quad": "quad",
+                       "rotation_degrees": "rotation_degrees", "clipped": "clipped"}
+CLOSED_LINE_POINTER = re.compile(r"/lines/([0-9]{1,4})/([a-z0-9_]+)(?:/[a-z0-9_]+){0,3}\Z")
+CLOSED_POINTER = re.compile(r"/[a-z0-9_]+(?:/[a-z0-9_]+){0,3}\Z")
 
 
-def public_issues(issues):
+def issue_position(normalized, collection, index):
+    rows = normalized.get(collection) if isinstance(normalized, dict) else None
+    row = rows[index] if isinstance(rows, list) and index is not None and index < len(rows) else None
+    value = row.get("position") if isinstance(row, dict) else None
+    return value if type(value) is int and 1 <= value <= 32767 else None
+
+
+def issue_context(field, normalized):
+    # Derived from the stored pointer before it is replaced by "/". Only closed
+    # vocabulary and integers leave here: never a closed field name or its value.
+    entity, index, position, attribute = "unknown", None, None, "unknown"
+    if isinstance(field, str):
+        parts = field[1:].split("/")
+        if PUBLIC_POINTER.fullmatch(field):
+            if parts[0] in ISSUE_COLLECTIONS:
+                entity = ISSUE_COLLECTIONS[parts[0]]
+                index = int(parts[1]) if len(parts) > 1 else None
+                attribute = parts[2] if len(parts) > 2 else None
+                attribute = "name" if attribute == "raw_name" else attribute
+                if entity != "tax":
+                    position = issue_position(normalized, parts[0], index)
+            elif parts[0] in GEOMETRY_ATTRIBUTES:
+                entity, attribute = "geometry", GEOMETRY_ATTRIBUTES[parts[0]]
+            else:
+                entity = "receipt"
+                attribute = "currency" if field == "/currency_code" else "_".join(parts) or None
+        elif match := CLOSED_LINE_POINTER.fullmatch(field):
+            entity, index = "line", int(match[1])
+            attribute = "product" if match[2] == "product_hint" else "unknown"
+            position = issue_position(normalized, "lines", index)
+        elif CLOSED_POINTER.fullmatch(field):
+            entity, attribute = "receipt", "receipt_metadata"
+    return {"entity": entity, "index": index, "position": position, "attribute": attribute}
+
+
+def public_issues(issues, *, status, normalized):
     result = []
     for issue in issues[:1000] if isinstance(issues, list) else []:
         if not isinstance(issue, dict):
             continue
         code = issue.get("code")
+        reason = code if isinstance(code, str) and code in ISSUE_REASONS else "unknown"
         code = code if isinstance(code, str) and code in ISSUE_MESSAGES else "invalid_value"
         field = issue.get("field")
+        context = issue_context(field, normalized)
         field = field if isinstance(field, str) and PUBLIC_POINTER.fullmatch(field) else "/"
-        result.append({"code": code, "field": field, "message": ISSUE_MESSAGES[code]})
+        if reason in INFO_REASONS:
+            severity = "info"
+        elif reason in WARNING_REASONS or status not in ("needs_review", "failed"):
+            severity = "warning"
+        else:
+            severity = "error"
+        result.append({"code": code, "field": field, "message": ISSUE_MESSAGES[code],
+                       "reason": reason, "severity": severity, "context": context})
     return result
 
 
@@ -238,7 +297,8 @@ def image_object(image, *, detail=False):
         "receipt_deleted": image.receipt_id is None and isinstance(image.outcome_snapshot, dict)
         and bool(image.outcome_snapshot.get("receipt_id")),
         "image_url": media_url(image.file), "width": image.width, "height": image.height,
-        "bbox": bbox, "clipped": image.clipped, "issues": public_issues(image.issues),
+        "bbox": bbox, "clipped": image.clipped, "issues": public_issues(
+            image.issues, status=image.status, normalized=image.normalized_result),
         "normalized_result": normalized_public(image.normalized_result) if image.status == "needs_review" else None,
     }
     if detail:

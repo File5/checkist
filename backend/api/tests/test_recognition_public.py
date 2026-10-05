@@ -75,6 +75,17 @@ class PublicExamplesTests(TestCase):
             self.assertEqual(replay.status_code, 200)
             self.assertEqual(replay.json(), self.expected("upload-reused.json"))
 
+    def test_image_examples_carry_reason_severity_and_context(self):
+        for name in ("receipt-image.json", "receipt-images.json"):
+            value = self.expected(name)
+            issues = [issue for image in value.get("results", [value]) for issue in image["issues"]]
+            self.assertTrue(issues)
+            for issue in issues:
+                self.assertEqual(issue, {"code": "missing_required", "field": "/lines/0/quantity",
+                    "message": "Не удалось прочитать обязательное поле.", "reason": "missing_required",
+                    "severity": "error",
+                    "context": {"entity": "line", "index": 0, "position": 1, "attribute": "quantity"}})
+
     def test_new_upload_example_matches_actual_post(self):
         token = self.client.get("/api/recognition/csrf/").json()["csrf_token"]
         self.client.credentials(HTTP_X_CSRFTOKEN=token, HTTP_ORIGIN="http://testserver")
