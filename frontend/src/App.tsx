@@ -8,6 +8,7 @@ import ProductPage from './features/product/ProductPage'
 import RequestState from './components/RequestState'
 import { UploadPage, JobsPage, JobPage } from './features/recognition'
 import { ReceiptsPage, ReceiptPage } from './features/receipts'
+import { MergesPage, MergePage } from './features/merges'
 
 function pageTitle(route: Route) {
   switch (route.kind) {
@@ -20,6 +21,8 @@ function pageTitle(route: Route) {
     case 'receipt': return 'Чек'
     case 'jobs': return 'Обработка'
     case 'job': return 'Задание обработки'
+    case 'merges': return 'Дубли товаров'
+    case 'merge': return 'Группа дублей'
     case 'invalid-query': return 'Некорректная ссылка'
     case 'not-found': return 'Страница не найдена'
   }
@@ -36,6 +39,8 @@ function pageContent({ route, returnTo }: NavigationSnapshot) {
     case 'receipt': return <ReceiptPage receiptId={route.receiptId} returnTo={returnTo} />
     case 'jobs': return <JobsPage query={route.query} />
     case 'job': return <JobPage jobId={route.jobId} returnTo={returnTo} />
+    case 'merges': return <MergesPage query={route.query} />
+    case 'merge': return <MergePage groupId={route.groupId} returnTo={returnTo} />
     case 'invalid-query': return <RequestState kind="empty" message="В адресе указаны некорректные фильтры или номер страницы. Сбросьте параметры и попробуйте снова." action={<Link className="action-link" to={route.resetTo} replace>Сбросить параметры</Link>} />
     case 'not-found': return <RequestState kind="empty" message="Такой страницы нет. Перейдите в каталог продуктов." action={<Link className="action-link" to="/catalog">В каталог</Link>} />
   }
@@ -56,15 +61,15 @@ export default function App() {
     if (previous?.href.split(/[?#]/)[0] === pathname) return
     heading.current?.focus()
     if (!previous?.returnTo
-      || !['product', 'receipt', 'job'].includes(previous.route.kind)
-      || (route.kind !== 'catalog' && route.kind !== 'category' && route.kind !== 'receipts' && route.kind !== 'jobs')
+      || !['product', 'receipt', 'job', 'merge'].includes(previous.route.kind)
+      || (route.kind !== 'catalog' && route.kind !== 'category' && route.kind !== 'receipts' && route.kind !== 'jobs' && route.kind !== 'merges')
       || buildRoute(route) !== previous.returnTo || !content.current) return
 
     // The list loads asynchronously. Restore the selected link only while the
     // user has left focus on the transition heading; never interrupt their work.
     const detailHref = previous.route.kind === 'product'
       ? buildRoute({ kind: 'product', productId: previous.route.productId, query: { page: 1 } })
-      : previous.route.kind === 'receipt' || previous.route.kind === 'job' ? buildRoute(previous.route) : undefined
+      : previous.route.kind === 'receipt' || previous.route.kind === 'job' || previous.route.kind === 'merge' ? buildRoute(previous.route) : undefined
     const stop = () => {
       observer.disconnect()
       document.removeEventListener('focusin', cancelOnFocus)
@@ -86,7 +91,8 @@ export default function App() {
     document.title = `Checkist — ${title}`
   }, [title])
 
-  const catalogActive = route.kind === 'catalog' || route.kind === 'category' || route.kind === 'product'
+  const mergesActive = route.kind === 'merges' || route.kind === 'merge'
+  const catalogActive = route.kind === 'catalog' || route.kind === 'category' || route.kind === 'product' || mergesActive
   return (
     <div className="page">
       <a className="skip-link" href="#page-heading">К содержимому</a>
@@ -112,6 +118,10 @@ export default function App() {
           <h1 id="page-heading" ref={heading} tabIndex={-1}>{title}</h1>
           {route.kind === 'health' && <p className="intro-note">Техническая страница проверки соединения с сервером.</p>}
         </div>
+        {catalogActive && <nav className="main-navigation section-navigation" aria-label="Раздел каталога">
+          <Link to="/catalog" aria-current={mergesActive ? undefined : 'page'}>Товары</Link>
+          <Link to="/catalog/merges" aria-current={mergesActive ? 'page' : undefined}>Дубли</Link>
+        </nav>}
         {pageContent(navigation)}
       </main>
       <footer>Checkist · Каркас приложения</footer>
