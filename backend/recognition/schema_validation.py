@@ -182,9 +182,48 @@ def _pointer(data, pointer):
     return obj
 
 
+def _normalize_observation(data):
+    """Canonicalize printed text/offsets without changing the caller's payload.
+
+    Only human-readable observations admit print line breaks. Identifiers,
+    enums, JSON pointers and other controls still pass through strict validation.
+    """
+    text_paths = {
+        "/merchant/legal_name", "/merchant/brand_name", "/store/name",
+        "/store/address_raw", "/store/region", "/store/city", "/store/street", "/store/house",
+    }
+
+    def normalize(value, path=""):
+        if type(value) is dict:
+            return {key: normalize(child, path + "/" + key) for key, child in value.items()}
+        if type(value) is list:
+            return [normalize(child, path + f"/{i}") for i, child in enumerate(value)]
+        if type(value) is str:
+            if (path in text_paths or re.fullmatch(
+                    r"/lines/[0-9]+/(?:raw_name|product_hint/(?:name|brand))|/discounts/[0-9]+/name", path)):
+                if any(c in value for c in "\r\n\t"):
+                    separator = ", " if path == "/store/address_raw" else " "
+                    return re.sub(r"[ \r\n\t]*[\r\n\t][ \r\n\t]*", separator, value.strip(" \r\n\t"))
+            if (path == "/utc_offset_printed" or path in {
+                    "/timestamps/header/utc_offset", "/timestamps/fiscal/utc_offset"}) and value in {"Z", "z"}:
+                return "+00:00"
+        return value
+
+    try:
+        # Bound the original too: normalization must not hide oversized input.
+        if len(json.dumps(data, ensure_ascii=False, allow_nan=False).encode("utf-8")) > MAX_OUTPUT_BYTES:
+            _fail("", "output_too_large")
+        return normalize(data)
+    except (TypeError, UnicodeError, RecursionError, OverflowError, ValueError) as exc:
+        if isinstance(exc, SchemaValidationError):
+            raise
+        _fail("", "invalid_json")
+
+
 def validate_observation(data):
     if isinstance(data, (bytes, str)):
         data = load_json(data)
+    data = _normalize_observation(data)
     _bounded(data, _schema("receipt"))
     for section in ("merchant", "store"):
         code = data[section]["country_code"]
