@@ -95,6 +95,99 @@ class ImportTests(TestCase):
         self.assertEqual(result.receipt.total, Decimal("6.00"))
         self.assertEqual((Receipt.objects.count(), Store.objects.count(), Product.objects.count()), (2, 2, 5))
 
+    @staticmethod
+    def tax_id_payload(tax_id):
+        data = receipt_payload()
+        data["merchant"].update(tax_id=tax_id, tax_id_type="vat_id" if tax_id else None)
+        data["fiscal"] = {key: None for key in data["fiscal"]}
+        for key in ("receipt_number", "register_code", "shift_number"):
+            data[key] = None
+        return data
+
+    def assert_tax_id_completeness_links_weak_receipt(self, first_id, second_id):
+        first = self.run_import(self.tax_id_payload(first_id))
+        self.assertEqual(first.outcome, "created")
+        self.assertEqual((first.receipt.fiscal_key, first.receipt.receipt_number), ("", ""))
+        models = (Store, Receipt, ReceiptLine, ReceiptDiscount, ReceiptTax, Product, ProductAlias)
+        saved = {model: list(model.objects.order_by("pk").values()) for model in models}
+        second = self.run_import(self.tax_id_payload(second_id))
+        self.assertEqual(second.outcome, "linked")
+        self.assertEqual(second.issues, [])
+        self.assertEqual(second.receipt.pk, first.receipt.pk)
+        self.assertEqual(second.image.receipt_id, first.receipt.pk)
+        for model in models:
+            self.assertEqual(list(model.objects.order_by("pk").values()), saved[model], model.__name__)
+        self.assertEqual((Merchant.objects.count(), Store.objects.count(), Receipt.objects.count()), (1, 1, 1))
+        self.assertEqual(ReceiptImage.objects.filter(receipt=first.receipt).count(), 2)
+        self.assertEqual((ReceiptLine.objects.count(), ReceiptDiscount.objects.count(), ReceiptTax.objects.count(),
+                          Product.objects.count(), ProductAlias.objects.count()), (4, 1, 2, 3, 3))
+        merchant = Merchant.objects.get()
+        self.assertEqual((merchant.tax_id, merchant.tax_id_type), ("DE999999994", "vat_id"))
+
+    def test_tax_id_then_absent_links_weak_receipt_without_changes(self):
+        self.assert_tax_id_completeness_links_weak_receipt("DE999999994", None)
+
+    def test_absent_then_tax_id_links_weak_receipt_without_changes(self):
+        self.assert_tax_id_completeness_links_weak_receipt(None, "DE999999994")
+
+    def test_different_nonempty_tax_ids_do_not_link_weak_receipts(self):
+        first = self.run_import(self.tax_id_payload("DE999999994"))
+        second = self.run_import(self.tax_id_payload("DE999999995"))
+        self.assertEqual((first.outcome, second.outcome), ("created", "created"))
+        self.assertNotEqual(first.receipt.pk, second.receipt.pk)
+        self.assertNotEqual(first.receipt.store_id, second.receipt.store_id)
+        self.assertEqual((Merchant.objects.count(), Store.objects.count(), Receipt.objects.count()), (2, 2, 2))
+        self.assertIn({"code": "merchant_conflict", "field": "/merchant/tax_id",
+                       "message": "Результат требует проверки."}, second.issues)
+        self.assertEqual(first.receipt.store.merchant.tax_id, "DE999999994")
+
+    def test_missing_tax_id_with_multiple_known_sellers_requires_review(self):
+        self.run_import(self.tax_id_payload("DE999999994"))
+        self.run_import(self.tax_id_payload("DE999999995"))
+        models = (Merchant, Store, Receipt, ReceiptLine, ReceiptDiscount, ReceiptTax, ProductAlias)
+        before = {model: list(model.objects.order_by("pk").values()) for model in models}
+        result = self.run_import(self.tax_id_payload(None))
+        self.assertEqual((result.outcome, result.image.status), ("needs_review", "needs_review"))
+        self.assertIsNone(result.receipt)
+        self.assertIsNone(result.image.receipt_id)
+        self.assertEqual(result.issues[0]["code"], "store_ambiguous")
+        self.assertIsNotNone(result.image.normalized_result)
+        for model in models:
+            self.assertEqual(list(model.objects.order_by("pk").values()), before[model], model.__name__)
+
+    def test_new_tax_id_with_multiple_blank_sellers_requires_review(self):
+        first = self.run_import(self.tax_id_payload(None))
+        merchant = Merchant.objects.create(country_id="DE", legal_name=first.receipt.store.merchant.legal_name)
+        Store.objects.create(merchant=merchant, country_id="DE", name=first.receipt.store.name,
+                             address_raw=first.receipt.store.address_raw, timezone="Europe/Berlin")
+        result = self.run_import(self.tax_id_payload("DE999999994"))
+        self.assertEqual(result.outcome, "needs_review")
+        self.assertEqual(result.issues[0]["code"], "store_ambiguous")
+        self.assertEqual(Merchant.objects.filter(tax_id="").count(), 2)
+        self.assertEqual((Store.objects.count(), Receipt.objects.count(), ReceiptLine.objects.count()), (2, 1, 4))
+
+    def test_tax_id_completion_is_rolled_back_when_timestamp_requires_review(self):
+        first = self.run_import(self.tax_id_payload(None))
+        data = self.tax_id_payload("DE999999994")
+        data.update(purchased_on="2026-10-25", local_time="02:30:00")
+        data["timestamps"]["header"].update(date=data["purchased_on"], time=data["local_time"])
+        result = self.run_import(data)
+        self.assertEqual(result.outcome, "needs_review")
+        self.assertEqual(result.issues[0]["code"], "timestamp_ambiguous")
+        first.receipt.store.merchant.refresh_from_db()
+        self.assertEqual(first.receipt.store.merchant.tax_id, "")
+        self.assertEqual((Merchant.objects.count(), Store.objects.count(), Receipt.objects.count()), (1, 1, 1))
+
+    def test_missing_currency_and_new_tax_id_resolve_existing_store(self):
+        first = self.run_import(self.tax_id_payload(None))
+        data = self.tax_id_payload("DE999999994")
+        data["currency_code"] = None
+        result = self.run_import(data)
+        self.assertEqual(result.outcome, "linked")
+        self.assertEqual(result.receipt.pk, first.receipt.pk)
+        self.assertIn("currency_inferred", [v["code"] for v in result.issues])
+        self.assertEqual((Merchant.objects.count(), Store.objects.count(), Receipt.objects.count()), (1, 1, 1))
+
     def test_optional_invalid_fields_import_and_do_not_create_tax_or_false_product_facts(self):
         payload = receipt_payload()
         payload["taxes"][0].update(net="3.00")

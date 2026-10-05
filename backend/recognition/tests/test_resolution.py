@@ -2,6 +2,8 @@ from dataclasses import replace
 from decimal import Decimal
 
 from django.test import SimpleTestCase, TestCase, override_settings, tag
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 
 from catalog.models import Brand, Category, GenericProduct, Product
 from receipts.models import ProductAlias
@@ -152,6 +154,158 @@ class ResolutionTests(TestCase):
         with self.assertRaises(ResolutionError) as caught:
             resolve_store(replace(obs, store=replace(obs.store, branch_code="B")), self.country)
         self.assertEqual(caught.exception.issues[0]["code"], "store_ambiguous")
+
+    def assert_tax_id_completeness_reuses_store(self, first_id, second_id):
+        def observed(tax_id):
+            return replace(self.obs, merchant=replace(
+                self.obs.merchant, tax_id=tax_id, tax_id_type="vat_id" if tax_id else None,
+            ))
+
+        first = resolve_store(observed(first_id), self.country)
+        second = resolve_store(observed(second_id), self.country)
+        self.assertEqual(second.pk, first.pk)
+        self.assertEqual(second.merchant_id, first.merchant_id)
+        first.merchant.refresh_from_db()
+        self.assertEqual(first.merchant.tax_id, "DE999999994")
+        self.assertEqual(first.merchant.tax_id_type, "vat_id")
+        self.assertEqual(Merchant.objects.filter(legal_name=self.obs.merchant.legal_name).count(), 1)
+        self.assertEqual(Store.objects.count(), 1)
+
+    def test_tax_id_then_absent_reuses_store(self):
+        self.assert_tax_id_completeness_reuses_store("DE999999994", None)
+
+    def test_absent_then_tax_id_reuses_store(self):
+        self.assert_tax_id_completeness_reuses_store(None, "DE999999994")
+
+    def test_different_nonempty_tax_ids_keep_separate_merchants_and_stores(self):
+        first = resolve_store(replace(self.obs, merchant=replace(
+            self.obs.merchant, tax_id="DE999999994", tax_id_type="vat_id",
+        )), self.country)
+        notices = []
+        second = resolve_store(replace(self.obs, merchant=replace(
+            self.obs.merchant, tax_id="DE999999995", tax_id_type="vat_id",
+        )), self.country, notices=notices)
+        self.assertNotEqual(first.pk, second.pk)
+        self.assertNotEqual(first.merchant_id, second.merchant_id)
+        first.merchant.refresh_from_db()
+        self.assertEqual(first.merchant.tax_id, "DE999999994")
+        self.assertEqual(notices, [{"code": "merchant_conflict", "field": "/merchant/tax_id",
+                                    "message": "Результат требует проверки."}])
+
+    def make_same_named_location(self, tax_id="", **store_fields):
+        merchant = Merchant.objects.create(
+            country=self.country, legal_name=self.obs.merchant.legal_name,
+            tax_id=tax_id, tax_id_type="vat_id" if tax_id else "",
+        )
+        values = dict(country=self.country, name=self.obs.store.name,
+                      address_raw=self.obs.store.address_raw, timezone="Europe/Berlin")
+        values.update(store_fields)
+        return Store.objects.create(merchant=merchant, **values)
+
+    def test_absent_tax_id_with_two_known_sellers_is_ambiguous(self):
+        self.make_same_named_location("DE999999994")
+        self.make_same_named_location("DE999999995")
+        with self.assertRaises(ResolutionError) as caught:
+            resolve_store(self.obs, self.country)
+        self.assertEqual(caught.exception.issues[0]["code"], "store_ambiguous")
+        self.assertEqual(Store.objects.count(), 2)
+
+    def test_new_tax_id_with_two_blank_candidates_does_not_enrich_either(self):
+        first = self.make_same_named_location()
+        second = self.make_same_named_location()
+        with self.assertRaises(ResolutionError) as caught:
+            resolve_store(replace(self.obs, merchant=replace(
+                self.obs.merchant, tax_id="DE999999994", tax_id_type="vat_id",
+            )), self.country)
+        self.assertEqual(caught.exception.issues[0]["code"], "store_ambiguous")
+        self.assertEqual(Merchant.objects.filter(pk__in=[first.merchant_id, second.merchant_id], tax_id="").count(), 2)
+
+    def test_new_tax_id_already_owned_elsewhere_requires_review(self):
+        store = self.make_same_named_location()
+        Merchant.objects.create(country=self.country, legal_name="Different seller", tax_id="DE999999994")
+        with self.assertRaises(ResolutionError) as caught:
+            resolve_store(replace(self.obs, merchant=replace(self.obs.merchant, tax_id="DE999999994")), self.country)
+        self.assertEqual(caught.exception.issues[0]["code"], "store_ambiguous")
+        store.merchant.refresh_from_db()
+        self.assertEqual(store.merchant.tax_id, "")
+
+    def test_branch_completion_then_branch_only_reuses_store_without_tax_id(self):
+        first = resolve_store(self.obs, self.country)
+        improved = replace(self.obs, merchant=replace(self.obs.merchant, tax_id="DE999999994"),
+                           store=replace(self.obs.store, branch_code="12", postal_code=None,
+                                         address_raw="TESTSTRASSE 12  10115 Berlin"))
+        self.assertEqual(resolve_store(improved, self.country).pk, first.pk)
+        branch_only = replace(self.obs, store=replace(self.obs.store, branch_code="12", address_raw=None))
+        self.assertEqual(resolve_store(branch_only, self.country).pk, first.pk)
+        first.refresh_from_db()
+        self.assertEqual(first.branch_code, "12")
+        self.assertEqual(first.address_raw, self.obs.store.address_raw)
+        self.assertEqual(first.postal_code, self.obs.store.postal_code)
+
+    def test_different_nonempty_branch_code_cannot_rewrite_known_store(self):
+        first = resolve_store(replace(self.obs, store=replace(self.obs.store, branch_code="12")), self.country)
+        with self.assertRaises(ResolutionError) as caught:
+            resolve_store(replace(self.obs, store=replace(self.obs.store, branch_code="13")), self.country)
+        self.assertEqual(caught.exception.issues[0], {"code": "store_conflict", "field": "/store/branch_code",
+                                                    "message": "Результат требует проверки."})
+        first.refresh_from_db()
+        self.assertEqual(first.branch_code, "12")
+
+    def test_missing_tax_id_does_not_match_different_store_name(self):
+        first = resolve_store(self.obs, self.country)
+        with self.assertRaises(ResolutionError) as caught:
+            resolve_store(replace(self.obs, store=replace(self.obs.store, name="Different shop")), self.country)
+        self.assertEqual(caught.exception.issues[0]["code"], "store_conflict")
+        self.assertEqual(Store.objects.count(), 1)
+        self.assertEqual(first.name, self.obs.store.name)
+
+    def test_name_fallback_can_disambiguate_store_names(self):
+        wrong = self.make_same_named_location("DE999999995", name="Different shop")
+        right = self.make_same_named_location("DE999999994")
+        self.assertEqual(resolve_store(self.obs, self.country).pk, right.pk)
+        self.assertNotEqual(right.merchant_id, wrong.merchant_id)
+
+    def test_fallback_requires_same_merchant_and_store_countries(self):
+        first = resolve_store(self.obs, self.country)
+        ru = Country.objects.get(pk="RU")
+        with self.assertRaises(ResolutionError) as caught:
+            resolve_store(replace(self.obs, store=replace(self.obs.store, country_code="RU")), ru)
+        self.assertEqual(caught.exception.issues[0]["code"], "store_conflict")
+        different_registration = replace(self.obs, merchant=replace(self.obs.merchant, country_code="RU"))
+        second = resolve_store(different_registration, self.country)
+        self.assertNotEqual(first.merchant_id, second.merchant_id)
+
+    def test_completion_preserves_nonempty_tax_id_type_and_other_merchant_fields(self):
+        first = resolve_store(self.obs, self.country)
+        Merchant.objects.filter(pk=first.merchant_id).update(tax_id_type="other", extra={"test": "preserved"})
+        result = resolve_store(replace(self.obs, merchant=replace(
+            self.obs.merchant, tax_id="DE999999994", tax_id_type="vat_id",
+        )), self.country)
+        self.assertEqual(result.pk, first.pk)
+        self.assertEqual(result.merchant.tax_id_type, "other")
+        self.assertEqual(result.merchant.extra, {"test": "preserved"})
+
+    def test_store_name_does_not_hide_conflicting_address_and_branch(self):
+        first = resolve_store(self.obs, self.country)
+        Store.objects.create(merchant=first.merchant, country=self.country, name="Different shop",
+                             branch_code="12", address_raw="Other street 2", timezone="Europe/Berlin")
+        with self.assertRaises(ResolutionError) as caught:
+            resolve_store(replace(self.obs, store=replace(self.obs.store, branch_code="12")), self.country)
+        self.assertEqual(caught.exception.issues[0]["code"], "store_ambiguous")
+        first.refresh_from_db()
+        self.assertEqual(first.branch_code, "")
+
+    def test_location_candidates_do_not_add_per_candidate_queries(self):
+        store = self.make_same_named_location("DE999999994")
+        with CaptureQueriesContext(connection) as first:
+            self.assertEqual(resolve_store(self.obs, self.country).pk, store.pk)
+        for index in range(12):
+            merchant = Merchant.objects.create(country=self.country, legal_name=f"Other seller {index}")
+            Store.objects.create(merchant=merchant, country=self.country,
+                                 address_raw=self.obs.store.address_raw, timezone="Europe/Berlin")
+        with CaptureQueriesContext(connection) as many:
+            self.assertEqual(resolve_store(self.obs, self.country).pk, store.pk)
+        self.assertEqual(len(first), len(many))
 
     def test_tax_rate_matches_country_kind_rate_not_letter(self):
         rate = self.line.tax_rate

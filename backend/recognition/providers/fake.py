@@ -16,6 +16,7 @@ SCENARIOS = (
     "success2", "one_receipt", "no_receipts", "too_many_receipts", "provider_auth_failure",
     "provider_error", "malformed_schema", "partial_missing_quantity", "inconsistent_total",
     "duplicate_strong", "duplicate_weak", "partial_success", "pause_detect", "pause_recognize", "late_completion",
+    "tax_id_present", "tax_id_absent",
 )
 ALIASES = {"success": "success2", "single": "one_receipt", "invalid_output": "malformed_schema",
            "incomplete": "partial_missing_quantity", "repeat": "duplicate_strong", "pause": "pause_detect"}
@@ -123,7 +124,7 @@ class FakeProvider:
 
     def detect(self, prepared_image, run):
         self._stage("detect", run)
-        count = 0 if self.scenario == "no_receipts" else 11 if self.scenario == "too_many_receipts" else 1 if self.scenario in ("one_receipt", "duplicate_strong", "duplicate_weak") else 2
+        count = 0 if self.scenario == "no_receipts" else 11 if self.scenario == "too_many_receipts" else 1 if self.scenario in ("one_receipt", "duplicate_strong", "duplicate_weak", "tax_id_present", "tax_id_absent") else 2
         data = detection_payload(prepared_image, count)
         if self.scenario == "malformed_schema":
             data["unexpected"] = True
@@ -149,6 +150,19 @@ class FakeProvider:
         if self.scenario == "duplicate_weak":
             data["fiscal"] = {key: None for key in data["fiscal"]}
             data["fields"] = [f for f in data["fields"] if not f["path"].startswith("/fiscal/")]
+        if self.scenario in {"tax_id_present", "tax_id_absent"}:
+            # R2: identical receipt without either strong key, only seller ID
+            # completeness differs. Intended for HTTP and human QA acceptance.
+            cleared = {"/receipt_number", "/shift_number", "/register_code"}
+            for key in ("receipt_number", "shift_number", "register_code"):
+                data[key] = None
+            data["fiscal"] = {key: None for key in data["fiscal"]}
+            data["fields"] = [f for f in data["fields"]
+                              if f["path"] not in cleared and not f["path"].startswith("/fiscal/")]
+            if self.scenario == "tax_id_present":
+                data["merchant"].update(tax_id="DE999999994", tax_id_type="vat_id")
+                data["fields"].extend({"path": path, "status": "observed", "confidence": 1, "note": None}
+                                      for path in ("/merchant/tax_id", "/merchant/tax_id_type"))
         if self.scenario == "malformed_schema":
             data["total"] = 4.42
         try:
