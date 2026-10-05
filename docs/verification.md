@@ -50,7 +50,7 @@ docker compose -p checkist_qa up -d --build --wait --wait-timeout 120 worker
 ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py check_services
 ```
 
-Ожидается exit 0, отсутствие новых миграций, 312 тестов без БД и 1058 integration, затем JSON с `celery_task.result={"message":"pong"}`. На пустой БД `migrate` применяет 23 миграции: 18 стандартных и 5 собственных, включая recognition.0001_initial. Числа соответствуют текущему коду и могут измениться вместе с тестами. Команда без тега БД не использует; integration нельзя заменять skip/eager. Runner создаёт и удаляет **`test_checkist_qa`**; Redis tests используют QA Redis DB 2 и уникальные ключи. Recognition tests используют временный MEDIA и fake/mock, настоящий Codex не вызывают. Не запускайте два DB-runner одновременно с одним именем test DB: --noinput может пересоздать БД другого своего прогона.
+Ожидается exit 0, отсутствие новых миграций, 312 тестов без БД и 1058 integration, затем JSON с `celery_task.result={"message":"pong"}`. На пустой БД `migrate` применяет 24 миграции: 18 стандартных и 6 собственных, включая recognition.0001_initial и merges.0001_initial. Числа соответствуют текущему коду и могут измениться вместе с тестами. Команда без тега БД не использует; integration нельзя заменять skip/eager. Runner создаёт и удаляет **`test_checkist_qa`**; Redis tests используют QA Redis DB 2 и уникальные ключи. Recognition tests используют временный MEDIA и fake/mock, настоящий Codex не вызывают. Не запускайте два DB-runner одновременно с одним именем test DB: --noinput может пересоздать БД другого своего прогона.
 
 | Приложение | Без БД (`--exclude-tag=integration`) | С БД (`--tag=integration`) |
 | --- | --- | --- |
@@ -115,9 +115,72 @@ curl.exe -s @H -X POST --data '{\"version\":1,\"product_id\":20}' "$B/api/produc
 
 Ожидается по порядку: 7 групп; группа пиццы с тремя записями и `lines_count: 4`; 4 покупки с `origin_product_id` 15, 2, 15, 9; `count: 2` (товары 3 и 2); `404`; группа `cancelled` (повтор — тот же ответ 200, `q=pizza` — 4, товар 9 снова 200); группа `confirmed` (повтор — 200, другой `target_product_id` и `cancel` — `409 merge_resolved`, товар 17 — 404, `?product=17` находит группу 3); `409 merge_conflict` с `fields.generic`, группа остаётся `pending`; с `resolutions` — `confirmed`, у товара 1 обобщённый продукт «Молоко»; исключение — `pending`, `version: 2`, товар 20 снова 200, повтор — тот же ответ. В конце: 30 товаров, 9 чеков, 42 строки, строк без товара нет; группы — 4 `pending`, 2 `confirmed`, 1 `cancelled`. Остановите свой `runserver` и `docker compose -p <проект> down` (тома сохраняются).
 
-### Ручная приёмка человеком (после клиента)
+### Клиент через Vite proxy без браузера
 
-Экраны слияния появятся на этапе клиента; до него вручную проверяется админка на `http://127.0.0.1:18000/admin/` (нужен `createsuperuser` в QA): товар ожидающей группы удалить нельзя — штатный отказ со ссылкой на запись группы; модели `merges` открываются только на чтение; после подтверждения строки и написания показывают оставляемый товар; ручная приёмка F4/F6 — без изменений.
+Тот же сервер на **свежей** базе после `seed_product_merge_demo` и `detect` (до curl-сценария выше: оба сценария меняют одни и те же группы). В терминалах сервера, Vite и скрипта — полный QA environment и блок выше, дополнительно `$env:DJANGO_CSRF_TRUSTED_ORIGINS='http://127.0.0.1:15173,http://localhost:15173'` (точный origin Vite). Команды `npm.cmd` и `node` запускайте из PowerShell: Git Bash переписывает `VITE_API_BASE_URL=/api` в `C:/Program Files/Git/api`, и 31 тест адаптеров падает на сравнении URL.
+
+```powershell
+Set-Location frontend
+npm.cmd ci
+npm.cmd run lint
+npm.cmd run test
+npm.cmd run build
+npm.cmd run dev -- --port 15173        # либо npm.cmd run preview -- --port 15173
+# третий терминал, из корня:
+node frontend/scripts/check_product_merges_proxy.mjs http://127.0.0.1:15173
+```
+
+Ожидается exit 0 и последняя строка `{"result":"passed", …, "groups":{"pending":4,"confirmed":2,"cancelled":1},"requests":59,"posts":19,"statuses":[200,400,404,409],"browser_ui":"not tested"}`. Скрипт вызывает настоящие адаптеры клиента через proxy, отказывается работать с dev-портами и с базой, имя которой не `checkist_qa[_суффикс]`; повторный запуск на той же базе не пройдёт — нужна новая. Для второго прогона (preview) достаточно копии свежей базы: до запуска сервера `CREATE DATABASE checkist_qa_<суффикс> TEMPLATE <свежая база>` и тот же `POSTGRES_DB` в трёх терминалах.
+
+### Ручная приёмка человеком
+
+Экраны `/catalog/merges`, `/catalog/merges/{id}`, пометки в каталоге и карточке, подсказка слитого товара: запуск, тестовые данные и девять шагов сценария (включая `merge_changed`, `merge_resolved`, отказ сети, клавиатуру, адаптив и screen reader) — [frontend/src/features/merges/ACCEPTANCE.md](../frontend/src/features/merges/ACCEPTANCE.md); там же статические превью экранов. Автоматический обход UI запрещён.
+
+Админка на `http://127.0.0.1:18000/admin/` (нужен `createsuperuser` в QA): товар ожидающей группы удалить нельзя — штатный отказ со ссылкой на запись группы; модели `merges` открываются только на чтение; после подтверждения строки и написания показывают оставляемый товар; ручная приёмка F4/F6 — без изменений.
+
+### Фактические результаты Б1 (окончательная ветка), 2026-10-06
+
+Повтор всех проверок слияния на окончательном состоянии ветки после С1, С2, Ф1, Ф2: коммит `10fce95`, ветка `orca/task_muvty04w6n`; код продукта и тесты в этой задаче не менялись. Windows 11, Python 3.13.9 (новый venv из `backend/requirements.txt`, `pip check` — exit 0), Node 24.18.0, npm 11.16.0. Изолированный Compose-проект `checkist_qa_b1` с чистыми томами: БД `checkist_qa_b1` (тестовая — `test_checkist_qa_b1`), Postgres 25497, Redis 16427, Django 18097, Vite 15197; `MEDIA_ROOT` и scratch — отдельные временные каталоги; `RECEIPT_OCR_PROVIDER=fake`, модельных вызовов не было. `P` — `./backend/.venv/Scripts/python.exe -X utf8`.
+
+#### Проверено и прошло
+
+| Команда | Exit | Результат |
+| --- | --- | --- |
+| `docker compose -p checkist_qa_b1 config --quiet`; `up -d --wait --wait-timeout 90 postgres redis`; TCP-пробы 25497 и 16427 | 0 | оба контейнера healthy, `TCP OK` |
+| `P backend/manage.py check` | 0 | no issues |
+| `P backend/manage.py makemigrations --check --dry-run` | 0 | No changes detected |
+| `P backend/manage.py migrate --noinput` на пустой базе | 0 | 24 миграции, включая `merges.0001_initial` |
+| `P backend/manage.py test catalog stores receipts health api recognition merges --exclude-tag=integration --verbosity=2` | 0 | 312 тестов, OK, 17.3 с; по приложениям 9 / 14 / 18 / 26 / 112 / 110 / 23 |
+| `P backend/manage.py test catalog stores receipts health api recognition merges --tag=integration --noinput --verbosity=2` | 0 | 1058 тестов, OK, 252.3 с; по приложениям 80 / 79 / 238 / 7 / 358 / 202 / 94 |
+| `npm.cmd ci` (PowerShell) | 0 | 188 пакетов, 0 vulnerabilities |
+| `npm.cmd run lint` | 0 | без предупреждений |
+| `npm.cmd run test` | 0 | 39 файлов, 1181 тест |
+| `npm.cmd run build` | 0 | 107 модулей |
+| `seed_product_merge_demo` дважды | 0 / 0 | `{"created": true, "merchants": 2, "products": 35, "receipts": 9, "lines": 42}`; повтор `{"created": false}` |
+| `product_merges detect --dry-run`; `detect` дважды | 0 / 0 / 0 | `created: 7`, `group_ids: []`; затем `created: 7`, `group_ids: [1..7]`, группа 1 — товары 1, 6, 13, 18, 21, оставляемый 1; повтор `created: 0, extended: 0` |
+| `node frontend/scripts/check_product_merges_proxy.mjs http://127.0.0.1:15197` через `npm.cmd run dev -- --port 15197`, база `checkist_qa_b1` | 0 | `passed`: 59 запросов, 19 POST, статусы 200 / 400 / 404 / 409, группы 4 ожидают / 2 подтверждены / 1 отменена |
+| То же через `npm.cmd run preview -- --port 15197` (сборка), база `checkist_qa_b1_preview` — копия свежей базы | 0 | тот же результат |
+| Итог в БД после сценария dev (`psql`) | 0 | 30 товаров, 9 чеков, 42 строки, 0 строк без товара; в журналах обоих `runserver` нет traceback |
+| `curl.exe` `/catalog/merges` (dev) и `/catalog/merges/2` (preview) через Vite | 0 | HTTP 200 |
+
+Расхождений клиента и сервера не найдено, дефектов сервера не найдено.
+
+#### Проверено и не прошло
+
+Продукт — нет. Ошибка запуска, не дефект: первый прогон `npm.cmd run test` из Git Bash с QA environment дал exit 1, 31 из 1181 теста упал в восьми файлах (семь `src/api/*.test.ts` и `features/merges/actions.test.ts`) — оболочка превратила `VITE_API_BASE_URL=/api` в `C:/Program Files/Git/api` (`expected 'C:/Program Files/Git/api/products/?has_prices=1' to be '/api/products/?has_prices=1'`). Повтор тех же команд из PowerShell, как предписано документами, — строки таблицы выше. Код и тесты не менялись.
+
+#### Не проверено и почему
+
+- Экраны React и админка в браузере: клики, фокус, клавиатура, screen reader, узкий экран, Back/Forward, cookie-политика браузера для CSRF — принимает человек, автоматический обход UI запрещён. Шаги — [ACCEPTANCE.md](../frontend/src/features/merges/ACCEPTANCE.md) и раздел выше.
+- `merge_busy` на живом сервере: нужен импорт чека или другое слияние в тот же момент. Покрыто тестами сервера на отдельных соединениях и тестом клиента на эталонном ответе.
+- `merge_conflict` с `fields.name` / `fields.gtin` на живом сервере: в демо-данных нет совпадения с посторонним товаром. Покрыто тестами сервера и разметки клиента.
+- Реальный Codex и сквозной `recognition_worker` с `PRODUCT_MERGE_AUTO_DETECT=1`: модельные вызовы не выполнялись, шаг после импорта проверен тестами импортёра на fake-данных.
+- Время поиска на каталоге больше демо (35 товаров) не измерялось: поиск квадратичен в пределах товаров одного продавца.
+- Dev-база не мигрировалась и не менялась: `merges.0001_initial`, `detect` и включение `PRODUCT_MERGE_AUTO_DETECT` на dev — отдельное решение владельца.
+- `check_services` и QA Celery worker не запускались (слияние их не затрагивает); поэтому `/api/health/` через Vite отвечал 503 — ожидаемо без worker.
+- curl-сценарий сервера из раздела выше и запрет при `ALLOW_LOCAL_RECOGNITION_API=0` на живом сервере в этом прогоне не повторялись: те же запросы прошли через адаптеры клиента, запрет покрыт integration-тестами `api`; фактические результаты curl — в С2 ниже, запрета через Vite — в ACCEPTANCE.md.
+
+После прогона свои `runserver` и Vite остановлены, `docker compose -p checkist_qa_b1 down` — exit 0; тома `checkist_qa_b1_postgres_data` / `checkist_qa_b1_redis_data` сохранены. В томе оставлена нетронутая копия свежей базы с демо и семью ожидающими группами — `checkist_qa_b1_manual` — для ручной приёмки.
 
 ### Фактические результаты С2, 2026-10-05
 

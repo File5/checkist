@@ -230,6 +230,17 @@ docker compose -p checkist_qa up -d --wait --wait-timeout 90 postgres redis
 - На dev `PRODUCT_MERGE_AUTO_DETECT` остаётся `0`, пока владелец не решит применить слияния к dev-данным; `detect` на dev без такого решения не запускайте.
 - Сценарий HTTP без браузера и ручная приёмка — [verification.md](verification.md#слияние-дублей-http-без-браузера).
 
+Клиент — во втором терминале с тем же environment, **в PowerShell** (Git Bash переписывает `VITE_API_BASE_URL=/api` в путь Windows):
+
+```powershell
+Set-Location frontend
+npm.cmd ci
+npm.cmd run dev -- --port 15173
+# либо сборка: npm.cmd run build; npm.cmd run preview -- --port 15173
+```
+
+Экраны — `http://127.0.0.1:15173/catalog/merges`; сценарий для человека и тестовые данные — [frontend/src/features/merges/ACCEPTANCE.md](../frontend/src/features/merges/ACCEPTANCE.md). Проверка адаптеров настоящим HTTP без браузера, из корня в третьем терминале с тем же environment: `node frontend/scripts/check_product_merges_proxy.mjs http://127.0.0.1:15173`. Скрипт подтверждает, отменяет и исключает записи, поэтому запускается один раз на свежей базе после `seed_product_merge_demo` и `detect`; имя базы должно быть `checkist_qa` либо `checkist_qa_<суффикс>`, порты — не dev. Без QA Celery worker `/api/health/` отвечает 503 — слияние от него не зависит.
+
 ### Настоящий Codex в QA
 
 Остановить fake-worker. В том же QA DB/MEDIA/scratch, в терминале worker:
