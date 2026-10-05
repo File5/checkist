@@ -327,7 +327,8 @@ def _import_domain(observation, derived, *, require_duplicate=False, link_only=F
     notices = _preflight(observation, derived)
     country = resolve_country(observation)
     with transaction.atomic():
-        store = resolve_store(observation, country, allow_create=observation.currency_code is not None)
+        store = resolve_store(observation, country, allow_create=observation.currency_code is not None,
+                              notices=notices)
         if store is None:
             raise ResolutionError(issue("missing_required", "/currency_code"))
         currency = resolve_currency(observation, store=store)

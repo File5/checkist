@@ -1,6 +1,7 @@
 """Exact OCR resolution. Call mutating helpers inside the import mutex/transaction.
 
-Existing reference/catalog/store records are never rewritten. No fuzzy matching.
+Only empty store identity fields are completed; filled values are preserved.
+Existing reference/catalog records are never rewritten. No fuzzy matching.
 The currency fallback is deliberately limited to the project's RU/KZ/DE scope.
 """
 from dataclasses import dataclass
@@ -9,6 +10,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import re
 
 from django.conf import settings
+from django.db import transaction
 from django.db.models import Q
 
 from catalog.models import Brand, Category, GenericProduct, Product
@@ -61,11 +63,41 @@ def resolve_currency(observation, *, store=None):
     return currency
 
 
-def resolve_store(observation, country, *, allow_create=True):
-    """Tax ID + address/branch; absent tax ID uses exact merchant name + address.
+def _complete_store_identity(store, tax_id, tax_type, branch_code):
+    # Called in resolve_store's transaction and the OCR import mutex. Lock and
+    # re-read empty fields before completing them: an external writer may have
+    # supplied a different value since candidate selection.
+    if branch_code and store.branch_code and branch_code != store.branch_code:
+        raise ResolutionError(issue("store_conflict", "/store/branch_code"))
+    if tax_id and not store.merchant.tax_id:
+        merchant = Merchant.objects.select_for_update().get(pk=store.merchant_id)
+        if merchant.tax_id and merchant.tax_id != tax_id:
+            raise ResolutionError(issue("merchant_conflict", "/merchant/tax_id"))
+        if not merchant.tax_id:
+            merchant.tax_id = tax_id
+            if not merchant.tax_id_type:
+                merchant.tax_id_type = tax_type
+            clean_save(merchant)
+        store.merchant = merchant
+    if branch_code and not store.branch_code:
+        merchant = store.merchant
+        store = Store.objects.select_for_update().get(pk=store.pk)
+        if store.branch_code and store.branch_code != branch_code:
+            raise ResolutionError(issue("store_conflict", "/store/branch_code"))
+        if not store.branch_code:
+            store.branch_code = branch_code
+            clean_save(store)
+        store.merchant = merchant
+    return store
 
-    The latter is needed for K1's German receipts without printed tax IDs.
-    Ambiguous merchants/branches are never selected by PK.
+
+@transaction.atomic
+def resolve_store(observation, country, *, allow_create=True, notices=None):
+    """Resolve exact, compatible identity despite missing tax ID/branch code.
+
+    A fallback requires a known location and matching merchant/store names in
+    the same countries. Conflicting nonempty IDs remain separate sellers;
+    several compatible locations require review, never a choice by PK.
     """
     incoming = observation.merchant
     registration = Country.objects.filter(pk=incoming.country_code or country.pk).first()
@@ -84,19 +116,49 @@ def resolve_store(observation, country, *, allow_create=True):
     if not legal_name:
         raise ResolutionError(issue("missing_required", "/merchant/legal_name"))
     merchants = Merchant.objects.filter(country=registration)
+    key = address_key(observation.store.address_raw)
+    branches = Q(address_key=key) if key else Q(pk__in=[])
+    branch_code = observation.store.branch_code
+    if branch_code:
+        branches |= Q(branch_code=branch_code)
+    # Limit locations in SQL and join each merchant once, then normalize names
+    # in Python: these models have no persisted name keys.
+    locations = Store.objects.filter(
+        branches, country=country, merchant__country=registration,
+    ).select_related("merchant")
+    named_locations = [s for s in locations.iterator()
+                       if name_key(s.merchant.legal_name) == name_key(legal_name)
+                       and (not observation.store.name or not s.name
+                            or name_key(s.name) == name_key(observation.store.name))]
+    compatible = [s for s in named_locations
+                  if not tax_id or s.merchant.tax_id in ("", tax_id)]
+    if len(compatible) > 1:
+        raise ResolutionError(issue("store_ambiguous", "/store"))
+    if tax_id and any(s.merchant.tax_id not in ("", tax_id) for s in named_locations):
+        if notices is not None:
+            notices.append(issue("merchant_conflict", "/merchant/tax_id"))
     if tax_id:
         candidates = list(merchants.filter(tax_id=tax_id))
     else:
+        candidates = []
+    if compatible:
+        store = compatible[0]
+        if key and branch_code and Store.objects.filter(
+            branches, merchant_id=store.merchant_id,
+        ).exclude(pk=store.pk).exists():
+            # A different store name must not mask contradictory address/branch
+            # matches within the resolved seller (or cause a branch unique error).
+            raise ResolutionError(issue("store_ambiguous", "/store"))
+        # Do not assign an ID already owned by another Merchant, even if that
+        # seller's known branches do not match this photo. No automatic merge.
+        if tax_id and candidates and candidates[0].pk != store.merchant_id:
+            raise ResolutionError(issue("store_ambiguous", "/store"))
+        return _complete_store_identity(store, tax_id, tax_type, branch_code)
+    if not tax_id:
         candidates = [m for m in merchants.filter(tax_id="").iterator()
                       if name_key(m.legal_name) == name_key(legal_name)]
     if len(candidates) > 1:
-        key = address_key(observation.store.address_raw)
-        locations = Q(address_key=key) if key else Q(pk__in=[])
-        if observation.store.branch_code:
-            locations |= Q(branch_code=observation.store.branch_code)
-        candidates = [m for m in candidates if m.stores.filter(locations, country=country).exists()]
-        if len(candidates) != 1:
-            raise ResolutionError(issue("store_ambiguous", "/store"))
+        raise ResolutionError(issue("store_ambiguous", "/store"))
     if candidates:
         merchant = candidates[0]
     else:
@@ -106,10 +168,6 @@ def resolve_store(observation, country, *, allow_create=True):
             country=registration, legal_name=legal_name, brand_name=incoming.brand_name or "",
             tax_id=tax_id, tax_id_type=tax_type,
         ))
-    key = address_key(observation.store.address_raw)
-    branches = Q(address_key=key) if key else Q(pk__in=[])
-    if observation.store.branch_code:
-        branches |= Q(branch_code=observation.store.branch_code)
     stores = list(Store.objects.filter(branches, merchant=merchant))
     if len(stores) > 1:
         raise ResolutionError(issue("store_ambiguous", "/store"))
@@ -117,7 +175,10 @@ def resolve_store(observation, country, *, allow_create=True):
         store = stores[0]
         if store.country_id != country.pk:
             raise ResolutionError(issue("store_conflict", "/store/country_code"))
-        return store
+        if (not tax_id and observation.store.name and store.name
+                and name_key(store.name) != name_key(observation.store.name)):
+            raise ResolutionError(issue("store_conflict", "/store/name"))
+        return _complete_store_identity(store, tax_id, tax_type, branch_code)
     if not allow_create:
         return None
     if not key:

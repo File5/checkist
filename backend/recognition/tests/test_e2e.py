@@ -24,14 +24,14 @@ from PIL import Image
 from rest_framework.test import APIClient
 
 from catalog.models import Product
-from receipts.models import Receipt, ReceiptLine
+from receipts.models import ProductAlias, Receipt, ReceiptDiscount, ReceiptLine, ReceiptTax
 from recognition import queue
 from recognition.models import ProcessingJob, ReceiptImage, SourcePhoto
 from recognition.pipeline import process_job
 from recognition.providers.fake import FakeProvider
 from recognition.tests.import_fixtures import observation
 from recognition.dto import FieldObservation
-from stores.models import Country, Currency
+from stores.models import Country, Currency, Merchant, Store
 
 
 @tag("integration")
@@ -126,6 +126,68 @@ class RecognitionEndToEndTests(TransactionTestCase):
         finally:
             response.close()
         self.assertEqual(content, file.read_bytes())
+
+    def assert_tax_id_completeness_http_roundtrip(self, first_id, second_id):
+        receipt_id = None
+        for index, (tax_id, photo) in enumerate(((first_id, self.single), (second_id, self.another_photo()))):
+            uploaded = self.upload(photo)
+            self.assertFalse(uploaded["reused"])
+            scenario = "tax_id_present" if tax_id else "tax_id_absent"
+            job = process_job(queue.claim_job(), provider=FakeProvider(scenario))
+            self.assertEqual(job.pk, uploaded["job"]["id"])
+            public = self.get(self.job_url(job.pk))
+            self.assertEqual((public["status"], public["progress"]["review"]), ("succeeded", 0))
+            self.assertFalse(public["review_required"])
+            linked_id = public["items"][0]["receipt_id"]
+            receipt = Receipt.objects.get(pk=linked_id)
+            self.assertEqual((receipt.fiscal_key, receipt.receipt_number), ("", ""))
+            if index == 0:
+                receipt_id = linked_id
+                lines = self.get(f"/api/receipts/{receipt_id}/lines/")
+                discounts = self.get(f"/api/receipts/{receipt_id}/discounts/")
+                taxes = self.get(f"/api/receipts/{receipt_id}/taxes/")
+            else:
+                self.assertEqual(linked_id, receipt_id)
+                self.assertEqual(public["progress"]["reused"], 1)
+        receipts = self.get("/api/receipts/")
+        self.assertEqual(receipts["count"], 1)
+        self.assertEqual(receipts["results"][0]["receipt_images_count"], 2)
+        self.assertFalse(receipts["results"][0]["review_required"])
+        self.assertEqual(self.get(f"/api/receipts/{receipt_id}/lines/"), lines)
+        self.assertEqual(self.get(f"/api/receipts/{receipt_id}/discounts/"), discounts)
+        self.assertEqual(self.get(f"/api/receipts/{receipt_id}/taxes/"), taxes)
+        self.assertEqual((Merchant.objects.count(), Store.objects.count(), Receipt.objects.count()), (1, 1, 1))
+        self.assertEqual((ReceiptLine.objects.count(), ReceiptDiscount.objects.count(), ReceiptTax.objects.count(),
+                          Product.objects.count(), ProductAlias.objects.count()), (4, 1, 2, 3, 3))
+        self.assertEqual((SourcePhoto.objects.count(), ProcessingJob.objects.count(), ReceiptImage.objects.count()), (2, 2, 2))
+        self.assertEqual(ReceiptImage.objects.filter(receipt_id=receipt_id).count(), 2)
+        self.assertEqual(Merchant.objects.get().tax_id, "DE999999994")
+
+    def test_http_tax_id_then_absent_links_one_receipt(self):
+        self.assert_tax_id_completeness_http_roundtrip("DE999999994", None)
+
+    def test_http_absent_then_tax_id_links_one_receipt(self):
+        self.assert_tax_id_completeness_http_roundtrip(None, "DE999999994")
+
+    def test_http_ambiguous_sellers_require_review_without_a_new_receipt(self):
+        for tax_id in ("DE999999994", "DE999999995"):
+            merchant = Merchant.objects.create(country_id="DE", legal_name="TESTMARKT GmbH", tax_id=tax_id)
+            Store.objects.create(merchant=merchant, country_id="DE", name="TESTMARKT",
+                                 address_raw="Teststrasse 12, 10115 Berlin", timezone="Europe/Berlin")
+        uploaded = self.upload(self.single)
+        process_job(queue.claim_job(), provider=FakeProvider("tax_id_absent"))
+        public = self.get(self.job_url(uploaded["job"]["id"]))
+        self.assertEqual((public["status"], public["progress"]["review"]), ("partial_succeeded", 1))
+        self.assertTrue(public["review_required"])
+        item = public["items"][0]
+        self.assertEqual(item["status"], "needs_review")
+        self.assertIsNone(item["receipt_id"])
+        image = self.get(f"/api/recognition/receipt-images/{item['image_id']}/")
+        self.assertEqual(image["issues"][0]["field"], "/store")
+        self.assertIsNotNone(image["normalized_result"])
+        self.assertEqual(self.get("/api/receipts/")["count"], 0)
+        self.assertEqual((Merchant.objects.count(), Store.objects.count(), Product.objects.count()), (2, 2, 0))
+        self.assertEqual(ReceiptImage.objects.get().issues[0]["code"], "store_ambiguous")
 
     def test_c6_observation_with_notices_finishes_succeeded_and_replays_without_duplicates(self):
         class C6Provider(FakeProvider):

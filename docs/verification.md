@@ -50,7 +50,7 @@ docker compose -p checkist_qa up -d --build --wait --wait-timeout 120 worker
 ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py check_services
 ```
 
-Ожидается exit 0, отсутствие новых миграций, 260 тестов без БД и 866 integration, затем JSON с `celery_task.result={"message":"pong"}`. На пустой БД `migrate` применяет 23 миграции: 18 стандартных и 5 собственных, включая recognition.0001_initial. Числа соответствуют текущему коду и могут измениться вместе с тестами. Команда без тега БД не использует; integration нельзя заменять skip/eager. Runner создаёт и удаляет **`test_checkist_qa`**; Redis tests используют QA Redis DB 2 и уникальные ключи. Recognition tests используют временный MEDIA и fake/mock, настоящий Codex не вызывают. Не запускайте два DB-runner одновременно с одним именем test DB: --noinput может пересоздать БД другого своего прогона.
+Ожидается exit 0, отсутствие новых миграций, 260 тестов без БД и 890 integration, затем JSON с `celery_task.result={"message":"pong"}`. На пустой БД `migrate` применяет 23 миграции: 18 стандартных и 5 собственных, включая recognition.0001_initial. Числа соответствуют текущему коду и могут измениться вместе с тестами. Команда без тега БД не использует; integration нельзя заменять skip/eager. Runner создаёт и удаляет **`test_checkist_qa`**; Redis tests используют QA Redis DB 2 и уникальные ключи. Recognition tests используют временный MEDIA и fake/mock, настоящий Codex не вызывают. Не запускайте два DB-runner одновременно с одним именем test DB: --noinput может пересоздать БД другого своего прогона.
 
 | Приложение | Без БД (`--exclude-tag=integration`) | С БД (`--tag=integration`) |
 | --- | --- | --- |
@@ -59,10 +59,10 @@ docker compose -p checkist_qa up -d --build --wait --wait-timeout 120 worker
 | `receipts` | 18 | 238 |
 | `health` | 26 | 7 |
 | `api` | 112 | 305 |
-| `recognition` | 81 | 157 |
-| Всего | 260 | 866 |
+| `recognition` | 81 | 181 |
+| Всего | 260 | 890 |
 
-Текущие числа включают три регрессии настроек MEDIA_URL в Р1; команды и фактические результаты — [ниже](#media_url-р1-фиксированный-префикс-и-регрессии). И4 после согласованного уточнения: 257/866, итоговый прогон [ниже](#повторный-прогон-после-согласованного-уточнения-и4), Windows, DB `checkist_qa_i4_final` / `test_checkist_qa_i4_final`, Postgres 25475, Redis 16405. Исторический С6: 247/846; merge-прогон без recognition: 179/671; F3–F6 до merge, без api: 67/404. Эти исторические результаты ниже сохраняются со своими датами и scope. Subtests отдельно не считаются. Гонки — TransactionTestCase и отдельные Postgres-соединения. Журналы ожидаемых безопасных HTTP 400/403/409/500 в негативных тестах не означают failure теста; окончательный exit code и сводка runner обязательны.
+Текущие числа включают три регрессии настроек MEDIA_URL в Р1 и 24 integration-регрессии Р2; команды и фактические результаты — [Р1](#media_url-р1-фиксированный-префикс-и-регрессии), [Р2](#р2-полнота-инн-и-идентичность-магазина). И4 после согласованного уточнения: 257/866, итоговый прогон [ниже](#повторный-прогон-после-согласованного-уточнения-и4), Windows, DB `checkist_qa_i4_final` / `test_checkist_qa_i4_final`, Postgres 25475, Redis 16405. Исторический С6: 247/846; merge-прогон без recognition: 179/671; F3–F6 до merge, без api: 67/404. Эти исторические результаты ниже сохраняются со своими датами и scope. Subtests отдельно не считаются. Гонки — TransactionTestCase и отдельные Postgres-соединения. Журналы ожидаемых безопасных HTTP 400/403/409/500 в негативных тестах не означают failure теста; окончательный exit code и сводка runner обязательны.
 
 Unit/contract tests health покрывают точный 200, комбинации 503, сохранение независимых checks, анонимность, игнорирование query/Authorization, 405, 406, безопасный 500 при DEBUG, отсутствие публикации task из health, параллельность probes, cleanup кеша, bounded publication retries и негативную env-валидацию. Это не сетевой замер времени отказа.
 
@@ -82,7 +82,7 @@ Unit/contract tests health покрывают точный 200, комбинац
 ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test recognition.tests.test_e2e --tag=integration --noinput --verbosity=2
 ```
 
-11 `TransactionTestCase` на PostgreSQL: настоящий APIClient с cookie/Origin/CSRF, multipart upload → queued → `recognition_worker --once` → succeeded/2 crops; original/preview/crop files и GET их URL байт в байт; receipts/lines/discounts/taxes; точный replay; другое фото по сильной идентичности и отдельно без номеров по store/time/total без новых lines/products; HTTP cancel queued и первого/второго recognize на отдельном соединении; сохранение первой импортированной части; retry failed/cancelled/partial; needs_review с нормализованным результатом, одновременно missing quantity/unit_price и противоречивыми totals. И4 добавляет observation как в С6: operation=null, ambiguous fiscal → Receipt/товары, succeeded/review=0, неблокирующие issues и replay без дублей. После уточнения И4 сквозной тест также подтверждает арифметический вывод отсутствующих quantity/unit_price/amount, pcs для штучной строки и повторное фото с валютой из известного магазина: succeeded, review=0, без дублей. Для MEDIA тест перепривязывает только document_root существующего DEBUG media route к TemporaryDirectory, API-маршруты остаются из config.urls. Это dispatch внутри Django, без HTTP-сокета и браузера.
+14 `TransactionTestCase` на PostgreSQL: настоящий APIClient с cookie/Origin/CSRF, multipart upload → queued → `recognition_worker --once` → succeeded/2 crops; original/preview/crop files и GET их URL байт в байт; receipts/lines/discounts/taxes; точный replay; другое фото по сильной идентичности и отдельно без номеров по store/time/total без новых lines/products; HTTP cancel queued и первого/второго recognize на отдельном соединении; сохранение первой импортированной части; retry failed/cancelled/partial; needs_review с нормализованным результатом, одновременно missing quantity/unit_price и противоречивыми totals. И4 добавляет observation как в С6: operation=null, ambiguous fiscal → Receipt/товары, succeeded/review=0, неблокирующие issues и replay без дублей. После уточнения И4 сквозной тест также подтверждает арифметический вывод отсутствующих quantity/unit_price/amount, pcs для штучной строки и повторное фото с валютой из известного магазина: succeeded, review=0, без дублей. Для MEDIA тест перепривязывает только document_root существующего DEBUG media route к TemporaryDirectory, API-маршруты остаются из config.urls. Это dispatch внутри Django, без HTTP-сокета и браузера.
 
 Регрессия — обе полные команды шести приложений выше. Откат recognition на QA **до загрузок**, при остановленном OCR-worker:
 
@@ -161,6 +161,111 @@ UI загрузки, заданий и чеков реализован, `/media`
 5. HEIC, битый/анимированный файл, >20 MiB/>40 MP, >10 чеков, нет CSRF/неверный Origin/выключенный flag, отсутствие API/worker/media: корректные ошибки, нет выдуманного успеха. Idle executor=false само по себе не доказывает отсутствие worker.
 6. Реальный Codex: разрешённые к облачной обработке фото RU/KZ/DE вне git; эталон числа чеков, границ, полей/строк/сумм/налогов и нечитаемых мест. Проверить один/несколько чеков, поворот, длинный/мятый/термо-чек, блики/размытие, частично обрезанный и не-чек, повтор/лучший снимок/разные чеки с одинаковыми суммами. Сверить timezone магазина, CLI/model/schema versions, реальные durations/errors и каждый Receipt/needs_review с эталоном. Синтетический smoke не доказывает качество этих фото.
 7. Проверить нет потери результата, дублей/ложного объединения и перезаписи заполненных значений при последовательном повторе. Не редактировать aggregate параллельно OCR ради гарантии: manual_locked/отпечаток формы и защита stale admin POST сознательно исключены из v1. По существующей админке пройти F4/F6 отдельно.
+
+## Р2: полнота ИНН и идентичность магазина
+
+2026-10-05. Исправлен дубликат при двух разных фото одного чека, если ИНН есть только на одном фото. Один совместимый известный магазин сохраняется при обоих порядках: ИНН → отсутствует и отсутствует → ИНН. Пустые tax_id/tax_id_type и код филиала дополняются без перезаписи заполненных полей; несколько совместимых точек требуют needs_review. Разные непустые ИНН сохраняют разных продавцов с причиной в issues. Публичные формы API, доступ, модели, миграции и frontend не менялись; подробные [правила разрешения](data-model.md#recognition-фотографии-и-очередь).
+
+Добавлены 24 integration-теста: 14 resolution, 7 import, 3 HTTP/pipeline. Шесть регрессий обоих порядков сначала упали на исходной реализации. Импорт проверяет неизменность всех сохранённых полей Store/Receipt/lines/discounts/taxes/products/aliases, один Merchant/Store/Receipt и две связанные ReceiptImage. Сквозные тесты используют APIClient с CSRF, два файла с разными SHA-256, claim_job → process_job/FakeProvider → GET job/receipts/lines/discounts/taxes; оба задания succeeded, review=0, без сильных ключей. Отдельно проверены разные непустые ИНН, два заполненных/пустых кандидата, ИНН уже у другого Merchant, needs_review без domain-записей, откат дополненного ИНН при DST-неоднозначности, валюта известной точки и сохранность остальных полей продавца. Соседние ветки: дополнение/отсутствие кода филиала, противоречие двух кодов, конфликт адреса и филиала даже при разных названиях магазинов, индекс и написание в пределах address_key, страны и точные названия. Число SQL при одном и 13 кандидатах расположения одинаково; это проверка отсутствия запросов на каждого кандидата, не нагрузочный benchmark.
+
+### Проверено и прошло
+
+Windows, Python 3.13.9, Node 24.18.0, Docker 29.8.1 / Compose 5.5.1. Основной QA environment из начала этого документа: Compose `checkist_qa`, DB `checkist_qa`, тестовая DB `test_checkist_qa`, Postgres 25432 / Redis 16379. DB-runner создал и удалил свою тестовую БД. MEDIA/scratch автотестов — TemporaryDirectory; только fake/mock, настоящий Codex не вызывался. `P` ниже означает `./backend/.venv/Scripts/python.exe -X utf8` из корня worktree.
+
+| Фактическая команда | Exit | Результат |
+| --- | --- | --- |
+| `py -3.13 -m venv backend/.venv`; `P -m pip install -r backend/requirements.txt` | 0 каждый | Локальный venv и закреплённые зависимости |
+| `docker compose -p checkist_qa config --quiet`; `docker compose -p checkist_qa up -d --wait --wait-timeout 90 postgres redis` | 0 каждый | Свои QA Postgres/Redis healthy; до host SQL ограниченные socket-пробы 25432/16379 с timeout=2 дали TCP OK |
+| `P -m pip check`; `P backend/manage.py check`; `P backend/manage.py makemigrations --check --dry-run` | 0 каждый | No broken requirements; 0 issues; No changes detected |
+| `P backend/manage.py migrate --noinput` | 0 | No migrations to apply, схема не меняется |
+| `P backend/manage.py test recognition.tests.test_resolution recognition.tests.test_import recognition.tests.test_e2e --tag=integration --noinput --verbosity=1` | 0 | 98 tests OK, 31.142 с; промежуточный прогон до добавления последних двух resolution-тестов |
+| `P backend/manage.py test catalog stores receipts health api recognition --exclude-tag=integration --verbosity=1` | 0 | Окончательный код: 260 tests OK, 14.893 с; без БД и skips |
+| `P backend/manage.py test catalog stores receipts health api recognition --tag=integration --noinput --verbosity=1` | 0 | Окончательный код: 890 tests OK, 173.098 с; без skips, настоящий QA Postgres/Redis |
+| `npm.cmd ci` в `frontend/` | 0 | Установлен существующий lock, 0 vulnerabilities; frontend-файлы не менялись |
+| `docker compose -p checkist_qa_r2_proxy config --quiet`; `docker compose -p checkist_qa_r2_proxy up -d --wait --wait-timeout 90 postgres redis`; `P backend/manage.py migrate --noinput`; `P backend/manage.py seed_recognition_demo` с proxy env ниже | 0 каждый | Новый отдельный QA project/DB/тома; TCP 25492/16422 OK; 23 миграции, синтетические single/double |
+| `node frontend/scripts/check_recognition_proxy.mjs dev http://127.0.0.1:15192` при `P backend/manage.py runserver 127.0.0.1:18092 --noreload` | 0 | passed, 62 настоящих HTTP-запроса через Vite и клиентские runtime guards; 2 Receipt / 6 lines / 5 Product, replay/cancel/retry/needs_review, `/media/`, HTTP 200/202/400/403/409 |
+| Проверка владельца API через `Get-NetTCPConnection`/`Get-CimInstance`, `Stop-Process -Id 28204`; `docker compose -p checkist_qa_r2_proxy down`; `docker compose -p checkist_qa down` | 0 каждый | Свой API и созданные QA контейнеры/сети остановлены, тома сохранены; dev и чужой QA не останавливались |
+
+Proxy-прогон использовал тот же полный блок QA с заменами: COMPOSE_PROJECT_NAME/POSTGRES_DB=`checkist_qa_r2_proxy`, публичные QA POSTGRES_USER/PASSWORD из `.env.example`, Postgres 25492, Redis 16422 во всех трёх URL, DEV_API_PROXY_TARGET=`http://127.0.0.1:18092`, Origin=`http://127.0.0.1:15192`, DEBUG=1, ALLOW_LOCAL_RECOGNITION_API=1, provider=fake. MEDIA_ROOT=`Join-Path $env:TEMP 'checkist-qa-r2-proxy-media'`, scratch=`Join-Path $env:TEMP 'checkist-qa-r2-proxy-scratch'`. Это прежний общий smoke И5 на пустой БД; регрессии полноты ИНН проверены отдельно APIClient/pipeline в полном suite. Browser UI не проверялся.
+
+### Проверено и не прошло
+
+На исходном коде следующий точный набор аргументов дал exit 1, 6 tests / 6 failures: Store PK отличались, второй import был created вместо linked, HTTP возвращал другой Receipt ID. После исправления тот же набор с `--verbosity=1` дал exit 0, 6 tests OK; эти проверки также вошли в окончательные 890 tests.
+
+```powershell
+P backend/manage.py test recognition.tests.test_resolution.ResolutionTests.test_tax_id_then_absent_reuses_store recognition.tests.test_resolution.ResolutionTests.test_absent_then_tax_id_reuses_store recognition.tests.test_import.ImportTests.test_tax_id_then_absent_links_weak_receipt_without_changes recognition.tests.test_import.ImportTests.test_absent_then_tax_id_links_weak_receipt_without_changes recognition.tests.test_e2e.RecognitionEndToEndTests.test_http_tax_id_then_absent_links_one_receipt recognition.tests.test_e2e.RecognitionEndToEndTests.test_http_absent_then_tax_id_links_one_receipt --tag=integration --noinput --verbosity=2
+```
+
+Запуск API через `Start-Process ... -WindowStyle Hidden -RedirectStandardOutput ... -RedirectStandardError ...` был отклонён автоматической проверкой команд (`blocked by policy`, процесс не создан, exit code процесса отсутствует). API запущен прямой командой runserver в управляемой CLI-сессии; настоящий HTTP-прогон затем прошёл. Неразрешённых отказов выполненных проверок не осталось.
+
+### Не проверено и почему; показ и ручная приёмка
+
+Визуальное/интерактивное поведение React и скриншоты принимает человек; автоматический обход браузера запрещён. Preview HTTP, frontend lint/unit/build, настоящий Codex, Celery check_services/stop/recovery и production не повторялись: задача меняет разрешение domain-идентичности, не клиент/health/модельный OCR. Fake проверяет импорт и транспорт синтетических DTO, не качество чтения ИНН с фотографии. Массовый импорт/нагрузка и конкурентная ручная правка через admin/SQL вне OCR mutex не испытывались; существующая защита stale admin POST от OCR по-прежнему отсутствует.
+
+Показ — этот фактический отчёт и следующий воспроизводимый сценарий с синтетическими данными. Новый макет и скриншоты не создавались. Для обоих порядков взять **два новых пустых** QA project, например `checkist_qa_r2_manual_a` и `checkist_qa_r2_manual_b`. Уже заполненную proxy-БД не использовать для регрессии: в ней есть strong-key demo. Каждый порядок запускать отдельно, останавливая свои API/Vite/контейнеры перед следующим. В каждом терминале из корня worktree установить весь блок:
+
+```powershell
+$env:COMPOSE_PROJECT_NAME='checkist_qa_r2_manual_a' # Для обратного порядка: ..._b
+$env:POSTGRES_DB=$env:COMPOSE_PROJECT_NAME
+$env:POSTGRES_USER='checkist'
+$env:POSTGRES_PASSWORD='checkist_dev_only'
+$env:POSTGRES_HOST='127.0.0.1'
+$env:POSTGRES_PORT='25493'
+$env:REDIS_PORT='16423'
+$env:CELERY_BROKER_URL='redis://127.0.0.1:16423/0'
+$env:CELERY_RESULT_BACKEND='redis://127.0.0.1:16423/1'
+$env:DJANGO_CACHE_URL='redis://127.0.0.1:16423/2'
+$env:VITE_API_BASE_URL='/api'
+$env:DEV_API_PROXY_TARGET='http://127.0.0.1:18093'
+$env:DJANGO_DEBUG='1'
+$env:DJANGO_ALLOWED_HOSTS='127.0.0.1,localhost'
+$env:ALLOW_LOCAL_RECOGNITION_API='1'
+$env:DJANGO_CSRF_TRUSTED_ORIGINS='http://127.0.0.1:15193'
+$env:MEDIA_ROOT=Join-Path $env:TEMP "$($env:COMPOSE_PROJECT_NAME)-media"
+$env:RECEIPT_OCR_TEMP_ROOT=Join-Path $env:TEMP "$($env:COMPOSE_PROJECT_NAME)-scratch"
+$env:RECEIPT_OCR_PROVIDER='fake'
+```
+
+Проверить свободные порты/чужие процессы. Выполнять команды по одной, проверяя exit code:
+
+```powershell
+docker compose -p $env:COMPOSE_PROJECT_NAME config --quiet
+docker compose -p $env:COMPOSE_PROJECT_NAME up -d --wait --wait-timeout 90 postgres redis
+@'
+import socket
+for port in (25493, 16423):
+    with socket.create_connection(('127.0.0.1', port), timeout=2):
+        print(f'{port}: TCP OK')
+'@ | ./backend/.venv/Scripts/python.exe -X utf8 -
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py migrate --noinput
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py seed_recognition_demo
+@'
+import os
+from pathlib import Path
+from PIL import Image
+root = Path(os.environ['MEDIA_ROOT']) / 'demo'
+with Image.open(root / 'single.png') as image:
+    image.save(root / 'single-other.png', format='PNG', compress_level=0)
+assert (root / 'single.png').read_bytes() != (root / 'single-other.png').read_bytes()
+print('Two different synthetic PNG files ready')
+'@ | ./backend/.venv/Scripts/python.exe -X utf8 -
+```
+
+API в своём терминале: `./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py runserver 127.0.0.1:18093 --noreload`. Клиент в другом с тем же env: `Set-Location frontend`, затем по одной `npm.cmd ci` и `npm.cmd run dev -- --port 15193`. Постоянный OCR-worker не запускать: обработать каждую загрузку своей отдельной командой `--once`.
+
+| Порядок | Worker после первой загрузки | Worker после второй загрузки |
+| --- | --- | --- |
+| `_a`: ИНН → отсутствует | `recognition_worker --once --fake-scenario tax_id_present` | `recognition_worker --once --fake-scenario tax_id_absent` |
+| `_b`: отсутствует → ИНН | `recognition_worker --once --fake-scenario tax_id_absent` | `recognition_worker --once --fake-scenario tax_id_present` |
+
+Каждый worker запускать как `./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py <команда из таблицы>`. Оба новых fake-сценария распознают один TESTMARKT, 2026-10-04 14:35:20 Europe/Berlin, 4.42 EUR, 4 строки / 3 товара / 1 скидку / 2 налога, без fiscal и номера/кассы/смены; только tax_id_present даёт вымышленный DE999999994. Они возвращают фиксированные DTO и не читают ИНН с пикселей demo.
+
+1. Человек открывает `http://127.0.0.1:15193/recognition`, загружает `$env:MEDIA_ROOT/demo/single.png`, видит queued; выполняет первый worker. Проверяет succeeded, отсутствие review и один чек на `/receipts`, сохраняет его ID, строки/товары/скидку/налоги.
+2. Загружает **другие байты** `$env:MEDIA_ROOT/demo/single-other.png`, выполняет второй worker. Два разных Photo/Job, оба succeeded; второй reused=1/review=0 и тот же Receipt ID. В списке один чек, в нём две связанные вырезки; прежние 4 строки, 3 товара, скидка и 2 налога без дублей. Переходы к товарам, фото/вырезкам, refresh/Back, клавиатуру, focus и узкий экран проверяет человек по [И5](#ручная-приёмка-клиента-распознавания-человеком).
+3. При необходимости подтвердить скрытую identity через read-only QA shell: `manage.py shell -c "from stores.models import Merchant, Store; from receipts.models import Receipt; from recognition.models import ReceiptImage; assert (Merchant.objects.count(), Store.objects.count(), Receipt.objects.count(), ReceiptImage.objects.count()) == (1, 1, 1, 2); assert Merchant.objects.get().tax_id == 'DE999999994'"`, также с указанным Python/env. ИНН/юрназвание не выводятся HTTP API. Админка — отдельно напрямую `http://127.0.0.1:18093/admin/`, is_staff/пользователь создаётся человеком; [F4/F6 сценарий](#ручная-приёмка-админки-человеком) остаётся прежним.
+4. Остановить свои API/Vite через Ctrl+C, `docker compose -p $env:COMPOSE_PROJECT_NAME down` без `-v`; для второго порядка использовать новый project/DB/MEDIA/scratch `_b`, повторить весь запуск. Доступ только локальный DEBUG + flag + loopback; unsafe запросы требуют CSRF даже без пользователя, SPA получает его штатно.
+
+Откат Р2 — revert кода/тестов/docs, без миграций. Уже дополненные пустые ИНН/коды филиала и связанные чеки сохраняются; revert не удаляет domain-данные и не объединяет ранее созданные дубликаты. Исправление старых дублей/данных требует отдельной задачи и backup, автоматического cleanup нет.
 
 ## MEDIA_URL: Р1, фиксированный префикс и регрессии
 
