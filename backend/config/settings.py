@@ -226,9 +226,12 @@ if recognition_flag not in {"0", "1", "true", "false"}:
     raise ImproperlyConfigured("ALLOW_LOCAL_RECOGNITION_API: expected 0, 1, true or false.")
 ALLOW_LOCAL_RECOGNITION_API = recognition_flag in {"1", "true"}
 MEDIA_ROOT = env_directory("MEDIA_ROOT", BASE_DIR.parent / "media")
-MEDIA_URL = env_text("MEDIA_URL", "/media/")
-if not re.fullmatch(r"/(?:[A-Za-z0-9_-]+/)+", MEDIA_URL) or MEDIA_URL.startswith(("/api/", "/admin/", "/static/")):
-    raise ImproperlyConfigured("MEDIA_URL: expected a local media prefix ending in /.")
+# Fixed v1 prefix shared with the client URL guards and Vite dev/preview proxy.
+MEDIA_URL = os.environ.get("MEDIA_URL", "/media/")
+if MEDIA_URL != "/media/":
+    raise ImproperlyConfigured(
+        "MEDIA_URL: v1 supports only /media/. Changing the prefix requires coordinated client and Vite proxy changes."
+    )
 scratch_suffix = hashlib.sha256(str(BASE_DIR).encode()).hexdigest()[:16]
 RECEIPT_OCR_TEMP_ROOT = env_directory(
     "RECEIPT_OCR_TEMP_ROOT", Path(tempfile.gettempdir()) / f"checkist-ocr-{scratch_suffix}",

@@ -160,6 +160,43 @@ class ImageTests(SimpleTestCase):
 
 
 class RecognitionSettingsTests(SimpleTestCase):
+    def load_media_settings(self, value):
+        environment = os.environ.copy()
+        environment.pop("MEDIA_URL", None)
+        if value is not None:
+            environment["MEDIA_URL"] = value
+        # Test the process env/default independently of any local root .env.
+        return subprocess.run(
+            [sys.executable, "-X", "utf8", "-c",
+             "from unittest.mock import patch\n"
+             "with patch('dotenv.load_dotenv'):\n"
+             "    import config.settings\n"
+             "    print(config.settings.MEDIA_URL)\n"],
+            cwd=settings.BASE_DIR, env=environment, capture_output=True,
+            text=True, encoding="utf-8", timeout=10,
+        )
+
+    def test_media_url_rejects_every_unsupported_prefix_at_settings_load(self):
+        for value in ("/pictures/", "/media", "https://example.test/media/", "",
+                      "media/", "//example.test/media/", "/media/subdir/", "/MEDIA/",
+                      " /media/", "/media/ ", "/media/\n"):
+            with self.subTest(value=value):
+                result = self.load_media_settings(value)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("ImproperlyConfigured: MEDIA_URL: v1 supports only /media/.", result.stderr)
+                self.assertIn("client and Vite proxy changes", result.stderr)
+                self.assertEqual(result.stdout, "")
+
+    def test_media_url_accepts_fixed_prefix(self):
+        result = self.load_media_settings("/media/")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "/media/")
+
+    def test_media_url_defaults_to_fixed_prefix_without_environment_variable(self):
+        result = self.load_media_settings(None)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "/media/")
+
     def test_invalid_recognition_configuration_rejected(self):
         for key, value in (("RECEIPT_OCR_PROVIDER", "auto"), ("ALLOW_LOCAL_RECOGNITION_API", "maybe"),
                            ("MEDIA_ROOT", "relative"), ("MEDIA_URL", "https://example.test/media/"),

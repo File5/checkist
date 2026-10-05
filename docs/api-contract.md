@@ -476,6 +476,8 @@ D1 меняет прежние 500/HTML-отказы клиентского вв
 
 Потребитель — клиент загрузки фото, опроса заданий и просмотра чеков. HTTP-слой использует модели и сервисы `recognition`; провайдер из HTTP не вызывается. Pipeline/импорт выполняет host recognition_worker, сквозной путь с FakeProvider проверен в С6 ([результаты](verification.md#фактические-результаты-с6)). Существующие 13 GET каталога/цен и health сохраняют свои формы и анонимный доступ.
 
+В v1 `MEDIA_URL` фиксирован строго `/media/` (также default при отсутствии переменной). Иной префикс, пустое значение, отсутствие завершающего `/` или абсолютный URL вызывают `ImproperlyConfigured` при загрузке настроек, до старта API/worker. Непустые `photo.original_url`, `photo.preview_url`, `receipt-image.image_url` и `receipt.preview_image_url` начинаются с `/media/`; nullable поля сохраняют `null`. Клиентские проверки URL и Vite dev/preview proxy рассчитаны только на этот префикс; его изменение требует согласованной правки клиента и proxy. Формы JSON и правила доступа не меняются.
+
 ### Доступ, CSRF, тело и пагинация
 
 Все новые маршруты доступны только при `DEBUG=True`, `ALLOW_LOCAL_RECOGNITION_API=True` и loopback `REMOTE_ADDR` (`127.0.0.1`, `::1`); иначе `403 permission_denied`. `X-Forwarded-For` не учитывается. Это единое локальное пространство данных: пользователей, владельцев объектов и разграничения чеков нет. Session/Basic не используются (`authentication_classes=[]`).
@@ -617,7 +619,7 @@ Line.product=null → matching_status=unmatched; ambiguous здесь отсут
 ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test api.tests.test_recognition_api api.tests.test_receipts_api api.tests.test_recognition_public api.tests.test_recognition_concurrency --tag=integration --noinput --verbosity=2
 ```
 
-Для клиента: применить QA environment, отдельный MEDIA_ROOT вне dev, DEBUG=1, ALLOW_LOCAL_RECOGNITION_API=1, выполнить migrate и `manage.py runserver 127.0.0.1:18000 --noreload`. `/media/` Django раздаёт только при DEBUG; Vite пока проксирует только `/api`, поэтому для media в клиенте нужен отдельный proxy на тот же Django (зона клиента/интегратора). С4 запускает host `recognition_worker` в том же QA environment/MEDIA; fake/настоящий pipeline принимаются отдельно, настоящий Codex этими автотестами не вызывается.
+Для клиента: применить QA environment, отдельный MEDIA_ROOT вне dev, DEBUG=1, ALLOW_LOCAL_RECOGNITION_API=1, MEDIA_URL=/media/, выполнить migrate и `manage.py runserver 127.0.0.1:18000 --noreload`. `/media/` Django раздаёт только при DEBUG; Vite dev/preview проксируют `/api` и `/media` на тот же Django. С4 запускает host `recognition_worker` в том же QA environment/MEDIA; fake/настоящий pipeline принимаются отдельно, настоящий Codex этими автотестами не вызывается.
 
 Ручной сценарий для человека: получить CSRF, загрузить синтетический JPEG/PNG/WebP → 202 и queued; опрашивать detail раз в 2 с; проверить original/preview/crops напрямую на QA Django; открыть чек и все три дочерние страницы, включая unmatched. Повтор тех же байтов → 200 с теми же IDs/последним Job; queued cancel → 200, running cancel → 202 до подтверждения С4; retry failed/partial/cancelled → новое задание, повтор retry пока active →409. Проверить needs_review и issues без закрытых данных, выключенный флаг и отсутствие CSRF →403. Визуальную/интерактивную проверку SPA и админки делает человек по [verification.md](verification.md#ручная-ui-приёмка-человеком); HTTP/unit не подтверждают браузерное поведение.
 
@@ -630,7 +632,7 @@ Line.product=null → matching_status=unmatched; ambiguous здесь отсут
 - Origin вычисляется по живой связи ReceiptImage: recognized либо буквальное `legacy/manual`. Отдельного provenance состояния и защиты ручных правок нет.
 - Executor основан только на executing Job heartbeat/lease С1; idle availability неизвестна, terminal last_seen_at=null. Слот воркера/его постоянный heartbeat в С5 не добавлялись.
 - SourcePhoto и первоначальный Job не имеют общего атомарного commit: граница задана durable accept_upload С1; повтор восстанавливает Photo без Job. Нет cleanup; аварийные orphan-файлы остаются ограничением С1/v1.
-- Нормализованные provider notes/произвольные сообщения и неизвестные коды/пути не копируются; для неизвестных сохранённых кодов предусмотрены безопасные заменители. `/media/` только DEBUG напрямую на Django; Vite media proxy пока не добавлен в этой зоне.
+- Нормализованные provider notes/произвольные сообщения и неизвестные коды/пути не копируются; для неизвестных сохранённых кодов предусмотрены безопасные заменители. `/media/` только DEBUG на Django, Vite dev/preview проксируют этот фиксированный префикс.
 
 Другие формы К2 Photo/Job/Receipt/Line/Discount/Tax сохранены; успешные формы прежних 13 GET и health не меняются. Новых миграций, настроек и зависимостей С5 нет. Откат С5 — revert его кода/тестов/docs: записи С1 и файлы сохраняются, очистка БД/томов не нужна; откат миграции recognition принадлежит С1 и требует отдельной процедуры/backup.
 
