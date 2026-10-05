@@ -33,10 +33,11 @@ from recognition.demo import seed_demo
 from recognition.models import ProcessingJob, ReceiptImage, SourcePhoto
 from recognition.pipeline import process_job
 from recognition.providers.fake import FakeProvider
-from recognition.tests.import_fixtures import lidl_format_payload, observation
+from recognition.tests.import_fixtures import lidl_format_payload, observation, sparse_lidl_format_payload
 from recognition.dto import FieldObservation, PreparedImage
 from recognition.images import validate_geometry
 from recognition.providers.base import RunContext
+from recognition.schema_validation import validate_observation
 from stores.models import Country, Currency, Merchant, Store
 
 
@@ -357,7 +358,7 @@ class RecognitionEndToEndTests(TransactionTestCase):
                     lines=tuple(replace(line, **{("quantity", "unit_price", "amount", "unit")[i]: None})
                                 for i, line in enumerate(value.lines)),
                     fields=tuple(f for f in value.fields if f.path not in missing)
-                    + tuple(FieldObservation(path, "absent" if path.endswith("/unit") else "unreadable", None, None)
+                    + tuple(FieldObservation(path, "absent", None, None)
                             for path in sorted(missing)))
 
         first = self.upload(self.single)
@@ -379,11 +380,11 @@ class RecognitionEndToEndTests(TransactionTestCase):
         self.assertFalse(public["review_required"])
         self.assertEqual((Receipt.objects.count(), ReceiptLine.objects.count(), Product.objects.count()), (1, 4, 3))
 
-    def test_lidl_observation_worker_http_receipt_and_photo_replay(self):
+    def assert_lidl_worker_http_receipt_and_photo_replay(self, payload_factory, *, tax_count):
         class LidlFormat(FakeProvider):
             def recognize(self, crop, run):
                 self._stage("recognize", run)
-                return observation(lidl_format_payload())
+                return validate_observation(payload_factory())
 
         first = self.upload(self.single)
         with patch("recognition.management.commands.recognition_worker.get_provider", return_value=LidlFormat("one_receipt")):
@@ -404,8 +405,10 @@ class RecognitionEndToEndTests(TransactionTestCase):
         self.assertEqual(lines[18]["amount"], "1.99")
         self.assertEqual(lines[18]["discount_amount"], "0.20")
         self.assertEqual(self.get(detail["discounts_url"])["count"], 3)
-        self.assertEqual(self.get(detail["taxes_url"])["count"], 2)
+        self.assertEqual(self.get(detail["taxes_url"])["count"], tax_count)
         self.assertEqual(ProcessingJob.objects.get(pk=result["id"]).attempts.get(phase="recognize").prompt_version, "4")
+        self.assertEqual(ReceiptImage.objects.get(job_id=result["id"]).normalized_result,
+                         validate_observation(payload_factory()).to_dict())
 
         replay = self.upload(self.single, expected=200)
         self.assertTrue(replay["reused"])
@@ -416,6 +419,35 @@ class RecognitionEndToEndTests(TransactionTestCase):
         self.assertEqual((repeated["status"], repeated["progress"]["reused"], repeated["progress"]["review"]), ("succeeded", 1, 0))
         self.assertEqual(repeated["items"][0]["receipt_id"], receipt_id)
         self.assertEqual((Receipt.objects.count(), ReceiptLine.objects.count(), Product.objects.count()), (1, 22, 20))
+
+    def test_lidl_observation_worker_http_receipt_and_photo_replay(self):
+        self.assert_lidl_worker_http_receipt_and_photo_replay(lidl_format_payload, tax_count=2)
+
+    def test_sparse_lidl_observation_worker_http_receipt_and_photo_replay(self):
+        self.assert_lidl_worker_http_receipt_and_photo_replay(sparse_lidl_format_payload, tax_count=0)
+
+    def test_sparse_response_explicit_uncertainty_worker_http_remains_review(self):
+        class UnreadableQuantity(FakeProvider):
+            def recognize(self, crop, run):
+                self._stage("recognize", run)
+                payload = sparse_lidl_format_payload()
+                payload["lines"][2]["quantity"] = None
+                payload["fields"].append({"path": "/lines/2/quantity", "status": "unreadable",
+                                          "confidence": None, "note": None})
+                return validate_observation(payload)
+
+        uploaded = self.upload(self.single)
+        job = process_job(queue.claim_job(), provider=UnreadableQuantity("one_receipt"))
+        public = self.get(self.job_url(uploaded["job"]["id"]))
+        self.assertEqual((job.status, job.imported_count, job.review_count), ("partial_succeeded", 0, 1))
+        self.assertTrue(public["review_required"])
+        self.assertIsNone(public["items"][0]["receipt_id"])
+        image = self.get(f"/api/recognition/receipt-images/{public['items'][0]['image_id']}/")
+        self.assertEqual(image["status"], "needs_review")
+        self.assertIsNone(image["normalized_result"]["lines"][2]["quantity"])
+        self.assertIn(("missing_required", "/lines/2/quantity"),
+                      [(v["code"], v["field"]) for v in image["issues"]])
+        self.assertEqual((Receipt.objects.count(), ReceiptLine.objects.count(), Product.objects.count()), (0, 0, 0))
 
     def test_different_photo_reuses_strong_identity_without_duplicate_lines_or_products(self):
         first = self.run_once(self.upload(self.single)["job"]["id"], "one_receipt")
