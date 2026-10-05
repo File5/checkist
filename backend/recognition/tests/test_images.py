@@ -153,7 +153,10 @@ class ImageTests(SimpleTestCase):
             with self.subTest(box=box):
                 self.error("geometry_requires_review", lambda: validate_geometry(box))
         quad = [{"x": .2, "y": .25}, {"x": .8, "y": .25}, {"x": .8, "y": .75}, {"x": .2, "y": .75}]
-        for invalid in ([], quad[:3], list(reversed(quad)), [*quad[1:], quad[0]], [quad[0], quad[2], quad[1], quad[3]], [{"x": 0, "y": 0}, *quad[1:]]):
+        # Cyclic clockwise starts are valid: text orientation cannot be inferred
+        # from the frame's axes. Reversed/crossed/outside polygons remain invalid.
+        self.assertEqual(validate_geometry(BOX, [*quad[1:], quad[0]])[1], [*quad[1:], quad[0]])
+        for invalid in ([], quad[:3], list(reversed(quad)), [quad[0], quad[2], quad[1], quad[3]], [{"x": 0, "y": 0}, *quad[1:]]):
             self.error("geometry_requires_review", lambda: validate_geometry(BOX, invalid))
         for angle in (True, float("nan"), 181, -181):
             self.error("geometry_requires_review", lambda: validate_geometry(BOX, rotation_degrees=angle))

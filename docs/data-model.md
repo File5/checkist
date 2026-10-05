@@ -210,6 +210,20 @@
 - Image: unique `(job,position)`, position 1..10, положительные размеры ≤40 MP, допустимые status/import_effect, rotation −180..180. Принадлежность photo к job и геометрия проверяются `clean()`/storage, не FK-ограничением БД.
 - Attempt: unique `(job,phase,image,ordinal)` с `nulls_distinct=False`; ordinal ≥1; detect без image, recognize с image; running без finished_at, завершённый с ним. Принадлежность image к job проверяет приложение.
 
+Р3: bbox/quad заданы нормализованными координатами 0..1 полного фото после EXIF-transpose
+(x вправо, y вниз). Quad — углы бумаги TL, TR, BR, BL относительно текста, по часовой
+стрелке при любом повороте. Общий валидатор detect/crop требует строго выпуклый обход,
+положительную площадь и охват всех углов bbox; пересечение, коллинеарность, повторные точки,
+невыпуклость, обратный обход и выход за границы запрещены. Циклическое начало обхода
+допускается и сохраняется: геометрия не устанавливает ориентацию текста и не сортирует
+углы по x+y кадра. `rotation_degrees` — угол текста от вертикального положения чтения:
+положительный по часовой стрелке, отрицательный против, −180..180 (270° записывается −90°;
+оба представления 180° допустимы). Вырезка использует bbox + 1% размеров исходного фото
+с каждой стороны, floor/ceil и ограничение границами. Quad остаётся в координатах исходного
+фото; угол сохраняется у ReceiptImage и передаётся в recognize и его промпт. Вырезка
+сохраняет наклон текста: выпрямления/перспективного преобразования нет. Модели, миграции и
+формы HTTP не менялись; откат Р3 — revert кода, без преобразования данных.
+
 Индексы: photo `(created_at,id)`; job `(status,available_at,id)` и `(status,lease_expires_at)`; image `(photo,id)` и `(receipt,id)`; attempt `(job,id)`, плюс FK/unique. Списки HTTP используют пагинацию и фиксированное число SQL, зафиксированное API-тестами. Импорт большого чека делает проверки/записи по строкам; throughput/N+1 на больших импортируемых графах не измерялся.
 
 Job statuses: queued → running → succeeded / partial_succeeded / failed; running → cancel_requested → cancelled; queued → cancelled. Recovery истёкшего running lease возвращает queued с новым fence при остатке budget и claim_count <2, иначе failed; cancel_requested становится cancelled. HTTP retry разрешён из failed/partial_succeeded/cancelled, создаёт новый job на том же photo, прежние outcomes остаются.

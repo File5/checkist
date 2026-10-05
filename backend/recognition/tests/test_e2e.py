@@ -4,6 +4,8 @@ APIClient dispatches HTTP requests in process. The separate runserver/host-worke
 smoke in docs/verification.md covers sockets; browser acceptance belongs to people.
 """
 import hashlib
+import math
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from io import BytesIO, StringIO
@@ -11,6 +13,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import Event
 from types import ModuleType
+from unittest.mock import patch
 
 from django.conf import settings
 from django.conf.urls.static import static
@@ -26,11 +29,14 @@ from rest_framework.test import APIClient
 from catalog.models import Product
 from receipts.models import ProductAlias, Receipt, ReceiptDiscount, ReceiptLine, ReceiptTax
 from recognition import queue
+from recognition.demo import seed_demo
 from recognition.models import ProcessingJob, ReceiptImage, SourcePhoto
 from recognition.pipeline import process_job
 from recognition.providers.fake import FakeProvider
 from recognition.tests.import_fixtures import observation
-from recognition.dto import FieldObservation
+from recognition.dto import FieldObservation, PreparedImage
+from recognition.images import validate_geometry
+from recognition.providers.base import RunContext
 from stores.models import Country, Currency, Merchant, Store
 
 
@@ -126,6 +132,70 @@ class RecognitionEndToEndTests(TransactionTestCase):
         finally:
             response.close()
         self.assertEqual(content, file.read_bytes())
+
+    def assert_rotated_end_to_end(self, *, single):
+        paths = seed_demo(rotated=True)
+        source = paths[0 if single else 1]
+        uploaded = self.upload(source.read_bytes())
+        inputs = []
+        original = FakeProvider.recognize
+
+        def capture(provider, crop, run):
+            inputs.append(crop)
+            return original(provider, crop, run)
+
+        with patch.object(FakeProvider, "recognize", capture):
+            job = self.run_once(uploaded["job"]["id"], "rotated_receipt" if single else "rotated_two_receipts")
+        count = 1 if single else 2
+        self.assertEqual((job["status"], job["progress"]["imported"], job["progress"]["completed"]),
+                         ("succeeded", count, count))
+        self.assertEqual((Receipt.objects.count(), ReceiptLine.objects.count(), Product.objects.count()),
+                         (1, 4, 3) if single else (2, 6, 5))
+        self.assertEqual([crop.rotation_degrees for crop in inputs], [-12] if single else [0, -12])
+        expected = FakeProvider("rotated_receipt" if single else "rotated_two_receipts")
+        with Image.open(source) as image:
+            detection = expected.detect(PreparedImage(source, "a" * 64, *image.size), RunContext(time.monotonic() + 5))
+        rows = self.get(f"/api/recognition/receipt-images/?job={job['id']}")["results"]
+        self.assertEqual(len(rows), count)
+        for public in rows:
+            stored = ReceiptImage.objects.get(pk=public["id"])
+            geometry = detection.receipts[stored.position - 1]
+            quad = [point.to_dict() for point in geometry.quad]
+            self.assertEqual(stored.quad, quad)
+            self.assertEqual(stored.bbox, geometry.bbox.to_dict())
+            self.assertEqual(stored.rotation_degrees, geometry.rotation_degrees)
+            detail = self.get(f"/api/recognition/receipt-images/{stored.pk}/")
+            # List contains bbox; only detail exposes quad and rotation.
+            self.assertEqual(public["bbox"], stored.bbox)
+            self.assertEqual(public["receipt_id"], stored.receipt_id)
+            self.assertEqual(detail["quad"], quad)
+            self.assertEqual(detail["bbox"], stored.bbox)
+            self.assertEqual(detail["rotation_degrees"], stored.rotation_degrees)
+            self.assertEqual(detail["receipt_id"], stored.receipt_id)
+            validate_geometry(stored.bbox, quad, stored.rotation_degrees)
+            self.assertEqual(inputs[stored.position - 1].rotation_degrees, stored.rotation_degrees)
+            self.assertEqual(inputs[stored.position - 1].sha256, stored.sha256)
+            self.assert_media(detail["image_url"], Path(stored.file.path))
+            with Image.open(source) as original_image, Image.open(stored.file.path) as crop:
+                box = stored.bbox
+                expected_bbox = [math.floor(max(0, box["x_min"] - .01) * original_image.width),
+                                 math.floor(max(0, box["y_min"] - .01) * original_image.height),
+                                 math.ceil(min(1, box["x_max"] + .01) * original_image.width),
+                                 math.ceil(min(1, box["y_max"] + .01) * original_image.height)]
+                self.assertEqual(stored.crop_transform["pixel_bbox"], expected_bbox)
+                with original_image.crop(expected_bbox) as expected_crop:
+                    self.assertEqual(crop.tobytes(), expected_crop.tobytes())
+            receipt = self.get(f"/api/receipts/{stored.receipt_id}/")
+            self.assertEqual(receipt["total"], "4.42" if stored.position == 1 else "6.00")
+            self.assertEqual(self.get(receipt["lines_url"])["count"], 4 if stored.position == 1 else 2)
+        self.assertEqual(self.upload(source.read_bytes(), expected=200)["job"]["id"], job["id"])
+        self.assertEqual(Receipt.objects.count(), count)
+
+    def test_single_rotated_receipt_worker_crop_rotation_import_and_api(self):
+        self.assert_rotated_end_to_end(single=True)
+
+    def test_two_receipts_one_rotated_worker_crop_rotation_import_and_api(self):
+        self.assert_rotated_end_to_end(single=False)
 
     def assert_tax_id_completeness_http_roundtrip(self, first_id, second_id):
         receipt_id = None
