@@ -150,7 +150,7 @@ class JobPipeline:
                 provider=settings.RECEIPT_OCR_PROVIDER,
                 model=settings.RECEIPT_OCR_MODEL if settings.RECEIPT_OCR_PROVIDER == "codex_cli" else "",
                 provider_version="1", cli_version=getattr(self.provider, "cli_version", ""),
-                prompt_version="2" if phase == AttemptPhase.DETECT else "3",
+                prompt_version="2" if phase == AttemptPhase.DETECT else "4",
                 schema_version="1" if phase == AttemptPhase.DETECT else "2",
                 input_sha256=prepared.sha256,
             )

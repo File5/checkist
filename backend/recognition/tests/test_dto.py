@@ -11,6 +11,8 @@ from recognition.schema_validation import (
     MAX_OUTPUT_BYTES, SchemaValidationError, _schema, load_json,
     observation_issues, validate_detection, validate_observation,
 )
+from stores.normalize import address_key
+from .import_fixtures import lidl_format_payload
 
 
 class DTOTests(SimpleTestCase):
@@ -147,7 +149,7 @@ class DTOTests(SimpleTestCase):
         edits = [lambda d: d.update(lines=d["lines"] * 251), lambda d: d.update(taxes=d["taxes"] * 51),
                  lambda d: d.update(discounts=d["discounts"] * 1001), lambda d: d.update(warnings=["w"] * 101),
                  lambda d: d.update(receipt_number="x" * 65), lambda d: d.update(raw_text="я" * 524289),
-                 lambda d: d["store"].update(name="line\nname"),
+                 lambda d: d["store"].update(name="line\x00name"),
                  lambda d: d["lines"][1].update(position=1)]
         for edit in edits:
             data = receipt_payload()
@@ -192,3 +194,63 @@ class DTOTests(SimpleTestCase):
         data["lines"][3].update(kind="deposit_return",quantity="-1.000",amount="-0.25")
         dto=validate_observation(data)
         self.assertIn({"code":"invalid_value","path":"/lines/3/parent_position"},observation_issues(dto))
+
+    def test_print_line_breaks_normalize_before_validation_without_mutating_input(self):
+        for separator in ("\n", "\r", "\r\n", "\t", " \r\n\t "):
+            data = receipt_payload()
+            address = "Testweg 17" + separator + "88131 Lindau"
+            data["store"]["address_raw"] = address
+            data["store"]["name"] = "TEST" + separator + "MARKT"
+            data["merchant"]["legal_name"] = "TEST" + separator + "GmbH"
+            data["lines"][0]["raw_name"] = "MILCH" + separator + "1 L"
+            data["lines"][0]["product_hint"]["name"] = "MILCH" + separator + "1 L"
+            data["discounts"][0]["name"] = "Rabatt" + separator + "MILCH"
+            with self.subTest(separator=separator):
+                dto = validate_observation(data)
+                self.assertEqual(dto.store.address_raw, "Testweg 17, 88131 Lindau")
+                self.assertEqual(address_key(dto.store.address_raw), address_key("Testweg 17 88131 Lindau"))
+                self.assertEqual(dto.store.name, "TEST MARKT")
+                self.assertEqual(dto.merchant.legal_name, "TEST GmbH")
+                self.assertEqual(dto.lines[0].raw_name, "MILCH 1 L")
+                self.assertEqual(dto.lines[0].product_hint.name, "MILCH 1 L")
+                self.assertEqual(dto.discounts[0].name, "Rabatt MILCH")
+                self.assertEqual(data["store"]["address_raw"], address)
+                self.assertEqual(validate_observation(json.dumps(data)).to_dict(), dto.to_dict())
+
+    def test_other_controls_and_line_breaks_in_identifiers_are_rejected(self):
+        for control in ("\x00", "\x0b", "\x0c", "\x1f", "\x7f", "\x85"):
+            data = receipt_payload()
+            data["store"]["address_raw"] = "Testweg\n17" + control + "Lindau"
+            with self.subTest(control=control), self.assertRaises(SchemaValidationError) as caught:
+                validate_observation(data)
+            self.assertEqual((caught.exception.path, caught.exception.reason), ("/store/address_raw", "control_character"))
+        for section, key in (("store", "branch_code"), ("merchant", "tax_id"), ("fiscal", "register_serial")):
+            data = receipt_payload()
+            data[section][key] = "TEST\n123"
+            with self.subTest(key=key), self.assertRaises(SchemaValidationError) as caught:
+                validate_observation(data)
+            self.assertEqual(caught.exception.reason, "control_character")
+
+    def test_z_offsets_are_canonical_in_all_timestamp_sources(self):
+        for offset in ("Z", "z", "+00:00"):
+            data = lidl_format_payload()
+            data["utc_offset_printed"] = offset
+            for stamp in data["timestamps"].values():
+                stamp["utc_offset"] = offset
+            with self.subTest(offset=offset):
+                dto = validate_observation(data)
+                self.assertEqual(dto.utc_offset_printed, "+00:00")
+                self.assertEqual(dto.timestamps.fiscal.utc_offset, "+00:00")
+                self.assertEqual(dto.timestamps.header.utc_offset, "+00:00")
+                self.assertEqual(dto.local_time, "17:01:56")
+                self.assertNotIn({"code": "invalid_value", "path": "/timestamps"}, observation_issues(dto))
+                self.assertEqual(data["utc_offset_printed"], offset)
+
+    def test_invalid_offsets_still_fail_in_every_source(self):
+        for bad in ("UTC", "+25:00", " Z", "Z\n", "+00:60", "+14:01"):
+            for source in (None, "header", "fiscal"):
+                data = receipt_payload()
+                target = data if source is None else data["timestamps"][source]
+                target["utc_offset_printed" if source is None else "utc_offset"] = bad
+                with self.subTest(bad=bad, source=source), self.assertRaises(SchemaValidationError):
+                    validate_observation(data)

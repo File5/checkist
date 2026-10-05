@@ -5,7 +5,7 @@ from django.test import SimpleTestCase
 
 from recognition.dto import FieldObservation
 from recognition.import_policy import prepare_observation
-from recognition.importer import _domain_observation
+from recognition.importer import _domain_observation, _preflight
 from recognition.providers.codex_cli import PACKAGE_ROOT
 from recognition.providers.fake import receipt_payload
 from recognition.schema_validation import _schema, validate_observation
@@ -35,7 +35,6 @@ class ImportPolicyTests(SimpleTestCase):
             dict(quantity=Decimal("3"), unit_price=None, amount=Decimal("1")),
             dict(quantity=None, unit_price=Decimal("0"), amount=Decimal("0")),
             dict(quantity=Decimal("0"), unit_price=None, amount=Decimal("0")),
-            dict(quantity=None, unit_price=None, amount=Decimal("1")),
         )
         for values in cases:
             with self.subTest(values=values):
@@ -64,6 +63,75 @@ class ImportPolicyTests(SimpleTestCase):
             effective, derived = _domain_observation(incoming)
             self.assertEqual(effective.lines[0].unit, expected)
             self.assertEqual("/lines/0/unit" in derived, expected is not None)
+
+    def test_amount_only_lines_default_to_one_piece_and_keep_observation(self):
+        for kind, amount, quantity, price in (("product", "3.49", "1.000", "3.4900"),
+                ("deposit", "0.25", "1.000", "0.2500"),
+                ("deposit_return", "-0.25", "-1.000", "0.2500")):
+            payload = receipt_payload()
+            payload["lines"][0].update(kind=kind, quantity=None, unit_price=None, unit=None, amount=amount)
+            incoming = observation(payload)
+            with self.subTest(kind=kind):
+                effective, derived = _domain_observation(incoming)
+                line = effective.lines[0]
+                self.assertEqual((line.quantity, line.unit, line.unit_price), (Decimal(quantity), "pcs", Decimal(price)))
+                for key in ("quantity", "unit", "unit_price"):
+                    self.assertIn("/lines/0/" + key, derived)
+                    self.assertIsNone(getattr(incoming.lines[0], key))
+                self.assertEqual(line.amount, Decimal(amount))
+
+    def test_amount_only_defaults_require_absent_fields_and_observed_amount(self):
+        edits = (
+            {"amount": None}, {"amount": "-1.00"}, {"kind": "service"}, {"kind": "deposit_return"},
+            {"unit": "kg"}, {"raw_name": "APFEL pro kg"}, {"quantity": "0.500"},
+        )
+        for edit in edits:
+            payload = receipt_payload()
+            payload["lines"][0].update(quantity=None, unit_price=None, unit=None, amount="1.00")
+            payload["lines"][0].update(edit)
+            incoming = observation(payload)
+            with self.subTest(edit=edit):
+                effective, derived = _domain_observation(incoming)
+                self.assertNotIn("/lines/0/quantity", derived)
+                self.assertEqual(effective.lines[0].quantity, incoming.lines[0].quantity)
+        for key in ("quantity", "unit_price", "unit", "amount"):
+            for status in ("ambiguous", "unreadable"):
+                payload = receipt_payload()
+                payload["lines"][0].update(quantity=None, unit_price=None, unit=None)
+                incoming = observation(payload)
+                incoming = replace(incoming, fields=tuple(f for f in incoming.fields if f.path != "/lines/0/" + key)
+                                   + (FieldObservation("/lines/0/" + key, status, None, None),))
+                with self.subTest(key=key, status=status):
+                    effective, derived = _domain_observation(incoming)
+                    self.assertIsNone(effective.lines[0].quantity)
+                    self.assertNotIn("/lines/0/quantity", derived)
+
+    def test_other_weighted_line_does_not_block_integer_piece_or_amount_defaults(self):
+        for quantity, price, amount in (("2.000", "1.2900", "2.58"), ("-5.000", "0.2500", "-1.25"),
+                                       (None, None, "3.49")):
+            payload = receipt_payload()
+            payload["raw_text"] = "APFEL 2 EUR/kg\nMILCH 1.29 x 2\n"
+            payload["lines"][0].update(quantity=quantity, unit_price=price, unit=None, amount=amount,
+                                       kind="deposit_return" if amount.startswith("-") else "product")
+            with self.subTest(quantity=quantity):
+                effective, derived = _domain_observation(observation(payload))
+                self.assertEqual(effective.lines[0].unit, "pcs")
+                self.assertIn("/lines/0/unit", derived)
+                self.assertEqual((effective.lines[1].quantity, effective.lines[1].unit, effective.lines[1].unit_price),
+                                 (Decimal("0.500"), "kg", Decimal("2.0000")))
+
+    def test_contradictory_printed_values_are_preserved_without_defaults(self):
+        payload = receipt_payload()
+        payload["lines"][0].update(quantity="2.000", unit_price="1.2900", amount="3.49", unit=None)
+        payload.update(total="5.33", taxes=[])
+        incoming = observation(payload)
+        effective, derived = _domain_observation(incoming)
+        self.assertEqual((effective.lines[0].quantity, effective.lines[0].unit_price, effective.lines[0].amount),
+                         (Decimal("2.000"), Decimal("1.2900"), Decimal("3.49")))
+        self.assertNotIn("/lines/0/quantity", derived)
+        self.assertNotIn("/lines/0/unit_price", derived)
+        self.assertEqual([(v["code"], v["field"]) for v in _preflight(effective, derived)],
+                         [("total_mismatch", "/lines/0/amount")])
 
     def test_prompt_schema_validator_agree_on_operation_and_nullable_fiscal(self):
         prompt = (PACKAGE_ROOT / "prompts/receipt.txt").read_text(encoding="utf-8")

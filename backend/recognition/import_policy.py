@@ -1,6 +1,7 @@
 """Discard uncertain optional observations, preserving the original DTO for audit.
 
-No guessed identifiers, quantities, prices or product assignments. Issue objects
+No guessed identifiers or product assignments. Explicit quantity defaults and
+arithmetic derivations are recorded separately from printed facts. Issue objects
 keep the public v1 shape; successful imports can carry non-blocking notices.
 """
 import re
@@ -154,17 +155,31 @@ def _usable_rate(rate, evidence, path):
 def derive_line_values(observation):
     """Use two printed numbers; never round an inferred quantity or price.
 
-    A missing amount follows the receipt's cent precision. Unit defaults apply
-    only to integer, observed counts with no indication of a weight/volume rate.
+    A missing amount follows the receipt's cent precision. Amount-only product
+    and deposit lines default to one piece; negative deposit returns to minus one.
+    Unit defaults use only this line's evidence for a weight/volume rate.
     Unreadable/ambiguous units and non-null uncertain numbers stay unresolved.
     """
     evidence = {f.path: f.status for f in observation.fields}
     derived, lines = [], []
     weight_rate = r"(?:/\s*|\b(?:per|pro|за)\s+)(?:kg|g|l|ml|кг|г|л|мл)\b"
-    weighted_receipt = re.search(weight_rate, observation.raw_text or "", re.IGNORECASE)
     for i, line in enumerate(observation.lines):
         path = f"/lines/{i}"
         values = {key: getattr(line, key) for key in ("quantity", "unit_price", "amount")}
+        unit = line.unit
+        weighted = re.search(weight_rate, line.raw_name or "", re.IGNORECASE)
+        defaulted = (line.kind in {"product", "deposit", "deposit_return"}
+                     and line.quantity is None and line.unit_price is None and line.amount is not None
+                     and evidence.get(path + "/amount") == "observed"
+                     and all(evidence.get(path + "/" + key) in (None, "absent")
+                             for key in ("quantity", "unit_price"))
+                     and (unit == "pcs" or unit is None and evidence.get(path + "/unit") in (None, "absent"))
+                     and not weighted
+                     and (line.amount < 0 if line.kind == "deposit_return" else line.amount >= 0))
+        if defaulted:
+            values.update(quantity=Decimal("-1.000") if line.kind == "deposit_return" else Decimal("1.000"),
+                          unit_price=abs(line.amount).quantize(Decimal("0.0001")))
+            derived.extend((path + "/quantity", path + "/unit_price"))
         missing = [key for key, value in values.items() if value is None]
         if len(missing) == 1 and all(evidence.get(path + "/" + key) == "observed"
                                      for key in values if key not in missing):
@@ -184,11 +199,10 @@ def derive_line_values(observation):
             if value is not None:
                 values[key] = value
                 derived.append(path + "/" + key)
-        unit = line.unit
-        weighted = weighted_receipt or re.search(weight_rate, line.raw_name or "", re.IGNORECASE)
         if (unit is None and evidence.get(path + "/unit") in (None, "absent")
-                and evidence.get(path + "/quantity") == "observed" and line.quantity is not None
-                and line.quantity == line.quantity.to_integral_value() and not weighted):
+                and (defaulted or evidence.get(path + "/quantity") == "observed")
+                and values["quantity"] is not None
+                and values["quantity"] == values["quantity"].to_integral_value() and not weighted):
             unit = "pcs"
             derived.append(path + "/unit")
         lines.append(replace(line, unit=unit, **values))

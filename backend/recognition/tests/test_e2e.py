@@ -33,7 +33,7 @@ from recognition.demo import seed_demo
 from recognition.models import ProcessingJob, ReceiptImage, SourcePhoto
 from recognition.pipeline import process_job
 from recognition.providers.fake import FakeProvider
-from recognition.tests.import_fixtures import observation
+from recognition.tests.import_fixtures import lidl_format_payload, observation
 from recognition.dto import FieldObservation, PreparedImage
 from recognition.images import validate_geometry
 from recognition.providers.base import RunContext
@@ -378,6 +378,44 @@ class RecognitionEndToEndTests(TransactionTestCase):
         self.assertEqual(public["items"][0]["receipt_id"], receipt_id)
         self.assertFalse(public["review_required"])
         self.assertEqual((Receipt.objects.count(), ReceiptLine.objects.count(), Product.objects.count()), (1, 4, 3))
+
+    def test_lidl_observation_worker_http_receipt_and_photo_replay(self):
+        class LidlFormat(FakeProvider):
+            def recognize(self, crop, run):
+                self._stage("recognize", run)
+                return observation(lidl_format_payload())
+
+        first = self.upload(self.single)
+        with patch("recognition.management.commands.recognition_worker.get_provider", return_value=LidlFormat("one_receipt")):
+            result = self.run_once(first["job"]["id"], "one_receipt")
+        self.assertEqual(result["status"], "succeeded")
+        self.assertEqual((result["progress"]["imported"], result["progress"]["review"]), (1, 0))
+        self.assertFalse(result["review_required"])
+        receipt_id = result["items"][0]["receipt_id"]
+        detail = self.get(f"/api/receipts/{receipt_id}/")
+        self.assertEqual(detail["total"], "40.80")
+        self.assertEqual(detail["purchased_at"], "2026-10-01T17:01:56Z")
+        lines = self.get(detail["lines_url"])["results"]
+        self.assertEqual((lines[1]["quantity"], lines[1]["unit"], lines[1]["unit_price"]), ("1.000", "pcs", "3.4900"))
+        self.assertEqual((lines[2]["quantity"], lines[2]["unit"]), ("2.000", "pcs"))
+        self.assertEqual((lines[0]["quantity"], lines[0]["unit"]), ("0.294", "kg"))
+        self.assertEqual((lines[21]["quantity"], lines[21]["unit_price"]), ("-5.000", "0.2500"))
+        self.assertEqual(lines[17]["parent_id"], lines[16]["id"])
+        self.assertEqual(lines[18]["amount"], "1.99")
+        self.assertEqual(lines[18]["discount_amount"], "0.20")
+        self.assertEqual(self.get(detail["discounts_url"])["count"], 3)
+        self.assertEqual(self.get(detail["taxes_url"])["count"], 2)
+        self.assertEqual(ProcessingJob.objects.get(pk=result["id"]).attempts.get(phase="recognize").prompt_version, "4")
+
+        replay = self.upload(self.single, expected=200)
+        self.assertTrue(replay["reused"])
+        self.assertEqual(replay["job"]["id"], result["id"])
+        second = self.upload(self.another_photo())
+        with patch("recognition.management.commands.recognition_worker.get_provider", return_value=LidlFormat("one_receipt")):
+            repeated = self.run_once(second["job"]["id"], "one_receipt")
+        self.assertEqual((repeated["status"], repeated["progress"]["reused"], repeated["progress"]["review"]), ("succeeded", 1, 0))
+        self.assertEqual(repeated["items"][0]["receipt_id"], receipt_id)
+        self.assertEqual((Receipt.objects.count(), ReceiptLine.objects.count(), Product.objects.count()), (1, 22, 20))
 
     def test_different_photo_reuses_strong_identity_without_duplicate_lines_or_products(self):
         first = self.run_once(self.upload(self.single)["job"]["id"], "one_receipt")
