@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { JobDetail } from '../../api/recognition'
 import { jobStatuses } from '../../api/recognition-types'
 import { isJobDetail, isReceiptImage } from '../../api/recognition-schema'
-import { publicFixture } from '../../api/recognition-test-support'
+import { issue, publicFixture, taxEvidenceMissingIssues } from '../../api/recognition-test-support'
 import ActionButtons from './ActionButtons'
 import JobSummary from './JobSummary'
 import MediaImage from './MediaImage'
@@ -42,7 +42,8 @@ describe('recognition SSR markup (interactive UI remains manual)', () => {
   it('shows incomplete recognized data, translated issue and linked receipts without provider text', () => {
     const data = image(); data.receipt_id = 71; data.issues[0].message = 'private issue message'
     const html = renderToStaticMarkup(<ReceiptImages images={[data]} />)
-    expect(html).toContain('Требует проверки'); expect(html).toContain('Количество'); expect(html).toContain('запись 1')
+    expect(html).toContain('Требует проверки'); expect(html).toContain('<h4>Причины проверки</h4>')
+    expect(html).toContain('Не удалось прочитать обязательное поле · Количество'); expect(html).toContain('Строки: 1')
     expect(html).toContain('Распознанные данные для проверки'); expect(html).toContain('МОЛОКО'); expect(html).toContain('Не прочитано')
     expect(html).toContain('4,52'); expect(html).toContain('1,29'); expect(html).toContain('href="/receipts/71"')
     expect(html).not.toContain('private issue message'); expect(html).not.toContain('черновик')
@@ -61,13 +62,59 @@ describe('recognition SSR markup (interactive UI remains manual)', () => {
     expect(html).toContain('Изображение пока недоступно'); expect(html).toContain('чек удалён')
   })
   it('keeps successful imports with nonblocking issues successful and offers a return to the receipt', () => {
-    const data = { ...image(), status: 'imported' as const, normalized_result: null }
+    // The server gives error only to needs_review/failed crops; an imported crop keeps the same cause as a warning.
+    const data = { ...image(), status: 'imported' as const, normalized_result: null, issues: image().issues.map((item) => ({ ...item, severity: 'warning' as const })) }
     const html = renderToStaticMarkup(<ReceiptImages images={[data]} />)
     expect(html).toContain('Чек сохранён')
     expect(html).toContain('Замечания распознавания')
     expect(html).not.toContain('Причины проверки')
     const page = renderToStaticMarkup(<JobPage jobId={31} returnTo="/receipts/71" />)
     expect(page).toContain('href="/receipts/71">К чеку')
+  })
+  it('groups 29 omissions of an imported crop into three collapsed native disclosures', () => {
+    const issues = taxEvidenceMissingIssues().map((item) => ({ ...item, message: 'private issue message' }))
+    const html = renderToStaticMarkup(<ReceiptImages images={[{ ...image(), status: 'imported', receipt_id: 71, normalized_result: null, issues }]} />)
+    expect(html).toContain('Чек сохранён'); expect(html).toContain('<h4>Замечания распознавания</h4>')
+    expect(html.match(/<summary>[^<]*<\/summary>/g)).toEqual([
+      '<summary>НДС не использован в 25 строках</summary>', '<summary>Пропущены 2 налоговых итога</summary>', '<summary>Не прочитаны 2 реквизита</summary>'])
+    expect(html.match(/<details/g)).toHaveLength(3); expect(html).not.toContain('<details open')
+    expect(html).toContain('Распознавание не подтвердило чтение ставки, поэтому ставка не сохранена. Остальные данные строк сохранены.')
+    expect(html).toContain(`Строки: ${Array.from({ length: 25 }, (_, index) => index + 1).join(', ')}`)
+    expect(html).toContain('Налоговый итог не сохранён: ставка не подтверждена или суммы не сходятся.'); expect(html).toContain('Налоговые итоги №: 1, 2')
+    expect(html).toContain('Необязательные реквизиты чека не прочитаны уверенно и не сохранены. Значения не показываются.')
+    expect(html).not.toContain('Причины проверки'); expect(html).not.toContain('Некорректное значение')
+    expect(html).not.toContain('private issue message'); expect(html).not.toContain('Значение не прошло проверку')
+    expect(html).not.toContain('aria-live'); expect(html).not.toContain('Распознанные данные для проверки')
+  })
+  it('keeps review causes always visible and apart from collapsed notes, with unchanged review data', () => {
+    const data = image()
+    data.issues = [issue('optional_omitted', 'warning', { attribute: 'receipt_metadata' }), ...data.issues,
+      issue('total_mismatch', 'error', { attribute: 'total' }, { code: 'total_mismatch', field: '/total', message: 'private issue message' }),
+      issue('operation_defaulted', 'info', { attribute: 'operation' })]
+    const html = renderToStaticMarkup(<ReceiptImages images={[data]} />)
+    const [causes, notes] = html.split('<h4>Замечания распознавания</h4>')
+    expect(causes).toContain('<h4>Причины проверки</h4>'); expect(causes).not.toContain('<details')
+    expect(causes).toContain('Не удалось прочитать обязательное поле · Количество'); expect(causes).toContain('Сумма строк не совпадает с итогом · Итого')
+    expect(notes).toContain('<details><summary>Не прочитан 1 реквизит</summary>'); expect(notes).toContain('Тип операции определён автоматически · Операция')
+    expect(notes.indexOf('Не прочитан 1 реквизит')).toBeLessThan(notes.indexOf('Тип операции определён автоматически'))
+    expect(notes).toContain('<details class="ck-rec-review" open=""><summary>Распознанные данные для проверки</summary>'); expect(notes).toContain('МОЛОКО')
+    expect(html).not.toContain('private issue message'); expect(html).not.toContain('<form')
+    const failed = renderToStaticMarkup(<ReceiptImages images={[{ ...data, status: 'failed', normalized_result: null }]} />)
+    expect(failed).toContain('<h4>Причины ошибки</h4>'); expect(failed).not.toContain('Причины проверки')
+  })
+  it('groups an answer of an old server by its code, field and crop status', () => {
+    const old = [0, 1, 2].map((index) => ({ code: 'invalid_value' as const, field: `/lines/${index}/tax_rate`, message: 'private issue message' }))
+    const imported = renderToStaticMarkup(<ReceiptImages images={[{ ...image(), status: 'imported', normalized_result: null, issues: old }]} />)
+    expect(imported).toContain('<h4>Замечания распознавания</h4>'); expect(imported).not.toContain('Причины проверки')
+    expect(imported).toContain('<summary>Замечание распознавания · Ставка налога (3)</summary>'); expect(imported).toContain('Строки распознавания №: 1, 2, 3')
+    const review = renderToStaticMarkup(<ReceiptImages images={[{ ...image(), issues: old }]} />)
+    expect(review).toContain('<h4>Причины проверки</h4>'); expect(review).not.toContain('<h4>Замечания распознавания</h4>')
+    expect(review).toContain('Замечание распознавания · Ставка налога (3)')
+    for (const html of [imported, review]) { expect(html).not.toContain('private issue message'); expect(html).not.toContain('Некорректное значение') }
+  })
+  it('renders no issue block for a crop without issues', () => {
+    const html = renderToStaticMarkup(<ReceiptImages images={[{ ...image(), status: 'imported', normalized_result: null, issues: [] }]} />)
+    expect(html).not.toContain('rec-issues'); expect(html).not.toContain('Замечания распознавания')
   })
   it('keeps the last snapshot visible with refresh failure and retry', () => {
     const html = renderToStaticMarkup(<RequestBlock title="Задание" id="test-job" state={{ kind: 'ok', data: job(), refreshing: false, refreshError: { kind: 'error', reason: 'network' } }} retry={vi.fn()}>{(data) => <JobSummary job={data} />}</RequestBlock>)

@@ -1,9 +1,9 @@
 import { amount, array, bool, choice, isId, isISODateTime, nonNegativeInteger, nullable, object, price, quantity, text, unit } from './schema.ts'
 import type { Check, Guard } from './schema.ts'
 import { lineKind, mediaPath, receiptOperation, taxKind } from './receipts-schema.ts'
-import { jobStatuses } from './recognition-types.ts'
+import { issueSeverities, jobStatuses } from './recognition-types.ts'
 import type {
-  Bbox, Executor, Job, JobActions, JobDetail, JobItem, JobProgress, NormalizedDiscount, NormalizedLine,
+  Bbox, Executor, IssueContext, Job, JobActions, JobDetail, JobItem, JobProgress, NormalizedDiscount, NormalizedLine,
   NormalizedResult, NormalizedTax, NormalizedTaxRate, Photo, PhotoUpload, ProposedReceipt, QuadPoint,
   ReceiptImage, ReceiptImageDetail, RecognitionCsrf, RecognitionError, RecognitionIssue, RecognitionLimits,
 } from './recognition-types.ts'
@@ -43,8 +43,15 @@ const recognitionCode = choice(
   'network_unavailable', 'configuration_error', 'invalid_input', 'cancelled', 'no_receipts', 'too_many_receipts',
 )
 export const isRecognitionError = object<RecognitionError>({ code: recognitionCode, message: text })
-const pointer = /^\/(?:|identity|geometry|bbox|quad|rotation_degrees|clipped|merchant|store|operation|currency(?:_code)?|purchased_on|local_time|total|discount_total|prices_include_tax|merchant\/(?:country_code|brand_name)|store\/(?:country_code|name|address_raw|city)|(?:lines|discounts|taxes)(?:\/[0-9]{1,4}(?:\/(?:position|kind|parent_position|raw_name|name|product|quantity|unit|unit_price|amount|discount_amount|tax_amount|tax_code|tax_rate|net|tax|gross|line_position|barcode|store_item_code|is_excise|is_marked))?)?)$/
-export const isRecognitionIssue = object<RecognitionIssue>({ code: recognitionCode, field: (value) => typeof value === 'string' && pointer.test(value), message: text })
+export const publicPointer = /^\/(?:|identity|geometry|bbox|quad|rotation_degrees|clipped|merchant|store|operation|currency(?:_code)?|purchased_on|local_time|total|discount_total|prices_include_tax|merchant\/(?:country_code|brand_name)|store\/(?:country_code|name|address_raw|city)|(?:lines|discounts|taxes)(?:\/[0-9]{1,4}(?:\/(?:position|kind|parent_position|raw_name|name|product|quantity|unit|unit_price|amount|discount_amount|tax_amount|tax_code|tax_rate|net|tax|gross|line_position|barcode|store_item_code|is_excise|is_marked))?)?)$/
+const integerRange = (min: number, max: number): Check => (value) => Number.isSafeInteger(value) && (value as number) >= min && (value as number) <= max
+const slug = (max: number): Check => (value) => typeof value === 'string' && new RegExp(`^[a-z_]{1,${max}}$`).test(value)
+const issueContext = object<IssueContext>({ entity: slug(32), index: nullable(integerRange(0, 9999)), position: nullable(integerRange(1, 32767)), attribute: nullable(slug(32)) })
+const issueBase = object<Pick<RecognitionIssue, 'code' | 'field' | 'message'>>({ code: recognitionCode, field: (value) => typeof value === 'string' && publicPointer.test(value), message: text })
+const issueDetails = object<Required<Pick<RecognitionIssue, 'reason' | 'severity' | 'context'>>>({ reason: slug(64), severity: choice(...issueSeverities), context: issueContext })
+// An older server sends none of the three keys; a partial set is a contract violation.
+export const isRecognitionIssue: Guard<RecognitionIssue> = (value): value is RecognitionIssue => issueBase(value)
+  && (!['reason', 'severity', 'context'].some((key) => Object.hasOwn(value, key)) || issueDetails(value))
 export const isJobItem = object<JobItem>({ image_id: isId, position, status: choice(...imageStatuses), receipt_id: nullable(isId) })
 export const isJob = object<Job>({
   id: isId, photo_id: isId, retry_of: nullable(isId), status: choice(...jobStatuses), stage: choice(...jobStages), version: isId,
