@@ -115,7 +115,17 @@ function describe(first: IssueView, items: IssueView[]): Pick<IssueGroup, 'title
   return { title: `${reasonLabel(first)}${area && ` · ${area}`}${count > 1 ? ` (${count})` : ''}`, explanation: null }
 }
 
-/** Groups by (severity, reason, entity, attribute): error, warning, info; inside a block by first occurrence. */
+// The server does not fix the order of issues, so the three omission groups get their own places; 3 means any other group.
+function knownOrder(group: Pick<IssueGroup, 'reason' | 'entity' | 'attribute'>): number {
+  if (group.reason !== 'optional_omitted') return 3
+  if (group.entity === 'line' && group.attribute === 'tax_rate') return 0
+  if (group.entity === 'tax') return 1
+  return group.attribute === 'receipt_metadata' ? 2 : 3
+}
+
+/** Groups by (severity, reason, entity, attribute): error, warning, info; inside a block line tax rates,
+ * tax totals and requisites of optional_omitted go first, the rest by first occurrence.
+ */
 export function groupIssues(issues: RecognitionIssue[], status: ReceiptImageStatus): IssueGroup[] {
   const groups = new Map<string, IssueView[]>()
   for (const issue of issues) {
@@ -129,5 +139,5 @@ export function groupIssues(issues: RecognitionIssue[], status: ReceiptImageStat
       key, severity: first.severity, reason: first.reason, entity: first.entity, attribute: first.attribute,
       count: items.length, ...describe(first, items), locations: locations(first.entity, items),
     }
-  }).sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity])
+  }).sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity] || knownOrder(a) - knownOrder(b))
 }
