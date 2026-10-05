@@ -1,6 +1,6 @@
 # И2: загрузка фото и обработка
 
-Реализованы `/receipts/upload`, `/recognition/jobs`, `/recognition/jobs/{id}`. Это страницы существующей SPA на настоящих API-адаптерах И1. В интерфейсе нет встроенных демо-данных. Экспорты и props И1 сохранены; оболочка, навигация, API, Vite и `features/receipts` не менялись.
+Реализованы `/receipts/upload`, `/recognition/jobs`, `/recognition/jobs/{id}`. Это страницы существующей SPA на настоящих API-адаптерах И1. В интерфейсе нет встроенных демо-данных. Экспорты и props И1 сохранены; код оболочки, навигация, API, Vite и `features/receipts` не менялись. По разрешению из ответов к задаче точечно обновлены три устаревшие строки upload/jobs/job в `pages/recognition-shell.test.tsx`; проверки заголовков, меню, возврата и страниц чеков сохранены.
 
 Загрузка получает CSRF/лимиты, показывает один выбранный файл и освобождает object URL при замене/уходе. До отправки проверяются расширение, непустой файл и размер по лимиту сервера. Формат содержимого, пиксели, повреждения и анимацию окончательно проверяет сервер. Есть явное предупреждение об облачной модели, сообщения об очереди и повторно загруженном фото; reused открывает последнее задание без нового запуска. После csrf_failed токен обновляется, повтор POST выполняется только по нажатию пользователя.
 
@@ -100,11 +100,19 @@ node frontend/src/features/recognition/http-check.mjs
 
 ## Проверки и ограничения
 
-Проверено и прошло: Windows, Node 24.18.0/npm 11.16.0, Python 3.13.9, Django 5.2.17, Docker 29.8.1. `npm.cmd ci` — exit 0, 188 пакетов, 0 vulnerabilities; `npm.cmd run lint` и `npm.cmd run build` — exit 0 на окончательном состоянии исходников. Feature Vitest/SSR проверяет polling/actions/upload и состояния, использует backend public fixtures: все **73 теста И2** прошли в полном прогоне.
+Проверено и прошло на повторном заходе после разрешённой правки теста оболочки, Windows, без БД (2026-10-05):
 
-Настоящий HTTP: `node frontend/src/features/recognition/http-check.mjs` — exit 0, DB/Compose `checkist_qa_i2_final`, порты и окружение выше, синтетические single/double. Наблюдались Job 1 succeeded с imported=2, Job 2/3 cancelled, Job 4 partial_succeeded/needs_review; ожидаемые 403/409 прошли как негативные проверки. `pip check`, `manage.py check`, `migrate --noinput`, `seed_recognition_demo`, `docker compose ... config --quiet/up -d --wait --wait-timeout 90 postgres redis`, ограниченные TCP-пробы 25482/16482 — exit 0. Перед ним такой же временный HTTP-прогон прошёл на отдельной DB `checkist_qa_i2`. Redis запущен из общего QA шаблона, health/Celery эта задача не проверяет.
+| Команда в `frontend/` | Фактический результат |
+| --- | --- |
+| `npm.cmd run lint` | exit 0, ESLint без предупреждений |
+| `npm.cmd run test` | exit 0, **841 тест / 29 файлов**, включая 73 теста И2 и тест оболочки |
+| `npm.cmd run build` | exit 0, TypeScript и Vite build прошли, 78 модулей |
 
-Проверено и не прошло: **`npm.cmd run test` — exit 1: 839 passed / 2 failed, 841 тест / 29 файлов**. Оба отказа в `pages/recognition-shell.test.tsx`: ожидания прежних строк «Загрузка через интерфейс пока недоступна» и «Страница задания №31» расходятся с реализованными экранами («Получаем лимиты…» / «Задание №31»). Этот файл вне первоначальной зоны И2, вопрос `q_muuevbimd0` передан координатору для точечной актуализации. Файл, набор проверок оболочки и её ожидания h1/навигации/возврата не менялись; тесты не отключены. До решения координатора полный test не зелёный и критерий готовности всей подзадачи не выполнен.
+Vitest/SSR проверяет polling/actions/upload, reused, состояния и публичные backend fixtures. Сборка подтверждает сборку; ни она, ни SSR не подтверждают поведение React в браузере. В предыдущем запуске И2: Node 24.18.0/npm 11.16.0, Python 3.13.9, Django 5.2.17, Docker 29.8.1; `npm.cmd ci` — exit 0, 188 пакетов, 0 vulnerabilities.
+
+Настоящий HTTP в предыдущем запуске И2: `node frontend/src/features/recognition/http-check.mjs` — exit 0, DB/Compose `checkist_qa_i2_final`, порты и окружение выше, синтетические single/double. Наблюдались Job 1 succeeded с imported=2, Job 2/3 cancelled, Job 4 partial_succeeded/needs_review; ожидаемые 403/409 прошли как негативные проверки. `pip check`, `manage.py check`, `migrate --noinput`, `seed_recognition_demo`, `docker compose ... config --quiet/up -d --wait --wait-timeout 90 postgres redis`, ограниченные TCP-пробы 25482/16482 — exit 0. Перед ним такой же временный HTTP-прогон прошёл на отдельной DB `checkist_qa_i2`. Redis запущен из общего QA шаблона, health/Celery эта задача не проверяет. На повторном заходе HTTP/DB не запускались: изменены только ожидания SSR-теста и этот отчёт, исходники экранов/транспорта остались прежними.
+
+Проверено и не прошло: на повторном заходе отказов нет. Исторический полный прогон завершился `npm.cmd run test` — exit 1: 839 passed / 2 failed, 841 тест / 29 файлов. Причина — ожидания заглушек «Загрузка через интерфейс пока недоступна» и «Страница задания №31» в `pages/recognition-shell.test.tsx`. После ответа на вопрос `q_muuevbimd0` разрешены точечные изменения: три строки upload/jobs/job теперь проверяют настоящие экраны. Набор проверок оболочки, h1/навигация/возврат и ожидания страниц чеков сохранены; тесты не отключались. Свежий полный прогон зелёный, критерий lint/test/build выполнен.
 
 Промежуточные отказы: первая tsc-сборка выявила типовой export jobStatuses, неверное имя TaxKind и узкую типизацию состояния; lint выявил setState в effect и export helper из TSX; исправлено в своей зоне. Ошибки новых SSR ожиданий (экранирование regex и совпадение «Отменено» со счётчиком) исправлены, проверяется именно метка статуса. Начальная загрузка QA environment через .ps1 была отклонена ExecutionPolicy; из-за этого Compose попытался занять default dev-порт 15432 и получил port already allocated. Host-записи в БД не выполнялись; созданный отдельный QA project остановлен, environment затем задан как значения процесса через JSON без изменения ExecutionPolicy, запуск на QA-портах прошёл.
 

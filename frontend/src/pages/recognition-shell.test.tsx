@@ -13,10 +13,10 @@ vi.mock('../navigation', async (importOriginal) => ({
 describe('new page wiring (SSR only, no browser interaction)', () => {
   it.each<[NavigableRoute, string, string, string]>([
     [{ kind: 'receipts', query: { page: 2 } }, 'Чеки', 'Страница 2', '/receipts'],
-    [{ kind: 'upload' }, 'Загрузка фото чеков', 'Загрузка через интерфейс пока недоступна', '/receipts'],
+    [{ kind: 'upload' }, 'Загрузка фото чеков', 'Получаем лимиты и токен безопасности…', '/receipts'],
     [{ kind: 'receipt', receiptId: 71 }, 'Чек', 'Страница чека №71', '/receipts'],
-    [{ kind: 'jobs', query: { page: 3 } }, 'Обработка', 'Страница 3', '/recognition/jobs'],
-    [{ kind: 'job', jobId: 31 }, 'Задание обработки', 'Страница задания №31', '/recognition/jobs'],
+    [{ kind: 'jobs', query: { page: 3 } }, 'Обработка', 'Задания · Страница 3', '/recognition/jobs'],
+    [{ kind: 'job', jobId: 31 }, 'Задание обработки', 'Задание №31', '/recognition/jobs'],
   ])('mounts %j with the shell title, props and active menu', (route, title, text, menu) => {
     state.snapshot = { route, href: buildRoute(route) }
     const html = renderToStaticMarkup(<App />)
