@@ -117,7 +117,7 @@ API и OCR-worker должны использовать **одни и те же*
 | --- | --- |
 | `ALLOW_LOCAL_RECOGNITION_API` | `0`; включить `1` вместе с `DJANGO_DEBUG=1`, peer должен быть loopback |
 | `DJANGO_CSRF_TRUSTED_ORIGINS` | Точные локальные origins с портом; образец включает Vite 5173/15173. Другой порт добавлять явно |
-| `MEDIA_ROOT`, `MEDIA_URL` | `<worktree>/media`, `/media/`; абсолютный root, локальный URL-префикс с завершающим `/` |
+| `MEDIA_ROOT`, `MEDIA_URL` | `<worktree>/media`, `/media/`; абсолютный root, URL в v1 фиксирован строго `/media/` |
 | `RECEIPT_OCR_TEMP_ROOT` | Приватный worktree-specific каталог системного temp; абсолютный путь, не пересекается с MEDIA |
 | `RECEIPT_OCR_PROVIDER` | `codex_cli` либо явно `fake`; fallback после ошибки отсутствует |
 | `RECEIPT_OCR_MODEL` | `gpt-6.1-sol` |
@@ -130,6 +130,8 @@ API и OCR-worker должны использовать **одни и те же*
 | `RECEIPT_OCR_LEASE_SECONDS`, `RECEIPT_OCR_HEARTBEAT_SECONDS` | 30/5; lease 10..300, heartbeat 1..30, heartbeat×2 строго меньше lease |
 | `RECEIPT_OCR_MAX_CONCURRENCY`, `RECEIPT_OCR_MAX_ATTEMPTS` | Только 1 worker; 1..2 попытки провайдера, default 2 |
 | `RECEIPT_IMAGE_MAX_BYTES`, `RECEIPT_IMAGE_MAX_PIXELS`, `RECEIPT_IMAGE_MAX_RECEIPTS` | Фиксированные 20971520 / 40000000 / 10; другие env-значения отвергаются |
+
+`MEDIA_URL` можно не задавать (default `/media/`) или задать ровно `/media/`. Любое другое значение, включая пустое, `/pictures/`, `/media` и абсолютный URL, вызывает `ImproperlyConfigured` при загрузке настроек: `check`, `runserver` и `recognition_worker` не стартуют. Клиентские проверки URL и Vite dev/preview proxy рассчитаны только на `/media/`; изменение префикса требует согласованной правки клиента и proxy.
 
 Авторизация Codex берётся у существующего host-пользователя; child наследует `CODEX_HOME`, если он уже установлен. Worker проверяет version/flags/login status, не делает login/logout и не меняет auth/config. `RECEIPT_OCR_CODEX_HOME` и `RECEIPT_OCR_DEFAULT_COUNTRY` сейчас **не загружаются из env в settings**: одноимённые getattr hooks в коде не являются готовыми env-настройками. Не создавайте пустой home вместо авторизованного. Для стандартной установки Windows путь проверяют так:
 
@@ -201,7 +203,7 @@ Seed разрешён для `test_*` или `checkist_qa` с необязате
 
 Загрузить `double.png` HTTP-сценарием из [verification.md](verification.md#распознавание-сквозная-серверная-проверка). Для single.png остановить свой worker и запустить `--fake-scenario one_receipt`. Сценарии partial_success / inconsistent_total / no_receipts / provider_auth_failure / pause_detect / pause_recognize — для негативной приёмки; полный список — [providers/README.md](../backend/recognition/providers/README.md). Fake не читает текст произвольного фото. Смена scenario не перерабатывает уже завершённый одинаковый файл: использовать retry для failed/partial/cancelled либо другой файл/новую QA-среду.
 
-Клиент: существующие npm-команды, QA `npm.cmd run dev -- --port 15173`. Все новые действия требуют CSRF cookie/token (`credentials: same-origin`), в отличие от health. API возвращает относительные media URL; текущий Vite передаёт только `/api`. До добавления клиентом `/media` proxy файлы проверять напрямую на `http://127.0.0.1:18000/media/...`; не считать отсутствие картинки через Vite дефектом хранения или успешной UI-приёмкой.
+Клиент: существующие npm-команды, QA `npm.cmd run dev -- --port 15173`. Все новые действия требуют CSRF cookie/token (`credentials: same-origin`), в отличие от health. API возвращает относительные URL с фиксированным `MEDIA_URL=/media/`; Vite dev/preview передают `/api` и `/media` на один Django. Сквозная HTTP-проверка и ручная UI-приёмка — в [verification.md](verification.md#распознавание-сквозная-проверка-клиента-и5).
 
 ### Настоящий Codex в QA
 

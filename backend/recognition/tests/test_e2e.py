@@ -116,6 +116,7 @@ class RecognitionEndToEndTests(TransactionTestCase):
         return result
 
     def assert_media(self, url, file):
+        self.assertTrue(url.startswith("/media/"), url)
         self.assertTrue(file.is_file())
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
@@ -179,13 +180,18 @@ class RecognitionEndToEndTests(TransactionTestCase):
             self.assert_media(image["image_url"], file)
             detail = self.get(f"/api/recognition/receipt-images/{image['id']}/")
             self.assertEqual(detail["receipt_id"], image["receipt_id"])
+            self.assertEqual(detail["image_url"], image["image_url"])
 
         receipts = self.get("/api/receipts/")
         self.assertEqual(receipts["count"], 2)
         self.assertEqual(sorted(r["total"] for r in receipts["results"]), ["4.42", "6.00"])
         lines_by_total = {}
         for receipt in receipts["results"]:
-            self.assertEqual(self.get(f"/api/receipts/{receipt['id']}/")["id"], receipt["id"])
+            detail = self.get(f"/api/receipts/{receipt['id']}/")
+            self.assertEqual(detail["id"], receipt["id"])
+            file = Path(ReceiptImage.objects.filter(receipt_id=receipt["id"]).get().file.path)
+            self.assert_media(receipt["preview_image_url"], file)
+            self.assertEqual(detail["preview_image_url"], receipt["preview_image_url"])
             lines_by_total[receipt["total"]] = self.get(receipt["lines_url"])["results"]
             for line in lines_by_total[receipt["total"]]:
                 if line["kind"] == "product":
