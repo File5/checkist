@@ -51,7 +51,7 @@ export default function JobPage({ jobId, returnTo }: JobPageProps) {
   const actions = useJobActions(lifecycle)
   const notice = getJobNotice(jobId)
   return <div className="ck-rec">
-    <div className="ck-rec-actions"><Link className="action-link" to={returnTo ?? '/recognition/jobs'}>К обработке</Link><Link className="action-link" to="/receipts/upload">Загрузить другое фото</Link></div>
+    <div className="ck-rec-actions"><Link className="action-link" to={returnTo ?? '/recognition/jobs'}>{returnTo?.startsWith('/receipts/') ? 'К чеку' : 'К обработке'}</Link><Link className="action-link" to="/receipts/upload">Загрузить другое фото</Link></div>
     {notice && <p role="status" className="ck-rec-warning">{notice}</p>}
     <RequestBlock title={`Задание №${jobId}`} id="recognition-job-title" state={state} retry={request.refresh}>
       {(job) => <>

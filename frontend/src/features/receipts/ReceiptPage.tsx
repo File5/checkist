@@ -42,7 +42,7 @@ export function ReceiptView({ receiptId, returnTo, header, images, lines, discou
   const visibleLines = lines.state.kind === 'ok' ? lines.state.data.results : []
   return <div className="receipts-page">
     <div className="receipt-actions">
-      <Link className="action-link" to={returnTo ?? '/receipts'}>К чекам</Link>
+      <Link className="action-link" to={returnTo ?? '/receipts'}>{returnTo?.startsWith('/recognition/jobs/') ? 'К заданию' : 'К чекам'}</Link>
       <Link className="action-link" to="/receipts/upload">Загрузить фото</Link>
       <Link className="action-link" to="/recognition/jobs">Обработка</Link>
     </div>

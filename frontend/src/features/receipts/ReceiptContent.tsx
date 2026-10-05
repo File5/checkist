@@ -1,6 +1,6 @@
 import type { Discount, Line, Receipt, Tax } from '../../api/receipts'
 import type { ReceiptImage } from '../../api/recognition'
-import type { RecognitionCode } from '../../api/recognition-types'
+import { imageLabels, issueLabels } from '../../lib/recognition-labels'
 import { formatObservedAt, formatPercent, formatQuantity } from '../../lib/format'
 import { Link } from '../../navigation'
 import ReceiptMedia from './ReceiptMedia'
@@ -9,26 +9,6 @@ import { money, price, recognizedText, recognizedValue, unknown } from './state'
 const lineKinds: Record<Line['kind'], string> = {
   product: 'Товар', service: 'Услуга', deposit: 'Залог', deposit_return: 'Возврат залога',
 }
-const imageStatuses: Record<ReceiptImage['status'], string> = {
-  pending: 'Ожидает обработки', running: 'Распознаётся', imported: 'Чек сохранён', reused: 'Связан с существующим чеком',
-  updated: 'Чек дополнен', needs_review: 'Требует проверки', failed: 'Ошибка распознавания', cancelled: 'Обработка отменена',
-}
-const issues: Partial<Record<RecognitionCode, string>> = {
-  missing_required: 'Не удалось прочитать обязательное поле.', invalid_value: 'Распознанное значение требует проверки.',
-  total_mismatch: 'Сумма строк не совпадает с итогом.', tax_mismatch: 'Суммы налогов не совпадают.',
-  timezone_unknown: 'Часовой пояс магазина не определён.', time_ambiguous: 'Время покупки неоднозначно.',
-  weak_identity: 'Недостаточно данных для определения дубликата.', identity_conflict: 'Данные чека противоречат уже сохранённым.',
-  product_unmatched: 'Товар не сопоставлен.', product_ambiguous: 'Сопоставление товара неоднозначно.',
-  product_conflict: 'Данные товара требуют проверки.', clipped: 'Часть чека обрезана.', overlap: 'Области чеков пересекаются.',
-  geometry_requires_review: 'Область чека требует проверки.', timeout: 'Время распознавания истекло.',
-  worker_lost: 'Обработка была прервана.', storage_unavailable: 'Изображение временно недоступно.',
-  provider_error: 'Сервис распознавания вернул ошибку.', invalid_output: 'Не удалось прочитать ответ сервиса распознавания.',
-  auth_required: 'Сервис распознавания требует входа.', rate_limited: 'Сервис распознавания временно ограничил запросы.',
-  provider_unavailable: 'Сервис распознавания недоступен.', network_unavailable: 'Нет соединения с сервисом распознавания.',
-  configuration_error: 'Настройки распознавания требуют проверки.', invalid_input: 'Изображение не подходит для распознавания.',
-  cancelled: 'Обработка отменена.', no_receipts: 'На фото не найдены чеки.', too_many_receipts: 'На фото слишком много чеков.',
-}
-
 export function ReceiptHeader({ receipt }: { receipt: Receipt }) {
   return <>
     <h3 className="receipt-store-name">{recognizedText(receipt.store.name)}</h3>
@@ -43,7 +23,7 @@ export function ReceiptHeader({ receipt }: { receipt: Receipt }) {
       <div><dt>Налог в ценах</dt><dd>{receipt.prices_include_tax ? 'Включён' : 'Не включён'}</dd></div>
     </dl>
     {receipt.unmatched_products_count > 0 && <p className="receipt-warning">Товары не сопоставлены: {receipt.unmatched_products_count.toLocaleString('ru-RU')}</p>}
-    {receipt.review_required && <p className="receipt-warning">Данные требуют проверки. Причины для каждого снимка показаны в изображениях.</p>}
+    {receipt.review_required && <p className="receipt-warning">Данные требуют проверки. Проверьте несопоставленные товары и замечания к изображениям.</p>}
   </>
 }
 
@@ -51,9 +31,9 @@ export function ReceiptImages({ images, receiptId }: { images: ReceiptImage[]; r
   return <ul className="receipt-images">{images.map((image) => <li className="receipt-image-card" key={image.id}>
     <h3>Фото №{image.photo_id} · вырезка {image.position}</h3>
     <ReceiptMedia url={image.image_url} alt={`Вырезка ${image.position} с фото №${image.photo_id}, чек №${receiptId}`} />
-    <p>{imageStatuses[image.status]}</p>
-    {image.issues.length > 0 && <ul className="receipt-warning" aria-label="Причины проверки">{image.issues.map((issue, index) =>
-      <li key={`${issue.code}-${issue.field}-${index}`}>{issues[issue.code] ?? 'Данные требуют проверки.'}</li>)}</ul>}
+    <p>{imageLabels[image.status]}</p>
+    {image.issues.length > 0 && <ul className="receipt-warning" aria-label="Замечания распознавания">{image.issues.map((issue, index) =>
+      <li key={`${issue.code}-${issue.field}-${index}`}>{issueLabels[issue.code]}</li>)}</ul>}
     <Link className="action-link" to={`/recognition/jobs/${image.job_id}`}>Задание №{image.job_id}</Link>
   </li>)}</ul>
 }
