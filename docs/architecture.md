@@ -93,3 +93,4 @@ Cancel queued сразу даёт cancelled, running — cancel_requested до �
 Клиент загрузки фото/чеков, экраны каталога и цен, ручное сопоставление/редактирование через API, дашборд, серверные курсы валют и пользовательское разграничение. OpenAI API/Claude CLI пока не реализованы. Production-архитектура, retention/cleanup и deployment не определены; защита ручных админских правок от параллельного OCR исключена из v1.
 
 Контракт, модель данных и реальные ограничения проверки: [api-contract.md](api-contract.md), [data-model.md](data-model.md), [verification.md](verification.md).
+Обработка фото с шестью чеками: [проблемы, решения и компромиссы](multi-receipt-photo-report.md).
