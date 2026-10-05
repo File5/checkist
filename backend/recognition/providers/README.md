@@ -70,8 +70,8 @@ in upload bodies. Codex failure never selects fake.
 | provider_auth_failure | auth_required, nonretryable |
 | provider_error | provider_unavailable, retryable |
 | malformed_schema (invalid_output) | Strictly rejected schema; no success DTO |
-| partial_missing_quantity (incomplete) | Unknown quantity with unreadable evidence, needs review |
-| partial_success | First receipt complete; second lacks quantity |
+| partial_missing_quantity (incomplete) | Unknown quantity and unit price with unreadable evidence, needs review |
+| partial_success | First receipt complete; second lacks quantity and unit price |
 | inconsistent_total | Structurally valid contradictory total, review reason total_mismatch |
 | duplicate_strong (repeat) | Always first receipt's fiscal identity, including crop position 2 |
 | duplicate_weak | Repeated store/time/total with no fiscal identifiers |

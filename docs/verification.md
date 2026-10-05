@@ -4,7 +4,7 @@
 
 Реализованы backend scaffold (health API, Postgres/Redis probes, Celery task/CLI, Compose), React/TypeScript/Vite SPA с настоящим health API через proxy и предметная модель данных чеков — приложения `catalog`, `stores`, `receipts` с миграциями и тестами ([data-model.md](data-model.md)) — и HTTP API чтения этой модели, приложение `api` с 13 GET-эндпоинтами ([api-contract.md](api-contract.md#реализовано-api-чтения-каталога-и-цен)). Контрактные тесты health используют mocks; integration-tag tests работают с реальными Postgres и Redis; выполнение очереди и result backend проверяет отдельный `check_services`. Ограничения БД, каскады, сиды, дедупликацию, проверку чека и историю цен проверяют integration tests трёх приложений на реальном Postgres. API чтения проверяют тесты `api`: без БД — разбор параметров, пагинация, сериализация, курсы и формат ошибок; с тегом `integration` — эндпоинты через тестовый клиент Django на реальном Postgres; настоящий HTTP — сценарии `curl.exe` [ниже](#http-api-чтения). Django admin (`/admin/`, 12 моделей и inline чека) проверяют `test_admin.py` трёх приложений и `health/tests/test_admin_site.py` через `django.test.Client`: это HTTP-запросы к настоящим страницам админки без браузера. Vitest проверяет клиентский API-адаптер с mocked fetch; CLI `backend/scripts/check_health_proxy.mjs` — настоящий HTTP и тот же адаптер через proxy в Node 24.
 
-Реализован `recognition`: фото/вырезки MEDIA, очередь PostgreSQL, host-worker, FakeProvider/Codex CLI, автоматический импорт, локальный HTTP upload/cancel/retry и чтение всех строк чеков. Новый сквозной набор — [ниже](#распознавание-сквозная-серверная-проверка). Пользовательского входа, HTTP ручного редактирования, UI загрузки/чеков и дашборда пока нет. Прежний SPA использует только health, поэтому новые HTTP-тесты не подтверждают React/proxy/UI интеграцию. Админку проверяют отдельно [без браузера](#админка-проверки-без-браузера) и [человеком](#ручная-приёмка-админки-человеком).
+Реализован `recognition`: фото/вырезки MEDIA, очередь PostgreSQL, host-worker, FakeProvider/Codex CLI, автоматический импорт, локальный HTTP upload/cancel/retry и чтение всех строк чеков. Новый сквозной набор — [ниже](#распознавание-сквозная-серверная-проверка). Пользовательского входа, HTTP ручного редактирования и дашборда пока нет. Каталог и цены SPA уже подключены к API ([frontend.md](frontend.md)); И4 не меняет клиентские экраны распознавания и не подтверждает их React/proxy/UI интеграцию. Админку проверяют отдельно [без браузера](#админка-проверки-без-браузера) и [человеком](#ручная-приёмка-админки-человеком).
 
 Ни сборка образа, ни `check`, ни mocked API tests не доказывают реальную HTTP/клиентскую интеграцию. Визуальную и интерактивную приёмку выполняет человек; автоматический обход browser UI запрещён. HTTP, CLI и unit tests можно автоматизировать.
 
@@ -50,7 +50,7 @@ docker compose -p checkist_qa up -d --build --wait --wait-timeout 120 worker
 ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py check_services
 ```
 
-Ожидается exit 0, отсутствие новых миграций, 247 тестов без БД и 846 integration, затем JSON с `celery_task.result={"message":"pong"}`. На пустой БД `migrate` применяет 23 миграции: 18 стандартных и 5 собственных, включая recognition.0001_initial. Числа соответствуют текущему коду и могут измениться вместе с тестами. Команда без тега БД не использует; integration нельзя заменять skip/eager. Runner создаёт и удаляет **`test_checkist_qa`**; Redis tests используют QA Redis DB 2 и уникальные ключи. Recognition tests используют временный MEDIA и fake/mock, настоящий Codex не вызывают.
+Ожидается exit 0, отсутствие новых миграций, 257 тестов без БД и 866 integration, затем JSON с `celery_task.result={"message":"pong"}`. На пустой БД `migrate` применяет 23 миграции: 18 стандартных и 5 собственных, включая recognition.0001_initial. Числа соответствуют текущему коду и могут измениться вместе с тестами. Команда без тега БД не использует; integration нельзя заменять skip/eager. Runner создаёт и удаляет **`test_checkist_qa`**; Redis tests используют QA Redis DB 2 и уникальные ключи. Recognition tests используют временный MEDIA и fake/mock, настоящий Codex не вызывают. Не запускайте два DB-runner одновременно с одним именем test DB: --noinput может пересоздать БД другого своего прогона.
 
 | Приложение | Без БД (`--exclude-tag=integration`) | С БД (`--tag=integration`) |
 | --- | --- | --- |
@@ -58,11 +58,11 @@ docker compose -p checkist_qa up -d --build --wait --wait-timeout 120 worker
 | `stores` | 14 | 79 |
 | `receipts` | 18 | 238 |
 | `health` | 26 | 7 |
-| `api` | 112 | 304 |
-| `recognition` | 68 | 138 |
-| Всего | 247 | 846 |
+| `api` | 112 | 305 |
+| `recognition` | 78 | 157 |
+| Всего | 257 | 866 |
 
-Числа обнаружены `DiscoverRunner.build_suite` по приложениям/тегам и подтверждены итоговым прогоном С6 на Windows, DB `checkist_qa_c6` / `test_checkist_qa_c6`, Postgres 25466, Redis 16396. Результаты — [ниже](#фактические-результаты-с6). Предыдущий merge-прогон без recognition: 179/671; F3–F6 до merge, без api: 67/404. Эти исторические результаты ниже сохраняются со своими датами и scope. Subtests отдельно не считаются. Гонки — TransactionTestCase и отдельные Postgres-соединения. Журналы ожидаемых безопасных HTTP 400/403/409/500 в негативных тестах не означают failure теста; окончательный exit code и сводка runner обязательны.
+Текущие числа — И4 после согласованного уточнения, итоговый прогон [ниже](#повторный-прогон-после-согласованного-уточнения-и4), Windows, DB `checkist_qa_i4_final` / `test_checkist_qa_i4_final`, Postgres 25475, Redis 16405. Исторический С6: 247/846; merge-прогон без recognition: 179/671; F3–F6 до merge, без api: 67/404. Эти исторические результаты ниже сохраняются со своими датами и scope. Subtests отдельно не считаются. Гонки — TransactionTestCase и отдельные Postgres-соединения. Журналы ожидаемых безопасных HTTP 400/403/409/500 в негативных тестах не означают failure теста; окончательный exit code и сводка runner обязательны.
 
 Unit/contract tests health покрывают точный 200, комбинации 503, сохранение независимых checks, анонимность, игнорирование query/Authorization, 405, 406, безопасный 500 при DEBUG, отсутствие публикации task из health, параллельность probes, cleanup кеша, bounded publication retries и негативную env-валидацию. Это не сетевой замер времени отказа.
 
@@ -82,7 +82,7 @@ Unit/contract tests health покрывают точный 200, комбинац
 ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test recognition.tests.test_e2e --tag=integration --noinput --verbosity=2
 ```
 
-9 `TransactionTestCase` на PostgreSQL: настоящий APIClient с cookie/Origin/CSRF, multipart upload → queued → `recognition_worker --once` → succeeded/2 crops; original/preview/crop files и GET их URL байт в байт; receipts/lines/discounts/taxes; точный replay; другое фото по сильной идентичности и отдельно без номеров по store/time/total без новых lines/products; HTTP cancel queued и первого/второго recognize на отдельном соединении; сохранение первой импортированной части; retry failed/cancelled/partial; needs_review с нормализованным результатом, missing quantity и противоречивыми totals. Для MEDIA тест перепривязывает только document_root существующего DEBUG media route к TemporaryDirectory, API-маршруты остаются из config.urls. Это dispatch внутри Django, без HTTP-сокета и браузера.
+11 `TransactionTestCase` на PostgreSQL: настоящий APIClient с cookie/Origin/CSRF, multipart upload → queued → `recognition_worker --once` → succeeded/2 crops; original/preview/crop files и GET их URL байт в байт; receipts/lines/discounts/taxes; точный replay; другое фото по сильной идентичности и отдельно без номеров по store/time/total без новых lines/products; HTTP cancel queued и первого/второго recognize на отдельном соединении; сохранение первой импортированной части; retry failed/cancelled/partial; needs_review с нормализованным результатом, одновременно missing quantity/unit_price и противоречивыми totals. И4 добавляет observation как в С6: operation=null, ambiguous fiscal → Receipt/товары, succeeded/review=0, неблокирующие issues и replay без дублей. После уточнения И4 сквозной тест также подтверждает арифметический вывод отсутствующих quantity/unit_price/amount, pcs для штучной строки и повторное фото с валютой из известного магазина: succeeded, review=0, без дублей. Для MEDIA тест перепривязывает только document_root существующего DEBUG media route к TemporaryDirectory, API-маршруты остаются из config.urls. Это dispatch внутри Django, без HTTP-сокета и браузера.
 
 Регрессия — обе полные команды шести приложений выше. Откат recognition на QA **до загрузок**, при остановленном OCR-worker:
 
@@ -198,6 +198,84 @@ P = `./backend/.venv/Scripts/python.exe -X utf8`. Завершившиеся п�
 
 **Не проверено и почему.** Реальные фото/полевое OCR-качество и UI — нужны разрешённые фото/эталон и реализованный клиент; шаги ручной приёмки выше. Vite `/media` proxy ещё отсутствует; новый API через него и frontend lint/test/build не повторялись, frontend не менялся. Полный suite в Linux не повторялся: проверен Windows→QA путь, отдельно container checks/pong; Linux OCR/POSIX crash/watchdog не принят (watchdog исключён v1). Нагрузка/большие данные, облачные лимиты/истечение auth, backup restore и recovery после реального убийства worker — не испытывались в С6; deterministic leases/recovery/cancel покрыты существующими integration-тестами. Эти проверки не заменяются сборкой/статическим аудитом.
 
+## Фактические результаты И4
+
+2026-10-05. Исправлена причина С6: null operation и ambiguous/null необязательный fiscal больше не отправляют читаемый чек в needs_review. Исходный DTO сохраняется; при отсутствии явного возврата импорт использует sale с замечанием. Неблокирующие issues совместимы с imported/reused/updated и Job.succeeded; review-счётчик учитывает needs_review. Неоднозначная товарная идентичность оставляет product=NULL с замечанием, не откатывает чек. Для Receipt такой unmatched по-прежнему даёт review_required=true. Формы, список публичных кодов, fixtures/public и схема БД не изменены; новых зависимостей нет. В CLAUDE.md исправлено описание уже подключённых каталога/цен SPA; клиент распознавания принадлежит И5.
+
+### Причины импорта: итоговая таблица
+
+Это внутренние коды сервиса; API сохраняет прежний allowlist и заменяет неизвестные коды на invalid_value, закрытые pointers — на `/`. Таблица относится к новому импорту, не меняет прошлые terminal outcomes.
+
+| Причина / условие | Блокирует импорт в needs_review | Действие |
+| --- | --- | --- |
+| operation=null или неоднозначный тип операции | Нет | sale без явного возврата; явный заголовок возврата/отрицательные товарные количества → refund; operation_defaulted и derived `/operation` |
+| ambiguous/unreadable необязательные fiscal, касса/смена/номер, код товара, подсказка товара, налоговые детали | Нет | Значение отсутствует; optional_omitted, исходное наблюдение сохраняется |
+| identity_conflict из-за неподтверждённого необязательного идентификатора | Нет | В сильный ключ попадают только observed поля; неполный номер не включает unique номера |
+| Нет сильного ключа / слабая идентичность | Нет | Точный store/time/total → тот же Receipt, другое значение → новый; совпадение разных реальных чеков по слабому ключу остаётся ограничением v1 |
+| identity_conflict: разные полные fiscal-ключи либо разные полные номер/касса/смена у кандидата | Да | Никакого нового domain graph; исходные данные и безопасная причина сохраняются |
+| missing_required: нет названия продавца/магазина, даты/точного времени, итога или обязательного факта строки после безопасных выводов | Да | Обязательные инварианты текущей модели сохранены по решению человека; два неизвестных числа строки, неразрешимые единицы/округляемые количества или цены требуют review |
+| Отсутствует одно из quantity/unit_price/amount при двух observed числах | Нет, если вывод представим в модели | Третье число арифметически; quantity/price без округления, amount до цента ROUND_HALF_UP; исходный DTO не заменяется, pointer в derived |
+| Единица отсутствует у целого observed количества, без признаков цены за вес/объём | Нет | pcs с derived; unreadable/ambiguous единица и дробное количество без единицы всё ещё блокируют |
+| Валюта отсутствует, но разрешён существующий магазин RU/KZ/DE | Нет | RUB/KZT/EUR из страны точки, currency_inferred; напечатанная валюта имеет приоритет; без разрешимой точки/правила — review |
+| Нет ни одной строки | Да | Сохраняется needs_review без Receipt |
+| country_unknown, currency_unknown, store_ambiguous/store_conflict, отсутствие адреса новой точки без разрешимой branch | Да | Не удалось разрешить обязательный магазин/валюту; страна может выводиться из RUB/KZT/EUR по существующему правилу |
+| timezone_unknown, timestamp_ambiguous/conflict, конфликт выбранных timestamps | Да | Момент покупки нельзя определить однозначно без угадывания |
+| ambiguous_value / identity_conflict в обязательных магазине/дате/времени/итоге/фактах строки | Да | Нет уверенно читаемых обязательных фактов |
+| invalid_value обязательной строки: нулевое количество, отрицательная unit_price, quantity/amount разных знаков, положительный deposit_return | Да | Инварианты существующей модели/БД сохраняются |
+| total_mismatch `/total`: абсолютная разница больше 0.01 | Да | Проверяется сумма строк − скидки + налог при prices_include_tax=False |
+| Разница итога до 0.01; total_mismatch quantity×unit_price; receipt_invalid вторичного валидатора | Нет | Сохраняются напечатанные суммы и безопасные замечания, текст валидатора не публикуется |
+| tax_mismatch, tax_rate_invalid/unconfirmed, неполные ReceiptTax | Нет | Непригодные налоговые детали отбрасываются; новая ставка только по observed kind/rate. Если налог необходим для общей суммы без налога, блокирует именно gross total_mismatch |
+| merchant_tax_id_invalid, merchant_conflict необязательного tax_id_type | Нет | Неверный ID отбрасывается; конфликт типа у известного продавца даёт замечание без перезаписи |
+| Неверные/нечитаемые скидки, parent/line_position, discount_total/discount_amount | Сами по себе нет | Пропуск непригодной скидки, отвязка неверного parent, арифметический пересчёт агрегатов; грубое расхождение общей суммы всё ещё блокирует |
+| product_ambiguous/conflict/package_invalid | Нет | Читаемая строка остаётся; неизвестная подсказка отбрасывается, точный конфликт оставляет product=NULL; заполненный товар не заменяется |
+| receipt_conflict / receipt_structure_conflict / receipt_line_conflict повторного фото | Нет | Связь с тем же Receipt, несовместимые уже заполненные части не перезаписываются; partial fiscal не смешиваются в новый ключ |
+| clipped у читаемой вырезки | Нет | Импорт с замечанием; unreadable core остаётся needs_review |
+| Некорректная/перекрывающаяся геометрия, invalid_output, ошибка провайдера/БД/хранилища | Технический failed, не ослаблен | Смешанный OCR не запускается; ошибки и факты закрыты прежними безопасными кодами |
+| import_busy, отмена, потерянный fence | Это управление очередью | Busy откладывается до deadline; cancel/stale fence не записывает новый граф; уже сохранённые части остаются |
+
+Решение человека по q_muudwwemcm: сохранить обязательные инварианты Receipt/ReceiptLine; до needs_review применять безопасные выводы валюты из страны найденного магазина, третьего числа строки из двух напечатанных и pcs для штучной строки без веса. Код после уточнения реализует это без изменения моделей/миграций receipts. Точное время, неизвестные факты и неоднозначные значения не выдумываются. Откат И4 — revert кода/тестов/docs, импортированные данные остаются; миграций и удаления данных нет.
+
+### Проверено и прошло
+
+Windows Python 3.13.9, Docker 29.8.1/Compose 5.5.1; PostgreSQL 17.11, Redis 7.4.11. Собственный Compose project/DB `checkist_qa_i4`, runner `test_checkist_qa_i4`; Postgres 25474, Redis 16404, host API 18014. Полный QA environment выше с согласованной заменой DB/портов/Redis URL/proxy; MEDIA/scratch — разные игнорируемые каталоги `.orca-attachments/i4/media` и `scratch`. Автотесты — TemporaryDirectory, fake/mock. Dev/чужие QA не менялись.
+
+P = `./backend/.venv/Scripts/python.exe -X utf8`. У завершившихся проверок в таблице exit 0.
+
+| Команда | Фактический результат |
+| --- | --- |
+| `py -3.13 -m venv backend/.venv`; `P -m pip install -r backend/requirements.txt`; `P -m pip check` | Закреплённый набор установлен; No broken requirements |
+| `docker compose -p checkist_qa_i4 config --quiet`; `up -d --wait --wait-timeout 90 postgres redis` | Healthy отдельные сервисы; socket.create_connection(timeout=2) на 25474/16404 → TCP OK |
+| `P backend/manage.py check`; `makemigrations --check --dry-run`; `migrate --noinput` | 0 issues; No changes detected; 23 миграции на пустой QA |
+| `P backend/manage.py test catalog stores receipts health api recognition --exclude-tag=integration --noinput --verbosity=1` | Окончательный последовательный прогон: **253 OK, 12.112 с**, без skips |
+| Та же команда с `--tag=integration` | **857 OK, 162.311 с**, без skips; тестовая БД удалена |
+| `P backend/manage.py test recognition.tests.test_import --noinput --verbosity=1` | **42 OK, 8.504 с** перед окончательным полным прогоном |
+| `docker compose -p checkist_qa_i4 up -d --build --wait --wait-timeout 120 worker`; `P backend/manage.py check_services` | Healthy prefork worker; реальные DB/Redis/Celery task/result → pong |
+| `codex.exe --version`; `codex.exe login status` | Native 0.160.0; Logged in using ChatGPT; auth/config не менялись |
+| `P backend/manage.py seed_recognition_demo`; `runserver 127.0.0.1:18014 --noreload` | Синтетические single/double; настоящий host HTTP API |
+| HTTP retry single + `RECEIPT_OCR_PROVIDER=codex_cli`, `P backend/manage.py recognition_worker --once` | **80.917 с wall**, detect **9.941 с**, recognize **69.909 с**; Job 2 succeeded, reused=1, review=0; прежний Receipt 1 с 4 строками/3 товарами |
+| HTTP upload double + та же команда worker | **171.983 с wall**, detect **13.776 с**, recognize **99.844/57.006 с**; Job 3 succeeded, imported=1/reused=1/review=0; первый чек тот же Receipt 1, второй создан как Receipt 2 |
+| `P .orca-attachments/i4/http_smoke.py verify-single`, `verify-double`, `repeat-single`, `repeat-double` | urllib/cookie/CSRF/multipart/assert script; HTTP totals 4.42/6.00, 4/2 строки; каждый product-kind имеет product; точный повтор 200/reused с прежними Photo/последними Job IDs. Итог БД: **2 Receipt / 6 ReceiptLine / 5 Product** |
+
+Скрипт smoke и приватные provider payload находятся в игнорируемом QA-каталоге, не deliverable. Воспроизводимые HTTP-команды — раздел выше. После последнего изменения продуктового кода обе полные команды выполнены последовательно; после них менялись только документы. Публичные fixture tests и проверки постоянного числа SQL включены в полный прогон; новый detail Receipt с warnings делает 1 SQL. Это не нагрузочный замер.
+
+После документации `P -m pip check`, `P backend/manage.py check`, `makemigrations --check --dry-run`, `git diff --check` и проверка UTF-8/LF 18 изменённых файлов — exit 0. Свой host API остановлен после проверки PID/executable/порта; `docker compose -p checkist_qa_i4 down` — exit 0, без удаления томов. Аудит контейнеров project, LISTEN 25474/16404/18014/15187 и python/codex процессов своего worktree пуст; чужие процессы не останавливались.
+
+### Проверено и не прошло
+
+- До исправления `P backend/manage.py test recognition.tests.test_import.ImportTests.test_c6_codex_null_operation_and_ambiguous_optional_fiscal_autoimport --noinput --verbosity=1` — exit 1, `needs_review != created`. На окончательном коде входит в успешный полный прогон.
+- Первый реальный single worker — exit 0, **108.990 с wall**, detect 8.757 с/recognize 98.914 с: уже создал Receipt 1, 4 строки и 3 товара, но Job 1 остался partial_succeeded/review=1 из-за старого подсчёта любых issues. `verify-single` — exit 1 на требовании succeeded. Причина исправлена в queue/pipeline; штатный HTTP retry и double выше прошли. Исторический Job 1 не переписывался. Это не замена требования безусловным повтором модели: исправлен конкретный дефект терминализации.
+- Промежуточные импортные/queue tests ожидали review для теперь неблокирующих optional/product/clipped причин; ожидания заменены согласно заданию, проверки сохранения строк/неперезаписи/приватности/конфликтов сильных ключей сохранены и расширены. Промежуточный полный integration: 853 теста, exit 1 на старом clipped-ожидании. Дополнительный negative clipped test сперва имел observed total при null, поэтому получил failed схемы; evidence исправлен на unreadable, требования схемы не ослаблялись.
+- Ошибка подготовки PowerShell: dot-source qa.ps1 был запрещён ExecutionPolicy; зависимый Compose запуск пошёл с dev defaults и отказал на занятом 15432 (exit 1). Своих запущенных контейнеров/данных не было; собственный project удалён и создан после загрузки своего environment через ScriptBlock, политика ОС не менялась.
+- Ошибка организации проверки: точечный DB-runner был запущен параллельно полному с тем же `test_checkist_qa_i4`. Его --noinput пересоздал свою занятую test DB; exit 1/UniqueViolation contenttypes. Пересекающийся полный прогон остановлен (exit -1) и не принят. Проверено отсутствие test-соединений, удалена только собственная idle test DB; затем 42 tests и обе полные команды выше выполнены последовательно. QA domain `checkist_qa_i4` и реальные smoke-чеки не затронуты.
+
+### Не проверено и почему; показ и ручной сценарий
+
+- Реальные пользовательские фото и полевое качество OCR: проверены только синтетические демо. Человек сравнивает source/crop с эталоном, товары/суммы/дату, включая несколько чеков, возвраты, скидки и плохо читаемые необязательные реквизиты. Плохие обязательные факты/грубая сумма должны остаться needs_review.
+- UI, Vite proxy, адаптивность, фокус/Back/Forward/refresh и доступность — приёмка человеком по разделам выше и docs/frontend.md. Frontend И4 не менялся; npm lint/test/build не запускались. Автоматического обхода UI и скриншотов нет. Показ — этот фактический markdown-отчёт с данными и командами, не макет и не подтверждение визуального поведения.
+- Для просмотра результата: применить QA environment с DB `checkist_qa_i4`, портами 25474/16404/API 18014 и теми же MEDIA/scratch, поднять `docker compose -p checkist_qa_i4 up -d --wait postgres redis`, `P backend/manage.py runserver 127.0.0.1:18014 --noreload`. GET `/api/recognition/jobs/2/`, `/3/`, `/api/receipts/1/lines/`, `/2/lines/`: succeeded/review=0, totals 4.42/6.00, 4/2 строки, 5 товаров. Оригиналы — synthetic `demo/single.png` / `double.png`; MEDIA URL выданы API. Новый пустой собственный QA project позволяет повторить создание с нуля через seed/upload/worker; на сохранённом QA повтор исходных байтов вернёт уже выполненные jobs.
+- Клиент каталога/цен запускается по docs/frontend.md (`npm.cmd ci`, `npm.cmd run dev -- --port 15187`, proxy target 18014). Сценарий загрузки/просмотра распознавания и его UI-приёмку передаёт И5; этот backend-отчёт не обещает ещё не проверенные экраны. Админка — напрямую Django `/admin/`, is_staff; createsuperuser выполняет человек в QA.
+- Linux OCR/watchdog, нагрузка, cloud limits/auth expiry и восстановление backup не испытывались; стандартные race/cancel/recovery/миграционный reverse/reapply тесты входят в полный integration. Deployment/release/merge не выполнялись. QA-тома и игнорируемые синтетические MEDIA сохраняются для человека; процессы/Compose после проверки останавливаются без down -v.
+
 ## Модель данных: catalog, stores, receipts
 
 Команды выполняются в QA-среде после блока environment выше; нужен только QA Postgres (тестам `health` с тегом `integration` — ещё и Redis). Worker для проверок модели данных не нужен.
@@ -217,6 +295,44 @@ P = `./backend/.venv/Scripts/python.exe -X utf8`. Завершившиеся п�
 - без БД — `to_base` и единицы, `normalize_address` и `address_key`, `name_key`, сборку `fiscal_key`, согласованность образцов чеков;
 - с БД — unique и check каждой таблицы, три уровня дедупликации и `find_duplicates`, отрицательные строки и итог, `PROTECT` / `CASCADE` / `SET_NULL`, сиды и их повторное и обратное применение, сохранение трёх образцов чеков и отказ при повторе, `validate_receipt`, `find_alias`, историю цен;
 - с БД, админка (`test_admin.py`) — см. следующий раздел.
+
+### Повторный прогон после согласованного уточнения И4
+
+2026-10-05, окончательный код. Дополнены безопасные выводы перед needs_review: валюта из страны существующего Store (RU/KZ/DE), третье число строки из двух observed чисел, pcs при целой observed штучной строке без признаков цены за вес/объём. Количество/цена не округляются; сумма — ROUND_HALF_UP до цента. Исходный DTO сохраняется, derived фиксирует выводы. Отрицательный fake partial_missing_quantity/partial_success теперь оставляет неизвестными quantity **и** unit_price: это непригодный результат, а один пропуск уже восстанавливается. Требование needs_review для действительно непригодных данных и ожидания реального OCR не ослаблены. Все публичные JSON-формы/fixtures/allowlist сохранены; frontend не менялся.
+
+#### Проверено и прошло
+
+Windows Python 3.13.9, Docker 29.8.1, Compose 5.5.1, native Codex 0.160.0, model gpt-6.1-sol. Новые собственные project/БД **checkist_qa_i4_final**, runner test_checkist_qa_i4_final, новые тома, PostgreSQL 17.11 на 25475, Redis 7.4.11 на 16405, host API 18015. Полный QA environment этого документа со всеми DB/портами/Redis URL/proxy replacements; loopback/debug/CSRF, MEDIA/scratch раздельно в игнорируемом `.orca-attachments/i4-final/`. Dev/соседние QA не затронуты, auth/config Codex не менялись. P = `./backend/.venv/Scripts/python.exe -X utf8`. Все команды в таблице — exit 0.
+
+| Команда | Фактический результат |
+| --- | --- |
+| `docker compose -p checkist_qa_i4_final config --quiet`; `up -d --wait --wait-timeout 90 postgres redis` | Новые healthy сервисы; ограниченные socket.create_connection(timeout=2) на обоих опубликованных портах прошли |
+| `P -m pip check`; `P backend/manage.py check`; `makemigrations --check --dry-run`; `migrate --noinput` | No broken requirements, 0 issues, No changes detected, 23 миграции в пустую QA |
+| `P backend/manage.py test recognition.tests.test_import recognition.tests.test_import_policy recognition.tests.test_provider recognition.tests.test_pipeline recognition.tests.test_e2e --noinput --verbosity=1` | Промежуточные 110 tests OK, 34.531 с; после них добавлены дополнительные регрессии и выполнен полный прогон ниже |
+| `P backend/manage.py test catalog stores receipts health api recognition --exclude-tag=integration --noinput --verbosity=1` | **257 tests OK, 11.426 с**, без skips, без БД |
+| `P backend/manage.py test catalog stores receipts health api recognition --tag=integration --noinput --verbosity=1` | **866 tests OK, 165.178 с**, без skips; test_checkist_qa_i4_final создана/удалена runner |
+| `docker compose -p checkist_qa_i4_final up -d --build --wait --wait-timeout 120 worker`; `P backend/manage.py check_services` | Healthy Linux prefork; настоящие DB/Redis/Celery task/result: pong |
+| `P backend/manage.py seed_recognition_demo`; `runserver 127.0.0.1:18015 --noreload` | Синтетические single/double и настоящий host HTTP |
+| HTTP multipart/CSRF single → `RECEIPT_OCR_PROVIDER=codex_cli P backend/manage.py recognition_worker --once` | **78.748 с wall**, detect **9.439 с**, recognize **68.170 с**; Job 1 succeeded/imported=1/review=0, Receipt 1/4 строки/3 товара |
+| HTTP multipart/CSRF double → та же команда worker | **137.082 с wall**, detect **12.701 с**, recognize **66.881 / 56.161 с**; Job 2 succeeded/imported=1/reused=1/review=0, Receipt 1 переиспользован, Receipt 2 создан |
+| `P .orca-attachments/i4-final/http_smoke.py verify-single`, `verify-double`, `repeat-single`, `repeat-double`; `P .orca-attachments/i4-final/check_db.py final` | HTTP asserts и ORM asserts: итоги **4.42 / 6.00 EUR**, 4/2 строки, у всех product-строк есть товар. Повторы HTTP 200/reused, прежние Photo/Job. Итог **2 Receipt / 6 ReceiptLine / 5 Product**, оба Job succeeded и review=0 |
+
+Smoke/check_db — просмотренные локальные вспомогательные scripts в игнорируемом QA-каталоге. Воспроизводимые HTTP/CLI-команды приведены выше, приватные payload/логи в сдачу не входят. Полный suite включает согласованность prompt/schema/validator, наблюдение С6, конфликты сильных ключей, арифметику и её отрицательные случаи, CSRF/loopback/privacy, N+1 и 11 server e2e. Эти проверки не подтверждают React в браузере.
+
+После документации повторены `P -m pip check`, `P backend/manage.py check`, `makemigrations --check --dry-run`, `git diff --check` и UTF-8/LF аудит 13 изменённых файлов — exit 0. Ctrl+C завершил свою runserver-сессию (exit 1 вследствие остановки); `docker compose -p checkist_qa_i4_final down` — exit 0 без удаления томов. Проверки `docker ps -a` по своему project, `Get-NetTCPConnection` по 25475/16405/18015/15188 и `Get-CimInstance Win32_Process` по python/codex своего worktree подтвердили отсутствие созданных контейнеров/слушателей/процессов — exit 0.
+
+#### Проверено и не прошло
+
+- До исправления уточнения: `P backend/manage.py test recognition.tests.test_import.ImportTests.test_missing_currency_uses_country_of_existing_store_and_reuses_receipt recognition.tests.test_import.ImportTests.test_missing_line_quantity_is_derived_from_printed_price_and_amount --noinput --verbosity=1` — **exit 1, 2 failures** (`needs_review != linked/created`). После исправления обе регрессии вошли в успешные 866 tests.
+- Первая вспомогательная TCP-проба через PowerShell Python `-c` — **exit 1, SyntaxError** из-за передачи кавычек; зависимые команды не запускались. Проба исправлена передачей Python через UTF-8 stdin, TCP прошёл. Продуктовый код не менялся ради диагностики.
+- На окончательном коде отказов тестов и реальных single/double не было. Журналы ожидаемых негативных HTTP-ответов в suite не считаются failures.
+
+#### Не проверено и почему; ручной показ
+
+- Реальные пользовательские фотографии, разнообразие магазинов/веса/возвратов, OCR-качество: в задаче разрешены синтетические demo. Человек сравнивает source/crop с каноническими Receipt/строками/товарами. Неизвестные обязательные значения после безопасных выводов и грубая сумма должны остаться needs_review. Слабый ключ может объединить разные реальные чеки с точно совпавшими магазином/моментом/итогом — ограничение v1.
+- React UI/Vite proxy/фокус/доступность/адаптивность и скриншоты — только человек. Frontend И4 не менялся, npm проверки не запускались; клиент загрузки/чеков относится к И5. Показ: [фактический отчёт И4](../backend/recognition/I4_ACCEPTANCE.md), без фиктивных скриншотов.
+- Повторить: полный QA environment с DB checkist_qa_i4_final, PG25475/Redis16405/API18015, раздельными MEDIA/scratch; `docker compose -p checkist_qa_i4_final up -d --wait postgres redis`, runserver 127.0.0.1:18015. Прочитать `/api/recognition/jobs/1/`, `/2/`, `/api/receipts/1/`, `/2/` и `/lines/`; MEDIA напрямую на Django. Для нового настоящего OCR-прогона — отдельная пустая QA, seed, CSRF multipart upload и codex_cli worker --once (succeeded job нельзя retry). После интеграции И5 запустить QA Vite на 15188 с proxy target 18015 и вручную пройти upload single/double → статус → чек/товары → повтор/отмена/needs_review, включая клавиатуру, узкий экран и refresh.
+- Нагрузка, backup restore, production/deployment/merge не выполнялись; схема не меняется, откат — revert кода/тестов/docs без удаления импортированных записей. Контейнеры/host API этого прогона остановлены, QA-тома и синтетические MEDIA сохранены.
 
 ## Админка: проверки без браузера
 

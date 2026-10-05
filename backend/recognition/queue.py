@@ -193,11 +193,7 @@ def refresh_progress(job):
     job.completed_count = sum(image.status in TERMINAL_IMAGE_STATUSES for image in images)
     job.imported_count = sum(image.import_effect == ImportEffect.CREATED for image in images)
     job.reused_count = sum(image.import_effect in {ImportEffect.LINKED, ImportEffect.UPDATED} for image in images)
-    job.review_count = sum(
-        image.status == ImageStatus.NEEDS_REVIEW
-        or (image.status in {ImageStatus.IMPORTED, ImageStatus.REUSED, ImageStatus.UPDATED} and bool(image.issues))
-        for image in images
-    )
+    job.review_count = sum(image.status == ImageStatus.NEEDS_REVIEW for image in images)
     job.failed_count = sum(image.status == ImageStatus.FAILED for image in images)
     job.cancelled_count = sum(image.status == ImageStatus.CANCELLED for image in images)
     return images
@@ -239,7 +235,7 @@ def finish_job(job_id, run_token, version, *, status, error_code=""):
             if (not images or job.detected_count != len(images) or any(image.status not in TERMINAL_IMAGE_STATUSES for image in images)
                     or job.attempts.filter(status=AttemptStatus.RUNNING).exists()):
                 raise QueueError("incomplete_results")
-            success = all(image.status in {ImageStatus.IMPORTED, ImageStatus.REUSED, ImageStatus.UPDATED} and not image.issues for image in images)
+            success = all(image.status in {ImageStatus.IMPORTED, ImageStatus.REUSED, ImageStatus.UPDATED} for image in images)
             usable = any(image.import_effect != ImportEffect.NONE or (image.status == ImageStatus.NEEDS_REVIEW and image.normalized_result is not None) for image in images)
             if (status == JobStatus.SUCCEEDED and not success) or (status == JobStatus.PARTIAL_SUCCEEDED and (success or not usable)):
                 raise QueueError("invalid_outcome")
@@ -312,8 +308,7 @@ def save_image_result(job_id, run_token, version, image_id, *, status, normalize
             raise QueueError("invalid_import_effect")
         expected_effect = {ImageStatus.IMPORTED: ImportEffect.CREATED, ImageStatus.REUSED: ImportEffect.LINKED, ImageStatus.UPDATED: ImportEffect.UPDATED}
         if ((status in expected_effect and import_effect != expected_effect[status])
-                or (status in {ImageStatus.RUNNING, ImageStatus.FAILED, ImageStatus.CANCELLED} and import_effect != ImportEffect.NONE)
-                or (image.clipped and import_effect != ImportEffect.NONE)):
+                or (status in {ImageStatus.RUNNING, ImageStatus.FAILED, ImageStatus.CANCELLED} and import_effect != ImportEffect.NONE)):
             raise QueueError("invalid_import_effect")
         image.status = status
         image.normalized_result = normalized_result

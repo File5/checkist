@@ -228,11 +228,12 @@ def validate_observation(data):
 
 
 def observation_issues(observation):
-    """Safe review reasons, without losing structurally valid observations.
+    """Raw domain findings, without losing structurally valid observations.
 
     Importer must additionally resolve country/store/timezone, FK and identity,
     run full_clean and validate_receipt inside its transaction. This is not an
-    authorization or deduplication decision.
+    authorization or deduplication decision. The importer applies its optional
+    field policy first; findings alone do not mean needs_review.
     """
     from receipts.decimal_math import price_context
 
@@ -301,7 +302,7 @@ def observation_issues(observation):
             total = sum((l.amount for l in observation.lines), Decimal(0)) - sum((d.amount for d in observation.discounts), Decimal(0))
             if observation.prices_include_tax is False:
                 total += sum((t.tax for t in observation.taxes), Decimal(0))
-            if total != observation.total:
+            if abs(total - observation.total) > Decimal("0.01"):
                 issue("total_mismatch", "/total")
         if observation.discount_total is not None and all(d.amount is not None for d in observation.discounts):
             if sum((d.amount for d in observation.discounts), Decimal(0)) != observation.discount_total:

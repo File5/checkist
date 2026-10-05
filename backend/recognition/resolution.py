@@ -19,6 +19,7 @@ from stores.models import Country, Currency, Merchant, Store, TaxRate
 from stores.normalize import address_key
 
 COUNTRY_BY_CURRENCY = {"RUB": "RU", "KZT": "KZ", "EUR": "DE"}
+CURRENCY_BY_COUNTRY = {country: currency for currency, country in COUNTRY_BY_CURRENCY.items()}
 TIMEZONE_BY_COUNTRY = {"RU": "Europe/Moscow", "KZ": "Asia/Almaty", "DE": "Europe/Berlin"}
 
 
@@ -50,14 +51,17 @@ def resolve_country(observation):
     return country
 
 
-def resolve_currency(observation):
-    currency = Currency.objects.filter(pk=observation.currency_code).first()
+def resolve_currency(observation, *, store=None):
+    code = observation.currency_code
+    if code is None and store is not None:
+        code = CURRENCY_BY_COUNTRY.get(store.country_id)
+    currency = Currency.objects.filter(pk=code).first()
     if currency is None:
         raise ResolutionError(issue("currency_unknown", "/currency_code"))
     return currency
 
 
-def resolve_store(observation, country):
+def resolve_store(observation, country, *, allow_create=True):
     """Tax ID + address/branch; absent tax ID uses exact merchant name + address.
 
     The latter is needed for K1's German receipts without printed tax IDs.
@@ -95,9 +99,9 @@ def resolve_store(observation, country):
             raise ResolutionError(issue("store_ambiguous", "/store"))
     if candidates:
         merchant = candidates[0]
-        if incoming.tax_id_type and merchant.tax_id_type and incoming.tax_id_type != merchant.tax_id_type:
-            raise ResolutionError(issue("merchant_conflict", "/merchant/tax_id_type"))
     else:
+        if not allow_create:
+            return None
         merchant = clean_save(Merchant(
             country=registration, legal_name=legal_name, brand_name=incoming.brand_name or "",
             tax_id=tax_id, tax_id_type=tax_type,
@@ -114,6 +118,8 @@ def resolve_store(observation, country):
         if store.country_id != country.pk:
             raise ResolutionError(issue("store_conflict", "/store/country_code"))
         return store
+    if not allow_create:
+        return None
     if not key:
         raise ResolutionError(issue("missing_required", "/store/address_raw"))
     zone = TIMEZONE_BY_COUNTRY.get(country.pk, "UTC")

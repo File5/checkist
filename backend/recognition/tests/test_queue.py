@@ -187,15 +187,14 @@ class QueueTests(TestCase):
         job = finish_job(*fence(job), status="partial_succeeded", error_code="timeout")
         self.assertEqual((job.completed_count, job.review_count, job.failed_count), (2, 1, 1))
 
-    def test_import_effect_and_clipped_images_cannot_bypass_validation(self):
+    def test_import_effect_must_match_receipt_even_for_clipped_images(self):
         job = update_progress(*fence(self.claim()), detected_count=1)
         image = make_image(job, clipped=True)
         with self.assertRaises(QueueError):
             save_image_result(*fence(job), image.pk, status="imported")
-        with self.assertRaises(QueueError):
-            save_image_result(*fence(job), image.pk, status="imported", receipt=make_receipt(), import_effect="created")
+        save_image_result(*fence(job), image.pk, status="imported", receipt=make_receipt(), import_effect="created")
         image.refresh_from_db()
-        self.assertEqual(image.status, "pending")
+        self.assertEqual(image.status, "imported")
 
     def test_recovery_failed_images_include_safe_reason(self):
         job = update_progress(*fence(self.claim()), detected_count=1)

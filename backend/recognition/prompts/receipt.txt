@@ -13,3 +13,10 @@ purchased_on/local_time/utc_offset_printed match that chosen time. Required keys
 even when their values are null. Unknown booleans stay null. Include observed fields entries
 for every used fiscal identifier, store, date, time, total and identity value. No wildcard paths.
 Confidence is nullable self-assessment, not a calibrated probability. Warnings describe gaps.
+Return operation=sale for an ordinary purchase, even without a printed sale heading.
+Return refund only for explicit receipt-level refund/return text or negative product
+quantities; bottle deposit returns and change (Rueckgeld) alone do not mean refund.
+Use ambiguous only when the printed value has multiple plausible readings. A clearly
+printed Register identifier is register_serial, and TSE Transaktion is tse_transaction;
+copy each exactly, with observed evidence, even on synthetic test receipts. If an
+optional fiscal/tax/product identifier cannot be read confidently, return null.

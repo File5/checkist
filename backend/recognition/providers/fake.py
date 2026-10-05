@@ -138,9 +138,12 @@ class FakeProvider:
         self._stage("recognize", run)
         data = receipt_payload(1 if self.scenario.startswith("duplicate_") else getattr(prepared_crop, "position", 1))
         if self.scenario == "partial_missing_quantity" or (self.scenario == "partial_success" and getattr(prepared_crop, "position", 1) == 2):
-            data["lines"][0]["quantity"] = None
-            field = next(f for f in data["fields"] if f["path"] == "/lines/0/quantity")
-            field.update(status="unreadable", confidence=None)
+            # Two missing operands are genuinely unusable. Missing quantity
+            # alone can now be recovered from the printed price and amount.
+            for key in ("quantity", "unit_price"):
+                data["lines"][0][key] = None
+                field = next(f for f in data["fields"] if f["path"] == "/lines/0/" + key)
+                field.update(status="unreadable", confidence=None)
         if self.scenario == "inconsistent_total":
             data["total"] = "123.45"
         if self.scenario == "duplicate_weak":
