@@ -206,6 +206,41 @@ class RecognitionEndToEndTests(TransactionTestCase):
                           Receipt.objects.count(), ReceiptLine.objects.count(), Product.objects.count()),
                          (1, 1, 2, 6, 5))
 
+    def test_safe_line_inferences_and_known_store_currency_finish_succeeded_without_duplicates(self):
+        class MissingValues(FakeProvider):
+            missing_currency = False
+
+            def recognize(self, crop, run):
+                value = super().recognize(crop, run)
+                missing = {"/lines/0/quantity", "/lines/1/unit_price", "/lines/2/amount", "/lines/3/unit"}
+                if self.missing_currency:
+                    missing.add("/currency_code")
+                return replace(value, currency_code=None if self.missing_currency else value.currency_code,
+                    lines=tuple(replace(line, **{("quantity", "unit_price", "amount", "unit")[i]: None})
+                                for i, line in enumerate(value.lines)),
+                    fields=tuple(f for f in value.fields if f.path not in missing)
+                    + tuple(FieldObservation(path, "absent" if path.endswith("/unit") else "unreadable", None, None)
+                            for path in sorted(missing)))
+
+        first = self.upload(self.single)
+        result = process_job(queue.claim_job(), provider=MissingValues("one_receipt"))
+        self.assertEqual((result.status, result.imported_count, result.review_count), ("succeeded", 1, 0))
+        public = self.get(self.job_url(first["job"]["id"]))
+        receipt_id = public["items"][0]["receipt_id"]
+        lines = self.get(f"/api/receipts/{receipt_id}/lines/")["results"]
+        self.assertEqual((lines[0]["quantity"], lines[1]["unit_price"], lines[2]["amount"], lines[3]["unit"]),
+                         ("2.000", "2.0000", "0.79", "pcs"))
+        self.assertFalse(public["review_required"])
+        self.upload(self.another_photo())
+        provider = MissingValues("one_receipt")
+        provider.missing_currency = True
+        result = process_job(queue.claim_job(), provider=provider)
+        self.assertEqual((result.status, result.reused_count, result.review_count), ("succeeded", 1, 0))
+        public = self.get(self.job_url(result.pk))
+        self.assertEqual(public["items"][0]["receipt_id"], receipt_id)
+        self.assertFalse(public["review_required"])
+        self.assertEqual((Receipt.objects.count(), ReceiptLine.objects.count(), Product.objects.count()), (1, 4, 3))
+
     def test_different_photo_reuses_strong_identity_without_duplicate_lines_or_products(self):
         first = self.run_once(self.upload(self.single)["job"]["id"], "one_receipt")
         receipt_id = first["items"][0]["receipt_id"]

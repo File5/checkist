@@ -5,6 +5,7 @@ from django.test import SimpleTestCase
 
 from recognition.dto import FieldObservation
 from recognition.import_policy import prepare_observation
+from recognition.importer import _domain_observation
 from recognition.providers.codex_cli import PACKAGE_ROOT
 from recognition.providers.fake import receipt_payload
 from recognition.schema_validation import _schema, validate_observation
@@ -12,6 +13,58 @@ from .import_fixtures import observation
 
 
 class ImportPolicyTests(SimpleTestCase):
+    def test_arithmetic_requires_two_observed_operands_and_preserves_original(self):
+        obs = observation()
+        for key, expected in (("quantity", Decimal("2.000")), ("unit_price", Decimal("1.2900")),
+                              ("amount", Decimal("2.58"))):
+            with self.subTest(key=key):
+                incoming = replace(obs, lines=(replace(obs.lines[0], **{key: None}),))
+                effective, derived = _domain_observation(incoming)
+                self.assertEqual(getattr(effective.lines[0], key), expected)
+                self.assertIn("/lines/0/" + key, derived)
+                self.assertIsNone(getattr(incoming.lines[0], key))
+                uncertain = replace(incoming, fields=tuple(replace(f, status="ambiguous")
+                    if f.path == "/lines/0/" + ("unit_price" if key == "quantity" else "quantity") else f
+                    for f in incoming.fields))
+                self.assertIsNone(getattr(_domain_observation(uncertain)[0].lines[0], key))
+
+    def test_arithmetic_does_not_round_quantity_or_price_or_divide_by_zero(self):
+        obs = observation()
+        cases = (
+            dict(quantity=None, unit_price=Decimal("3"), amount=Decimal("1")),
+            dict(quantity=Decimal("3"), unit_price=None, amount=Decimal("1")),
+            dict(quantity=None, unit_price=Decimal("0"), amount=Decimal("0")),
+            dict(quantity=Decimal("0"), unit_price=None, amount=Decimal("0")),
+            dict(quantity=None, unit_price=None, amount=Decimal("1")),
+        )
+        for values in cases:
+            with self.subTest(values=values):
+                incoming = replace(obs, lines=(replace(obs.lines[0], **values),))
+                effective, derived = _domain_observation(incoming)
+                self.assertNotIn("/lines/0/quantity", derived)
+                self.assertNotIn("/lines/0/unit_price", derived)
+                for key in values:
+                    self.assertEqual(getattr(effective.lines[0], key), values[key])
+
+    def test_derived_amount_uses_cent_rounding_and_preserves_refund_sign(self):
+        obs = observation()
+        for quantity, expected in (("1.005", "1.01"), ("-1.005", "-1.01")):
+            incoming = replace(obs, lines=(replace(obs.lines[0], quantity=Decimal(quantity),
+                                                   unit_price=Decimal("1"), amount=None),))
+            self.assertEqual(_domain_observation(incoming)[0].lines[0].amount, Decimal(expected))
+
+    def test_piece_default_requires_observed_integer_count_without_weight_rate(self):
+        obs = observation()
+        for quantity, status, text, expected in (("2", "absent", "MILCH 1 L", "pcs"),
+                ("0.5", "absent", "APFEL", None), ("2", "unreadable", "MILCH", None),
+                ("2", "ambiguous", "MILCH", None), ("2", "absent", "APFEL pro kg", None)):
+            incoming = replace(obs, lines=(replace(obs.lines[0], quantity=Decimal(quantity), unit=None, raw_name=text),),
+                fields=tuple(f for f in obs.fields if f.path != "/lines/0/unit")
+                + (FieldObservation("/lines/0/unit", status, None, None),))
+            effective, derived = _domain_observation(incoming)
+            self.assertEqual(effective.lines[0].unit, expected)
+            self.assertEqual("/lines/0/unit" in derived, expected is not None)
+
     def test_prompt_schema_validator_agree_on_operation_and_nullable_fiscal(self):
         prompt = (PACKAGE_ROOT / "prompts/receipt.txt").read_text(encoding="utf-8")
         self.assertIn("operation=sale", prompt)

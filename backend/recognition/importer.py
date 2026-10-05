@@ -19,7 +19,7 @@ from receipts.models import Receipt, ReceiptDiscount, ReceiptLine, ReceiptTax
 from receipts.validation import validate_receipt
 
 from .dto import ReceiptObservation
-from .import_policy import optional_field, prepare_observation
+from .import_policy import derive_line_values, optional_field, prepare_observation
 from .models import ReceiptImage
 from .queue import fenced_job, save_image_result
 from .resolution import (
@@ -52,7 +52,7 @@ class ImportResult:
 
 def _domain_observation(observation):
     """Derive only arithmetic/defaults with recorded JSON pointers, not facts."""
-    derived = []
+    observation, derived = derive_line_values(observation)
     taxes = []
     for i, tax in enumerate(observation.taxes):
         values = {k: getattr(tax, k) for k in ("net", "tax", "gross")}
@@ -83,20 +83,25 @@ def _domain_observation(observation):
     return replace(observation, taxes=tuple(taxes), lines=tuple(lines), **values), derived
 
 
-def _preflight(observation):
+def _preflight(observation, derived=()):
     issues = [issue(v["code"], v["path"]) for v in observation_issues(observation)]
     notices = [v for v in issues if v["code"] == "total_mismatch" and v["field"] != "/total"]
     issues = [v for v in issues if v not in notices]
     # C3 explicitly permits country inference. Store name can come from merchant,
     # and an existing branch may be resolved without reprinting its address.
     allowed = {"/store/country_code"}
+    if observation.currency_code is None:
+        # Resolve this only from an existing store; never from a guessed shop.
+        allowed.add("/currency_code")
     if observation.merchant.legal_name or observation.merchant.brand_name:
         allowed.add("/store/name")
     if observation.store.branch_code:
         allowed.add("/store/address_raw")
     issues = [v for v in issues if not (v["code"] == "missing_required" and v["field"] in allowed)]
     for evidence in observation.fields:
-        if evidence.status == "ambiguous" and not optional_field(evidence.path) and evidence.path not in {"/confidence", "/raw_text"}:
+        if (evidence.status == "ambiguous" and not optional_field(evidence.path)
+                and evidence.path not in {"/confidence", "/raw_text"} and evidence.path not in derived
+                and not (evidence.path == "/currency_code" and observation.currency_code is None)):
             issues.append(issue("ambiguous_value", evidence.path))
     for i, discount in enumerate(observation.discounts):
         if not discount.name:
@@ -319,11 +324,16 @@ def _update_graph(receipt, header, observation):
 
 
 def _import_domain(observation, derived, *, require_duplicate=False, link_only=False):
-    notices = _preflight(observation)
+    notices = _preflight(observation, derived)
     country = resolve_country(observation)
-    currency = resolve_currency(observation)
     with transaction.atomic():
-        store = resolve_store(observation, country)
+        store = resolve_store(observation, country, allow_create=observation.currency_code is not None)
+        if store is None:
+            raise ResolutionError(issue("missing_required", "/currency_code"))
+        currency = resolve_currency(observation, store=store)
+        if observation.currency_code is None:
+            derived = [*derived, "/currency_code"]
+            notices.append(issue("currency_inferred", "/currency_code", "Валюта определена по стране известного магазина."))
         if observation.merchant.tax_id_type and store.merchant.tax_id_type and observation.merchant.tax_id_type != store.merchant.tax_id_type:
             notices.append(issue("merchant_conflict", "/merchant/tax_id_type"))
         header = _header(observation, country, store, currency)

@@ -8,6 +8,6 @@ Django/DRF + PostgreSQL, Redis/Celery для health, React/Vite SPA: health, к�
 
 Облегчённая v1 исключает ReceiptDraft/подтверждение, MutationRequest/Idempotency-Key, cleanup, POSIX watchdog, manual_locked и защиту stale admin POST от OCR. Не добавляй это без задачи. UI загрузки/чеков, ручные API правки, дашборд/курсы/production пока не реализованы.
 
-Тесты/миграции/демо/модельные вызовы только QA, не dev. Полный env в verification.md; TemporaryDirectory для MEDIA/scratch и fake/mock в автотестах. Итог С6: 247 без БД / 846 integration, 9 e2e; реальный Codex synthetic smoke 102.738 с → needs_review, автоимпорт не состоялся. [Фактические результаты](docs/verification.md#фактические-результаты-с6).
+Тесты/миграции/демо/модельные вызовы только QA, не dev. Полный env в verification.md; TemporaryDirectory для MEDIA/scratch и fake/mock в автотестах. Итог И4 после уточнения: 257 без БД / 866 integration, 11 e2e; реальный Codex single/double → succeeded, 2 чека / 6 строк / 5 товаров, повтор без дублей. Исторический С6: 247/846, single 102.738 с → needs_review без автоимпорта. [Фактические результаты](docs/verification.md#фактические-результаты-с6).
 
 UI принимает человек, browser automation запрещён. Соблюдай F4/F6 гарантии админки, UTF-8/LF, scope задачи, свою ветку/worktree; не меняй соседние worktrees. После проверок останови свои процессы/QA Compose, тома сохраняй. Отчёт: прошло / не прошло / не проверено и почему, точные команды/exit/results и ручные шаги. Публикация/merge/release только по явной задаче.

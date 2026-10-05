@@ -5,7 +5,7 @@ keep the public v1 shape; successful imports can carry non-blocking notices.
 """
 import re
 from dataclasses import fields, is_dataclass, replace
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from receipts.dedup import FISCAL_KEY_PARTS, build_fiscal_key
 from .resolution import COUNTRY_BY_CURRENCY, issue
@@ -149,3 +149,47 @@ def _usable_rate(rate, evidence, path):
     return (rate.kind in {"vat", "exempt"} and evidence.get(path + "/kind") == "observed"
             and (rate.kind == "exempt" and rate.rate is None or rate.kind == "vat" and rate.rate is not None
                  and rate.rate >= 0 and evidence.get(path + "/rate") == "observed"))
+
+
+def derive_line_values(observation):
+    """Use two printed numbers; never round an inferred quantity or price.
+
+    A missing amount follows the receipt's cent precision. Unit defaults apply
+    only to integer, observed counts with no indication of a weight/volume rate.
+    Unreadable/ambiguous units and non-null uncertain numbers stay unresolved.
+    """
+    evidence = {f.path: f.status for f in observation.fields}
+    derived, lines = [], []
+    weight_rate = r"(?:/\s*|\b(?:per|pro|за)\s+)(?:kg|g|l|ml|кг|г|л|мл)\b"
+    weighted_receipt = re.search(weight_rate, observation.raw_text or "", re.IGNORECASE)
+    for i, line in enumerate(observation.lines):
+        path = f"/lines/{i}"
+        values = {key: getattr(line, key) for key in ("quantity", "unit_price", "amount")}
+        missing = [key for key, value in values.items() if value is None]
+        if len(missing) == 1 and all(evidence.get(path + "/" + key) == "observed"
+                                     for key in values if key not in missing):
+            key = missing[0]
+            quantity, price, amount = (values[k] for k in ("quantity", "unit_price", "amount"))
+            value = None
+            if key == "amount":
+                value = (quantity * price).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            elif key == "quantity" and price > 0:
+                candidate = amount / price
+                if candidate == candidate.quantize(Decimal("0.001")):
+                    value = candidate.quantize(Decimal("0.001"))
+            elif key == "unit_price" and quantity != 0:
+                candidate = amount / quantity
+                if candidate == candidate.quantize(Decimal("0.0001")):
+                    value = candidate.quantize(Decimal("0.0001"))
+            if value is not None:
+                values[key] = value
+                derived.append(path + "/" + key)
+        unit = line.unit
+        weighted = weighted_receipt or re.search(weight_rate, line.raw_name or "", re.IGNORECASE)
+        if (unit is None and evidence.get(path + "/unit") in (None, "absent")
+                and evidence.get(path + "/quantity") == "observed" and line.quantity is not None
+                and line.quantity == line.quantity.to_integral_value() and not weighted):
+            unit = "pcs"
+            derived.append(path + "/unit")
+        lines.append(replace(line, unit=unit, **values))
+    return replace(observation, lines=tuple(lines)), derived

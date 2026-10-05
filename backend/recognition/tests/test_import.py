@@ -285,7 +285,7 @@ class ImportTests(TestCase):
             lambda p: (p["merchant"].update(legal_name=None, brand_name=None), p["store"].update(name=None)),
             lambda p: p.update(lines=[]),
             lambda p: p.update(local_time=None),
-            lambda p: p["lines"][0].update(quantity=None),
+            lambda p: p["lines"][0].update(quantity=None, unit_price=None),
             lambda p: p.update(total="123.45"),
             lambda p: p["lines"][0].update(quantity="-2.000", amount="-2.58"),
             lambda p: p.update(currency_code="XTS"),
@@ -308,6 +308,96 @@ class ImportTests(TestCase):
         self.assertEqual(result.outcome, "created")
         self.assertEqual(result.receipt.store.country_id, "DE")
         self.assertEqual(result.receipt.extra["recognition"]["country_source"], "fallback")
+
+    def test_missing_currency_uses_country_of_existing_store_and_reuses_receipt(self):
+        first = self.run_import()
+        payload = receipt_payload()
+        payload["currency_code"] = None
+        result = self.run_import(payload)
+        self.assertEqual(result.outcome, "linked")
+        self.assertEqual(result.receipt.pk, first.receipt.pk)
+        self.assertEqual(result.receipt.currency_id, "EUR")
+        self.assertIsNone(result.image.normalized_result["currency_code"])
+        self.assertIn("currency_inferred", [v["code"] for v in result.issues])
+        self.assertEqual((Receipt.objects.count(), Store.objects.count()), (1, 1))
+
+    def test_missing_currency_does_not_guess_for_unresolved_new_store(self):
+        payload = receipt_payload()
+        payload["currency_code"] = None
+        result = self.run_import(payload)
+        self.assertEqual(result.outcome, "needs_review")
+        self.assert_no_domain()
+
+    def test_currency_inference_for_new_receipt_records_provenance_and_printed_currency_wins(self):
+        self.run_import()
+        payload = another_receipt()
+        payload["currency_code"] = None
+        result = self.run_import(payload)
+        self.assertEqual(result.outcome, "created")
+        self.assertEqual(result.receipt.currency_id, "EUR")
+        self.assertIn("/currency_code", result.receipt.extra["recognition"]["derived"])
+        payload = another_receipt()
+        payload["currency_code"] = "RUB"
+        payload["local_time"] = payload["timestamps"]["header"]["time"] = "17:00:00"
+        payload["receipt_number"] = "000125"
+        payload["fiscal"]["tse_transaction"] = "98767"
+        result = self.run_import(payload)
+        self.assertEqual(result.outcome, "created")
+        self.assertEqual(result.receipt.currency_id, "RUB")
+
+    def test_null_ambiguous_quantity_can_be_recovered_from_two_observed_numbers(self):
+        obs = observation()
+        obs = replace(obs, lines=(replace(obs.lines[0], quantity=None),) + obs.lines[1:],
+                      fields=tuple(replace(f, status="ambiguous") if f.path == "/lines/0/quantity" else f
+                                   for f in obs.fields))
+        image, job = live_image()
+        result = import_receipt(image, obs, run_token=job.run_token, version=job.version)
+        self.assertEqual(result.outcome, "created")
+        self.assertEqual(result.receipt.lines.get(position=1).quantity, Decimal("2.000"))
+        self.assertIsNone(result.image.normalized_result["lines"][0]["quantity"])
+
+    def test_missing_line_quantity_is_derived_from_printed_price_and_amount(self):
+        payload = receipt_payload()
+        payload["lines"][0]["quantity"] = None
+        result = self.run_import(payload)
+        self.assertEqual(result.outcome, "created")
+        self.assertEqual(result.receipt.lines.get(position=1).quantity, Decimal("2.000"))
+        self.assertIn("/lines/0/quantity", result.receipt.extra["recognition"]["derived"])
+        self.assertIsNone(result.image.normalized_result["lines"][0]["quantity"])
+        self.assertEqual(validate_receipt(result.receipt), [])
+
+    def test_missing_line_price_is_derived_from_printed_quantity_and_amount(self):
+        payload = receipt_payload()
+        payload["lines"][0]["unit_price"] = None
+        result = self.run_import(payload)
+        self.assertEqual(result.outcome, "created")
+        self.assertEqual(result.receipt.lines.get(position=1).unit_price, Decimal("1.2900"))
+        self.assertIn("/lines/0/unit_price", result.receipt.extra["recognition"]["derived"])
+        self.assertEqual(validate_receipt(result.receipt), [])
+
+    def test_missing_line_amount_is_derived_from_printed_quantity_and_price(self):
+        payload = receipt_payload()
+        payload["lines"][0]["amount"] = None
+        result = self.run_import(payload)
+        self.assertEqual(result.outcome, "created")
+        self.assertEqual(result.receipt.lines.get(position=1).amount, Decimal("2.58"))
+        self.assertIn("/lines/0/amount", result.receipt.extra["recognition"]["derived"])
+        self.assertEqual(validate_receipt(result.receipt), [])
+
+    def test_piece_unit_default_does_not_guess_weighted_or_uncertain_unit(self):
+        payload = receipt_payload()
+        payload["lines"][0]["unit"] = None
+        obs = observation(payload)
+        obs = replace(obs, fields=obs.fields + (FieldObservation("/lines/0/unit", "absent", None, None),))
+        image, job = live_image()
+        result = import_receipt(image, obs, run_token=job.run_token, version=job.version)
+        self.assertEqual(result.outcome, "created")
+        self.assertEqual(result.receipt.lines.get(position=1).unit, "pcs")
+        self.assertIn("/lines/0/unit", result.receipt.extra["recognition"]["derived"])
+        payload = another_receipt()
+        payload["lines"][1]["unit"] = None
+        payload["lines"][1]["raw_name"] = "WEIGHTED / kg"
+        self.assertEqual(self.run_import(payload).outcome, "needs_review")
 
     def test_clipped_but_readable_receipt_imports_with_notice(self):
         result = self.run_import(clipped=True)
@@ -396,7 +486,7 @@ class ImportTests(TestCase):
 
     def test_partial_review_then_better_photo_creates_one_receipt(self):
         payload = receipt_payload()
-        payload["lines"][0]["quantity"] = None
+        payload["lines"][0].update(quantity=None, unit_price=None)
         partial = self.run_import(payload)
         complete = self.run_import()
         self.assertEqual((partial.outcome, complete.outcome), ("needs_review", "created"))
