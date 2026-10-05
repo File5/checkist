@@ -9,11 +9,12 @@ from unittest.mock import patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import OperationalError
-from django.test import TestCase, override_settings, tag
+from django.test import SimpleTestCase, TestCase, override_settings, tag
 from django.utils import timezone
 from PIL import Image
 from rest_framework.test import APIClient
 
+from api.recognition_serialization import public_issues
 from recognition.models import ProcessingJob, ReceiptImage, SourcePhoto
 from recognition.queue import claim_job, request_cancel
 from recognition.storage import StorageError
@@ -23,6 +24,206 @@ NOW = datetime(2026, 10, 4, 12, 35, tzinfo=dt_timezone.utc)
 PUBLIC = Path(__file__).resolve().parents[2] / "recognition/tests/fixtures/public"
 BBOX = {"x_min": 0.1, "y_min": 0.1, "x_max": 0.9, "y_max": 0.9}
 QUAD = [{"x": 0.1, "y": 0.1}, {"x": 0.9, "y": 0.1}, {"x": 0.9, "y": 0.9}, {"x": 0.1, "y": 0.9}]
+
+
+INVALID = "Значение не прошло проверку."
+PUBLIC_CODES = (
+    "missing_required", "invalid_value", "total_mismatch", "tax_mismatch", "timezone_unknown", "time_ambiguous",
+    "weak_identity", "identity_conflict", "product_unmatched", "product_ambiguous", "product_conflict",
+    "geometry_requires_review", "clipped", "overlap", "timeout", "worker_lost", "storage_unavailable",
+    "provider_error", "invalid_output", "auth_required", "rate_limited", "provider_unavailable",
+    "network_unavailable", "configuration_error", "invalid_input", "cancelled", "no_receipts", "too_many_receipts",
+)
+INTERNAL_CODES = (
+    "optional_omitted", "operation_defaulted", "currency_inferred", "ambiguous_value", "country_unknown",
+    "currency_unknown", "import_busy", "import_failed", "merchant_conflict", "merchant_tax_id_invalid",
+    "product_package_invalid", "receipt_conflict", "receipt_invalid", "receipt_line_conflict",
+    "receipt_structure_conflict", "store_ambiguous", "store_conflict", "tax_rate_invalid", "tax_rate_unconfirmed",
+    "timestamp_ambiguous", "timestamp_conflict",
+)
+UNKNOWN_CODES = ("invalid_image", "file_too_large", "unknown", "PRIVATE", "Optional_omitted", "optional_omitted ",
+                 "", None, 7, True, 1.5, ["optional_omitted"], {"code": "clipped"})
+IMAGE_STATUSES = ("pending", "running", "imported", "reused", "updated", "needs_review", "failed", "cancelled")
+ENTITIES = {"receipt", "line", "tax", "discount", "geometry", "unknown"}
+LINE_ATTRIBUTES = ("position", "kind", "parent_position", "raw_name", "name", "product", "quantity", "unit",
+                   "unit_price", "amount", "discount_amount", "tax_amount", "tax_code", "tax_rate", "net", "tax",
+                   "gross", "line_position", "barcode", "store_item_code", "is_excise", "is_marked")
+HEADER_ATTRIBUTES = {
+    "/identity": "identity", "/merchant": "merchant", "/store": "store", "/operation": "operation",
+    "/currency": "currency", "/currency_code": "currency", "/purchased_on": "purchased_on",
+    "/local_time": "local_time", "/total": "total", "/discount_total": "discount_total",
+    "/prices_include_tax": "prices_include_tax", "/merchant/country_code": "merchant_country_code",
+    "/merchant/brand_name": "merchant_brand_name", "/store/country_code": "store_country_code",
+    "/store/name": "store_name", "/store/address_raw": "store_address_raw", "/store/city": "store_city",
+}
+GEOMETRY = {"/geometry": None, "/bbox": "bbox", "/quad": "quad", "/rotation_degrees": "rotation_degrees",
+            "/clipped": "clipped"}
+ATTRIBUTES = ({None, "receipt_metadata", "unknown"} | set(HEADER_ATTRIBUTES.values()) | set(GEOMETRY.values())
+              | set(LINE_ATTRIBUTES) - {"raw_name"})
+CLOSED_RECEIPT_FIELDS = ("/receipt_number", "/shift_number", "/register_code", "/fiscal", "/fiscal/signature",
+                         "/fiscal/register_serial", "/merchant/tax_id", "/merchant/tax_id_type",
+                         "/merchant/legal_name", "/store/postal_code", "/raw_text", "/a/b/c/d",
+                         "/taxes/0/tax_rate/kind", "/taxes/0/secret", "/discounts/0/secret", "/discounts/0/line_id",
+                         "/lines/12345/quantity", "/lines/x", "/lines/x/quantity", "/geometry/bbox", "/total/value")
+NOT_POINTERS = (None, 5, True, 1.5, [], {}, ["/total"], "", "total", "/Total", "/lines/", "//", "/a/b/c/d/e",
+                "/lines/0/PRIVATE", "/total\n", "\n/total", "/receipt number", "/тест", "/fiscal/PRIVATE",
+                "/lines/0/product_hint/a/b/c/d", "/lines/-1/quantity", "/lines/0/product-hint", "/ ")
+NORMALIZED = {"lines": [{"position": 1}, {"position": 7}], "discounts": [{"position": 3}],
+              "taxes": [{"position": 5}]}
+
+
+def context(entity, index, position, attribute):
+    return {"entity": entity, "index": index, "position": position, "attribute": attribute}
+
+
+def context_cases():
+    """Source field -> (public field, context) for every branch of the agreed table."""
+    cases = [("/", "/", context("receipt", None, None, None))]
+    cases += [(field, field, context("geometry", None, None, attribute)) for field, attribute in GEOMETRY.items()]
+    cases += [(field, field, context("receipt", None, None, attribute))
+              for field, attribute in HEADER_ATTRIBUTES.items()]
+    for collection, entity in (("lines", "line"), ("discounts", "discount"), ("taxes", "tax")):
+        position = {"line": 1, "discount": 3, "tax": None}[entity]
+        cases.append((f"/{collection}", f"/{collection}", context(entity, None, None, None)))
+        cases.append((f"/{collection}/0", f"/{collection}/0", context(entity, 0, position, None)))
+        cases.append((f"/{collection}/9999", f"/{collection}/9999", context(entity, 9999, None, None)))
+        for name in LINE_ATTRIBUTES:
+            field = f"/{collection}/0/{name}"
+            cases.append((field, field, context(entity, 0, position, "name" if name == "raw_name" else name)))
+    cases.append(("/lines/1/tax_rate", "/lines/1/tax_rate", context("line", 1, 7, "tax_rate")))
+    cases.append(("/lines/0007/amount", "/lines/0007/amount", context("line", 7, None, "amount")))
+    for field in ("/lines/1/product_hint", "/lines/1/product_hint/brand", "/lines/1/product_hint/package_quantity",
+                  "/lines/1/product_hint/a/b/c"):
+        cases.append((field, "/", context("line", 1, 7, "product")))
+    for field in ("/lines/1/extra", "/lines/1/quantity/value", "/lines/1/tax_rate/kind", "/lines/1/product_hints",
+                  "/lines/1/line_id"):
+        cases.append((field, "/", context("line", 1, 7, "unknown")))
+    cases.append(("/lines/55/product_hint", "/", context("line", 55, None, "product")))
+    cases += [(field, "/", context("receipt", None, None, "receipt_metadata")) for field in CLOSED_RECEIPT_FIELDS]
+    cases += [(field, "/", context("unknown", None, None, "unknown")) for field in NOT_POINTERS]
+    return cases
+
+
+def expected_severity(reason, status):
+    if reason in ("operation_defaulted", "currency_inferred"):
+        return "info"
+    if reason in ("optional_omitted", "clipped", "cancelled"):
+        return "warning"
+    return "error" if status in ("needs_review", "failed") else "warning"
+
+
+class PublicIssuesTableTests(SimpleTestCase):
+    def one(self, issue, status="imported", normalized=None):
+        result = public_issues([issue], status=status, normalized=normalized)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(list(result[0]), ["code", "field", "message", "reason", "severity", "context"])
+        self.assertEqual(list(result[0]["context"]), ["entity", "index", "position", "attribute"])
+        return result[0]
+
+    def test_reason_is_closed_list_of_fifty_values(self):
+        self.assertEqual(len(PUBLIC_CODES), 28)
+        self.assertEqual(len(INTERNAL_CODES), 21)
+        self.assertEqual(len(set(PUBLIC_CODES + INTERNAL_CODES + ("unknown",))), 50)
+        for code in PUBLIC_CODES:
+            with self.subTest(code=code):
+                issue = self.one({"code": code, "field": "/total"})
+                self.assertEqual((issue["code"], issue["reason"]), (code, code))
+        for code in INTERNAL_CODES:
+            with self.subTest(code=code):
+                issue = self.one({"code": code, "field": "/total"})
+                self.assertEqual((issue["code"], issue["message"], issue["reason"]), ("invalid_value", INVALID, code))
+        for code in UNKNOWN_CODES:
+            with self.subTest(code=code):
+                issue = self.one({"code": code, "field": "/total"})
+                self.assertEqual((issue["code"], issue["message"], issue["reason"]),
+                                 ("invalid_value", INVALID, "unknown"))
+        self.assertEqual(self.one({"field": "/total"})["reason"], "unknown")
+
+    def test_severity_table_for_every_reason_and_image_status(self):
+        seen = set()
+        for code in PUBLIC_CODES + INTERNAL_CODES + UNKNOWN_CODES:
+            reason = code if isinstance(code, str) and code in PUBLIC_CODES + INTERNAL_CODES else "unknown"
+            for status in IMAGE_STATUSES + (None, "", "PRIVATE", 5):
+                with self.subTest(code=code, status=status):
+                    issue = self.one({"code": code, "field": "/"}, status=status)
+                    self.assertEqual(issue["severity"], expected_severity(reason, status))
+                    seen.add(issue["severity"])
+        self.assertEqual(seen, {"info", "warning", "error"})
+        for status in IMAGE_STATUSES:
+            self.assertEqual(self.one({"code": "operation_defaulted"}, status=status)["severity"], "info")
+            self.assertEqual(self.one({"code": "currency_inferred"}, status=status)["severity"], "info")
+            for code in ("optional_omitted", "clipped", "cancelled"):
+                self.assertEqual(self.one({"code": code}, status=status)["severity"], "warning")
+        self.assertEqual(self.one({"code": "total_mismatch"}, status="needs_review")["severity"], "error")
+        self.assertEqual(self.one({"code": "PRIVATE"}, status="failed")["severity"], "error")
+        self.assertEqual(self.one({"code": "total_mismatch"}, status="imported")["severity"], "warning")
+        self.assertEqual(self.one({"code": "PRIVATE"}, status="cancelled")["severity"], "warning")
+
+    def test_context_table_from_source_field(self):
+        cases = context_cases()
+        self.assertGreater(len(cases), 150)
+        for source, public, expected in cases:
+            with self.subTest(field=source):
+                issue = self.one({"code": "invalid_value", "field": source}, normalized=NORMALIZED)
+                self.assertEqual(issue["field"], public)
+                self.assertEqual(issue["context"], expected)
+                self.assertIn(issue["context"]["entity"], ENTITIES)
+                self.assertIn(issue["context"]["attribute"], ATTRIBUTES)
+        self.assertEqual(self.one({"code": "invalid_value"}, normalized=NORMALIZED)["context"],
+                         context("unknown", None, None, "unknown"))
+
+    def test_position_requires_intact_normalized_row(self):
+        for value in (1, 2, 32767):
+            for collection, entity in (("lines", "line"), ("discounts", "discount")):
+                issue = self.one({"field": f"/{collection}/1/amount"},
+                                 normalized={collection: [{}, {"position": value}]})
+                self.assertEqual(issue["context"], context(entity, 1, value, "amount"))
+        damaged = [None, "PRIVATE", 5, True, [], [{"position": 4}], {}, {"lines": None}, {"lines": "PRIVATE"},
+                   {"lines": {"1": {"position": 4}}}, {"lines": []}, {"lines": [{"position": 4}]},
+                   {"lines": [{}, None]}, {"lines": [{}, "PRIVATE"]}, {"lines": [{}, [4]]}, {"lines": [{}, {}]},
+                   {"discounts": [{}, {"position": 4}]}]
+        damaged += [{"lines": [{}, {"position": value}]} for value in
+                    (None, True, False, 0, -1, 32768, 10 ** 30, "4", 4.0, 1.5, [4], {"position": 4})]
+        for normalized in damaged:
+            with self.subTest(normalized=normalized):
+                for field, attribute in (("/lines/1/amount", "amount"), ("/lines/1/product_hint", "product")):
+                    issue = self.one({"field": field}, normalized=normalized)
+                    self.assertEqual(issue["context"], context("line", 1, None, attribute))
+        # A tax total has no position even when a damaged row carries one.
+        issue = self.one({"field": "/taxes/0/net"}, normalized={"taxes": [{"position": 5}]})
+        self.assertEqual(issue["context"], context("tax", 0, None, "net"))
+
+    def test_damaged_issue_lists_and_limit(self):
+        for issues in (None, "PRIVATE", 5, {}, {"code": "clipped"}, True):
+            self.assertEqual(public_issues(issues, status="needs_review", normalized=None), [])
+        mixed = [None, "PRIVATE", 5, ["clipped"], {}, {"code": None, "field": None, "message": None}]
+        expected = {"code": "invalid_value", "field": "/", "message": INVALID, "reason": "unknown",
+                    "severity": "error", "context": context("unknown", None, None, "unknown")}
+        self.assertEqual(public_issues(mixed, status="failed", normalized=NORMALIZED), [expected, expected])
+        many = [{"code": "optional_omitted", "field": f"/lines/{index}/tax_rate"} for index in range(1001)]
+        result = public_issues(many, status="imported", normalized=NORMALIZED)
+        self.assertEqual(len(result), 1000)
+        self.assertEqual(result[-1]["context"], context("line", 999, None, "tax_rate"))
+
+    def test_previous_keys_are_unchanged_by_status_and_normalized(self):
+        issues = [{"code": code, "field": field} for code in PUBLIC_CODES + INTERNAL_CODES + UNKNOWN_CODES[:4]
+                  for field in ("/", "/total", "/lines/0/raw_name", "/receipt_number", None)]
+        old = None
+        for status in IMAGE_STATUSES:
+            for normalized in (None, NORMALIZED, "PRIVATE"):
+                projected = [{key: issue[key] for key in ("code", "field", "message")}
+                             for issue in public_issues(issues, status=status, normalized=normalized)]
+                old = old or projected
+                self.assertEqual(projected, old)
+        required = "Не удалось прочитать обязательное поле."
+        self.assertEqual(old[:5], [
+            {"code": "missing_required", "field": "/", "message": required},
+            {"code": "missing_required", "field": "/total", "message": required},
+            {"code": "missing_required", "field": "/lines/0/raw_name", "message": required},
+            {"code": "missing_required", "field": "/", "message": required},
+            {"code": "missing_required", "field": "/", "message": required}])
+        self.assertEqual(old[-5:], [{"code": "invalid_value", "field": field, "message": INVALID}
+                                    for field in ("/", "/total", "/lines/0/raw_name", "/", "/")])
 
 
 def image_bytes(format="PNG", size=(10, 20)):
@@ -330,7 +531,9 @@ class RecognitionAPITests(TestCase):
                 self.assertNotIn('"' + name + '"', response.content.decode())
         image = self.client.get("/api/recognition/receipt-images/42/").json()
         self.assertIsNone(image["normalized_result"]["lines"][0]["quantity"])
-        self.assertEqual(image["issues"][0]["message"], "Не удалось прочитать обязательное поле.")
+        self.assertEqual(image["issues"], [{"code": "missing_required", "field": "/lines/0/quantity",
+            "message": "Не удалось прочитать обязательное поле.", "reason": "missing_required", "severity": "error",
+            "context": context("line", 0, 1, "quantity")}])
         receipt.delete()
         deleted = self.client.get("/api/recognition/receipt-images/41/").json()
         self.assertTrue(deleted["receipt_deleted"])
@@ -387,7 +590,199 @@ class RecognitionAPITests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertNotIn("PRIVATE", response.content.decode())
         self.assertIsNone(response.json()["bbox"])
-        self.assertEqual(response.json()["issues"], [{"code": "invalid_value", "field": "/", "message": "Значение не прошло проверку."}])
+        self.assertEqual(response.json()["issues"], [{"code": "invalid_value", "field": "/", "message": "Значение не прошло проверку.",
+            "reason": "unknown", "severity": "error", "context": context("unknown", None, None, "unknown")}])
+
+    def image_views(self, image):
+        """The same image as it appears in the list and in the detail response."""
+        rows = self.client.get(f"/api/recognition/receipt-images/?job={image.job_id}&page_size=200")
+        detail = self.client.get(f"/api/recognition/receipt-images/{image.pk}/")
+        self.assertEqual(rows.status_code, 200, rows.content)
+        self.assertEqual(detail.status_code, 200, detail.content)
+        row = next(value for value in rows.json()["results"] if value["id"] == image.pk)
+        self.assertEqual(row["issues"], detail.json()["issues"])
+        return row, detail.json(), rows.content.decode() + detail.content.decode()
+
+    def test_issue_table_over_http_list_and_detail(self):
+        cases = context_cases()
+        codes = (PUBLIC_CODES + INTERNAL_CODES + UNKNOWN_CODES) * 4
+        self.assertGreaterEqual(len(codes), len(cases))
+        for status in ("imported", "needs_review", "failed"):
+            job = ProcessingJob.objects.create(photo=make_photo())
+            image = make_image(job, status=status, normalized_result=NORMALIZED,
+                issues=[{"code": code, "field": field, "message": "PRIVATE"}
+                        for code, (field, _, _) in zip(codes, cases)])
+            row, detail, text = self.image_views(image)
+            self.assertEqual(len(detail["issues"]), len(cases))
+            self.assertNotIn("PRIVATE", text)
+            for issue, code, (field, public, expected) in zip(detail["issues"], codes, cases):
+                known = isinstance(code, str) and code in PUBLIC_CODES + INTERNAL_CODES
+                reason = code if known else "unknown"
+                public_code = code if known and code in PUBLIC_CODES else "invalid_value"
+                with self.subTest(status=status, code=code, field=field):
+                    self.assertEqual(issue, {"code": public_code, "field": public,
+                        "message": issue["message"], "reason": reason,
+                        "severity": expected_severity(reason, status), "context": expected})
+                    self.assertEqual(issue["message"] == INVALID, public_code == "invalid_value")
+            # normalized_result stays a needs_review-only projection.
+            self.assertEqual(detail["normalized_result"] is None, status != "needs_review")
+            self.assertEqual(row["normalized_result"] is None, status != "needs_review")
+
+    def test_replica_of_29_optional_omissions_on_imported_image(self):
+        _, job, receipt, _ = public_data()
+        job.images.filter(status="needs_review").delete()
+        ProcessingJob.objects.filter(pk=job.pk).update(status="succeeded", review_count=0, completed_count=1,
+                                                       detected_count=1)
+        issues = [{"code": "optional_omitted", "field": f"/lines/{i}/tax_rate", "message": "PRIVATE"} for i in range(25)]
+        issues += [{"code": "optional_omitted", "field": f"/taxes/{i}", "message": "PRIVATE"} for i in range(2)]
+        issues += [{"code": "optional_omitted", "field": "/receipt_number", "message": "PRIVATE"},
+                   {"code": "optional_omitted", "field": "/fiscal/signature", "message": "PRIVATE"}]
+        image = receipt.recognition_images.get()
+        image.issues = issues
+        image.normalized_result = {
+            "receipt_number": None, "fiscal": {"signature": None}, "raw_text": "PRIVATE TEXT",
+            "lines": [{"position": i + 1, "raw_name": f"TESTARTIKEL {i + 1:02d}", "tax_code": "A", "tax_rate": None}
+                      for i in range(25)],
+            "taxes": [{"tax_code": code, "net": "1.00", "tax": "0.07", "gross": None} for code in "AB"]}
+        image.save()
+        row, detail, text = self.image_views(image)
+        expected = [{"code": "invalid_value", "field": f"/lines/{i}/tax_rate", "message": INVALID,
+                     "reason": "optional_omitted", "severity": "warning",
+                     "context": context("line", i, i + 1, "tax_rate")} for i in range(25)]
+        expected += [{"code": "invalid_value", "field": f"/taxes/{i}", "message": INVALID,
+                      "reason": "optional_omitted", "severity": "warning",
+                      "context": context("tax", i, None, None)} for i in range(2)]
+        expected += [{"code": "invalid_value", "field": "/", "message": INVALID,
+                      "reason": "optional_omitted", "severity": "warning",
+                      "context": context("receipt", None, None, "receipt_metadata")}] * 2
+        self.assertEqual(len(detail["issues"]), 29)
+        self.assertEqual(detail["issues"], expected)
+        self.assertEqual((row["status"], detail["status"]), ("imported", "imported"))
+        self.assertIsNone(detail["normalized_result"])
+        self.assertEqual(detail["receipt_id"], receipt.pk)
+        self.assertNotIn("PRIVATE", text)
+        for hidden in ("receipt_number", "fiscal", "signature", "TESTARTIKEL"):
+            self.assertNotIn(hidden, text)
+        # Notices of a successful image do not change the job or the receipt.
+        public_job = self.client.get(f"/api/recognition/jobs/{job.pk}/").json()
+        self.assertEqual(public_job["status"], "succeeded")
+        self.assertFalse(public_job["review_required"])
+        self.assertEqual(public_job["progress"]["review"], 0)
+        self.assertFalse(self.client.get(f"/api/receipts/{receipt.pk}/").json()["review_required"])
+
+    def test_poisoned_issues_do_not_leak_through_new_keys(self):
+        poison = [
+            {"code": "PRIVATE_CODE", "field": "/receipt_number", "message": "PRIVATE 4711"},
+            {"code": "secret_code_4711", "field": "/fiscal/PRIVATE", "message": "PRIVATE"},
+            {"code": "optional_omitted", "field": "/iban_de4711", "message": "PRIVATE", "line_id": 4711001,
+             "note": "PRIVATE NOTE", "raw_text": "PRIVATE TEXT", "value": "4711"},
+            {"code": "merchant_tax_id_invalid", "field": "/merchant/tax_id", "message": "PRIVATE 4711"},
+            {"code": "merchant_conflict", "field": "/merchant/legal_name", "message": "PRIVATE"},
+            {"code": "optional_omitted", "field": "/shift_number"}, {"code": "optional_omitted", "field": "/register_code"},
+            {"code": "product_conflict", "field": "/lines/0/product_hint/PRIVATE"},
+            {"code": "product_conflict", "field": "/lines/0/product_hint/secret4711"},
+            {"code": "receipt_line_conflict", "field": "/lines/0/secret4711/line_id"},
+            {"code": "import_failed", "field": "/", "message": "Traceback PRIVATE: psycopg.OperationalError 4711"},
+            {"code": "clipped", "field": "/clipped", "reason": "PRIVATE", "severity": "PRIVATE",
+             "context": {"entity": "PRIVATE", "index": 4711, "position": 4711, "attribute": "secret4711"}},
+            {"code": {"secret": "PRIVATE"}, "field": {"secret4711": "PRIVATE"}, "message": {"secret": "PRIVATE"}},
+            {"code": ["PRIVATE"], "field": ["/secret4711"], "message": ["PRIVATE"]},
+            {"code": 4711, "field": 4711, "message": 4711},
+            {"PRIVATE": "PRIVATE", "secret4711": "/total"},
+        ]
+        job = ProcessingJob.objects.create(photo=make_photo(id=1, sha256="c" * 64))
+        image = make_image(job, id=1, status="needs_review", issues=poison, normalized_result={
+            "receipt_number": "PRIVATE 4711", "fiscal": {"signature": "PRIVATE"}, "raw_text": "PRIVATE",
+            "merchant": {"tax_id": "4711", "legal_name": "PRIVATE"}, "fields": [{"note": "PRIVATE"}],
+            "warnings": ["PRIVATE"], "lines": [{"position": 2, "line_id": 4711002, "raw_name": "ТЕСТ",
+                                                "product_hint": {"secret4711": "PRIVATE"}}]})
+        ReceiptImage.objects.filter(pk=image.pk).update(created_at=NOW)
+        row, detail, text = self.image_views(image)
+        self.assertEqual(len(detail["issues"]), len(poison))
+        for hidden in ("PRIVATE", "4711", "secret", "iban", "receipt_number", "shift_number", "register_code",
+                       "fiscal", "/tax_id", '"tax_id"', "legal_name", "product_hint", "line_id", "raw_text", "note",
+                       "Traceback", "psycopg", "warnings", '"fields"', '"value"'):
+            self.assertNotIn(hidden, text)
+        # The only place the words "tax_id" may occur is the agreed closed reason itself.
+        self.assertEqual(text.count("tax_id"), text.count('"reason":"merchant_tax_id_invalid"'))
+        reasons = set(PUBLIC_CODES + INTERNAL_CODES + ("unknown",))
+        for issue in detail["issues"]:
+            self.assertEqual(set(issue), {"code", "field", "message", "reason", "severity", "context"})
+            self.assertEqual(set(issue["context"]), {"entity", "index", "position", "attribute"})
+            self.assertIn(issue["code"], PUBLIC_CODES)
+            self.assertIn(issue["reason"], reasons)
+            self.assertIn(issue["severity"], ("info", "warning", "error"))
+            self.assertIn(issue["context"]["entity"], ENTITIES)
+            self.assertIn(issue["context"]["attribute"], ATTRIBUTES)
+            for key, low, high in (("index", 0, 9999), ("position", 1, 32767)):
+                value = issue["context"][key]
+                self.assertTrue(value is None or (type(value) is int and low <= value <= high), value)
+        contexts = [issue["context"] for issue in detail["issues"]]
+        metadata = context("receipt", None, None, "receipt_metadata")
+        self.assertEqual(contexts[0], metadata)
+        self.assertEqual(contexts[2:7], [metadata] * 5)
+        self.assertEqual(contexts[8], context("line", 0, 2, "product"))
+        self.assertEqual(contexts[9], context("line", 0, 2, "unknown"))
+        self.assertEqual(contexts[10], context("receipt", None, None, None))
+        self.assertEqual(contexts[11], context("geometry", None, None, "clipped"))
+        self.assertEqual([detail["issues"][11]["reason"], detail["issues"][11]["severity"]], ["clipped", "warning"])
+        self.assertEqual([issue["reason"] for issue in detail["issues"][:5]],
+                         ["unknown", "unknown", "optional_omitted", "merchant_tax_id_invalid", "merchant_conflict"])
+        for index in (1, 7, 12, 13, 14, 15):
+            self.assertEqual(contexts[index], context("unknown", None, None, "unknown"))
+
+    def test_damaged_issue_data_returns_200(self):
+        issues = [{"code": "optional_omitted", "field": "/lines/3/tax_rate"},
+                  {"code": "optional_omitted", "field": "/discounts/0/amount"},
+                  {"code": None, "field": None}, {"code": 5, "field": 5}, {"code": [], "field": {}},
+                  "PRIVATE", None, 5, ["PRIVATE"]]
+        variants = [None, "PRIVATE", [1, 2], 5, {"lines": "PRIVATE", "discounts": None},
+                    {"lines": [None, 1, "x"], "discounts": [[]]},
+                    {"lines": [{}, {}, {}, {"position": "PRIVATE"}], "discounts": [{"position": True}]},
+                    {"lines": [{}, {}, {}, {"position": 40000}], "discounts": [{"position": 0}]}]
+        for status, normalized in ((status, value) for status in ("imported", "needs_review", "failed")
+                                   for value in variants):
+            job = ProcessingJob.objects.create(photo=make_photo())
+            image = make_image(job, status=status, normalized_result=normalized, issues=issues)
+            with self.subTest(status=status, normalized=normalized):
+                row, detail, text = self.image_views(image)
+                self.assertNotIn("PRIVATE", text)
+                unknown = "error" if status != "imported" else "warning"
+                self.assertEqual(detail["issues"], [
+                    {"code": "invalid_value", "field": "/lines/3/tax_rate", "message": INVALID,
+                     "reason": "optional_omitted", "severity": "warning", "context": context("line", 3, None, "tax_rate")},
+                    {"code": "invalid_value", "field": "/discounts/0/amount", "message": INVALID,
+                     "reason": "optional_omitted", "severity": "warning",
+                     "context": context("discount", 0, None, "amount")},
+                    *[{"code": "invalid_value", "field": "/", "message": INVALID, "reason": "unknown",
+                       "severity": unknown, "context": context("unknown", None, None, "unknown")}] * 3])
+        for damaged in ("PRIVATE", 5, {"code": "clipped"}):
+            image = make_image(job, position=2, status="failed", issues=[])
+            # The column normally holds a list; write past validation as a damaged row would.
+            ReceiptImage.objects.filter(pk=image.pk).update(issues=damaged)
+            with self.subTest(issues=damaged):
+                row, detail, text = self.image_views(image)
+                self.assertEqual(detail["issues"], [])
+                self.assertNotIn("PRIVATE", text)
+            image.delete()
+
+    def test_thousand_issues_keep_query_counts_and_limit(self):
+        lines = [{"position": index + 1} for index in range(1200)]
+        issues = [{"code": "optional_omitted", "field": f"/lines/{index}/tax_rate"} for index in range(1200)]
+        images = [make_image(ProcessingJob.objects.create(photo=make_photo()), status="imported",
+                             normalized_result={"lines": lines}, issues=issues) for _ in range(3)]
+        for size in (1, 3):
+            with self.subTest(size=size), self.assertNumQueries(2):
+                response = self.client.get(f"/api/recognition/receipt-images/?page_size={size}")
+                self.assertEqual(response.status_code, 200)
+            self.assertEqual([len(value["issues"]) for value in response.json()["results"]], [1000] * size)
+        with self.assertNumQueries(1):
+            response = self.client.get(f"/api/recognition/receipt-images/{images[0].pk}/")
+            self.assertEqual(response.status_code, 200)
+        value = response.json()["issues"]
+        self.assertEqual(len(value), 1000)
+        self.assertEqual(value[999], {"code": "invalid_value", "field": "/lines/999/tax_rate", "message": INVALID,
+            "reason": "optional_omitted", "severity": "warning", "context": context("line", 999, 1000, "tax_rate")})
 
     def test_unrelated_active_job_does_not_block_retry(self):
         previous = ProcessingJob.objects.create(photo=make_photo())
