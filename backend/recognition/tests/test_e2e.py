@@ -5,6 +5,7 @@ smoke in docs/verification.md covers sockets; browser acceptance belongs to peop
 """
 import hashlib
 import math
+import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
@@ -406,7 +407,7 @@ class RecognitionEndToEndTests(TransactionTestCase):
         self.assertEqual(lines[18]["discount_amount"], "0.20")
         self.assertEqual(self.get(detail["discounts_url"])["count"], 3)
         self.assertEqual(self.get(detail["taxes_url"])["count"], tax_count)
-        self.assertEqual(ProcessingJob.objects.get(pk=result["id"]).attempts.get(phase="recognize").prompt_version, "4")
+        self.assertEqual(ProcessingJob.objects.get(pk=result["id"]).attempts.get(phase="recognize").prompt_version, "5")
         self.assertEqual(ReceiptImage.objects.get(job_id=result["id"]).normalized_result,
                          validate_observation(payload_factory()).to_dict())
 
@@ -589,3 +590,60 @@ class RecognitionEndToEndTests(TransactionTestCase):
             self.assertEqual(image["status"], "needs_review")
             self.assertEqual(image["normalized_result"]["proposed_receipt"]["total"], "123.45")
             self.assertIn("total_mismatch", [reason["code"] for reason in image["issues"]])
+
+    def assert_tax_evidence_job(self, job, *, tax_evidence, receipts):
+        self.assertEqual(job["status"], "succeeded")
+        self.assertEqual((job["progress"]["imported"], job["progress"]["review"], job["progress"]["reused"]), (1, 0, 0))
+        self.assertFalse(job["review_required"])
+        image = ReceiptImage.objects.get(job_id=job["id"])
+        self.assertEqual((image.status, image.import_effect), ("imported", "created"))
+        expected = ["/receipt_number", "/fiscal/signature"]
+        if not tax_evidence:
+            expected += [f"/lines/{i}/tax_rate" for i in range(25)] + ["/taxes/0", "/taxes/1"]
+        self.assertEqual(len(image.issues), 2 if tax_evidence else 29)
+        self.assertEqual([(v["code"], v["field"]) for v in image.issues],
+                         [("optional_omitted", path) for path in expected])
+        attempt = ProcessingJob.objects.get(pk=job["id"]).attempts.get(phase="recognize")
+        self.assertEqual((attempt.prompt_version, attempt.schema_version), ("5", "2"))
+        receipt = Receipt.objects.get(pk=image.receipt_id)
+        lines = list(receipt.lines.select_related("tax_rate").order_by("position"))
+        self.assertEqual(([line.kind for line in lines].count("product"), [line.kind for line in lines].count("deposit"),
+                          len(lines)), (21, 4, 25))
+        self.assertEqual([line.tax_code for line in lines], ["A"] * 17 + ["B"] * 8)
+        self.assertEqual([line.tax_rate and str(line.tax_rate.rate) for line in lines],
+                         ["7.00"] * 17 + ["19.00"] * 8 if tax_evidence else [None] * 25)
+        self.assertEqual(receipt.taxes.count(), 2 if tax_evidence else 0)
+        detail = self.get(f"/api/receipts/{receipt.pk}/")
+        self.assertEqual((detail["total"], detail["review_required"]), ("23.95", False))
+        self.assertEqual(self.get(detail["lines_url"])["count"], 25)
+        self.assertEqual(self.get(detail["taxes_url"])["count"], 2 if tax_evidence else 0)
+        public = self.get(f"/api/recognition/receipt-images/{image.pk}/")
+        self.assertEqual((public["status"], public["receipt_id"], len(public["issues"])),
+                         ("imported", receipt.pk, len(expected)))
+        self.assertEqual((Receipt.objects.count(), ReceiptLine.objects.count(), ReceiptTax.objects.count()), receipts)
+        self.assertEqual((Merchant.objects.count(), Store.objects.count(), Product.objects.count(),
+                          ProductAlias.objects.count()), (1, 1, 21, 21))
+        return receipt
+
+    def test_tax_evidence_missing_worker_imports_with_29_notices(self):
+        job = self.run_once(self.upload(self.single)["job"]["id"], "tax_evidence_missing")
+        self.assert_tax_evidence_job(job, tax_evidence=False, receipts=(1, 25, 0))
+
+    def test_tax_evidence_present_worker_imports_rates_and_taxes_with_2_notices(self):
+        job = self.run_once(self.upload(self.single)["job"]["id"], "tax_evidence_present")
+        self.assert_tax_evidence_job(job, tax_evidence=True, receipts=(1, 25, 2))
+
+    def test_tax_evidence_present_after_missing_reuses_store_and_products_in_one_database(self):
+        first_job = self.run_once(self.upload(self.single)["job"]["id"], "tax_evidence_missing")
+        first = self.assert_tax_evidence_job(first_job, tax_evidence=False, receipts=(1, 25, 0))
+        products = set(Product.objects.values_list("pk", flat=True))
+        # The second file is selected by the server environment, as an operator would.
+        uploaded = self.upload(self.double)
+        with patch.dict(os.environ, {"RECEIPT_OCR_FAKE_SCENARIO": "tax_evidence_present"}):
+            second_job = self.run_once(uploaded["job"]["id"], None)
+        second = self.assert_tax_evidence_job(second_job, tax_evidence=True, receipts=(2, 50, 2))
+        self.assertNotEqual(first.pk, second.pk)
+        self.assertEqual(first.store_id, second.store_id)
+        self.assertEqual(set(Product.objects.values_list("pk", flat=True)), products)
+        self.assertEqual(first.lines.filter(tax_rate=None).count(), 25)
+        self.assertEqual(len(ReceiptImage.objects.get(job_id=first_job["id"]).issues), 29)
