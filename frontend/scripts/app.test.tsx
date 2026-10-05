@@ -50,7 +50,11 @@ describe('App feature connections (Node server markup, not browser behavior)', (
 
   it('keeps health available independently', () => {
     navigation.snapshot = { href: '/health', route: { kind: 'health' } }
-    expect(renderToStaticMarkup(<App />)).toContain('Проверяем соединение…')
+    const html = renderToStaticMarkup(<App />)
+    expect(html).toContain('Проверяем соединение…')
+    expect(html).toContain('Ручное исправление распознанных данных')
+    expect(html).not.toContain('База данных фото чеков')
+    expect(html).not.toContain('Распознавание магазина и адреса, товаров и их стоимостей')
   })
 
   it('keeps invalid queries outside feature screens', () => {

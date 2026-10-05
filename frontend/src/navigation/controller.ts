@@ -13,7 +13,7 @@ export interface NavigationEnvironment {
 export interface NavigationSnapshot {
   href: string
   route: Route
-  /** Known catalog context; absent for a direct entry to a product. */
+  /** Known source page; absent for direct entry to a detail. */
   returnTo?: string
 }
 
@@ -23,13 +23,16 @@ export interface NavigateOptions {
 
 export type NavigationTarget = string | NavigableRoute
 
-function catalogContext(value: unknown, origin: string): string | undefined {
+function listContext(value: unknown, origin: string, detail: Route): string | undefined {
   if (typeof value !== 'string') return undefined
   try {
     const url = new URL(value, origin)
     if (url.origin !== origin) return undefined
     const route = parseRoute(url)
-    return route.kind === 'catalog' || route.kind === 'category' ? buildRoute(route) : undefined
+    const compatible = detail.kind === 'product' ? ['catalog', 'category', 'receipt'].includes(route.kind)
+      : detail.kind === 'receipt' ? ['receipts', 'job'].includes(route.kind)
+        : detail.kind === 'job' && ['jobs', 'receipt'].includes(route.kind)
+    return compatible && route.kind !== 'not-found' && route.kind !== 'invalid-query' ? buildRoute(route) : undefined
   } catch {
     return undefined
   }
@@ -42,9 +45,10 @@ export function createNavigation(environment: NavigationEnvironment) {
   const read = (): NavigationSnapshot => {
     const url = new URL(environment.getHref())
     const state = environment.getState()
+    const route = parseRoute(url)
     const returnTo = state !== null && typeof state === 'object' && 'checkistReturnTo' in state
-      ? catalogContext(state.checkistReturnTo, url.origin) : undefined
-    return { href: `${url.pathname}${url.search}${url.hash}`, route: parseRoute(url), ...(returnTo && { returnTo }) }
+      ? listContext(state.checkistReturnTo, url.origin, route) : undefined
+    return { href: `${url.pathname}${url.search}${url.hash}`, route, ...(returnTo && { returnTo }) }
   }
   let snapshot = read()
   const refresh = () => {
@@ -80,11 +84,8 @@ export function createNavigation(environment: NavigationEnvironment) {
       const href = `${url.pathname}${url.search}${url.hash}`
       if (href === snapshot.href) return
       const route = parseRoute(url)
-      const previousRoute = parseRoute(current)
-      const returnTo = route.kind === 'product'
-        ? previousRoute.kind === 'catalog' || previousRoute.kind === 'category'
-          ? buildRoute(previousRoute) : catalogContext(snapshot.returnTo, current.origin)
-        : undefined
+      const returnTo = listContext(current.href, current.origin, route)
+        ?? listContext(snapshot.returnTo, current.origin, route)
       const state = returnTo ? { checkistReturnTo: returnTo } : null
       if (options.replace) environment.replaceState(state, href)
       else environment.pushState(state, href)

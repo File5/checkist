@@ -1,0 +1,17 @@
+{
+  "csrf_token": "MASKED_CSRF_TOKEN",
+  "limits": {
+    "formats": [
+      "image/jpeg",
+      "image/png",
+      "image/webp"
+    ],
+    "max_bytes": 20971520,
+    "max_pixels": 40000000,
+    "max_receipts": 10
+  },
+  "executor": {
+    "available": false,
+    "last_seen_at": null
+  }
+}

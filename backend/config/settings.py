@@ -1,6 +1,8 @@
 import ipaddress
+import hashlib
 import os
 import re
+import tempfile
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -97,6 +99,7 @@ INSTALLED_APPS = [
     "catalog.apps.CatalogConfig",
     "stores.apps.StoresConfig",
     "receipts.apps.ReceiptsConfig",
+    "recognition.apps.RecognitionConfig",
     "api.apps.ApiConfig",
 ]
 MIDDLEWARE = [
@@ -201,3 +204,75 @@ USE_I18N = True
 USE_TZ = True
 STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+
+def env_integer(name, default, minimum, maximum):
+    value = env_text(name, str(default))
+    if not value.isascii() or not value.isdecimal() or not minimum <= int(value) <= maximum:
+        raise ImproperlyConfigured(f"{name}: expected an integer from {minimum} to {maximum}.")
+    return int(value)
+
+
+def env_directory(name, default):
+    path = Path(env_text(name, str(default))).expanduser()
+    if not path.is_absolute():
+        raise ImproperlyConfigured(f"{name}: expected an absolute directory path.")
+    return path.resolve()
+
+
+# Local recognition is opt-in. MEDIA and private provider scratch never overlap.
+recognition_flag = env_text("ALLOW_LOCAL_RECOGNITION_API", "0").lower()
+if recognition_flag not in {"0", "1", "true", "false"}:
+    raise ImproperlyConfigured("ALLOW_LOCAL_RECOGNITION_API: expected 0, 1, true or false.")
+ALLOW_LOCAL_RECOGNITION_API = recognition_flag in {"1", "true"}
+MEDIA_ROOT = env_directory("MEDIA_ROOT", BASE_DIR.parent / "media")
+# Fixed v1 prefix shared with the client URL guards and Vite dev/preview proxy.
+MEDIA_URL = os.environ.get("MEDIA_URL", "/media/")
+if MEDIA_URL != "/media/":
+    raise ImproperlyConfigured(
+        "MEDIA_URL: v1 supports only /media/. Changing the prefix requires coordinated client and Vite proxy changes."
+    )
+scratch_suffix = hashlib.sha256(str(BASE_DIR).encode()).hexdigest()[:16]
+RECEIPT_OCR_TEMP_ROOT = env_directory(
+    "RECEIPT_OCR_TEMP_ROOT", Path(tempfile.gettempdir()) / f"checkist-ocr-{scratch_suffix}",
+)
+if MEDIA_ROOT.is_relative_to(RECEIPT_OCR_TEMP_ROOT) or RECEIPT_OCR_TEMP_ROOT.is_relative_to(MEDIA_ROOT):
+    raise ImproperlyConfigured("MEDIA_ROOT and RECEIPT_OCR_TEMP_ROOT must be separate directories.")
+RECEIPT_OCR_PROVIDER = env_text("RECEIPT_OCR_PROVIDER", "codex_cli")
+if RECEIPT_OCR_PROVIDER not in {"codex_cli", "fake"}:
+    raise ImproperlyConfigured("RECEIPT_OCR_PROVIDER: expected codex_cli or fake.")
+RECEIPT_OCR_MODEL = env_text("RECEIPT_OCR_MODEL", "gpt-6.1-sol")
+RECEIPT_OCR_CODEX_EXECUTABLE = env_text("RECEIPT_OCR_CODEX_EXECUTABLE", "codex")
+RECEIPT_OCR_PREPARE_TIMEOUT_SECONDS = env_integer("RECEIPT_OCR_PREPARE_TIMEOUT_SECONDS", 30, 1, 300)
+RECEIPT_OCR_CROP_TIMEOUT_SECONDS = env_integer("RECEIPT_OCR_CROP_TIMEOUT_SECONDS", 30, 1, 300)
+RECEIPT_OCR_DETECT_TIMEOUT_SECONDS = env_integer("RECEIPT_OCR_DETECT_TIMEOUT_SECONDS", 90, 1, 2400)
+RECEIPT_OCR_RECOGNIZE_TIMEOUT_SECONDS = env_integer("RECEIPT_OCR_RECOGNIZE_TIMEOUT_SECONDS", 180, 1, 2400)
+RECEIPT_OCR_JOB_TIMEOUT_SECONDS = env_integer("RECEIPT_OCR_JOB_TIMEOUT_SECONDS", 2400, 1, 86400)
+RECEIPT_OCR_CANCEL_GRACE_SECONDS = env_integer("RECEIPT_OCR_CANCEL_GRACE_SECONDS", 2, 1, 10)
+RECEIPT_OCR_LEASE_SECONDS = env_integer("RECEIPT_OCR_LEASE_SECONDS", 30, 10, 300)
+RECEIPT_OCR_HEARTBEAT_SECONDS = env_integer("RECEIPT_OCR_HEARTBEAT_SECONDS", 5, 1, 30)
+if RECEIPT_OCR_HEARTBEAT_SECONDS * 2 >= RECEIPT_OCR_LEASE_SECONDS:
+    raise ImproperlyConfigured("RECEIPT_OCR_HEARTBEAT_SECONDS must be less than half the lease.")
+RECEIPT_OCR_MAX_CONCURRENCY = env_integer("RECEIPT_OCR_MAX_CONCURRENCY", 1, 1, 1)
+RECEIPT_OCR_MAX_ATTEMPTS = env_integer("RECEIPT_OCR_MAX_ATTEMPTS", 2, 1, 2)
+# Fixed v1 capabilities; changing these needs a matching API/client contract.
+RECEIPT_IMAGE_MAX_BYTES = env_integer("RECEIPT_IMAGE_MAX_BYTES", 20971520, 20971520, 20971520)
+RECEIPT_IMAGE_MAX_PIXELS = env_integer("RECEIPT_IMAGE_MAX_PIXELS", 40000000, 40000000, 40000000)
+RECEIPT_IMAGE_MAX_RECEIPTS = env_integer("RECEIPT_IMAGE_MAX_RECEIPTS", 10, 10, 10)
+csrf_origins = os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS", "")
+CSRF_TRUSTED_ORIGINS = []
+if csrf_origins:
+    for origin in csrf_origins.split(","):
+        origin = origin.strip()
+        try:
+            parsed = urlsplit(origin)
+            valid = (
+                parsed.scheme in {"http", "https"} and parsed.hostname in {"127.0.0.1", "localhost", "::1"}
+                and parsed.port is not None and not parsed.path and not parsed.query and not parsed.fragment
+                and not parsed.username and not parsed.password and not any(char.isspace() for char in origin)
+            )
+        except ValueError:
+            valid = False
+        if not valid:
+            raise ImproperlyConfigured("DJANGO_CSRF_TRUSTED_ORIGINS: expected exact local origins with ports.")
+        CSRF_TRUSTED_ORIGINS.append(origin)

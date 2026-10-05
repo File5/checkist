@@ -1,0 +1,138 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "image_width",
+    "image_height",
+    "receipt_count",
+    "receipts",
+    "warnings"
+  ],
+  "properties": {
+    "schema_version": {
+      "enum": [
+        "1"
+      ]
+    },
+    "image_width": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "image_height": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "receipt_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 10
+    },
+    "receipts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "bbox",
+          "quad",
+          "rotation_degrees",
+          "confidence",
+          "clipped"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "bbox": {
+            "description": "Axis-aligned bounds on the full EXIF-transposed image, normalized 0..1; must enclose every quad corner.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "x_min",
+              "y_min",
+              "x_max",
+              "y_max"
+            ],
+            "properties": {
+              "x_min": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "y_min": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "x_max": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "y_max": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            }
+          },
+          "quad": {
+            "description": "TL, TR, BR, BL relative to the text, clockwise with image y down. First corner is paper top-left with upright text, not smallest image x+y. Server preserves cyclic starts; requires strict convexity, positive area and bbox enclosure.",
+            "type": "array",
+            "minItems": 4,
+            "maxItems": 4,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "x",
+                "y"
+              ],
+              "properties": {
+                "x": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "y": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                }
+              }
+            }
+          },
+          "rotation_degrees": {
+            "description": "Text angle from upright: positive clockwise, negative counterclockwise, within [-180, 180] (270 clockwise is -90). The bbox crop retains this rotation.",
+            "type": "number",
+            "minimum": -180,
+            "maximum": 180
+          },
+          "confidence": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1
+          },
+          "clipped": {
+            "type": "boolean"
+          }
+        }
+      },
+      "maxItems": 10
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 255
+      },
+      "maxItems": 100
+    }
+  }
+}

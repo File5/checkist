@@ -6,6 +6,8 @@ import CatalogPage from './features/catalog/CatalogPage'
 import CategoryPage from './features/catalog/CategoryPage'
 import ProductPage from './features/product/ProductPage'
 import RequestState from './components/RequestState'
+import { UploadPage, JobsPage, JobPage } from './features/recognition'
+import { ReceiptsPage, ReceiptPage } from './features/receipts'
 
 function pageTitle(route: Route) {
   switch (route.kind) {
@@ -13,6 +15,11 @@ function pageTitle(route: Route) {
     case 'category': return 'Категория продуктов'
     case 'product': return 'Товар и история цен'
     case 'health': return 'Состояние сервисов'
+    case 'receipts': return 'Чеки'
+    case 'upload': return 'Загрузка фото чеков'
+    case 'receipt': return 'Чек'
+    case 'jobs': return 'Обработка'
+    case 'job': return 'Задание обработки'
     case 'invalid-query': return 'Некорректная ссылка'
     case 'not-found': return 'Страница не найдена'
   }
@@ -24,6 +31,11 @@ function pageContent({ route, returnTo }: NavigationSnapshot) {
     case 'category': return <CategoryPage categoryId={route.categoryId} query={route.query} />
     case 'product': return <ProductPage productId={route.productId} query={route.query} returnTo={returnTo} />
     case 'health': return <HealthPage />
+    case 'receipts': return <ReceiptsPage query={route.query} />
+    case 'upload': return <UploadPage />
+    case 'receipt': return <ReceiptPage receiptId={route.receiptId} returnTo={returnTo} />
+    case 'jobs': return <JobsPage query={route.query} />
+    case 'job': return <JobPage jobId={route.jobId} returnTo={returnTo} />
     case 'invalid-query': return <RequestState kind="empty" message="В адресе указаны некорректные фильтры или номер страницы. Сбросьте параметры и попробуйте снова." action={<Link className="action-link" to={route.resetTo} replace>Сбросить параметры</Link>} />
     case 'not-found': return <RequestState kind="empty" message="Такой страницы нет. Перейдите в каталог продуктов." action={<Link className="action-link" to="/catalog">В каталог</Link>} />
   }
@@ -43,13 +55,16 @@ export default function App() {
     previousNavigation.current = navigation
     if (previous?.href.split(/[?#]/)[0] === pathname) return
     heading.current?.focus()
-    if (previous?.route.kind !== 'product' || !previous.returnTo
-      || (route.kind !== 'catalog' && route.kind !== 'category')
+    if (!previous?.returnTo
+      || !['product', 'receipt', 'job'].includes(previous.route.kind)
+      || (route.kind !== 'catalog' && route.kind !== 'category' && route.kind !== 'receipts' && route.kind !== 'jobs')
       || buildRoute(route) !== previous.returnTo || !content.current) return
 
     // The list loads asynchronously. Restore the selected link only while the
     // user has left focus on the transition heading; never interrupt their work.
-    const productHref = buildRoute({ kind: 'product', productId: previous.route.productId, query: { page: 1 } })
+    const detailHref = previous.route.kind === 'product'
+      ? buildRoute({ kind: 'product', productId: previous.route.productId, query: { page: 1 } })
+      : previous.route.kind === 'receipt' || previous.route.kind === 'job' ? buildRoute(previous.route) : undefined
     const stop = () => {
       observer.disconnect()
       document.removeEventListener('focusin', cancelOnFocus)
@@ -57,7 +72,7 @@ export default function App() {
     const cancelOnFocus = () => { if (document.activeElement !== heading.current) stop() }
     const restore = () => {
       if (document.activeElement !== heading.current) { stop(); return }
-      const link = content.current?.querySelector<HTMLAnchorElement>(`a[href="${productHref}"]`)
+      const link = content.current?.querySelector<HTMLAnchorElement>(`a[href="${detailHref}"]`)
       if (link) { stop(); link.focus() }
     }
     const observer = new MutationObserver(restore)
@@ -85,6 +100,8 @@ export default function App() {
         </Link>
         <nav className="main-navigation" aria-label="Основная навигация">
           <Link to="/catalog" aria-current={catalogActive ? 'page' : undefined}>Каталог</Link>
+          <Link to="/receipts" aria-current={['receipts', 'upload', 'receipt'].includes(route.kind) ? 'page' : undefined}>Чеки</Link>
+          <Link to="/recognition/jobs" aria-current={['jobs', 'job'].includes(route.kind) ? 'page' : undefined}>Обработка</Link>
           <Link to="/health" aria-current={route.kind === 'health' ? 'page' : undefined}>Состояние сервисов</Link>
         </nav>
       </header>

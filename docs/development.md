@@ -2,7 +2,7 @@
 
 ## Реализовано и планируется
 
-Сейчас запускаются Django/DRF и React + TypeScript + Vite SPA локально, Postgres, Redis и Celery worker — в Linux Docker. Клиент показывает настоящий health API через proxy, ошибки и повтор; подробности — [frontend.md](frontend.md). Предметная модель данных чеков (приложения `stores`, `catalog`, `receipts`) реализована и описана в [data-model.md](data-model.md). К ней есть HTTP API только на чтение — приложение `api`, 13 GET-эндпоинтов ([api-contract.md](api-contract.md#реализовано-api-чтения-каталога-и-цен)); API записи нет — данные вводят через [Django admin](#админка) или кодом; клиент эти эндпоинты пока не вызывает. Хранение фото чеков, OCR магазина/адреса и товаров/стоимостей и дашборд не реализованы; OCR-провайдер не выбран.
+Локально запускаются Django/DRF, React/TypeScript/Vite SPA и host `recognition_worker`; Postgres, Redis и Celery worker — в Linux Docker. SPA пока показывает health через proxy ([frontend.md](frontend.md)). Реализованы stores/catalog/receipts, 13 GET каталога/цен и новый локальный recognition/receipts API: загрузка фото, очередь PostgreSQL, detect/crop/recognize/import, отмена и retry. Провайдеры — Codex CLI и явно выбранный FakeProvider. Данные также вводят через [Django admin](#админка). Клиент загрузки/чеков, API ручных правок, авторизация пользователей, дашборд и серверные курсы валют ещё не реализованы.
 
 ## Версии и установка Windows
 
@@ -12,6 +12,7 @@
 | Django / DRF | 5.2.17 / 3.16.1 |
 | Celery / redis-py | 5.6.3 / 6.4.0 |
 | psycopg / python-dotenv | 3.3.6 / 1.2.4 |
+| Pillow | 12.3.0; декодирование, EXIF, preview и вырезки |
 | Postgres / Redis images | `postgres:17.11-alpine` / `redis:7.4.11-alpine` |
 | Worker Python image | `python:3.13.16-slim-bookworm` |
 | Docker / Compose, проверенная среда | 29.8.1 / 5.5.1, Linux daemon |
@@ -104,6 +105,119 @@ npm.cmd run dev
 
 Для тестовых миграций, очереди и отключений сервисов используйте только [QA-блок и сквозной сценарий](verification.md#сквозная-проверка-клиента-через-vite-proxy): API 18000, Vite 15173, `DEV_API_PROXY_TARGET=http://127.0.0.1:18000`, `VITE_API_BASE_URL=/api`. Все npm-команды выше выполняются с QA environment; dev-команда — `npm.cmd run dev -- --port 15173`. Unit-тесты адаптера используют mocked fetch; реальный adapter/HTTP проверяет `node backend/scripts/check_health_proxy.mjs healthy` из корня при запущенных QA API и Vite. UI принимает человек.
 
+## Распознавание: запуск для клиента
+
+API и OCR-worker должны использовать **одни и те же** DB и абсолютный MEDIA_ROOT. Private scratch — другой каталог, вне MEDIA; оба каталога доступны текущему host-пользователю. Задания выполняет `recognition_worker`, Celery нужен только прежним health-проверкам. Health 200 не означает, что OCR-worker запущен. `executor.available=false` также бывает у живого idle-worker: публичный executor основан только на executing lease.
+
+### Настройки recognition
+
+Образец корневого `.env` содержит defaults; process overrides имеют приоритет. Не передавайте provider/model/scenario/пути через HTTP или VITE env.
+
+| Переменная | Default / граница |
+| --- | --- |
+| `ALLOW_LOCAL_RECOGNITION_API` | `0`; включить `1` вместе с `DJANGO_DEBUG=1`, peer должен быть loopback |
+| `DJANGO_CSRF_TRUSTED_ORIGINS` | Точные локальные origins с портом; образец включает Vite 5173/15173. Другой порт добавлять явно |
+| `MEDIA_ROOT`, `MEDIA_URL` | `<worktree>/media`, `/media/`; абсолютный root, URL в v1 фиксирован строго `/media/` |
+| `RECEIPT_OCR_TEMP_ROOT` | Приватный worktree-specific каталог системного temp; абсолютный путь, не пересекается с MEDIA |
+| `RECEIPT_OCR_PROVIDER` | `codex_cli` либо явно `fake`; fallback после ошибки отсутствует |
+| `RECEIPT_OCR_MODEL` | `gpt-6.1-sol` |
+| `RECEIPT_OCR_CODEX_EXECUTABLE` | `codex`; на Windows для worker нужен **native .exe**, не .cmd/.ps1 и не строка shell-команды |
+| `RECEIPT_OCR_FAKE_SCENARIO` | Команда читает server environment, default success2; `--fake-scenario` выше по приоритету. Не задан в `.env.example` |
+| `RECEIPT_OCR_PREPARE_TIMEOUT_SECONDS`, `RECEIPT_OCR_CROP_TIMEOUT_SECONDS` | 30/30, допустимо 1..300; проверки между шагами, hard deadline синхронного Pillow отсутствует |
+| `RECEIPT_OCR_DETECT_TIMEOUT_SECONDS`, `RECEIPT_OCR_RECOGNIZE_TIMEOUT_SECONDS` | 90/180 на вызов, 1..2400 |
+| `RECEIPT_OCR_JOB_TIMEOUT_SECONDS` | 2400 от первого claim, 1..86400; включает retry/recovery, исключает исходное queued ожидание |
+| `RECEIPT_OCR_CANCEL_GRACE_SECONDS` | 2, 1..10; POSIX TERM→KILL. Windows Job Object останавливается сразу |
+| `RECEIPT_OCR_LEASE_SECONDS`, `RECEIPT_OCR_HEARTBEAT_SECONDS` | 30/5; lease 10..300, heartbeat 1..30, heartbeat×2 строго меньше lease |
+| `RECEIPT_OCR_MAX_CONCURRENCY`, `RECEIPT_OCR_MAX_ATTEMPTS` | Только 1 worker; 1..2 попытки провайдера, default 2 |
+| `RECEIPT_IMAGE_MAX_BYTES`, `RECEIPT_IMAGE_MAX_PIXELS`, `RECEIPT_IMAGE_MAX_RECEIPTS` | Фиксированные 20971520 / 40000000 / 10; другие env-значения отвергаются |
+
+`MEDIA_URL` можно не задавать (default `/media/`) или задать ровно `/media/`. Любое другое значение, включая пустое, `/pictures/`, `/media` и абсолютный URL, вызывает `ImproperlyConfigured` при загрузке настроек: `check`, `runserver` и `recognition_worker` не стартуют. Клиентские проверки URL и Vite dev/preview proxy рассчитаны только на `/media/`; изменение префикса требует согласованной правки клиента и proxy.
+
+Авторизация Codex берётся у существующего host-пользователя; child наследует `CODEX_HOME`, если он уже установлен. Worker проверяет version/flags/login status, не делает login/logout и не меняет auth/config. `RECEIPT_OCR_CODEX_HOME` и `RECEIPT_OCR_DEFAULT_COUNTRY` сейчас **не загружаются из env в settings**: одноимённые getattr hooks в коде не являются готовыми env-настройками. Не создавайте пустой home вместо авторизованного. Для стандартной установки Windows путь проверяют так:
+
+```powershell
+$codexExe = Join-Path $env:LOCALAPPDATA 'Programs/OpenAI/Codex/bin/codex.exe'
+Test-Path $codexExe
+& $codexExe --version
+& $codexExe login status
+```
+
+Если установлен в другом месте, задайте фактический абсолютный `.exe`. Передавать секреты в browser env нельзя. Поддержанные команды/structured output — [OpenAI Docs](https://learn.chatgpt.com/docs/developer-commands?surface=cli); фактическую совместимость устанавливает startup и отдельный QA-прогон.
+
+### Dev
+
+После обычной установки/миграций и запуска Postgres по разделу выше, в **терминалах API и worker** применить:
+
+```powershell
+$env:DJANGO_DEBUG='1'
+$env:ALLOW_LOCAL_RECOGNITION_API='1'
+$env:MEDIA_ROOT=Join-Path (Get-Location) 'media'
+$env:RECEIPT_OCR_TEMP_ROOT=Join-Path $env:TEMP 'checkist-dev-ocr-scratch'
+$env:RECEIPT_OCR_PROVIDER='codex_cli'
+$env:RECEIPT_OCR_CODEX_EXECUTABLE=Join-Path $env:LOCALAPPDATA 'Programs/OpenAI/Codex/bin/codex.exe'
+```
+
+API: `./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py runserver 127.0.0.1:8000 --noreload`.
+В другом терминале: `./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py recognition_worker`.
+`--once` восстанавливает leases и обрабатывает не более одного готового job; пустая очередь даёт exit 0. Ненулевой exit означает отказ команды, но exit 0 с `Job …: failed/partial_succeeded` требует проверки самого Job.
+
+Тестовые загрузки, демо и настоящую OCR-приёмку проводите в QA по следующему блоку. `seed_recognition_demo` намеренно отвергает dev-БД, поэтому демо не является шагом dev-запуска.
+
+### QA: сервер, worker, демо
+
+В каждом терминале из корня сначала **весь** QA environment из [verification.md](verification.md#изолированная-qa-среда) (DB checkist_qa, Postgres 25432, Redis 16379, три Redis URLs, API 18000, Vite 15173), затем одинаковые overrides:
+
+```powershell
+$env:DJANGO_DEBUG='1'
+$env:ALLOW_LOCAL_RECOGNITION_API='1'
+$env:DJANGO_CSRF_TRUSTED_ORIGINS='http://127.0.0.1:15173,http://localhost:15173'
+$env:MEDIA_ROOT=Join-Path $env:TEMP 'checkist-qa-recognition-media'
+$env:RECEIPT_OCR_TEMP_ROOT=Join-Path $env:TEMP 'checkist-qa-recognition-scratch'
+$env:RECEIPT_OCR_PROVIDER='fake'
+docker compose -p checkist_qa config --quiet
+docker compose -p checkist_qa up -d --wait --wait-timeout 90 postgres redis
+```
+
+Перед host-командами выполнить ограниченные TCP-пробы из [диагностики](#диагностика-нет-доступа-с-windows-к-портам-docker). Если выбран другой свободный QA project/порт, согласованно изменить **все** DB/Redis/API/proxy/origins; не останавливать чужой QA. Затем каждую команду отдельно, прекращая зависимые шаги после ошибки:
+
+```powershell
+./backend/.venv/Scripts/python.exe -X utf8 -m pip check
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py check
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py migrate --noinput
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py seed_recognition_demo
+```
+
+Seed разрешён для `test_*` или `checkist_qa` с необязательным `_suffix`, идемпотентно создаёт только `MEDIA/demo/single.png` и `double.png`, печатает пути. Он не создаёт DB-записи. Игнорируемые MEDIA-файлы не переносятся при merge: повторить seed в итоговом worktree.
+
+Терминал API с тем же env:
+
+```powershell
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py runserver 127.0.0.1:18000 --noreload
+```
+
+Терминал OCR-worker с тем же env:
+
+```powershell
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py recognition_worker --fake-scenario success2
+```
+
+Загрузить `double.png` HTTP-сценарием из [verification.md](verification.md#распознавание-сквозная-серверная-проверка). Для single.png остановить свой worker и запустить `--fake-scenario one_receipt`. Сценарии partial_success / inconsistent_total / no_receipts / provider_auth_failure / pause_detect / pause_recognize — для негативной приёмки; полный список — [providers/README.md](../backend/recognition/providers/README.md). Fake не читает текст произвольного фото. Смена scenario не перерабатывает уже завершённый одинаковый файл: использовать retry для failed/partial/cancelled либо другой файл/новую QA-среду.
+
+Клиент: существующие npm-команды, QA `npm.cmd run dev -- --port 15173`. Все новые действия требуют CSRF cookie/token (`credentials: same-origin`), в отличие от health. API возвращает относительные URL с фиксированным `MEDIA_URL=/media/`; Vite dev/preview передают `/api` и `/media` на один Django. Сквозная HTTP-проверка и ручная UI-приёмка — в [verification.md](verification.md#распознавание-сквозная-проверка-клиента-и5).
+
+### Настоящий Codex в QA
+
+Остановить fake-worker. В том же QA DB/MEDIA/scratch, в терминале worker:
+
+```powershell
+$env:RECEIPT_OCR_PROVIDER='codex_cli'
+$env:RECEIPT_OCR_MODEL='gpt-6.1-sol'
+$env:RECEIPT_OCR_CODEX_EXECUTABLE=Join-Path $env:LOCALAPPDATA 'Programs/OpenAI/Codex/bin/codex.exe'
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py recognition_worker
+```
+
+Для одного измеряемого прогона сначала загрузить новое demo single.png при остановленном worker, затем запустить `recognition_worker --once`; замерить wall time и GET Job/images/receipts. Если этот файл уже обработан fake, точный upload переиспользует его job: для реального прогона нужна новая QA-среда/новое исходное изображение, а succeeded job не retryable. Синтетический smoke и итог С6 — в verification.md; качество реальных фото проверяет человек по эталону. После приёмки Ctrl+C только своих host-процессов и `docker compose -p checkist_qa down`, без `-v`.
+
 ## Админка
 
 Django admin работает на том же локальном Django, что и API, отдельного процесса нет. Открывайте его **напрямую**: dev — `http://127.0.0.1:8000/admin/`, QA — `http://127.0.0.1:18000/admin/`. Через Vite (5173/15173) админка недоступна: proxy передаёт только `/api`, а `/admin` и `/static` — нет.
@@ -135,7 +249,7 @@ Django admin работает на том же локальном Django, что
 
 ## Данные, остановка и восстановление
 
-Технические таблицы и таблицы предметной модели создаёт `migrate`; он же вносит сид-данные справочников: страны `KZ`, `RU`, `DE`, валюты `KZT`, `RUB`, `EUR` и четыре ставки налога. Seed users/фото чеков не нужны; пользователя для админки создаёт человек командой `createsuperuser`. Чеки, магазины и товары вводятся через [админку](#админка) или кодом, например из `manage.py shell`: API записи для них нет. API чтения показывает только товары каталога и позиции, сопоставленные с товаром, поэтому на пустой БД списки пусты. Тестовые записи делайте в QA, не в dev. `postgres_data` и `redis_data` — именованные тома с префиксом Compose project. Redis хранит AOF; mount `backend:/app:ro` не хранит состояние приложения. Dev и QA не делят эти тома.
+`migrate` создаёт технические, предметные и recognition-таблицы, вносит справочники: KZ/RU/DE, KZT/RUB/EUR и четыре ставки. Пользователя admin создаёт человек. Чеки, магазины и товары вводятся через [админку](#админка), кодом либо автоимпортом OCR; произвольного API редактирования нет. На пустой БД списки пусты; новый receipts API показывает и несопоставленные строки. Тестовые записи — только QA. `postgres_data`/`redis_data` изолированы именем project, MEDIA/scratch — отдельными host-каталогами. Ни Compose down, ни откат recognition, ни ORM deletion не удаляют MEDIA. Перед откатом на ценных данных нужны pg_dump и копия MEDIA; crash может оставить orphan, cleanup исключён v1.
 
 Остановите Vite/preview и Django через Ctrl+C, затем `docker compose -p checkist_dev down`. Это удаляет контейнеры/сеть, сохраняет тома. Для возобновления выполните последовательность запуска выше; повторный `migrate` применяет только недостающие миграции. Правки worker-кода видны через mount, но задачи исполняет долгоживущий процесс: перезапустите worker; изменения зависимостей требуют `up --build`.
 

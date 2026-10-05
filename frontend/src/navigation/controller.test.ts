@@ -31,6 +31,52 @@ function memoryHistory(initial = '/catalog') {
 }
 
 describe('navigation without a browser', () => {
+  it.each([
+    ['/recognition/jobs/31', '/receipts/71'],
+    ['/receipts/71', '/recognition/jobs/31'],
+    ['/receipts/71', '/catalog/products/61'],
+  ])('retains the source detail for %s → %s across query, reload and Back', (source, destination) => {
+    const history = memoryHistory(source)
+    const navigation = createNavigation(history.environment)
+    const unsubscribe = navigation.subscribe(() => {})
+    navigation.navigate(destination)
+    expect(navigation.getSnapshot().returnTo).toBe(source)
+    if (destination.startsWith('/catalog/')) navigation.navigate(`${destination}?currency=EUR&page=2`)
+    expect(createNavigation(history.environment).getSnapshot().returnTo).toBe(source)
+    history.go(-1)
+    history.go(1)
+    expect(navigation.getSnapshot().returnTo).toBe(source)
+    navigation.navigate(source)
+    expect(navigation.getSnapshot().href).toBe(source)
+    unsubscribe()
+  })
+  it.each([
+    ['/receipts?store=51&page=2', '/receipts/71', '/receipts?store=51&page=2'],
+    ['/recognition/jobs?status=failed&page=3', '/recognition/jobs/31', '/recognition/jobs?status=failed&page=3'],
+  ])('retains the compatible list context from %s and restores it on Back', (list, detail, expected) => {
+    const history = memoryHistory(list)
+    const navigation = createNavigation(history.environment)
+    const unsubscribe = navigation.subscribe(() => {})
+    navigation.navigate(detail)
+    expect(navigation.getSnapshot().returnTo).toBe(expected)
+    expect(createNavigation(history.environment).getSnapshot().returnTo).toBe(expected)
+    history.go(-1)
+    expect(navigation.getSnapshot().returnTo).toBeUndefined()
+    expect(navigation.getSnapshot().href).toBe(list)
+    history.go(1)
+    expect(navigation.getSnapshot().returnTo).toBe(expected)
+    navigation.navigate('/catalog')
+    expect(navigation.getSnapshot().returnTo).toBeUndefined()
+    unsubscribe()
+  })
+  it.each([
+    ['/receipts/71', '/recognition/jobs'], ['/recognition/jobs/31', '/receipts'],
+    ['/receipts/71', '/receipts?page=0'], ['/recognition/jobs/31', 'https://evil.test/recognition/jobs'],
+  ])('rejects inappropriate persisted context %s ← %s', (detail, context) => {
+    const history = memoryHistory(detail)
+    history.entries[0].state = { checkistReturnTo: context }
+    expect(createNavigation(history.environment).getSnapshot().returnTo).toBeUndefined()
+  })
   it('initializes from a direct URL and exposes a stable snapshot', () => {
     const history = memoryHistory('/catalog/products/2?store=3&page=2')
     const navigation = createNavigation(history.environment)

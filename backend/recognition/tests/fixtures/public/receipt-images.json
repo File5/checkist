@@ -1,0 +1,96 @@
+{
+  "count": 2,
+  "page": 1,
+  "page_size": 50,
+  "pages": 1,
+  "results": [
+    {
+      "id": 42,
+      "photo_id": 11,
+      "job_id": 31,
+      "position": 2,
+      "created_at": "2026-10-04T12:35:00Z",
+      "status": "needs_review",
+      "receipt_id": null,
+      "receipt_deleted": false,
+      "image_url": "/media/crops/test/crop.png",
+      "width": 8,
+      "height": 16,
+      "bbox": {
+        "x_min": 0.1,
+        "x_max": 0.9,
+        "y_min": 0.1,
+        "y_max": 0.9
+      },
+      "clipped": false,
+      "issues": [
+        {
+          "code": "missing_required",
+          "field": "/lines/0/quantity",
+          "message": "Не удалось прочитать обязательное поле."
+        }
+      ],
+      "normalized_result": {
+        "proposed_receipt": {
+          "store": null,
+          "store_display_name": "Тестовый магазин",
+          "address_display": "Teststrasse 12",
+          "currency": "EUR",
+          "operation": "sale",
+          "purchased_on": "2026-10-04",
+          "local_time": "14:35",
+          "total": "4.52",
+          "discount_total": null,
+          "prices_include_tax": true
+        },
+        "lines": [
+          {
+            "position": 1,
+            "parent_position": null,
+            "kind": "product",
+            "name": "МОЛОКО",
+            "unit": "pcs",
+            "quantity": null,
+            "unit_price": "1.2900",
+            "amount": null,
+            "discount_amount": null,
+            "tax_amount": null,
+            "store_item_code": null,
+            "barcode": null,
+            "tax_code": null,
+            "is_excise": null,
+            "is_marked": null,
+            "tax_rate": {
+              "kind": null,
+              "rate": null
+            }
+          }
+        ],
+        "discounts": [],
+        "taxes": []
+      }
+    },
+    {
+      "id": 41,
+      "photo_id": 11,
+      "job_id": 31,
+      "position": 1,
+      "created_at": "2026-10-04T12:35:00Z",
+      "status": "imported",
+      "receipt_id": 71,
+      "receipt_deleted": false,
+      "image_url": "/media/crops/test/crop.png",
+      "width": 8,
+      "height": 16,
+      "bbox": {
+        "x_min": 0.1,
+        "x_max": 0.9,
+        "y_min": 0.1,
+        "y_max": 0.9
+      },
+      "clipped": false,
+      "issues": [],
+      "normalized_result": null
+    }
+  ]
+}

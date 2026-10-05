@@ -1,0 +1,15 @@
+{
+  "count": 1,
+  "page": 1,
+  "page_size": 50,
+  "pages": 1,
+  "results": [
+    {
+      "id": 201,
+      "position": 1,
+      "line_id": 101,
+      "name": "Rabatt MILCH",
+      "amount": "0.20"
+    }
+  ]
+}

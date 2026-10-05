@@ -12,3 +12,5 @@ coverage/
 htmlcov/
 *.log
 .orca-attachments/
+media/
+.media-recognition-staging-*/

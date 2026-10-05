@@ -1,0 +1,869 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "merchant",
+    "store",
+    "operation",
+    "currency_code",
+    "purchased_on",
+    "local_time",
+    "utc_offset_printed",
+    "receipt_number",
+    "shift_number",
+    "register_code",
+    "fiscal",
+    "total",
+    "discount_total",
+    "prices_include_tax",
+    "raw_text",
+    "lines",
+    "discounts",
+    "taxes",
+    "confidence",
+    "fields",
+    "warnings",
+    "timestamps"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "enum": [
+        "2"
+      ],
+      "maxLength": 1
+    },
+    "merchant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "country_code",
+        "legal_name",
+        "brand_name",
+        "tax_id_type",
+        "tax_id"
+      ],
+      "properties": {
+        "country_code": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 2
+        },
+        "legal_name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 255
+        },
+        "brand_name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 100
+        },
+        "tax_id_type": {
+          "enum": [
+            "inn",
+            "bin",
+            "vat_id",
+            "other",
+            null
+          ]
+        },
+        "tax_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 32
+        }
+      }
+    },
+    "store": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "country_code",
+        "name",
+        "branch_code",
+        "address_raw",
+        "postal_code",
+        "region",
+        "city",
+        "street",
+        "house"
+      ],
+      "properties": {
+        "country_code": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 2
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 255
+        },
+        "branch_code": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 32
+        },
+        "address_raw": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 4096
+        },
+        "postal_code": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 16
+        },
+        "region": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 100
+        },
+        "city": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 100
+        },
+        "street": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 255
+        },
+        "house": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 32
+        }
+      }
+    },
+    "operation": {
+      "enum": [
+        "sale",
+        "refund",
+        null
+      ]
+    },
+    "currency_code": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 3
+    },
+    "purchased_on": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 10
+    },
+    "local_time": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 8
+    },
+    "utc_offset_printed": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 6
+    },
+    "receipt_number": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 64
+    },
+    "shift_number": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 16
+    },
+    "register_code": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 64
+    },
+    "fiscal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fn",
+        "fd",
+        "fp",
+        "rn_kkt",
+        "zn_kkt",
+        "rnm",
+        "znm",
+        "ofd",
+        "document",
+        "tse_transaction",
+        "register_serial",
+        "signature_counter",
+        "transaction_start",
+        "transaction_end",
+        "signature"
+      ],
+      "properties": {
+        "fn": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 255
+        },
+        "fd": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 255
+        },
+        "fp": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 255
+        },
+        "rn_kkt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 255
+        },
+        "zn_kkt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 255
+        },
+        "rnm": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 255
+        },
+        "znm": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 255
+        },
+        "ofd": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 255
+        },
+        "document": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 255
+        },
+        "tse_transaction": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 255
+        },
+        "register_serial": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 255
+        },
+        "signature_counter": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 255
+        },
+        "transaction_start": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 255
+        },
+        "transaction_end": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 255
+        },
+        "signature": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 255
+        }
+      }
+    },
+    "total": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^-?[0-9]{1,12}\\.[0-9]{2}$",
+      "maxLength": 255
+    },
+    "discount_total": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^-?[0-9]{1,12}\\.[0-9]{2}$",
+      "maxLength": 255
+    },
+    "prices_include_tax": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "raw_text": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 1048576
+    },
+    "lines": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "position",
+          "kind",
+          "parent_position",
+          "raw_name",
+          "store_item_code",
+          "barcode",
+          "quantity",
+          "unit",
+          "unit_price",
+          "amount",
+          "discount_amount",
+          "tax_rate",
+          "tax_code",
+          "tax_amount",
+          "is_excise",
+          "is_marked",
+          "product_hint"
+        ],
+        "properties": {
+          "position": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 32767
+          },
+          "kind": {
+            "enum": [
+              "product",
+              "service",
+              "deposit",
+              "deposit_return",
+              null
+            ]
+          },
+          "parent_position": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 32767
+          },
+          "raw_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 4096
+          },
+          "store_item_code": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64
+          },
+          "barcode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 32
+          },
+          "quantity": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^-?[0-9]{1,9}\\.[0-9]{3}$",
+            "maxLength": 255
+          },
+          "unit": {
+            "enum": [
+              "pcs",
+              "g",
+              "kg",
+              "ml",
+              "l",
+              "m",
+              null
+            ]
+          },
+          "unit_price": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[0-9]{1,10}\\.[0-9]{4}$",
+            "maxLength": 255
+          },
+          "amount": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^-?[0-9]{1,12}\\.[0-9]{2}$",
+            "maxLength": 255
+          },
+          "discount_amount": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^-?[0-9]{1,12}\\.[0-9]{2}$",
+            "maxLength": 255
+          },
+          "tax_rate": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "rate"
+            ],
+            "properties": {
+              "kind": {
+                "enum": [
+                  "vat",
+                  "exempt",
+                  null
+                ]
+              },
+              "rate": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^[0-9]{1,3}\\.[0-9]{2}$",
+                "maxLength": 255
+              }
+            }
+          },
+          "tax_code": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 8
+          },
+          "tax_amount": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^-?[0-9]{1,12}\\.[0-9]{2}$",
+            "maxLength": 255
+          },
+          "is_excise": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "is_marked": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "product_hint": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "brand",
+              "gtin",
+              "package_quantity",
+              "package_unit"
+            ],
+            "properties": {
+              "name": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 255
+              },
+              "brand": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 100
+              },
+              "gtin": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 14
+              },
+              "package_quantity": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^-?[0-9]{1,9}\\.[0-9]{3}$",
+                "maxLength": 255
+              },
+              "package_unit": {
+                "enum": [
+                  "pcs",
+                  "g",
+                  "kg",
+                  "ml",
+                  "l",
+                  "m",
+                  null
+                ]
+              }
+            }
+          }
+        }
+      },
+      "maxItems": 1000
+    },
+    "discounts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "position",
+          "line_position",
+          "name",
+          "amount"
+        ],
+        "properties": {
+          "position": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 32767
+          },
+          "line_position": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 32767
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "amount": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^-?[0-9]{1,12}\\.[0-9]{2}$",
+            "maxLength": 255
+          }
+        }
+      },
+      "maxItems": 1000
+    },
+    "taxes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "tax_rate",
+          "tax_code",
+          "net",
+          "tax",
+          "gross"
+        ],
+        "properties": {
+          "tax_rate": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "rate"
+            ],
+            "properties": {
+              "kind": {
+                "enum": [
+                  "vat",
+                  "exempt",
+                  null
+                ]
+              },
+              "rate": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^[0-9]{1,3}\\.[0-9]{2}$",
+                "maxLength": 255
+              }
+            }
+          },
+          "tax_code": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 8
+          },
+          "net": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^-?[0-9]{1,12}\\.[0-9]{2}$",
+            "maxLength": 255
+          },
+          "tax": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^-?[0-9]{1,12}\\.[0-9]{2}$",
+            "maxLength": 255
+          },
+          "gross": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^-?[0-9]{1,12}\\.[0-9]{2}$",
+            "maxLength": 255
+          }
+        }
+      },
+      "maxItems": 100
+    },
+    "confidence": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "fields": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "status",
+          "confidence",
+          "note"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "status": {
+            "enum": [
+              "observed",
+              "unreadable",
+              "absent",
+              "ambiguous"
+            ]
+          },
+          "confidence": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 1024
+          }
+        }
+      },
+      "maxItems": 10000
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 255
+      },
+      "maxItems": 100
+    },
+    "timestamps": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "header",
+        "fiscal"
+      ],
+      "properties": {
+        "header": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "date",
+            "time",
+            "utc_offset",
+            "precision"
+          ],
+          "properties": {
+            "date": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 10
+            },
+            "time": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 8
+            },
+            "utc_offset": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 6
+            },
+            "precision": {
+              "enum": [
+                "date",
+                "minute",
+                "second",
+                null
+              ]
+            }
+          }
+        },
+        "fiscal": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "date",
+            "time",
+            "utc_offset",
+            "precision"
+          ],
+          "properties": {
+            "date": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 10
+            },
+            "time": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 8
+            },
+            "utc_offset": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 6
+            },
+            "precision": {
+              "enum": [
+                "date",
+                "minute",
+                "second",
+                null
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}
