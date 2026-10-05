@@ -650,6 +650,122 @@ Line.product=null → matching_status=unmatched; ambiguous здесь отсут
 
 Другие формы К2 Photo/Job/Receipt/Line/Discount/Tax сохранены; успешные формы прежних 13 GET и health не меняются. Новых миграций, настроек и зависимостей С5 нет. Откат С5 — revert его кода/тестов/docs: записи С1 и файлы сохраняются, очистка БД/томов не нужна; откат миграции recognition принадлежит С1 и требует отдельной процедуры/backup.
 
+## Реализовано: локальный API слияния дублей товаров (С2)
+
+Приложение `backend/merges/` ищет товары-дубли одного продавца и сливает их **предварительно**: строки чеков и написания поглощаемых товаров сразу переносятся на оставляемый, исходная принадлежность пишется в журнал, человек подтверждает либо отменяет группу. Модель и правила — [data-model.md](data-model.md#merges-слияние-дублей-товаров). Код HTTP: `backend/api/views/product_merges.py`, `urls_product_merges.py`, `product_merge_serialization.py`. Эталонные ответы для клиента — `backend/merges/tests/fixtures/public/*.json`; тест `api.tests.test_product_merges_public` сверяет их целиком с настоящими HTTP-ответами.
+
+### Что меняется в 13 GET каталога и цен
+
+**Поглощённый товар** — активная запись ожидающей группы с ролью `source`. Формы ответов, анонимный доступ, коды ошибок и число SQL-запросов прежние, полей не добавлено; меняется только состав.
+
+| GET | Изменение состава |
+| --- | --- |
+| `/api/countries/` | `products_count` меньше естественно: строки перенесены |
+| `/api/stores/` | нет |
+| `/api/brands/` | `products_count` без поглощённых |
+| `/api/categories/`, `/{id}/` | `products_count`, `products_total`, `generic_products[].products_count` без поглощённых |
+| `/api/generic-products/`, `/{id}/` | `products_count` без поглощённых; `countries` — по строкам чеков |
+| `/api/products/` | поглощённых нет в `results`, `count` и `pages` меньше; оставляемый несёт объединённые `prices`, `observations`, `last_observed_at`; фильтры и сортировки — по полям оставляемого |
+| `/api/products/{id}/` | оставляемый: `aliases` включает перенесённые написания, `stores` и `prices` объединены, `alternatives_count` без поглощённых; поглощённый id — `404 not_found` |
+| `/api/products/{id}/prices/`, `/prices/summary/` | оставляемый: все покупки группы; поглощённый id — `404 not_found` |
+| `/api/products/{id}/alternatives/` | поглощённые не входят в набор; поглощённый id как исходный — `404 not_found` |
+| `/api/generic-products/{id}/comparison/` | поглощённые не входят в набор |
+
+- Поиск `q` в `/api/products/` по-прежнему ищет по названию, бренду, модели и GTIN видимого товара; по написаниям слитых записей не ищет.
+- Локальный API чеков: `name` строки — напечатанное `raw_name`, `product` строки показывает оставляемый товар; `/api/receipts/?product=<поглощённый id>` — пустой список.
+- После отмены группы товары снова видны; после подтверждения поглощённых товаров нет вовсе — тот же `404`. Перенаправления нет: карточка товара в SPA при `not_found` запрашивает `GET /api/product-merges/?product={id}`.
+
+### Доступ и тело
+
+Префикс `/api/product-merges/`, завершающий `/` обязателен. Доступ как у API распознавания: `DEBUG` + `ALLOW_LOCAL_RECOGNITION_API=1` + loopback, иначе `403 permission_denied`; POST требует CSRF и от анонима (`403 csrf_failed`), токен — `GET /api/recognition/csrf/`, заголовок `X-CSRFToken`; каждый ответ несёт `Cache-Control: no-store`; только JSON. Нет `Idempotency-Key`, `MutationRequest`, владельца.
+
+Тело POST — JSON-объект UTF-8 до 4096 байт, `Content-Type: application/json` (иначе `415 unsupported_media_type`). Пустое тело, не объект, повторный или неизвестный ключ, `NaN`/`Infinity`, превышение размера — `400 invalid_request`. Отсутствующий обязательный ключ и неверный тип значения — `400 invalid_parameter` с `fields`. Идентификаторы и `version` — целые от 1 (не строки и не `true`).
+
+| Метод и путь | Запрос | Ответ 200 |
+| --- | --- | --- |
+| GET `/product-merges/` | `status` (`pending` / `confirmed` / `cancelled`; без него — все), `product` (id товара в любой роли, в том числе уже удалённого), `page`, `page_size` (50, максимум 200) | Страница кратких групп, порядок `-id` |
+| GET `/product-merges/{id}/` | — | Группа |
+| GET `/product-merges/{id}/lines/` | `page`, `page_size` (50, максимум 200) | Страница покупок, порядок `purchased_at, receipt_id, position` |
+| POST `/product-merges/detect/` | `{}` | `{"created": n, "extended": n, "group_ids": [...]}` |
+| POST `/product-merges/{id}/confirm/` | `{"version": int, "target_product_id": int, "name_product_id"?: int, "resolutions"?: {поле: product_id}}` | Группа `confirmed` |
+| POST `/product-merges/{id}/cancel/` | `{}` | Группа `cancelled` |
+| POST `/product-merges/{id}/exclude/` | `{"version": int, "product_id": int}` | Группа (`pending` либо `cancelled`) |
+
+Другой метод на существующем пути — `405 method_not_allowed`; неизвестный путь под префиксом — `404 not_found`. Число запросов чтения не зависит от числа групп: список — 7, группа — 7 (8, если у продавца нет вывески), покупки — 3.
+
+### Группа, краткая форма, покупка
+
+```json
+{"id": 2, "status": "pending", "version": 1,
+ "created_at": "2026-10-06T10:00:00Z", "resolved_at": null,
+ "target_product_id": 5,
+ "members": [
+  {"product_id": 5, "role": "target", "state": "active", "exists": true,
+   "name": "Steinhof.PizzaSpezial", "brand": null, "model": "", "gtin": "",
+   "package": null, "generic": {"id": 91, "name": "Не разобрано", "base_unit": "pcs"},
+   "classified": false, "lines_count": 1,
+   "first_purchased_on": "2026-06-29", "last_purchased_on": "2026-06-29",
+   "aliases": [{"store_name": "Demomarkt", "raw_name": "Steinhof.PizzaSpezial", "store_item_code": ""}]}
+ ],
+ "conflicts": [],
+ "lines_count": 5, "new_lines_count": 1,
+ "actions": {"can_confirm": true, "can_cancel": true, "can_exclude": true}}
+```
+
+- `members` — все записи группы по возрастанию `product_id`; `role` — `target` / `source`, `state` — `active` / `excluded`. `brand` — `{"id", "name"}` либо `null`, `package` — `{"quantity": "10.000", "unit": "pcs"}` либо `null`. `classified: false` — обобщённый продукт служебный «Не разобрано».
+- `lines_count`, даты и `aliases` (до 50) записи — по журналу, то есть исходная принадлежность. У исключённой записи и у записей отменённой группы журнала нет: `0`, `null`, `[]`. После подтверждения у удалённых записей `exists: false`, название и факты — из снимка.
+- `conflicts` — `[{"field": "generic", "product_ids": [2, 36]}]`, по живым данным при каждом чтении; поля: `generic`, `brand`, `package`, `gtin`, `model`, `attributes`. У завершённой группы — `[]`.
+- `lines_count` группы: у ожидающей — все строки оставляемого товара, `new_lines_count` — те из них, которых нет в журнале (пришли после слияния); у подтверждённой — размер журнала и `0`; у отменённой — `0`.
+- `actions` — все три `true` только у ожидающей группы. `version` растёт при изменении состава (добавление записи поиском, исключение); подтверждение и отмена её не меняют.
+- **Краткая форма** в списке — те же поля, у записей нет `aliases`, вместо `conflicts` — булево `has_conflicts`.
+- **Покупка** в `/lines/`: `{"line_id", "receipt_id", "position", "purchased_on", "store": {"id", "name", "city", "country"}, "name", "quantity", "unit", "unit_price", "amount", "discount_amount", "currency", "origin_product_id"}`. `name` — напечатанное `raw_name`; `origin_product_id: null` — строка пришла после слияния. У отменённой группы список пуст. Десятичные — строками по общим правилам.
+- Закрытые поля (`raw_text`, `fiscal`, `extra`, юридическое название, налоговый номер, номера чека, кассы и смены) не отдаются; название магазина — вывеска продавца либо название магазина.
+
+### Подтверждение, отмена, исключение
+
+- `target_product_id` — любая активная запись; другая, чем `target_product_id` группы, переносит на себя все ссылки. Название оставляемого товара не меняется; `name_product_id` берёт название указанной активной записи. Произвольный текст не принимается.
+- Факты: одно непустое значение в группе при пустом у оставляемой — заполняется; заполненное не перезаписывается. Два и более разных непустых значения — конфликт: без `resolutions` — `409 merge_conflict`, ничего не сохранено. `resolutions: {"generic": 2}` — взять значение записи 2; принимается только запись с непустым значением спорного поля.
+- Подтверждение удаляет поглощённые товары, не обнуляя ни одной ссылки строки и не удаляя написаний. Совпадение результата с посторонним товаром по названию+бренду+фасовке либо GTIN — `409 merge_conflict` с `fields.name` либо `fields.gtin`, полный откат.
+- Отмена возвращает каждой записи её строки и написания; строка, пришедшая за время ожидания, уходит владельцу своего написания. Все пары записей пишутся как отклонённые и новым поиском не предлагаются.
+- Исключение восстанавливает одну запись (можно и оставляемую — остальные сливаются на оставляемую по умолчанию), `version + 1`; если осталось меньше двух записей — группа `cancelled`.
+- `detect` ищет по всему каталогу; повтор без изменений каталога — `created: 0, extended: 0, group_ids: []`.
+
+### Повторы и ошибки
+
+| Ситуация | Ответ |
+| --- | --- |
+| Повтор `confirm` подтверждённой группы с тем же `target_product_id` (любая `version`) | 200, та же Группа, без записей |
+| `confirm` подтверждённой с другим `target_product_id`; `confirm` или `exclude` отменённой | 409 `merge_resolved` |
+| Повтор `cancel` отменённой | 200, та же Группа |
+| `cancel` или `exclude` подтверждённой | 409 `merge_resolved` |
+| Повтор `exclude` уже исключённой записи (любая `version`, в том числе если исключение отменило группу) | 200, текущая Группа |
+| `version` не равна текущей | 409 `merge_changed`, ничего не сохранено |
+| `product_id` / `target_product_id` / `name_product_id` не из активных записей; ключ `resolutions` — не спорное поле либо запись без значения | 400 `invalid_parameter`, `fields` |
+| Идёт импорт чека или другая операция слияния; ожидание блокировки строк дольше `statement_timeout` 2000 мс | 409 `merge_busy`, полный откат, без скрытого повтора |
+| Группы нет, id вне диапазона | 404 `not_found` |
+| Прочий отказ БД | 503 `database_unavailable` |
+
+Новые коды (все HTTP 409): `merge_conflict` «Данные товаров противоречат друг другу.», `merge_resolved` «Слияние уже завершено.», `merge_changed` «Состав группы изменился.», `merge_busy` «Каталог сейчас изменяется. Повторите позже.». Формат общий: `{"error": {"code", "message", "fields?"}}`, `fields` — `{"имя": ["сообщение", ...]}`. Порядок проверок: доступ и CSRF → тело → существование группы → состояние → `version` → параметры. Изменяющий запрос клиент автоматически не повторяет.
+
+Каждая изменяющая операция — одна транзакция под той же неблокирующей advisory-блокировкой, что импорт чека (`IMPORT_LOCK`): импорт и слияния идут строго по очереди.
+
+### Поиск после импорта чека
+
+При `PRODUCT_MERGE_AUTO_DETECT=1` импортёр после успешного сохранения чека один раз вызывает поиск по товарам строк этого чека — в отдельном savepoint внутри той же транзакции. Новое написание попадает в группу сразу. Сбой шага откатывает только savepoint, пишет в журнал класс ошибки без данных чека и импорт не отменяет; следующий `detect` доводит состояние. При `0` (по умолчанию, так в `.env.example`) импорт ведёт себя как раньше, а поиск запускают `POST /detect/` или `manage.py product_merges detect [--dry-run]`.
+
+### Уточнения и отступления от согласованного контракта
+
+Формы «Группа», краткая группа, покупка, ответ `detect`, пути, коды и тексты ошибок соответствуют контракту. Уточнено то, что контракт не определял:
+
+- `fields` у `merge_conflict` и `invalid_parameter` — общий формат `{"имя": ["сообщение"]}`; id записей с разными значениями клиент берёт из `conflicts` Группы, а не из ошибки. Ключ решения в `fields` — `resolutions.<поле>`.
+- Отсутствующий обязательный ключ тела — `400 invalid_parameter` с `fields` (а не `invalid_request`); неизвестный или повторный ключ — `400 invalid_request`. `"name_product_id": null` — `invalid_parameter`: ключ нужно не передавать.
+- В записи группы нет поля `attributes`, хотя конфликт по `attributes` возможен: клиент видит его в `conflicts` и решает выбором записи.
+- Повтор `confirm` с тем же `target_product_id` и повтор `exclude` исключённой записи отвечают 200 и при устаревшей `version`.
+- Журнал исключённой записи и отменённой группы удаляется: их `lines_count: 0`, `aliases: []`, `/lines/` отменённой группы пуст.
+- Дополнительные эталонные примеры: `group-pending-conflict.json`, `error-invalid-parameter.json`.
+
+Откат: `manage.py product_merges cancel-pending`, затем `migrate merges zero`; подробности и необратимые ограничения — [data-model.md](data-model.md#откат-merges).
+
 ## Планируется
 
 Пользовательская авторизация и разграничение данных, API ручного редактирования/сопоставления, статистический дашборд, хранение курсов и production hosting не реализованы. Сквозное выполнение HTTP/worker/import с fake проверено С6; исторический реальный smoke С6 сохранил needs_review без автоимпорта. В И4 реальный Codex на single/double создал 2 Receipt, 6 строк и 5 товаров без дублей ([результаты](verification.md#фактические-результаты-и4)). Реальные фото и новый UI требуют [ручной приёмки](verification.md#ручная-приёмка-ocr-человеком); формы HTTP-слоя С5 не изменены.

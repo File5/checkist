@@ -1,6 +1,8 @@
 from django.test import TestCase, tag
 
 from api.tests import factories
+from api.tests.merge_factories import demo_groups
+from merges import demo
 from catalog.models import Category, GenericProduct
 from catalog.units import BaseUnit
 from receipts.tests import samples
@@ -123,3 +125,28 @@ class CategoryTreeTests(TestCase):
                 response = self.client.get(f"/api/categories/{pk}/")
                 self.assertEqual(response.status_code, 404)
                 self.assertEqual(response.json(), {"error": {"code": "not_found", "message": "Не найдено."}})
+
+
+# --- ожидающее слияние дублей: поглощённые товары скрыты, формы ответов прежние ---
+@tag("integration")
+class PendingMergeCategoriesTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        demo_groups()
+        cls.category = Category.objects.get(name=demo.SERVICE_GENERIC_NAME)
+
+    def test_tree_counters_skip_absorbed_products(self):
+        with self.assertNumQueries(3):
+            body = self.client.get("/api/categories/").json()
+        node = next(item for item in body["results"] if item["id"] == self.category.pk)
+        self.assertEqual((node["products_count"], node["products_total"], node["generic_products_count"]), (23, 23, 3))
+
+    def test_detail_counters_skip_absorbed_products(self):
+        with self.assertNumQueries(4):
+            body = self.client.get(f"/api/categories/{self.category.pk}/").json()
+        self.assertEqual((body["products_count"], body["products_total"]), (23, 23))
+        self.assertEqual(
+            {generic["name"]: generic["products_count"] for generic in body["generic_products"]},
+            {demo.SERVICE_GENERIC_NAME: 22, demo.MILK_GENERIC: 1, demo.OTHER_MILK_GENERIC: 0},
+        )
+        self.assertEqual(set(body["generic_products"][0]), {"id", "name", "base_unit", "products_count"})

@@ -5,6 +5,8 @@ from django.test import TestCase, tag
 
 from api.common import utc_datetime
 from api.tests import factories
+from api.tests.merge_factories import demo_groups, pending_group, product
+from merges import demo, services
 from catalog.models import Brand, Category, Product
 from catalog.units import Unit
 from receipts.dedup import name_key
@@ -382,3 +384,86 @@ class ProductDetailTests(ProductsTestCase):
             with self.subTest(pk=pk), self.assertNumQueries(0 if pk != missing else 1):
                 response = self.client.get(f"/api/products/{pk}/")
                 self.assertEqual((response.status_code, response.json()), (404, NOT_FOUND))
+
+
+# --- ожидающее слияние дублей: поглощённые товары скрыты, формы ответов прежние ---
+MERGE_PIZZA = demo.GROUPS[1]
+MERGE_ABSORBED = [name for group in demo.GROUPS for name in group[1:]]
+
+
+@tag("integration")
+class PendingMergeProductsTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        demo_groups()
+        cls.target = product(MERGE_PIZZA[0])
+        cls.absorbed = [product(name).pk for name in MERGE_ABSORBED]
+
+    def body(self, query=""):
+        response = self.client.get(f"/api/products/{query}")
+        self.assertEqual(response.status_code, 200, response.content)
+        return response.json()
+
+    def test_list_has_no_absorbed_products(self):
+        self.assertEqual((len(demo.PRODUCTS), len(self.absorbed)), (35, 12))
+        with self.assertNumQueries(5):  # как без слияния: дерево, COUNT, страница, группы цен, последние цены
+            body = self.body("?page_size=200")
+        self.assertEqual((body["count"], body["pages"], len(body["results"])), (23, 1, 23))
+        self.assertFalse({row["id"] for row in body["results"]} & set(self.absorbed))
+        self.assertFalse({row["name"] for row in body["results"]} & set(MERGE_ABSORBED))
+        self.assertEqual(self.body("?page_size=10")["pages"], 3)
+        self.assertEqual(self.body("?has_prices=1")["count"], 23)
+        self.assertEqual(self.body("?has_prices=0")["count"], 0)
+        self.assertEqual(self.body("?country=DE")["count"], 23)
+        self.assertEqual(self.body(f"?generic={self.target.generic_id}")["count"], 22)
+        self.assertEqual(self.body(f"?brand={product('Zimbo Mettw.fettred.').brand_id}")["count"], 1)
+
+    def test_search_and_combined_prices_of_the_surviving_product(self):
+        with self.assertNumQueries(5):
+            body = self.body("?q=pizza")
+        self.assertEqual([row["name"] for row in body["results"]], ["Pizza Hot Dog", MERGE_PIZZA[0]])
+        row = body["results"][1]
+        self.assertEqual(set(row), {
+            "id", "name", "brand", "model", "gtin", "package", "generic", "category", "last_observed_at", "prices",
+        })
+        self.assertEqual(row["id"], self.target.pk)
+        self.assertEqual(row["last_observed_at"], "2026-10-01T10:00:00Z")
+        self.assertEqual(len(row["prices"]), 1)
+        price = row["prices"][0]
+        self.assertEqual((price["country"], price["currency"], price["observations"]), ("DE", "EUR", 4))
+        self.assertEqual((price["last"]["paid_unit_price"], price["last"]["purchased_on"]), ("3.4900", "2026-10-01"))
+        # Поиск по написаниям слитых записей не ищет — как и раньше по ProductAlias.
+        self.assertEqual(self.body("?q=Steinof")["count"], 0)
+        first = self.body("?ordering=-last_observed_at&page_size=5")["results"]
+        self.assertEqual(first[0]["last_observed_at"], "2026-10-01T10:00:00Z")
+
+    def test_detail_of_the_surviving_product_and_404_of_absorbed(self):
+        with self.assertNumQueries(8):  # как без слияния: у продавца есть вывеска
+            response = self.client.get(f"/api/products/{self.target.pk}/")
+        self.assertEqual(response.status_code, 200, response.content)
+        body = response.json()
+        self.assertEqual(set(body), {
+            "id", "name", "brand", "model", "gtin", "package", "generic", "category", "last_observed_at", "prices",
+            "attributes", "aliases", "stores", "alternatives_count",
+        })
+        self.assertEqual(sorted(alias["raw_name"] for alias in body["aliases"]), sorted(MERGE_PIZZA))
+        self.assertEqual([(store["observations"], store["last_purchased_on"]) for store in body["stores"]],
+                         [(4, "2026-10-01")])
+        self.assertEqual(body["prices"][0]["observations"], 4)
+        self.assertEqual(body["alternatives_count"], 21)
+        for pk in self.absorbed:
+            with self.subTest(pk=pk), self.assertNumQueries(1):
+                response = self.client.get(f"/api/products/{pk}/")
+                self.assertEqual(response.status_code, 404)
+                self.assertEqual(response.json(), {"error": {"code": "not_found", "message": "Не найдено."}})
+
+    def test_cancel_and_confirm_change_the_visible_set(self):
+        services.cancel(pending_group(MERGE_PIZZA[0]).pk)
+        self.assertEqual(self.body()["count"], 25)
+        self.assertEqual(self.body("?q=pizza")["count"], 4)
+        self.assertEqual(self.client.get(f"/api/products/{product(MERGE_PIZZA[1]).pk}/").status_code, 200)
+        group = pending_group(demo.GROUPS[4][0])
+        gone = product(demo.GROUPS[4][1]).pk
+        services.confirm(group.pk, version=1, target_product_id=group.target_ref)
+        self.assertEqual(self.body()["count"], 25)
+        self.assertEqual(self.client.get(f"/api/products/{gone}/").status_code, 404)

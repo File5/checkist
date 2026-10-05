@@ -10,6 +10,7 @@ from api.rates import parse_conversion
 from catalog.models import GenericProduct, Product
 from catalog.units import Unit
 from config.exceptions import ObjectNotFound
+from merges.visibility import visible
 from receipts.decimal_math import change_percent, decimal_mean
 from receipts.models import ReceiptLine
 from receipts.prices import PriceGroup, last_prices, price_groups
@@ -244,12 +245,12 @@ class ProductAlternativesView(ReadOnlyAPIView):
     """``GET /api/products/{id}/alternatives/`` — исходный товар и его альтернативы."""
 
     def get(self, request, pk):
-        base = _get(Product.objects.select_related("generic"), pk)
+        base = _get(visible(Product.objects.select_related("generic")), pk)
         params = Params(request.query_params)
         if params.choice("scope", SCOPES, default="generic") == "category":
-            products = Product.objects.filter(generic__category_id=base.generic.category_id)
+            products = visible(Product.objects.filter(generic__category_id=base.generic.category_id))
         else:
-            products = Product.objects.filter(generic_id=base.generic_id)
+            products = visible(Product.objects.filter(generic_id=base.generic_id))
         return Response(_comparison(params, base.generic, base, products))
 
 
@@ -258,4 +259,4 @@ class GenericComparisonView(ReadOnlyAPIView):
 
     def get(self, request, pk):
         generic = _get(GenericProduct.objects.all(), pk)
-        return Response(_comparison(Params(request.query_params), generic, None, generic.products.all()))
+        return Response(_comparison(Params(request.query_params), generic, None, visible(generic.products.all())))

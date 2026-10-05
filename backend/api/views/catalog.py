@@ -10,6 +10,7 @@ from api.pagination import paginate
 from api.params import MAX_ID, Params
 from catalog.models import Brand, GenericProduct, Product
 from config.exceptions import ObjectNotFound
+from merges.visibility import visible, visible_q
 from receipts.models import ProductAlias, Receipt, ReceiptLine
 from receipts.prices import observation_q, price_history, price_summary
 from stores.models import Country, Store
@@ -31,6 +32,11 @@ def _object_pk(pk):
 def _observations():
     """Строки-наблюдения цены без аннотаций ``price_history`` — для счётчиков."""
     return ReceiptLine.objects.filter(observation_q()).order_by()
+
+
+def _products_count():
+    """Счётчик товаров связи ``products`` без поглощённых ожидающим слиянием."""
+    return Count("products", filter=visible_q("products__"))
 
 
 # --- справочники ---
@@ -99,7 +105,7 @@ class BrandsView(ReadOnlyAPIView):
         page = params.page()
         params.check()
 
-        brands = Brand.objects.annotate(products_count=Count("products"))
+        brands = Brand.objects.annotate(products_count=_products_count())
         if query is not None:
             brands = brands.filter(name__icontains=query)
         return Response(paginate(brands.order_by("name", "pk"), page, lambda brand: {
@@ -118,7 +124,9 @@ class _CategoryCounts:
     def __init__(self, tree):
         self.tree = tree
         self.generics = dict(GenericProduct.objects.order_by().values_list("category_id").annotate(Count("pk")))
-        self.products = dict(Product.objects.order_by().values_list("generic__category_id").annotate(Count("pk")))
+        self.products = dict(
+            visible(Product.objects.order_by()).values_list("generic__category_id").annotate(Count("pk"))
+        )
         # Обход в глубину перечисляет родителя раньше потомков: в обратном порядке
         # сумма узла готова к моменту, когда она прибавляется к родителю.
         self.totals = {}
@@ -170,7 +178,7 @@ class CategoryView(ReadOnlyAPIView):
         counts = _CategoryCounts(tree)
         generics = (
             GenericProduct.objects.filter(category=pk)
-            .annotate(products_count=Count("products"))
+            .annotate(products_count=_products_count())
             .order_by("name", "pk")
         )
         return Response({
@@ -185,7 +193,7 @@ class CategoryView(ReadOnlyAPIView):
 # --- обобщённые продукты ---
 
 def _generics():
-    return GenericProduct.objects.annotate(products_count=Count("products"))
+    return GenericProduct.objects.annotate(products_count=_products_count())
 
 
 def _generic_objects(generics, tree):
@@ -292,7 +300,7 @@ class ProductsView(ReadOnlyAPIView):
         params.check()
 
         tree = CategoryTree.load()
-        products = Product.objects.select_related("generic__category", "brand")
+        products = visible(Product.objects.select_related("generic__category", "brand"))
         if query is not None:
             products = products.filter(
                 Q(name__icontains=query) | Q(brand__name__icontains=query) | Q(model__icontains=query)
@@ -334,10 +342,14 @@ def _alias_objects(product):
     Сопоставление привязано к продавцу, а не к магазину. Юридическое название не
     отдаётся, поэтому у продавца без вывески берётся его первый (по ``id``) магазин.
     """
-    aliases = list(
+    return alias_objects(list(
         ProductAlias.objects.filter(product=product).select_related("merchant")
         .order_by("raw_name", "pk")[:DETAIL_LIST_LIMIT]
-    )
+    ))
+
+
+def alias_objects(aliases):
+    """Объекты написаний с загруженным ``merchant``; магазины читаются, только если есть продавец без вывески."""
     unnamed = {alias.merchant_id for alias in aliases if not alias.merchant.brand_name}
     names = {}
     if unnamed:
@@ -376,11 +388,13 @@ def _store_objects(product):
 
 class ProductView(ReadOnlyAPIView):
     def get(self, request, pk):
-        product = get_or_404(Product.objects.select_related("generic__category", "brand"), _object_pk(pk))
+        product = get_or_404(visible(Product.objects.select_related("generic__category", "brand")), _object_pk(pk))
         return Response({
             **_product_objects([product], CategoryTree.load())[0],
             "attributes": product.attributes,
             "aliases": _alias_objects(product),
             "stores": _store_objects(product),
-            "alternatives_count": Product.objects.filter(generic=product.generic_id).exclude(pk=product.pk).count(),
+            "alternatives_count": visible(
+                Product.objects.filter(generic=product.generic_id).exclude(pk=product.pk)
+            ).count(),
         })
