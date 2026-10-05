@@ -60,6 +60,15 @@ describe('recognition SSR markup (interactive UI remains manual)', () => {
     const html = renderToStaticMarkup(<ReceiptImages images={[data]} />)
     expect(html).toContain('Изображение пока недоступно'); expect(html).toContain('чек удалён')
   })
+  it('keeps successful imports with nonblocking issues successful and offers a return to the receipt', () => {
+    const data = { ...image(), status: 'imported' as const, normalized_result: null }
+    const html = renderToStaticMarkup(<ReceiptImages images={[data]} />)
+    expect(html).toContain('Чек сохранён')
+    expect(html).toContain('Замечания распознавания')
+    expect(html).not.toContain('Причины проверки')
+    const page = renderToStaticMarkup(<JobPage jobId={31} returnTo="/receipts/71" />)
+    expect(page).toContain('href="/receipts/71">К чеку')
+  })
   it('keeps the last snapshot visible with refresh failure and retry', () => {
     const html = renderToStaticMarkup(<RequestBlock title="Задание" id="test-job" state={{ kind: 'ok', data: job(), refreshing: false, refreshError: { kind: 'error', reason: 'network' } }} retry={vi.fn()}>{(data) => <JobSummary job={data} />}</RequestBlock>)
     expect(html).toContain('Не удалось обновить'); expect(html).toContain('Обрабатывается'); expect(html).toContain('Повторить обновление')

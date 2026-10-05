@@ -152,7 +152,7 @@ Write-Output "worker exit=$workerExit; seconds=$($duration.Elapsed.TotalSeconds)
 
 ### Ручная приёмка OCR человеком
 
-UI загрузки/чеков ещё предстоит реализовать. После интеграции клиента (и `/media` proxy) человек выполняет следующие шаги; текущие [SPA health](#ручная-ui-приёмка-человеком) и [admin](#ручная-приёмка-админки-человеком) сценарии остаются отдельными:
+UI загрузки, заданий и чеков реализован, `/media` проксируется в dev/preview. Подробный [сценарий клиента И5](#ручная-приёмка-клиента-распознавания-человеком) ниже; текущие [SPA health](#ручная-ui-приёмка-человеком) и [admin](#ручная-приёмка-админки-человеком) сценарии остаются отдельными:
 
 1. QA fake/double.png: загрузка с клавиатуры, loading/stages, две читаемые вырезки без потери текста, чеки 4.42/6.00 и все строки/товары/скидки/залоги/налоги; original и EXIF preview. Проверить mobile/desktop, focus, refresh/back/forward, пустые состояния/ошибки.
 2. Точный повтор — прежние photo/job IDs; другое изображение одного чека — новый Photo и тот же Receipt, без новых строк/товаров. Без strong key точный store/time/total связывает; разные реальные чеки с таким совпадением могут ложно объединиться — это ограничение правила v1, сверять с эталоном.
@@ -162,7 +162,113 @@ UI загрузки/чеков ещё предстоит реализовать.
 6. Реальный Codex: разрешённые к облачной обработке фото RU/KZ/DE вне git; эталон числа чеков, границ, полей/строк/сумм/налогов и нечитаемых мест. Проверить один/несколько чеков, поворот, длинный/мятый/термо-чек, блики/размытие, частично обрезанный и не-чек, повтор/лучший снимок/разные чеки с одинаковыми суммами. Сверить timezone магазина, CLI/model/schema versions, реальные durations/errors и каждый Receipt/needs_review с эталоном. Синтетический smoke не доказывает качество этих фото.
 7. Проверить нет потери результата, дублей/ложного объединения и перезаписи заполненных значений при последовательном повторе. Не редактировать aggregate параллельно OCR ради гарантии: manual_locked/отпечаток формы и защита stale admin POST сознательно исключены из v1. По существующей админке пройти F4/F6 отдельно.
 
-### Фактические результаты С6
+## Распознавание: сквозная проверка клиента И5
+
+CLI использует настоящий Django HTTP через настоящий Vite dev/preview, исходные клиентские адаптеры/runtime guards и контроллер опроса. Браузер не открывается. Fake возвращает фиксированные DTO, не читает текст произвольного фото. Это проверка транспорта и импортируемого демо, отдельно от визуальной/интерактивной приёмки и качества Codex OCR.
+
+Из корня: установите зависимости по development.md; `.env` из `.env.example` копируйте только при отсутствии. Ниже отдельный **новый пустой** QA project/DB; убедитесь, что имя и порты свободны. В каждом терминале API/CLI/человеческого worker применяйте весь блок:
+
+```powershell
+$env:COMPOSE_PROJECT_NAME='checkist_qa_i5_run'
+$env:POSTGRES_DB=$env:COMPOSE_PROJECT_NAME
+$env:POSTGRES_USER='checkist'
+$env:POSTGRES_PASSWORD='checkist_dev_only'
+$env:POSTGRES_HOST='127.0.0.1'
+$env:POSTGRES_PORT='25485'
+$env:REDIS_PORT='16415'
+$env:CELERY_BROKER_URL='redis://127.0.0.1:16415/0'
+$env:CELERY_RESULT_BACKEND='redis://127.0.0.1:16415/1'
+$env:DJANGO_CACHE_URL='redis://127.0.0.1:16415/2'
+$env:VITE_API_BASE_URL='/api'
+$env:DEV_API_PROXY_TARGET='http://127.0.0.1:18085'
+$env:DJANGO_DEBUG='1'
+$env:DJANGO_ALLOWED_HOSTS='127.0.0.1,localhost'
+$env:ALLOW_LOCAL_RECOGNITION_API='1'
+$env:DJANGO_CSRF_TRUSTED_ORIGINS='http://127.0.0.1:15185'
+$env:MEDIA_ROOT=Join-Path $env:TEMP "$($env:COMPOSE_PROJECT_NAME)-media"
+$env:RECEIPT_OCR_TEMP_ROOT=Join-Path $env:TEMP "$($env:COMPOSE_PROJECT_NAME)-scratch"
+$env:RECEIPT_OCR_PROVIDER='fake'
+```
+
+Env CLI сам по себе не доказывает выбор БД запущенным API: **Django должен быть запущен из этого же блока**. Публичный API не сообщает имя DB. Скрипт проверяет QA env, loopback, отсутствие dev ports, distinct MEDIA/scratch, token и пустые списки; не останавливает чужие процессы и не очищает существующие данные. Нет внешнего OCR-worker: CLI сам последовательно запускает только свои `recognition_worker --once` и гарантирует отсутствие своего worker при queued cancel. Celery не нужен этому сценарию; health/Celery принимаются отдельно.
+
+Подготовка, каждый шаг отдельно и с проверкой `$LASTEXITCODE` (не продолжать после ошибки):
+
+```powershell
+docker compose -p $env:COMPOSE_PROJECT_NAME config --quiet
+docker compose -p $env:COMPOSE_PROJECT_NAME up -d --wait --wait-timeout 90 postgres redis
+@'
+import socket
+for port in (25485, 16415):
+    with socket.create_connection(('127.0.0.1', port), timeout=2):
+        print(f'{port}: TCP OK')
+'@ | ./backend/.venv/Scripts/python.exe -X utf8 -
+./backend/.venv/Scripts/python.exe -X utf8 -m pip check
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py check
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py migrate --noinput
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py seed_recognition_demo
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py runserver 127.0.0.1:18085 --noreload
+```
+
+При недоступном TCP остановить зависимые шаги, применить ограниченную диагностику development.md. В терминале CLI из того же корня/env (Vite на 15185 не запускайте отдельно):
+
+```powershell
+node --check frontend/scripts/check_recognition_proxy.mjs
+node frontend/scripts/check_recognition_proxy.mjs dev http://127.0.0.1:15185
+```
+
+Для preview: остановить свой Django, `docker compose -p $env:COMPOSE_PROJECT_NAME down` без `-v`. Применить весь блок с **другим новым** QA project/DB, отдельными MEDIA/scratch, повторить config/up/TCP/migrate/seed/API. В `frontend/` выполнить `npm.cmd run build` с VITE_API_BASE_URL=/api; из корня:
+
+```powershell
+node frontend/scripts/check_recognition_proxy.mjs preview http://127.0.0.1:15185
+```
+
+Результат `passed`/exit 0 требуется вместе с проверенными Job states, не только worker exit. Скрипт проверяет CSRF cookie/token с Origin клиента, upload double 202, опрос/остановку на succeeded, оригинальные байты и Content-Type original/preview/crops по `/media`, detail/list Receipt и catalog Product, 2 чека (4.42/6.00 EUR), 6 строк/5 товаров, две страницы. Затем точный replay 200/reused, terminal 409, queued cancel 200, retry 202/active 409, pause_recognize cancel 202 → cancelled, one_receipt retry → старый Receipt без новых строк/товаров, два фото этого чека, последний job при повторе single. Для needs_review создаётся в памяти синтетическая копия single с хвостовыми байтами PNG; partial_missing_quantity оставляет два обязательных числа неизвестными, результат/причины и crop проверяются через тот же клиент. Негативные случаи: нет cookie/header →403 csrf_failed, фактический GIF →400 unsupported_format, PNG с правильной сигнатурой и усечёнными данными →400 invalid_image. Коды ошибок проходят клиентский транспорт; для raw CSRF проверены status/code. Node fetch не хранит cookies браузера: CLI явно переносит только QA csrftoken. Это не проверка browser cookie policy или DOM.
+
+CLI закрывает свои Vite, SSR loader, polling и fake-воркеры в finally. После него остановить свой API и выполнить Compose down, сохранив тома. MEDIA/scratch остаются для ручной приёмки; cleanup не реализован. Для нового полного CLI-прогона нужна новая пустая QA: прежняя filled DB отклоняется до upload.
+
+### Фактические результаты И5, 2026-10-05
+
+Windows/PowerShell, Python 3.13.9, Node 24.18.0/npm 11.16.0. Backend-код/контракт/миграции не менялись. Отдельные проекты/БД `checkist_qa_i5_dev_verified` (окончательный dev) и `checkist_qa_i5_preview` (preview), Postgres 25485, Redis 16415, Django 18085, Vite 15185; проекты запускались последовательно, DB и MEDIA/scratch разделены. Создан свой backend/.venv с pinned requirements и временный .env из публичного образца. Реальные данные/секреты не использовались.
+
+**Проверено и прошло:**
+
+| Команда | Exit | Наблюдение |
+| --- | --- | --- |
+| `npm.cmd ci` в frontend | 0 | 188 packages, 0 vulnerabilities; штатный ESLint deprecated warning |
+| `npm.cmd run lint` | 0 | ESLint без ошибок |
+| `npm.cmd run test` | 0 | 897 tests / 32 files; 14 новых регрессий возврата и единых подписей/замечаний |
+| `npm.cmd run build` | 0 | TypeScript + Vite, 90 modules; сборка не подтверждает поведение React |
+| `node --check frontend/scripts/check_recognition_proxy.mjs` | 0 | Синтаксис CLI |
+| `docker compose -p checkist_qa_i5_dev_verified config --quiet` / `up -d --wait --wait-timeout 90 postgres redis` (также preview) | 0 | Отдельные healthy QA services; TCP 25485/16415: OK |
+| `./backend/.venv/Scripts/python.exe -X utf8 -m pip check` / `backend/manage.py check` | 0 | No broken requirements / 0 issues |
+| `./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py migrate --noinput` / `seed_recognition_demo` в обеих QA | 0 | 23 миграции, синтетические single/double; до CLI нет domain/jobs |
+| `node frontend/scripts/check_recognition_proxy.mjs dev http://127.0.0.1:15185` | 0 | Полный сценарий passed, 62 HTTP requests; 2 Receipt / 6 lines / 5 Product; HTTP 200/202/400/403/409 |
+| `node frontend/scripts/check_recognition_proxy.mjs preview http://127.0.0.1:15185` | 0 | Тот же сценарий passed, 65 HTTP requests; byte/type MEDIA и реальный CSRF через preview |
+| `docker compose -p checkist_qa_i5_dev_verified down` / `docker compose -p checkist_qa_i5_preview down` | 0 | Свои процессы/контейнеры остановлены, тома сохранены |
+
+**Проверено и не прошло:** ранний targeted Vitest: 10 failures (незавершённая замена словарей/заголовка), следующий targeted прогон: 1 failure (возврат к чеку исчезал при product not_found); lint: unused import. Причины исправлены, проверки не отключались, окончательные 897/lint/build зелёные. Первый CLI dev: exit 1 только на дополнительном broken-file assertion — текст с MIME image/png фактически не PNG, сервер корректно вернул unsupported_format вместо ожидаемого invalid_image. Исправлен вход теста на усечённый PNG с PNG-сигнатурой; свежие dev/preview прошли без ослабления ожидания. Неразрешённых frontend/backend дефектов в выполненном сценарии не обнаружено.
+
+**Не проверено и почему:** browser UI, cookie policy, DOM focus, screen reader, визуальная адаптивность/scroll/image error events — по правилу проекта принимает человек, сценарий ниже. Настоящий Codex/реальные фото И5 не вызывал: его серверный результат И4 выше, ручной запуск ниже; fake не проверяет OCR-качество. Полные backend suites, Celery/health stop/recovery, нагрузка, backup restore и deployment в И5 не повторялись: сервер/зависимости не менялись. Наборы с >50 изображениями/скидками/налогами и уход из браузера при медленном POST остаются ручной приёмке. Архитектура/development/API-контракт местами исторически описывают Vite только /api; они вне зоны И5, актуальный клиент — frontend.md и этот раздел.
+
+### Ручная приёмка клиента распознавания человеком
+
+Запуск для просмотра **сохранённой** QA И5: полный блок выше, заменив project/DB на `checkist_qa_i5_dev_verified`, MEDIA_ROOT на `Join-Path $env:TEMP 'checkist-qa-i5-dev-verified-media'`, scratch на `Join-Path $env:TEMP 'checkist-qa-i5-dev-verified-scratch'`. Compose up, TCP, migrate (seed повторяемый), Django 18085. В другом терминале того же env: `Set-Location frontend; npm.cmd run dev -- --port 15185` или `npm.cmd run preview -- --port 15185` после build; открыть `http://127.0.0.1:15185/receipts`. CLI на сохранённой filled DB заново не запускать. Примеры: job 1 — succeeded/double; 2 — queued cancel; 3 — running cancel; 4 — one_receipt/reused; 5 — needs_review. Чеки 1/2, товары получайте из ссылок UI, не вводите предполагаемые IDs. Для загрузки с нуля — новый отдельный manual QA project/DB/MEDIA/scratch, тот же полный блок и seed.
+
+1. В новом пустом QA открыть «Чеки» и «Обработка»: пустые состояния, ссылки загрузки. Tab до «Загрузить фото», выбрать `MEDIA/demo/double.png`; проверить warning об облачной модели, лимиты, preview, замену файла/сброс и загрузку. Без worker задание «В очереди», нет фиктивного процента; executor=false не блокирует действия. Обновить страницу/Back/Forward, статус сохраняется.
+2. В worker-терминале того же env запустить `./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py recognition_worker --fake-scenario success2`. Увидеть итог «Завершено», две вырезки, две ссылки чека. Fake быстрый: отсутствие видимого промежуточного этапа не означает дефект. Открыть чеки: TESTMARKT, итоги 4,42/6,00 EUR, шесть строк (пять товарных/один залог), пять товаров, скидка молока 0,20, два налоговых итога первого чека. Деньги строками, даты магазина/UTC не смешаны. Открыть PNG в новой вкладке из чека; source/preview виден в задании.
+3. Пройти задание → чек («К заданию») → товар («К чеку»), изменить фильтр/страницу истории товара, reload и вернуться; из изображения чека → задание («К чеку»). Back/Forward должны восстанавливать URL/query. В новой вкладке и при прямом URL доступны разумные ссылки списка без выдуманного контекста. Перейти из отфильтрованного списка в detail и обратно, проверить фокус выбранной ссылки и h1 при pathname.
+4. Точный double повторить: сообщение «уже было загружено», прежние Photo/последний Job, новых чеков/строк/товаров нет. Остановить **свой** success2-worker, загрузить single.png и запустить worker с `--fake-scenario one_receipt`. Single — другое фото того же первого чека: один прежний Receipt, два изображения разных фото/jobs, итоги/строки не перезаписаны. Fake сценарий выбирается оператором до обработки; success2 для single всё равно создаёт два фиксированных DTO.
+5. Остановить свой worker. Для ещё не загруженного фото (в новом QA можно single) получить queued, нажать отмену: cancelled/200, исходник остаётся. «Повторить» создаёт новый Job/retry_of, старый не меняется. Запустить worker `--fake-scenario pause_recognize`; дождаться «Распознавание», отменить: сначала «Отмена запрошена», затем «Отменено». Для долгого pause второй cancel недоступен; подтверждение ждут от worker. Остановить свой pause-worker, повторить и запустить one_receipt; результат доступен. Уже сохранённые части не удаляются; завершившийся успешный job отменить/повторить нельзя.
+6. Needs_review просмотреть в сохранённом job 5 или в новом QA обработать double с `--fake-scenario partial_missing_quantity` (либо inconsistent_total). Вырезка и «Распознанные данные для проверки» доступны, неизвестные значения не нули, причины читаемы; нет формы подтверждения/редактирования. После partial повтор создаёт новый job; более качественный retry не удаляет прежний результат. У успешной вырезки с неблокирующими issues видны замечания, её статус остаётся успешным.
+7. Ошибки файла: GIF/HEIC, пустой/битый PNG, анимированный WebP/GIF, файл >20 MiB, PNG/JPEG >40 MP. Клиентское сообщение не теряет выбор/действие; серверная ошибка не рисует успех. Размер/пиксели/кадры проверяет сервер. Выключить локальный flag и перезапустить свой API: отказ доступа и понятный retry; вернуть flag. Остановить API, повторить GET и медленный upload: safe error, после восстановления проверить job до повтора POST. HTTP без CSRF проверяет CLI; удаление cookie через DevTools должно дать csrf_failed, новое явное действие обновляет token.
+8. Независимые блоки: через DevTools временно заблокировать один GET (например lines) или один `/media` URL; шапка/скидки/налоги и другие картинки остаются, есть локальный повтор/первая страница. У строки без товара (синтетические legacy данные или result с product conflict) видна пометка «Товар не сопоставлен». Проверить поиск с отсутствующим результатом, некорректные query/date/page, page_out_of_range и возврат на первую страницу. Slow network/Offline: уйти на другое задание, поздний ответ не заменяет новый; terminal polling останавливается, hidden tab обновляется при возврате.
+9. Клавиатура: skip-link, меню, file picker, submit/cancel/retry/details, фильтры/страницы/ссылки и focus-visible. После локального retry фокус остаётся в своём блоке; если человек ушёл в другой, фокус не перехватывается. Screen reader: h1/h2, alt, live статус без постоянного повторения. 320/375/768/1280 px, zoom 200%, длинные названия/адреса: действия не скрыты, таблица прокручивается в собственной области; нет общей горизонтальной прокрутки. Проверить reduced motion (специальной анимации новых экранов нет).
+10. **Настоящий Codex:** остановить fake. Новый отдельный real QA или фото, ещё не обработанное fake; succeeded demo retry недоступен. В worker-терминале того же env установить `RECEIPT_OCR_PROVIDER=codex_cli`, `RECEIPT_OCR_MODEL=gpt-6.1-sol`, `RECEIPT_OCR_CODEX_EXECUTABLE=Join-Path $env:LOCALAPPDATA 'Programs/OpenAI/Codex/bin/codex.exe'`; проверить существующий auth, не менять его. Запустить `./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py recognition_worker` (либо --once с замером). Загрузить single/double через UI, сверить каждый crop/Receipt/строку/товар/суммы и время; затем повтор. Реальные разрешённые к облачной обработке фото вне git проверять по эталону с поворотом/бликами/нечитаемыми полями и timezone магазина. При failed/auth_required/network_unavailable сохранить фактический код; exit worker 0 не равен успешному OCR.
+
+Записать результаты, размеры экрана и фактические ошибки; скриншоты с разрешёнными синтетическими данными может приложить человек. В конце Ctrl+C своих API/Vite/OCR-worker, `docker compose -p $env:COMPOSE_PROJECT_NAME down`, без `-v`. Показ [frontend/I5_ACCEPTANCE.md](../frontend/I5_ACCEPTANCE.md) — отчёт/данные/запуск, не макет или подтверждение визуальной приёмки.
+
+## Фактические результаты С6
 
 Прогон 2026-10-04–05.
 

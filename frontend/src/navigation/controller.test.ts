@@ -32,6 +32,25 @@ function memoryHistory(initial = '/catalog') {
 
 describe('navigation without a browser', () => {
   it.each([
+    ['/recognition/jobs/31', '/receipts/71'],
+    ['/receipts/71', '/recognition/jobs/31'],
+    ['/receipts/71', '/catalog/products/61'],
+  ])('retains the source detail for %s → %s across query, reload and Back', (source, destination) => {
+    const history = memoryHistory(source)
+    const navigation = createNavigation(history.environment)
+    const unsubscribe = navigation.subscribe(() => {})
+    navigation.navigate(destination)
+    expect(navigation.getSnapshot().returnTo).toBe(source)
+    if (destination.startsWith('/catalog/')) navigation.navigate(`${destination}?currency=EUR&page=2`)
+    expect(createNavigation(history.environment).getSnapshot().returnTo).toBe(source)
+    history.go(-1)
+    history.go(1)
+    expect(navigation.getSnapshot().returnTo).toBe(source)
+    navigation.navigate(source)
+    expect(navigation.getSnapshot().href).toBe(source)
+    unsubscribe()
+  })
+  it.each([
     ['/receipts?store=51&page=2', '/receipts/71', '/receipts?store=51&page=2'],
     ['/recognition/jobs?status=failed&page=3', '/recognition/jobs/31', '/recognition/jobs?status=failed&page=3'],
   ])('retains the compatible list context from %s and restores it on Back', (list, detail, expected) => {

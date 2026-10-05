@@ -128,11 +128,11 @@ function ProductScreen({ productId, query, returnTo }: ProductPageProps) {
             <div><dt>Обобщённый продукт</dt><dd>{product.generic.name.trim() || 'Не указано'}</dd></div>
           </dl>
           <div className="product-actions">
-            {returnTo && <Link className="action-link" to={returnTo}>Назад к списку</Link>}
+            {returnTo && <Link className="action-link" to={returnTo}>{returnTo.startsWith('/receipts/') ? 'К чеку' : 'Назад к списку'}</Link>}
             <Link className="action-link" to={{ kind: 'category', categoryId: product.category.id, query: { page: 1 } }}>Назад в категорию</Link>
           </div>
         </>}
-        {!product && !missing && <Link className="action-link" to={returnTo ?? '/catalog'}>Назад в каталог</Link>}
+        {!product && (returnTo || !missing) && <Link className="action-link" to={returnTo ?? '/catalog'}>{returnTo?.startsWith('/receipts/') ? 'К чеку' : 'Назад в каталог'}</Link>}
       </section>
       {!missing && <>
         <aside className="product-limitations" aria-label="Ограничения данных о ценах">

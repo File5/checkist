@@ -36,6 +36,18 @@ function renderLaterProduct(stores: Store[], directory: ApiResult<Page<StoreEntr
 }
 
 describe('store identities beyond the first 50 (SSR in Node)', () => {
+  it('returns to the receipt during loading, on not_found and after product loading', () => {
+    vi.spyOn(requests, 'useProductRequest').mockReturnValue({ state: { kind: 'loading' }, retry: noop })
+    expect(renderToStaticMarkup(<ProductPage productId={9} query={{ page: 1 }} returnTo="/receipts/71" />))
+      .toContain('href="/receipts/71">К чеку')
+    vi.mocked(requests.useProductRequest).mockReturnValue({ state: { kind: 'error', reason: 'not_found' }, retry: noop })
+    const missing = renderToStaticMarkup(<ProductPage productId={9} query={{ page: 1 }} returnTo="/receipts/71" />)
+    expect(missing).toContain('href="/receipts/71">К чеку')
+    vi.mocked(requests.useProductRequest).mockReturnValue({ state: { kind: 'loading' }, retry: noop })
+    vi.mocked(requests.useProductRequest).mockReturnValueOnce({ state: { kind: 'ok', data: detail }, retry: noop })
+    expect(renderToStaticMarkup(<ProductPage productId={9} query={{ page: 1 }} returnTo="/receipts/71" />))
+      .toContain('href="/receipts/71">К чеку')
+  })
   it('distinguishes identical chain/city/country points on the second history page without enrichment', () => {
     const html = renderToStaticMarkup(<PriceHistory state={{ kind: 'ok', data: laterHistory }} query={{ page: 2 }}
       stores={firstFiftyStores} retry={noop} reset={noop} buildPageHref={buildPageHref} />)

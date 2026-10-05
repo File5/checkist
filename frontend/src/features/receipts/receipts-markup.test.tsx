@@ -12,6 +12,7 @@ import { ReceiptPagination } from './ReceiptBlock'
 import { ReceiptView } from './ReceiptPage'
 import type { BlockRequest, ReceiptViewProps } from './ReceiptPage'
 import { ReceiptsView } from './ReceiptsPage'
+import { imageLabels, issueLabels } from '../../lib/recognition-labels'
 
 const receipt = publicFixture('receipt.json') as Receipt
 const lines = publicFixture('lines.json') as Page<Line>
@@ -27,6 +28,17 @@ const view: ReceiptViewProps = {
 }
 
 describe('receipt screens (Vitest/SSR, not browser visual acceptance)', () => {
+  it.each(Object.keys(imageLabels) as ReceiptImage['status'][])('uses the shared %s status and safe issue labels', (status) => {
+    const image = { ...images.results[0], status, issues: [{ code: 'invalid_value' as const, field: '/', message: 'private provider text' }] }
+    const html = renderToStaticMarkup(<ReceiptImages images={[image]} receiptId={71} />)
+    expect(html).toContain(imageLabels[status])
+    expect(html).toContain(issueLabels.invalid_value)
+    expect(html).not.toContain('private provider text')
+  })
+  it('returns to the source job from a receipt', () => {
+    const html = renderToStaticMarkup(<ReceiptView {...view} returnTo="/recognition/jobs/31" />)
+    expect(html).toContain('href="/recognition/jobs/31">К заданию')
+  })
   it('preserves shell props and shows five independent loading blocks without another h1', () => {
     const list = renderToStaticMarkup(<ReceiptsPage query={{ page: 2 }} />)
     expect(list).toContain('Страница 2')

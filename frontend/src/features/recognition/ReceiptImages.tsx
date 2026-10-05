@@ -25,7 +25,7 @@ export default function ReceiptImages({ images, finished = false }: { images: Re
     <h3>Чек {item.position} · {imageLabels[item.status]}</h3>
     <MediaImage url={item.image_url} alt={`Вырезка чека ${item.position}`} />
     {item.clipped && <p className="ck-rec-warning">Часть чека обрезана.</p>}
-    {item.issues.length > 0 && <><h4>Причины проверки</h4><ul>{item.issues.map((issue, index) => <li key={index}>{issueLabels[issue.code]}{issueField(issue.field) && ` · ${issueField(issue.field)}`}</li>)}</ul></>}
+    {item.issues.length > 0 && <><h4>{['imported', 'reused', 'updated'].includes(item.status) ? 'Замечания распознавания' : 'Причины проверки'}</h4><ul>{item.issues.map((issue, index) => <li key={index}>{issueLabels[issue.code]}{issueField(issue.field) && ` · ${issueField(issue.field)}`}</li>)}</ul></>}
     {item.receipt_id !== null && <Link className="action-link" to={{ kind: 'receipt', receiptId: item.receipt_id }}>Открыть чек №{item.receipt_id}</Link>}
     {item.receipt_deleted && <p>Ранее сохранённый чек удалён.</p>}
     {item.status === 'needs_review' && <ReviewResult result={item.normalized_result} />}

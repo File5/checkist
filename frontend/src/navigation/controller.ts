@@ -13,7 +13,7 @@ export interface NavigationEnvironment {
 export interface NavigationSnapshot {
   href: string
   route: Route
-  /** Known list context; absent for direct entry to a detail. */
+  /** Known source page; absent for direct entry to a detail. */
   returnTo?: string
 }
 
@@ -29,8 +29,9 @@ function listContext(value: unknown, origin: string, detail: Route): string | un
     const url = new URL(value, origin)
     if (url.origin !== origin) return undefined
     const route = parseRoute(url)
-    const compatible = detail.kind === 'product' ? route.kind === 'catalog' || route.kind === 'category'
-      : detail.kind === 'receipt' ? route.kind === 'receipts' : detail.kind === 'job' && route.kind === 'jobs'
+    const compatible = detail.kind === 'product' ? ['catalog', 'category', 'receipt'].includes(route.kind)
+      : detail.kind === 'receipt' ? ['receipts', 'job'].includes(route.kind)
+        : detail.kind === 'job' && ['jobs', 'receipt'].includes(route.kind)
     return compatible && route.kind !== 'not-found' && route.kind !== 'invalid-query' ? buildRoute(route) : undefined
   } catch {
     return undefined
