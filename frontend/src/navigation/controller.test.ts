@@ -53,6 +53,7 @@ describe('navigation without a browser', () => {
   it.each([
     ['/receipts?store=51&page=2', '/receipts/71', '/receipts?store=51&page=2'],
     ['/recognition/jobs?status=failed&page=3', '/recognition/jobs/31', '/recognition/jobs?status=failed&page=3'],
+    ['/catalog/merges?status=confirmed&page=2', '/catalog/merges/3', '/catalog/merges?status=confirmed&page=2'],
   ])('retains the compatible list context from %s and restores it on Back', (list, detail, expected) => {
     const history = memoryHistory(list)
     const navigation = createNavigation(history.environment)

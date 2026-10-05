@@ -15,6 +15,8 @@ import ProductRequestState from './ProductRequestState'
 import { filterDraft, filterOptions, historyParams, mergeStores, serverFieldErrors, summaryParams, validateFilters } from './state'
 import type { FieldErrors, FilterField } from './state'
 import { useProductRequest } from './useProductRequest'
+import { MergedProductHint, ProductMergeNotice } from '../merges/MergeMarks'
+import { useProductMergeLookup } from '../merges/marks'
 import './Product.css'
 
 function FilterForm({ query, product, stores, selectedStore, failures, apply, reset, onStores }: {
@@ -109,12 +111,16 @@ function ProductScreen({ productId, query, returnTo }: ProductPageProps) {
   const selectedStore = historyRequest.state.kind === 'ok'
     ? historyRequest.state.data.results.find((point) => point.store.id === query.store)?.store : undefined
   const missing = productRequest.state.kind === 'error' && productRequest.state.reason === 'not_found'
+  // Independent of the card: a refusal of the local API leaves the card and «не найден» as they were.
+  const merges = useProductMergeLookup(productId)
+  const merged = missing ? merges.hint : undefined
   return (
     <div className="product-page">
       <section ref={productBlock} className="product-panel" aria-labelledby="product-heading" aria-busy={productRequest.state.kind === 'loading'}>
-        <h2 id="product-heading" data-request-focus-target tabIndex={-1}>{missing ? 'Товар не найден' : product?.name.trim() || (product ? 'Не указано' : 'Карточка товара')}</h2>
+        <h2 id="product-heading" data-request-focus-target tabIndex={-1}>{merged ? 'Товар объединён' : missing ? 'Товар не найден' : product?.name.trim() || (product ? 'Не указано' : 'Карточка товара')}</h2>
         {productRequest.state.kind === 'loading' && <RequestState kind="loading" message="Загружаем карточку товара…" />}
-        {productRequest.state.kind === 'error' && <ProductRequestState failure={productRequest.state} retry={productRequest.retry} />}
+        {productRequest.state.kind === 'error' && (merged ? <MergedProductHint hint={merged} />
+          : <ProductRequestState failure={productRequest.state} retry={productRequest.retry} />)}
         {product && <>
           <nav aria-label="Путь категории товара" className="product-breadcrumbs"><ol>
             <li><Link to="/catalog">Каталог</Link></li>
@@ -127,6 +133,7 @@ function ProductScreen({ productId, query, returnTo }: ProductPageProps) {
             <div><dt>Фасовка</dt><dd>{product.package ? formatQuantity(product.package.quantity, product.package.unit) : 'Не указано'}</dd></div>
             <div><dt>Обобщённый продукт</dt><dd>{product.generic.name.trim() || 'Не указано'}</dd></div>
           </dl>
+          {merges.mark && <ProductMergeNotice mark={merges.mark} />}
           <div className="product-actions">
             {returnTo && <Link className="action-link" to={returnTo}>{returnTo.startsWith('/receipts/') ? 'К чеку' : 'Назад к списку'}</Link>}
             <Link className="action-link" to={{ kind: 'category', categoryId: product.category.id, query: { page: 1 } }}>Назад в категорию</Link>
