@@ -1,9 +1,9 @@
 import { readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { isJob, isJobDetail, isPhoto, isPhotoUpload, isReceiptImage, isReceiptImageDetail, isRecognitionCsrf } from './recognition-schema'
+import { isJob, isJobDetail, isPhoto, isPhotoUpload, isReceiptImage, isReceiptImageDetail, isRecognitionCsrf, isRecognitionIssue } from './recognition-schema'
 import { isDiscount, isLine, isReceipt, isTax } from './receipts-schema'
 import { page } from './schema'
-import { publicFixture } from './recognition-test-support'
+import { issue, publicFixture, taxEvidenceMissingIssues } from './recognition-test-support'
 import type { JobDetail, ReceiptImageDetail } from './recognition-types'
 import type { Line, Receipt } from './receipts-types'
 import type { Page } from './types'
@@ -95,5 +95,52 @@ describe('public recognition/receipts contract fixtures', () => {
     expect(isReceiptImage({ ...image, normalized_result: { ...result, lines: Array(1001).fill(result.lines[0]) } })).toBe(false)
     expect(isReceiptImage({ ...image, normalized_result: { ...result, discounts: [{ position: 1, line_position: null, name: null, amount: '1.00' }], taxes: [{ tax_rate: { kind: 'exempt', rate: null }, tax_code: null, net: null, tax: '0.00', gross: null }] } })).toBe(true)
     expect(isReceiptImage({ ...image, normalized_result: { ...result, proposed_receipt: { ...result.proposed_receipt, store: { id: 1 } } } })).toBe(false)
+  })
+  describe('issue reason/severity/context', () => {
+    const image = publicFixture('receipt-image.json') as ReceiptImageDetail
+    const legacy = { code: 'invalid_value', field: '/lines/0/tax_rate', message: 'Значение не прошло проверку.' }
+    const full = issue('optional_omitted', 'warning', { entity: 'line', index: 0, position: 1, attribute: 'tax_rate' }, { field: '/lines/0/tax_rate' })
+    const withContext = (patch: object) => ({ ...full, context: { ...full.context, ...patch } })
+    it('accepts the old answer without the three keys and the complete new answer', () => {
+      expect(isRecognitionIssue(legacy)).toBe(true)
+      expect(isRecognitionIssue(full)).toBe(true)
+      expect(image.issues[0]).toMatchObject({ reason: 'missing_required', severity: 'error', context: { entity: 'line', index: 0, position: 1, attribute: 'quantity' } })
+      expect(isReceiptImageDetail({ ...image, issues: [legacy] })).toBe(true)
+      expect(isReceiptImageDetail({ ...image, issues: taxEvidenceMissingIssues() })).toBe(true)
+      expect(isRecognitionIssue(withContext({ entity: 'receipt', index: null, position: null, attribute: null }))).toBe(true)
+      expect(isRecognitionIssue(withContext({ index: 9999, position: 32767 }))).toBe(true)
+    })
+    it.each([
+      [{ reason: 'optional_omitted' }], [{ severity: 'warning' }], [{ context: full.context }],
+      [{ reason: 'optional_omitted', severity: 'warning' }], [{ reason: 'optional_omitted', context: full.context }],
+      [{ severity: 'warning', context: full.context }],
+    ])('rejects the whole answer with a partial set of keys %#', (partial) => {
+      expect(isRecognitionIssue({ ...legacy, ...partial })).toBe(false)
+      expect(isReceiptImageDetail({ ...image, issues: [image.issues[0], { ...legacy, ...partial }] })).toBe(false)
+    })
+    it.each([
+      [{ reason: null }], [{ reason: 7 }], [{ reason: '' }], [{ reason: 'Optional' }], [{ reason: 'tax-rate' }], [{ reason: 'a'.repeat(65) }],
+      [{ severity: 'critical' }], [{ severity: null }], [{ severity: 'Error' }],
+      [{ context: null }], [{ context: [] }], [{ context: 'line' }], [{ context: { entity: 'line', index: 0, position: 1 } }],
+      [withContext({ entity: null })], [withContext({ entity: 'Line' })], [withContext({ entity: 'a'.repeat(33) })],
+      [withContext({ attribute: 7 })], [withContext({ attribute: 'tax rate' })], [withContext({ attribute: '' })],
+      [withContext({ index: -1 })], [withContext({ index: 10000 })], [withContext({ index: 1.5 })], [withContext({ index: '0' })],
+      [withContext({ position: 0 })], [withContext({ position: 32768 })], [withContext({ position: 2.5 })], [withContext({ position: true })],
+    ])('rejects wrong types and out-of-range values %#', (patch) => {
+      expect(isRecognitionIssue({ ...full, ...patch })).toBe(false)
+      expect(isReceiptImageDetail({ ...image, issues: [{ ...full, ...patch }] })).toBe(false)
+    })
+    it('accepts unlisted reason, entity and attribute slugs for display as unknown', () => {
+      expect(isRecognitionIssue({ ...full, reason: 'future_reason' })).toBe(true)
+      expect(isRecognitionIssue({ ...full, reason: 'a'.repeat(64) })).toBe(true)
+      expect(isRecognitionIssue(withContext({ entity: 'payment' }))).toBe(true)
+      expect(isRecognitionIssue(withContext({ attribute: 'loyalty_card' }))).toBe(true)
+      expect(isRecognitionIssue(withContext({ attribute: null }))).toBe(true)
+    })
+    it('keeps the old code/field/message rules for the new answer', () => {
+      expect(isRecognitionIssue({ ...full, code: 'optional_omitted' })).toBe(false)
+      expect(isRecognitionIssue({ ...full, field: '/fiscal/signature' })).toBe(false)
+      expect(isRecognitionIssue({ ...full, message: null })).toBe(false)
+    })
   })
 })

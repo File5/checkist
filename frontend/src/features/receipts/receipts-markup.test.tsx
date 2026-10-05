@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import type { Discount, Line, Receipt, Tax } from '../../api/receipts'
 import type { ReceiptImage } from '../../api/recognition'
-import { publicFixture } from '../../api/recognition-test-support'
+import { issue, publicFixture, taxEvidenceMissingIssues } from '../../api/recognition-test-support'
 import type { Page } from '../../api/types'
 import { ReceiptPage, ReceiptsPage } from './index'
 import { ReceiptDiscounts, ReceiptHeader, ReceiptImages, ReceiptLines, ReceiptTaxes } from './ReceiptContent'
@@ -12,7 +12,7 @@ import { ReceiptPagination } from './ReceiptBlock'
 import { ReceiptView } from './ReceiptPage'
 import type { BlockRequest, ReceiptViewProps } from './ReceiptPage'
 import { ReceiptsView } from './ReceiptsPage'
-import { imageLabels, issueLabels } from '../../lib/recognition-labels'
+import { imageLabels, reasonLabels } from '../../lib/recognition-labels'
 
 const receipt = publicFixture('receipt.json') as Receipt
 const lines = publicFixture('lines.json') as Page<Line>
@@ -32,7 +32,40 @@ describe('receipt screens (Vitest/SSR, not browser visual acceptance)', () => {
     const image = { ...images.results[0], status, issues: [{ code: 'invalid_value' as const, field: '/', message: 'private provider text' }] }
     const html = renderToStaticMarkup(<ReceiptImages images={[image]} receiptId={71} />)
     expect(html).toContain(imageLabels[status])
-    expect(html).toContain(issueLabels.invalid_value)
+    // An old server hides every internal cause behind invalid_value, so the neutral label is shown.
+    expect(html).toContain(reasonLabels.unknown)
+    expect(html).toContain(status === 'failed' ? '<h4>Причины ошибки</h4>' : status === 'needs_review' ? '<h4>Причины проверки</h4>' : '<h4>Замечания распознавания</h4>')
+    expect(html).not.toContain('Некорректное значение')
+    expect(html).not.toContain('private provider text')
+  })
+  it('shows the same three collapsed groups of 29 omissions as the job screen', () => {
+    const image = { ...images.results[0], status: 'imported' as const, receipt_id: 71, normalized_result: null,
+      issues: taxEvidenceMissingIssues().map((item) => ({ ...item, message: 'private provider text' })) }
+    const html = renderToStaticMarkup(<ReceiptImages images={[image]} receiptId={71} />)
+    expect(html).toContain('Чек сохранён')
+    expect(html).toContain('<h4>Замечания распознавания</h4>')
+    expect(html.match(/<summary>[^<]*<\/summary>/g)).toEqual([
+      '<summary>НДС не использован в 25 строках</summary>', '<summary>Пропущены 2 налоговых итога</summary>', '<summary>Не прочитаны 2 реквизита</summary>'])
+    expect(html).not.toContain('<details open')
+    expect(html).toContain(`Строки: ${Array.from({ length: 25 }, (_, index) => index + 1).join(', ')}`)
+    expect(html).toContain('Налоговые итоги №: 1, 2')
+    expect(html).toContain('Значения не показываются.')
+    expect(html).not.toContain('Причины проверки')
+    expect(html).not.toContain('private provider text')
+    expect(html).not.toContain('aria-live')
+  })
+  it('separates always visible review causes from collapsed notes on the receipt card', () => {
+    const image = { ...images.results[0], status: 'needs_review' as const, issues: [
+      issue('optional_omitted', 'warning', { entity: 'line', index: 4, attribute: 'tax_rate' }, { field: '/lines/4/tax_rate' }),
+      issue('total_mismatch', 'error', { attribute: 'total' }, { code: 'total_mismatch', field: '/total', message: 'private provider text' }),
+    ] }
+    const html = renderToStaticMarkup(<ReceiptImages images={[image]} receiptId={71} />)
+    const [causes, notes] = html.split('<h4>Замечания распознавания</h4>')
+    expect(causes).toContain('<h4>Причины проверки</h4>')
+    expect(causes).toContain('Сумма строк не совпадает с итогом · Итого')
+    expect(causes).not.toContain('<details')
+    expect(notes).toContain('<details><summary>НДС не использован в 1 строке</summary>')
+    expect(notes).toContain('Строки распознавания №: 5')
     expect(html).not.toContain('private provider text')
   })
   it('returns to the source job from a receipt', () => {
@@ -113,7 +146,8 @@ describe('receipt screens (Vitest/SSR, not browser visual acceptance)', () => {
     expect(html).toContain('href="/recognition/jobs/31"')
     expect(html).toContain('href="/recognition/jobs/32"')
     expect(html).toContain('Требует проверки')
-    expect(html).toContain('Не удалось прочитать обязательное поле')
+    expect(html).toContain('Не удалось прочитать обязательное поле · Количество')
+    expect(html).toContain('Строки: 1')
     expect(html).not.toContain('private provider message')
   })
   it('uses safe media paths, descriptive alt and explicit image fallback/retry', () => {
