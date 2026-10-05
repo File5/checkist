@@ -21,7 +21,8 @@ from recognition.providers.fake import receipt_payload
 from recognition.queue import FenceLost, db_now, request_cancel
 from recognition.resolution import resolve_country, resolve_store
 from stores.models import Country, Currency, Merchant, Store, TaxRate
-from .import_fixtures import another_receipt, live_image, observation
+from recognition.schema_validation import validate_observation
+from .import_fixtures import another_receipt, lidl_format_payload, live_image, observation, sparse_lidl_format_payload
 
 
 @tag("integration")
@@ -34,8 +35,11 @@ class ImportTests(TestCase):
         self.addCleanup(self.settings_override.disable)
 
     def run_import(self, data=None, **image_fields):
+        return self.run_import_observation(observation(data), **image_fields)
+
+    def run_import_observation(self, obs, **image_fields):
         image, job = live_image(**image_fields)
-        return import_receipt(image, observation(data), run_token=job.run_token, version=job.version)
+        return import_receipt(image, obs, run_token=job.run_token, version=job.version)
 
     def assert_no_domain(self):
         for model in (Merchant, Store, Category, GenericProduct, Brand, Product, ProductAlias,
@@ -94,6 +98,165 @@ class ImportTests(TestCase):
         self.assertEqual(result.outcome, "created")
         self.assertEqual(result.receipt.total, Decimal("6.00"))
         self.assertEqual((Receipt.objects.count(), Store.objects.count(), Product.objects.count()), (2, 2, 5))
+
+    def test_lidl_format_import_defaults_utc_discounts_taxes_and_repeat(self):
+        payload = lidl_format_payload()
+        result = self.run_import(payload)
+        self.assertEqual((result.outcome, result.image.status), ("created", "imported"))
+        self.assertEqual([(v["code"], v["field"]) for v in result.issues], [("optional_omitted", "/receipt_number")])
+        receipt = result.receipt
+        self.assertEqual(receipt.purchased_at.isoformat(), "2026-10-01T17:01:56+00:00")
+        self.assertEqual(receipt.store.timezone, "Europe/Berlin")
+        self.assertEqual(receipt.store.address_raw, "Testweg 17, 88131 Lindau")
+        self.assertEqual(receipt.extra["recognition"]["utc_offset_printed"], "+00:00")
+        self.assertEqual(receipt.total, Decimal("40.80"))
+        derived = receipt.extra["recognition"]["derived"]
+        for saved, observed in zip(receipt.lines.order_by("position"), payload["lines"], strict=True):
+            if observed["quantity"] is None:
+                self.assertEqual((saved.quantity, saved.unit, saved.unit_price, saved.amount),
+                                 (Decimal("1.000"), "pcs", Decimal(observed["amount"]), Decimal(observed["amount"])))
+                for key in ("quantity", "unit", "unit_price"):
+                    self.assertIn(f"/lines/{saved.position - 1}/{key}", derived)
+            elif saved.position == 1:
+                self.assertEqual((saved.quantity, saved.unit, saved.unit_price),
+                                 (Decimal("0.294"), "kg", Decimal("2.9900")))
+            else:
+                self.assertEqual(saved.unit, "pcs")
+        self.assertEqual(receipt.lines.get(position=3).quantity, Decimal("2.000"))
+        self.assertEqual(receipt.lines.get(position=22).quantity, Decimal("-5.000"))
+        self.assertEqual(receipt.lines.get(position=18).parent.position, 17)
+        self.assertEqual(receipt.lines.get(position=19).amount, Decimal("1.99"))
+        self.assertEqual(receipt.lines.get(position=19).discount_amount, Decimal("0.20"))
+        self.assertEqual(list(receipt.discounts.order_by("position").values_list("line__position", "name", "amount")),
+                         [(9, "Preisvorteil", Decimal("0.20")), (21, "Preisvorteil", Decimal("2.00")),
+                          (19, "Rabatt Snack", Decimal("0.20"))])
+        self.assertEqual(list(receipt.taxes.order_by("tax_code").values_list("tax_code", "gross")),
+                         [("A", Decimal("39.70")), ("B", Decimal("1.10"))])
+        self.assertEqual(validate_receipt(receipt), [])
+        self.assertIsNone(result.image.normalized_result["lines"][1]["quantity"])
+
+        # R2 plus exact weak identity: punctuation and tax-ID completeness must
+        # not create a new store/receipt even without a strong fiscal key.
+        payload["store"]["address_raw"] = "Testweg 17 88131 Lindau"
+        payload["merchant"].update(tax_id=None, tax_id_type=None)
+        payload["fiscal"] = {key: None for key in payload["fiscal"]}
+        repeated = self.run_import(payload)
+        self.assertEqual((repeated.outcome, repeated.receipt.pk), ("linked", receipt.pk))
+        exact = self.run_import(lidl_format_payload())
+        self.assertEqual((exact.outcome, exact.receipt.pk), ("linked", receipt.pk))
+        self.assertEqual((Receipt.objects.count(), Store.objects.count(), Merchant.objects.count()), (1, 1, 1))
+        self.assertEqual((ReceiptLine.objects.count(), ReceiptDiscount.objects.count(), ReceiptTax.objects.count()), (22, 3, 2))
+        self.assertEqual((Product.objects.count(), ProductAlias.objects.count()), (20, 20))
+
+    def test_missing_quantity_and_price_with_amount_now_imports(self):
+        payload = receipt_payload()
+        payload["lines"][0].update(quantity=None, unit_price=None, unit=None)
+        result = self.run_import(payload)
+        self.assertEqual(result.outcome, "created")
+        line = result.receipt.lines.get(position=1)
+        self.assertEqual((line.quantity, line.unit, line.unit_price), (Decimal("1.000"), "pcs", Decimal("2.5800")))
+        self.assertEqual(validate_receipt(result.receipt), [])
+
+    def test_sparse_lidl_response_imports_defaults_discounts_and_reuses_receipt(self):
+        payload = sparse_lidl_format_payload()
+        incoming = validate_observation(payload)
+        result = self.run_import_observation(incoming)
+        self.assertEqual((result.outcome, result.image.status), ("created", "imported"))
+        receipt = result.receipt
+        self.assertEqual(receipt.purchased_at.isoformat(), "2026-10-01T17:01:56+00:00")
+        self.assertEqual(receipt.store.address_raw, "Testweg 17, 88131 Lindau")
+        self.assertEqual(receipt.total, Decimal("40.80"))
+        self.assertEqual(receipt.extra["recognition"]["utc_offset_printed"], "+00:00")
+        derived = receipt.extra["recognition"]["derived"]
+        for line, original in zip(receipt.lines.order_by("position"), incoming.lines, strict=True):
+            if original.quantity is None:
+                self.assertEqual((line.quantity, line.unit, line.unit_price, line.amount),
+                                 (Decimal("1.000"), "pcs", original.amount, original.amount))
+                for key in ("quantity", "unit", "unit_price"):
+                    self.assertIn(f"/lines/{line.position - 1}/{key}", derived)
+            elif original.position == 1:
+                self.assertEqual((line.quantity, line.unit, line.unit_price),
+                                 (Decimal("0.294"), "kg", Decimal("2.9900")))
+            else:
+                self.assertEqual((line.quantity, line.unit, line.unit_price),
+                                 (original.quantity, "pcs", original.unit_price))
+        self.assertEqual(receipt.lines.get(position=3).quantity, Decimal("2.000"))
+        self.assertEqual(receipt.lines.get(position=22).quantity, Decimal("-5.000"))
+        self.assertEqual(receipt.lines.get(position=18).parent.position, 17)
+        self.assertEqual(receipt.lines.get(position=19).discount_amount, Decimal("0.20"))
+        self.assertEqual(list(receipt.discounts.order_by("position").values_list("line__position", "amount")),
+                         [(9, Decimal("0.20")), (21, Decimal("2.00")), (19, Decimal("0.20"))])
+        self.assertEqual(validate_receipt(receipt), [])
+        self.assertEqual(result.image.normalized_result, incoming.to_dict())
+        self.assertIsNone(result.image.normalized_result["lines"][1]["quantity"])
+        # Tax-rate confirmation remains an independent optional-field policy.
+        self.assertEqual(receipt.taxes.count(), 0)
+        self.assertEqual([(tax["tax_code"], tax["gross"]) for tax in result.image.normalized_result["taxes"]],
+                         [("A", "39.70"), ("B", "1.10")])
+        self.assertIn("optional_omitted", [v["code"] for v in result.issues])
+        models = (Merchant, Store, Product, ProductAlias, Receipt, ReceiptLine, ReceiptDiscount, ReceiptTax)
+        before = {model: list(model.objects.order_by("pk").values()) for model in models}
+        repeated = self.run_import_observation(validate_observation(sparse_lidl_format_payload()))
+        self.assertEqual((repeated.outcome, repeated.receipt.pk), ("linked", receipt.pk))
+        for model in models:
+            self.assertEqual(list(model.objects.order_by("pk").values()), before[model], model.__name__)
+        self.assertEqual((Receipt.objects.count(), ReceiptLine.objects.count(), Product.objects.count()), (1, 22, 20))
+
+    def test_sparse_response_derives_each_missing_number_and_piece_unit(self):
+        for key, expected in (("quantity", Decimal("2.000")), ("unit_price", Decimal("1.2900")),
+                              ("amount", Decimal("2.58"))):
+            with self.subTest(key=key):
+                payload = sparse_lidl_format_payload()
+                payload["lines"][2][key] = None
+                result = self.run_import_observation(validate_observation(payload))
+                self.assertEqual((result.outcome, result.image.status),
+                                 ("created", "imported") if key == "quantity" else ("linked", "reused"))
+                line = result.receipt.lines.get(position=3)
+                self.assertEqual(getattr(line, key), expected)
+                self.assertEqual(line.unit, "pcs")
+                self.assertIsNone(result.image.normalized_result["lines"][2][key])
+        self.assertEqual(Receipt.objects.count(), 1)
+
+    def test_sparse_response_explicitly_uncertain_values_remain_needs_review(self):
+        for key in ("quantity", "unit_price", "amount", "unit"):
+            for status in ("ambiguous", "unreadable"):
+                with self.subTest(key=key, status=status):
+                    payload = sparse_lidl_format_payload()
+                    # Test both populated ambiguous operands and null targets.
+                    if status == "unreadable":
+                        payload["lines"][2][key] = None
+                    payload["fields"].append({"path": "/lines/2/" + key, "status": status,
+                                              "confidence": None, "note": None})
+                    incoming = validate_observation(payload)
+                    result = self.run_import_observation(incoming)
+                    self.assertEqual((result.outcome, result.image.status), ("needs_review", "needs_review"))
+                    self.assertIsNone(result.receipt)
+                    self.assertEqual(result.image.normalized_result, incoming.to_dict())
+                    self.assertIn("/lines/2/" + key, [v["field"] for v in result.issues])
+                    self.assert_no_domain()
+
+    def test_sparse_response_line_arithmetic_conflict_blocks_even_with_balanced_total(self):
+        payload = sparse_lidl_format_payload()
+        payload["lines"][2]["amount"] = "3.49"
+        payload["total"] = "41.71"
+        result = self.run_import_observation(validate_observation(payload))
+        self.assertEqual((result.outcome, result.image.status), ("needs_review", "needs_review"))
+        self.assertIsNone(result.receipt)
+        self.assertIn(("total_mismatch", "/lines/2/amount"), [(v["code"], v["field"]) for v in result.issues])
+        self.assertEqual(result.image.normalized_result["lines"][2]["amount"], "3.49")
+        self.assert_no_domain()
+
+    def test_amount_only_deposit_return_defaults_negative_quantity_and_positive_price(self):
+        payload = receipt_payload()
+        payload["lines"][3].update(kind="deposit_return", parent_position=None, quantity=None, unit=None,
+                                    unit_price=None, amount="-0.25")
+        payload["total"] = "3.92"
+        payload["taxes"][1].update(net="0.45", tax="0.09", gross="0.54")
+        result = self.run_import(payload)
+        self.assertEqual(result.outcome, "created")
+        line = result.receipt.lines.get(position=4)
+        self.assertEqual((line.quantity, line.unit, line.unit_price), (Decimal("-1.000"), "pcs", Decimal("0.2500")))
+        self.assertEqual(validate_receipt(result.receipt), [])
 
     @staticmethod
     def tax_id_payload(tax_id):
@@ -378,7 +541,7 @@ class ImportTests(TestCase):
             lambda p: (p["merchant"].update(legal_name=None, brand_name=None), p["store"].update(name=None)),
             lambda p: p.update(lines=[]),
             lambda p: p.update(local_time=None),
-            lambda p: p["lines"][0].update(quantity=None, unit_price=None),
+            lambda p: p["lines"][0].update(quantity=None, unit_price=None, amount=None),
             lambda p: p.update(total="123.45"),
             lambda p: p["lines"][0].update(quantity="-2.000", amount="-2.58"),
             lambda p: p.update(currency_code="XTS"),
@@ -438,16 +601,18 @@ class ImportTests(TestCase):
         self.assertEqual(result.outcome, "created")
         self.assertEqual(result.receipt.currency_id, "RUB")
 
-    def test_null_ambiguous_quantity_can_be_recovered_from_two_observed_numbers(self):
-        obs = observation()
-        obs = replace(obs, lines=(replace(obs.lines[0], quantity=None),) + obs.lines[1:],
-                      fields=tuple(replace(f, status="ambiguous") if f.path == "/lines/0/quantity" else f
-                                   for f in obs.fields))
-        image, job = live_image()
-        result = import_receipt(image, obs, run_token=job.run_token, version=job.version)
-        self.assertEqual(result.outcome, "created")
-        self.assertEqual(result.receipt.lines.get(position=1).quantity, Decimal("2.000"))
-        self.assertIsNone(result.image.normalized_result["lines"][0]["quantity"])
+    def test_null_uncertain_quantity_is_not_replaced_from_two_observed_numbers(self):
+        for status in ("ambiguous", "unreadable"):
+            with self.subTest(status=status):
+                obs = observation()
+                obs = replace(obs, lines=(replace(obs.lines[0], quantity=None),) + obs.lines[1:],
+                              fields=tuple(replace(f, status=status) if f.path == "/lines/0/quantity" else f
+                                           for f in obs.fields))
+                result = self.run_import_observation(obs)
+                self.assertEqual((result.outcome, result.image.status), ("needs_review", "needs_review"))
+                self.assertIsNone(result.receipt)
+                self.assertIsNone(result.image.normalized_result["lines"][0]["quantity"])
+                self.assert_no_domain()
 
     def test_missing_line_quantity_is_derived_from_printed_price_and_amount(self):
         payload = receipt_payload()
@@ -579,7 +744,7 @@ class ImportTests(TestCase):
 
     def test_partial_review_then_better_photo_creates_one_receipt(self):
         payload = receipt_payload()
-        payload["lines"][0].update(quantity=None, unit_price=None)
+        payload["lines"][0].update(quantity=None, unit_price=None, amount=None)
         partial = self.run_import(payload)
         complete = self.run_import()
         self.assertEqual((partial.outcome, complete.outcome), ("needs_review", "created"))

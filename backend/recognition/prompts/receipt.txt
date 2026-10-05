@@ -7,6 +7,10 @@ text orientation; the image has not been deskewed or perspective rectified.
 Do not invent missing information: absent, unreadable or ambiguous values are null; add fields
 entries with concrete JSON Pointer paths (e.g. /lines/0/quantity), status and bounded notes.
 Money strings have 2 decimal places, unit_price 4, quantity and package_quantity 3, tax rate 2.
+Write store.address_raw on one line, joining printed address lines with a comma and space.
+Join print line breaks in other names/address components with a space. UTC offsets must
+use only the signed ±HH:MM format: normalize a printed Z or z to +00:00. Keep the printed
+time unchanged when normalizing its offset; a fiscal UTC time is not a local header time.
 Line amount is before discount; discounts are positive entries, not product lines. Deposits
 are separate lines with parent_position linking their product. Preserve leading zeros in IDs.
 Do not calculate unprinted net/tax/gross, timezone, quantities or missing prices. Do not guess

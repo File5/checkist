@@ -12,7 +12,7 @@ from recognition.resolution import (
     resolve_product, resolve_store, resolve_tax_rate,
 )
 from stores.models import Country, Merchant, Store, TaxRate
-from .import_fixtures import observation
+from .import_fixtures import lidl_format_payload, observation
 
 
 class GTINTests(SimpleTestCase):
@@ -326,3 +326,27 @@ class ResolutionTests(TestCase):
                 purchased_at(obs, store)
         obs = replace(self.obs, purchased_on="2026-10-25", local_time="02:30:00", utc_offset_printed="+02:00")
         self.assertEqual(purchased_at(obs, store).isoformat(), "2026-10-25T00:30:00+00:00")
+
+    def test_normalized_fiscal_z_is_utc_and_header_local_time_does_not_conflict(self):
+        for offset in ("Z", "z", "+00:00"):
+            payload = lidl_format_payload()
+            payload["utc_offset_printed"] = payload["timestamps"]["fiscal"]["utc_offset"] = offset
+            obs = observation(payload)
+            store = resolve_store(obs, resolve_country(obs))
+            with self.subTest(offset=offset):
+                self.assertEqual(purchased_at(obs, store).isoformat(), "2026-10-01T17:01:56+00:00")
+                self.assertEqual(store.timezone, "Europe/Berlin")
+
+    def test_multiline_address_resolves_existing_single_line_store_with_same_key(self):
+        payload = lidl_format_payload()
+        payload["store"]["address_raw"] = "Testweg 17 88131 Lindau"
+        single = observation(payload)
+        store = resolve_store(single, resolve_country(single))
+        for separator in ("\n", "\r\n", "\r", "\t"):
+            payload["store"]["address_raw"] = "Testweg 17" + separator + "88131 Lindau"
+            incoming = observation(payload)
+            with self.subTest(separator=separator):
+                self.assertEqual(resolve_store(incoming, resolve_country(incoming)).pk, store.pk)
+                self.assertEqual(Store.objects.count(), 1)
+        store.refresh_from_db()
+        self.assertEqual(store.address_raw, "Testweg 17 88131 Lindau")

@@ -85,7 +85,8 @@ def _domain_observation(observation):
 
 def _preflight(observation, derived=()):
     issues = [issue(v["code"], v["path"]) for v in observation_issues(observation)]
-    notices = [v for v in issues if v["code"] == "total_mismatch" and v["field"] != "/total"]
+    notices = [v for v in issues if v["code"] == "total_mismatch"
+               and (v["field"] == "/discount_total" or v["field"].endswith("/discount_amount"))]
     issues = [v for v in issues if v not in notices]
     # C3 explicitly permits country inference. Store name can come from merchant,
     # and an existing branch may be resolved without reprinting its address.
@@ -99,6 +100,12 @@ def _preflight(observation, derived=()):
         allowed.add("/store/address_raw")
     issues = [v for v in issues if not (v["code"] == "missing_required" and v["field"] in allowed)]
     for evidence in observation.fields:
+        parts = evidence.path.split("/")
+        if (len(parts) == 4 and parts[1] == "lines" and parts[2].isdigit()
+                and int(parts[2]) < len(observation.lines) and parts[3] in {"quantity", "unit_price", "amount", "unit"}
+                and evidence.status in {"absent", "unreadable"} and evidence.path not in derived
+                and getattr(observation.lines[int(parts[2])], parts[3]) is not None):
+            issues.append(issue("invalid_value", evidence.path))
         if (evidence.status == "ambiguous" and not optional_field(evidence.path)
                 and evidence.path not in {"/confidence", "/raw_text"} and evidence.path not in derived
                 and not (evidence.path == "/currency_code" and observation.currency_code is None)):
