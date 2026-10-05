@@ -5,6 +5,7 @@ import sys
 import tempfile
 import threading
 import time
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -92,6 +93,24 @@ class ProviderTests(SimpleTestCase):
         observation = provider.recognize(self.crop, self.run_context())
         self.assertEqual(str(observation.total), "4.42")
         self.assertIn(b"schema v2", stub.calls[0][3])
+
+    def test_recognize_prompt_receives_signed_rotation_without_rectification(self):
+        for angle in (-12, 30, 90, -180, -90):
+            with self.subTest(angle=angle):
+                provider, stub = self.provider(payload=receipt_payload())
+                provider.recognize(replace(self.crop, rotation_degrees=angle), self.run_context())
+                prompt = stub.calls[0][3].decode("utf-8")
+                self.assertIn(f"rotation_degrees={angle}", prompt)
+                self.assertIn("positive clockwise, negative counterclockwise", prompt)
+                self.assertIn("has not been deskewed", prompt)
+
+    def test_recognize_rejects_invalid_rotation_before_subprocess(self):
+        for angle in (True, float("nan"), float("inf"), 270, -181):
+            provider, stub = self.provider(payload=receipt_payload())
+            with self.subTest(angle=angle), self.assertRaises(ProviderError) as error:
+                provider.recognize(replace(self.crop, rotation_degrees=angle), self.run_context())
+            self.assertEqual(error.exception.code, "invalid_input")
+            self.assertEqual(stub.calls, [])
 
     def test_adapter_with_real_supervised_substitute_process(self):
         # This is a safe Python stand-in, never an installed Codex invocation.

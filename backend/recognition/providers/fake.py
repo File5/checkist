@@ -9,6 +9,7 @@ import copy
 import time
 
 from recognition.dto import FiscalObservation
+from recognition.demo import rotated_demo_receipts
 from recognition.providers.base import ProviderError
 from recognition.schema_validation import SchemaValidationError, validate_detection, validate_observation
 
@@ -16,7 +17,7 @@ SCENARIOS = (
     "success2", "one_receipt", "no_receipts", "too_many_receipts", "provider_auth_failure",
     "provider_error", "malformed_schema", "partial_missing_quantity", "inconsistent_total",
     "duplicate_strong", "duplicate_weak", "partial_success", "pause_detect", "pause_recognize", "late_completion",
-    "tax_id_present", "tax_id_absent",
+    "tax_id_present", "tax_id_absent", "rotated_receipt", "rotated_two_receipts",
 )
 ALIASES = {"success": "success2", "single": "one_receipt", "invalid_output": "malformed_schema",
            "incomplete": "partial_missing_quantity", "repeat": "duplicate_strong", "pause": "pause_detect"}
@@ -126,6 +127,9 @@ class FakeProvider:
         self._stage("detect", run)
         count = 0 if self.scenario == "no_receipts" else 11 if self.scenario == "too_many_receipts" else 1 if self.scenario in ("one_receipt", "duplicate_strong", "duplicate_weak", "tax_id_present", "tax_id_absent") else 2
         data = detection_payload(prepared_image, count)
+        if self.scenario in {"rotated_receipt", "rotated_two_receipts"}:
+            data["receipts"] = rotated_demo_receipts(single=self.scenario == "rotated_receipt")
+            data["receipt_count"] = len(data["receipts"])
         if self.scenario == "malformed_schema":
             data["unexpected"] = True
         try:

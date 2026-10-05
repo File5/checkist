@@ -7,6 +7,8 @@ from pathlib import Path
 from django.conf import settings
 from PIL import Image, ImageOps, UnidentifiedImageError
 
+from recognition.geometry import GeometryError, validate_geometry as _validate_geometry
+
 FORMATS = {"JPEG": ("image/jpeg", "jpg"), "PNG": ("image/png", "png"), "WEBP": ("image/webp", "webp")}
 
 
@@ -120,48 +122,20 @@ def prepare_upright(source, destination):
         raise ImageError("invalid_image") from None
 
 
-def _number(value):
-    return type(value) in {int, float} and math.isfinite(value)
-
-
 def validate_geometry(bbox, quad=None, rotation_degrees=0):
-    """Validate normalized upright coordinates. Returns canonical (bbox, quad, angle)."""
-    keys = {"x_min", "y_min", "x_max", "y_max"}
-    if not isinstance(bbox, dict) or set(bbox) != keys or not all(_number(v) and 0 <= v <= 1 for v in bbox.values()):
-        raise ImageError("geometry_requires_review")
-    box = {key: float(bbox[key]) for key in keys}
-    if box["x_min"] >= box["x_max"] or box["y_min"] >= box["y_max"]:
-        raise ImageError("geometry_requires_review")
-    if not _number(rotation_degrees) or not -180 <= rotation_degrees <= 180:
-        raise ImageError("geometry_requires_review")
-    points = None
-    if quad is not None:
-        if not isinstance(quad, (list, tuple)) or len(quad) != 4:
-            raise ImageError("geometry_requires_review")
-        points = []
-        for point in quad:
-            if not isinstance(point, dict) or set(point) != {"x", "y"} or not all(_number(v) for v in point.values()):
-                raise ImageError("geometry_requires_review")
-            x, y = float(point["x"]), float(point["y"])
-            if not box["x_min"] <= x <= box["x_max"] or not box["y_min"] <= y <= box["y_max"]:
-                raise ImageError("geometry_requires_review")
-            points.append({"x": x, "y": y})
-        # In image coordinates positive cross products mean clockwise, convex, nonzero area.
-        for index in range(4):
-            a, b, c = (points[(index + offset) % 4] for offset in range(3))
-            cross = (b["x"] - a["x"]) * (c["y"] - b["y"]) - (b["y"] - a["y"]) * (c["x"] - b["x"])
-            if cross <= 1e-12:
-                raise ImageError("geometry_requires_review")
-        if points[0]["x"] + points[0]["y"] > min(point["x"] + point["y"] for point in points) + 1e-12:
-            raise ImageError("geometry_requires_review")
-    return box, points, float(rotation_degrees)
+    """Shared detect/crop contract; preserve text-relative clockwise corner order."""
+    try:
+        return _validate_geometry(bbox, quad, rotation_degrees)
+    except GeometryError:
+        raise ImageError("geometry_requires_review") from None
 
 
 def crop_receipt(source, destination, bbox, *, quad=None, rotation_degrees=0):
     """crop_receipt(upright_path, destination, bbox, *, quad=None, rotation_degrees=0) -> CropInfo.
 
     Adds 1% of the source dimensions on each edge, clamps, floor/ceil half-open.
-    Retains rotation/quad; does not apply unverified perspective rectification.
+    Retains source quad order and signed clockwise text rotation. Crop remains
+    rotated; no deskew or perspective rectification is applied.
     """
     box, points, angle = validate_geometry(bbox, quad, rotation_degrees)
     try:

@@ -14,6 +14,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from recognition.dto import DetectionResult, ReceiptObservation, _typed
+from recognition.geometry import GeometryError, validate_geometry
 
 MAX_OUTPUT_BYTES = 4 * 1024 * 1024
 SCHEMA_DIR = Path(__file__).resolve().parent / "schemas"
@@ -139,20 +140,10 @@ def validate_detection(data, *, width, height):
         if receipt["id"] in ids:
             _fail(path + "/id", "duplicate_id")
         ids.add(receipt["id"])
-        box = receipt["bbox"]
-        if box["x_min"] >= box["x_max"] or box["y_min"] >= box["y_max"]:
-            _fail(path + "/bbox", "area")
-        quad = receipt["quad"]
-        for p in quad:
-            if not (box["x_min"] <= p["x"] <= box["x_max"] and box["y_min"] <= p["y"] <= box["y_max"]):
-                _fail(path + "/quad", "bbox_enclosure")
-        # Convex clockwise quadrilateral in image coordinates. Also rejects
-        # crossed edges, duplicates, collinear points and zero-area polygons.
-        for j in range(4):
-            a, b, c = quad[j], quad[(j + 1) % 4], quad[(j + 2) % 4]
-            cross = (b["x"] - a["x"]) * (c["y"] - b["y"]) - (b["y"] - a["y"]) * (c["x"] - b["x"])
-            if cross <= 1e-12:
-                _fail(path + "/quad", "quad_geometry")
+        try:
+            validate_geometry(receipt["bbox"], receipt["quad"], receipt["rotation_degrees"])
+        except GeometryError as error:
+            _fail(path + ("/bbox" if error.reason == "area" else "/quad"), error.reason)
     return _typed(DetectionResult, data)
 
 

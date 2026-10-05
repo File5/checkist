@@ -142,7 +142,7 @@ class JobPipeline:
                 provider=settings.RECEIPT_OCR_PROVIDER,
                 model=settings.RECEIPT_OCR_MODEL if settings.RECEIPT_OCR_PROVIDER == "codex_cli" else "",
                 provider_version="1", cli_version=getattr(self.provider, "cli_version", ""),
-                prompt_version="1" if phase == AttemptPhase.DETECT else "2",
+                prompt_version="2" if phase == AttemptPhase.DETECT else "3",
                 schema_version="1" if phase == AttemptPhase.DETECT else "2",
                 input_sha256=prepared.sha256,
             )
@@ -182,7 +182,8 @@ class JobPipeline:
         if image.status == ImageStatus.PENDING:
             image, self.job = queue.save_image_result(*self.fence, image.pk, status=ImageStatus.RUNNING)
         try:
-            prepared = PreparedReceiptImage(storage.media_path(image.file.name), image.sha256, image.width, image.height, position=image.position)
+            prepared = PreparedReceiptImage(storage.media_path(image.file.name), image.sha256, image.width, image.height,
+                                            position=image.position, rotation_degrees=image.rotation_degrees)
             observation = self._invoke(AttemptPhase.RECOGNIZE, prepared, image=image)
             self._stage(JobStage.VALIDATE, position=image.position)
             # Domain validation and preservation of incomplete results belong

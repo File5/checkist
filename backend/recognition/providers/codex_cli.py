@@ -219,6 +219,11 @@ class CodexCLIProvider:
                 prompt = (PACKAGE_ROOT / "prompts" / f"{name}.txt").read_text(encoding="utf-8")
                 if phase == "detect":
                     prompt = prompt.format(width=image.width, height=image.height)
+                else:
+                    angle = image.rotation_degrees
+                    if type(angle) not in (int, float) or not math.isfinite(angle) or not -180 <= angle <= 180:
+                        raise ProviderError("invalid_input")
+                    prompt = prompt.format(rotation_degrees=angle)
                 if output.exists():
                     raise ProviderError("invalid_output")
                 # Use the filesystem's own clock/resolution as the fence:

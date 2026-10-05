@@ -20,6 +20,11 @@ observation = provider.recognize(
 Both methods also accept `run=run`. `run_id` defaults to a UUID string; pass the
 attempt/run UUID explicitly when needed. `PreparedImage.orientation` defaults
 to 1. `PreparedReceiptCrop` aliases `PreparedReceiptImage`.
+`PreparedReceiptImage.rotation_degrees` defaults to 0; the pipeline copies the
+persisted signed clockwise text angle into each recognize input. Bbox crops
+retain that angle. Detect quad is TL, TR, BR, BL relative to the text, clockwise
+with image y down; validators preserve cyclic starts and never sort by x+y.
+Angles are [-180, 180], positive clockwise, negative counterclockwise; 270 is -90.
 `on_stage` receives exactly `detect` or `recognize`; the worker maps these to
 its persisted/public stage enum, rather than passing them to the HTTP API.
 
@@ -65,6 +70,8 @@ in upload bodies. Codex failure never selects fake.
 | --- | --- |
 | success2 (alias success) | K1 two synthetic DE/EUR receipts, totals 4.42 and 6.00 |
 | one_receipt (single) | One detection, first receipt |
+| rotated_receipt | single_rotated.png, first paper/text at -12 degrees, total 4.42 |
+| rotated_two_receipts | double_rotated.png, first upright, second at -12 degrees, totals 4.42 and 6.00 |
 | no_receipts | Empty detection |
 | too_many_receipts | invalid_output, nonretryable, reason too_many_receipts |
 | provider_auth_failure | auth_required, nonretryable |

@@ -51,6 +51,8 @@ class PreparedImage:
 @dataclass(frozen=True)
 class PreparedReceiptImage(PreparedImage):
     position: int = 1
+    # Text angle in the unrectified crop: positive clockwise, [-180, 180].
+    rotation_degrees: float = 0
 
 
 # Both names refer to the same crop input contract.
@@ -73,6 +75,11 @@ class BoundingBox(JSONDTO):
 
 @dataclass(frozen=True)
 class DetectedReceipt(JSONDTO):
+    """quad: TL, TR, BR, BL relative to the text, clockwise with image y down.
+
+    rotation_degrees: signed clockwise text angle, [-180, 180]; 270 is -90.
+    Geometry validation preserves any cyclic start, never sorts by frame axes.
+    """
     id: int
     bbox: BoundingBox
     quad: tuple[Point, ...]
