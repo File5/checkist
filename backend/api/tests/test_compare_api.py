@@ -7,6 +7,8 @@ from django.test.utils import CaptureQueriesContext
 from rest_framework.test import APIClient
 
 from api.tests import factories
+from api.tests.merge_factories import demo_groups, product
+from merges import demo
 from api.tests.factories import make_product, observe
 from catalog.models import Category, GenericProduct
 from catalog.units import BaseUnit, Unit
@@ -801,3 +803,56 @@ class RankAndReasonTests(CompareTestCase):
             self.get(alternatives_url(base))
         with self.assertNumQueries(6):
             self.get(comparison_url(self.generic))
+
+
+# --- ожидающее слияние дублей: поглощённые товары скрыты, формы ответов прежние ---
+MERGE_PIZZA = demo.GROUPS[1]
+MERGE_ABSORBED = [name for group in demo.GROUPS for name in group[1:]]
+
+
+@tag("integration")
+class PendingMergeCompareTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        demo_groups()
+        cls.target = product(MERGE_PIZZA[0])
+        cls.absorbed = {product(name).pk for name in MERGE_ABSORBED}
+
+    def ids(self, body):
+        return {row["product"]["id"] for row in body["results"]}
+
+    def test_alternatives_have_no_absorbed_products(self):
+        url = f"/api/products/{self.target.pk}/alternatives/?page_size=100"
+        with self.assertNumQueries(6):  # как без слияния
+            response = self.client.get(url)
+        self.assertEqual(response.status_code, 200, response.content)
+        body = response.json()
+        self.assertEqual(set(body), {
+            "base", "generic", "unit", "conversion", "groups", "count", "page", "page_size", "pages", "results",
+        })
+        self.assertEqual((body["count"], body["base"]), (22, {"id": self.target.pk, "name": MERGE_PIZZA[0]}))
+        self.assertFalse(self.ids(body) & self.absorbed)
+        base = body["results"][0]
+        self.assertTrue(base["product"]["is_base"])
+        self.assertEqual([offer["observations"] for offer in base["offers"]], [4])
+        category = self.client.get(url + "&scope=category").json()
+        self.assertEqual(category["count"], 23)
+        self.assertFalse(self.ids(category) & self.absorbed)
+
+    def test_absorbed_base_product_is_not_found(self):
+        for pk in sorted(self.absorbed):
+            with self.subTest(pk=pk), self.assertNumQueries(1):
+                response = self.client.get(f"/api/products/{pk}/alternatives/")
+                self.assertEqual(response.status_code, 404)
+                self.assertEqual(response.json(), {"error": {"code": "not_found", "message": "Не найдено."}})
+
+    def test_generic_comparison_has_no_absorbed_products(self):
+        url = f"/api/generic-products/{self.target.generic_id}/comparison/?page_size=100"
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200, response.content)
+        body = response.json()
+        self.assertEqual((body["count"], body["base"]), (22, None))
+        self.assertFalse(self.ids(body) & self.absorbed)
+        other = GenericProduct.objects.get(name=demo.OTHER_MILK_GENERIC)
+        empty = self.client.get(f"/api/generic-products/{other.pk}/comparison/").json()
+        self.assertEqual((empty["count"], empty["results"], empty["groups"]), (0, [], []))

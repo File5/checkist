@@ -5,6 +5,8 @@ from decimal import Decimal
 from django.test import TestCase, tag
 
 from api.tests import factories
+from api.tests.merge_factories import demo_groups, product
+from merges import demo
 from api.tests.factories import observe
 from catalog.units import Unit
 from receipts.models import Receipt, ReceiptDiscount, ReceiptLine
@@ -690,3 +692,36 @@ class PriceSummaryRangeTests(SummaryTestCase):
         eur, rub = self.groups(self.product, interval="day", date_to=days[499].isoformat())
         self.assertEqual((len(eur["buckets"]), len(rub["buckets"])), (500, 500))
         self.assertEqual(len(self.group(self.product, interval="day", date_to=last_of_600, currency="RUB")["buckets"]), 600)
+
+
+# --- ожидающее слияние дублей: поглощённые товары скрыты, формы ответов прежние ---
+MERGE_PIZZA = demo.GROUPS[1]
+
+
+@tag("integration")
+class PendingMergePriceSummaryTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        demo_groups()
+        cls.target = product(MERGE_PIZZA[0])
+        cls.absorbed = [product(name).pk for name in MERGE_PIZZA[1:]]
+
+    def test_surviving_product_summarises_every_purchase_of_the_group(self):
+        with self.assertNumQueries(2):  # товар и сводка — как без слияния
+            response = self.client.get(f"/api/products/{self.target.pk}/prices/summary/")
+        self.assertEqual(response.status_code, 200, response.content)
+        body = response.json()
+        self.assertEqual(set(body), {"product", "price", "group_by", "interval", "groups"})
+        self.assertEqual(len(body["groups"]), 1)
+        group = body["groups"][0]
+        self.assertEqual((group["country"], group["currency"], group["unit"]), ("DE", "EUR", "pcs"))
+        self.assertEqual(group["total"]["count"], 4)
+        self.assertEqual(group["total"]["first"], {"price": "3.4900", "purchased_on": "2026-06-09"})
+        self.assertEqual(group["total"]["last"], {"price": "3.4900", "purchased_on": "2026-10-01"})
+
+    def test_absorbed_product_is_not_found(self):
+        for pk in self.absorbed:
+            with self.subTest(pk=pk), self.assertNumQueries(1):  # только товар
+                response = self.client.get(f"/api/products/{pk}/prices/summary/")
+                self.assertEqual(response.status_code, 404)
+                self.assertEqual(response.json(), {"error": {"code": "not_found", "message": "Не найдено."}})
