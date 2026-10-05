@@ -99,3 +99,17 @@ def lidl_format_payload():
     # Regenerate evidence for the changed nullable values and line positions.
     data["fields"] = observation(copy.deepcopy(data)).to_dict()["fields"]
     return data
+
+
+def sparse_lidl_format_payload():
+    """Real-response evidence shape: headers and two names, no line numbers.
+
+    Keep the raw multiline address/Z offsets and fictional values of the
+    fully evidenced fixture. Call validate_observation directly: observation()
+    would silently repopulate evidence and hide the regression.
+    """
+    data = lidl_format_payload()
+    data["fields"] = [field for field in data["fields"] if
+                      not field["path"].startswith(("/lines/", "/discounts/", "/taxes/"))
+                      or field["path"] in {"/lines/1/raw_name", "/lines/2/raw_name"}]
+    return data
