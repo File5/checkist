@@ -3,23 +3,131 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import timedelta
+from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import Event
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.db import connection, connections
-from django.test import TransactionTestCase, override_settings, tag
+from django.test import SimpleTestCase, TransactionTestCase, override_settings, tag
+from django.utils import timezone
+from PIL import Image
 
 from catalog.models import Product
 from receipts.models import Receipt, ReceiptLine
 from recognition import queue, storage
 from recognition.demo import seed_demo
+from recognition.dto import PreparedImage
+from recognition.images import ImageError
 from recognition.importer import import_receipt
 from recognition.models import ProcessingJob, ReceiptImage
 from recognition.pipeline import JobPipeline, process_job
 from recognition.providers.base import ProviderError
-from recognition.providers.fake import FakeProvider
+from recognition.providers.fake import FakeProvider, detection_payload
+from recognition.schema_validation import validate_detection
+from recognition.statuses import AttemptPhase
 from stores.models import Country, Currency
+
+
+def six_receipt_detection(image):
+    """Detect geometry from the 2880x2160 six-paper response of 05.10.2026."""
+    papers = (
+        ((60, 328, 541, 1808), ((75, 382), (467, 328), (541, 1778), (60, 1808)), -4),
+        ((544, 382, 996, 1730), ((567, 387), (982, 384), (994, 1713), (553, 1730)), -1),
+        ((976, 333, 1443, 1791), ((1034, 333), (1431, 350), (1440, 1786), (1014, 1791)), 1),
+        ((1434, 372, 1878, 1756), ((1457, 374), (1863, 402), (1875, 1754), (1437, 1750)), 1),
+        ((1878, 410, 2313, 1426), ((1878, 410), (2278, 423), (2313, 1419), (1886, 1426)), 0),
+        ((2321, 423, 2773, 1791), ((2341, 426), (2724, 428), (2742, 1788), (2324, 1769)), 2),
+    )
+    data = detection_payload(image, 0)
+    data["receipt_count"] = len(papers)
+    for position, (box, quad, rotation) in enumerate(papers, 1):
+        x1, y1, x2, y2 = box
+        data["receipts"].append({
+            "id": position,
+            "bbox": dict(x_min=x1 / 2880, y_min=y1 / 2160, x_max=x2 / 2880, y_max=y2 / 2160),
+            "quad": [dict(x=x / 2880, y=y / 2160) for x, y in quad],
+            "rotation_degrees": rotation, "confidence": 0.96, "clipped": False,
+        })
+    return validate_detection(data, width=image.width, height=image.height)
+
+
+class PipelineDetectionTests(SimpleTestCase):
+    def setUp(self):
+        now = timezone.now()
+        job = SimpleNamespace(run_token="detect-geometry", processing_deadline_at=now + timedelta(minutes=1))
+        with patch("recognition.pipeline.queue.db_now", return_value=now):
+            self.pipeline = JobPipeline(job, None)
+        self.image = PreparedImage(Path("synthetic.png"), "a" * 64, 2880, 2160)
+
+    def validate_boxes(self, boxes):
+        data = detection_payload(self.image, 0)
+        data["receipt_count"] = len(boxes)
+        for position, (x1, y1, x2, y2) in enumerate(boxes, 1):
+            data["receipts"].append({
+                "id": position, "bbox": dict(x_min=x1, y_min=y1, x_max=x2, y_max=y2),
+                "quad": [dict(x=x1, y=y1), dict(x=x2, y=y1), dict(x=x2, y=y2), dict(x=x1, y=y2)],
+                "rotation_degrees": 0, "confidence": 1, "clipped": False,
+            })
+        detection = validate_detection(data, width=self.image.width, height=self.image.height)
+        return self.pipeline._validate(AttemptPhase.DETECT, detection, self.image)
+
+    def test_real_six_receipt_geometry_passes_without_changing_quads_or_rotations(self):
+        detection = six_receipt_detection(self.image)
+        validated = self.pipeline._validate(AttemptPhase.DETECT, detection, self.image)
+        self.assertEqual(validated.receipt_count, 6)
+        self.assertEqual(len(validated.receipts), 6)
+        self.assertEqual(validated, detection)
+
+    def test_disjoint_and_touching_boxes_pass(self):
+        first = (.1, .1, .4, .4)
+        for second in ((.5, .1, .8, .4), (.4, .1, .7, .4), (.1, .4, .4, .7),
+                       (.4, .4, .7, .7), (.1, .5, .4, .8)):
+            with self.subTest(second=second):
+                self.assertEqual(self.validate_boxes((first, second)).receipt_count, 2)
+
+    def test_nine_and_twenty_pixel_overlap_pass_in_either_order(self):
+        for overlap in (9, 20):
+            first = (100 / 2880, 100 / 2160, 550 / 2880, 1500 / 2160)
+            second = ((550 - overlap) / 2880, 100 / 2160, (1000 - overlap) / 2880, 1500 / 2160)
+            for boxes in ((first, second), (second, first)):
+                with self.subTest(overlap=overlap, boxes=boxes):
+                    self.assertEqual(self.validate_boxes(boxes).receipt_count, 2)
+
+    def test_ten_percent_boundary_is_inclusive(self):
+        # Binary-exact coordinates give an exact 10% area overlap at .34375.
+        first = (.0625, .125, .375, .875)
+        for start, allowed in ((.34375 + 1e-6, True), (.34375, True), (.34375 - 1e-6, False)):
+            second = (start, .125, start + .3125, .875)
+            for boxes in ((first, second), (second, first)):
+                with self.subTest(start=start, boxes=boxes):
+                    if allowed:
+                        self.assertEqual(self.validate_boxes(boxes).receipt_count, 2)
+                    else:
+                        with self.assertRaises(ImageError) as error:
+                            self.validate_boxes(boxes)
+                        self.assertEqual(error.exception.code, "geometry_requires_review")
+
+    def test_overlap_uses_area_in_both_axes(self):
+        boxes = ((.1, .1, .5, .5), (.3, .48, .7, .88))
+        self.assertEqual(self.validate_boxes(boxes).receipt_count, 2)
+
+    def test_duplicate_nearly_duplicate_nested_and_substantial_overlap_are_rejected(self):
+        cases = (
+            ((.1, .1, .5, .9), (.1, .1, .5, .9)),
+            ((.1, .1, .5, .9), (.11, .11, .51, .91)),
+            ((0, 0, 1, 1), (.1, .1, .2, .2)),
+            ((0, 0, 1, 1), (0, 0, .1, .1)),
+            # Only 0.6% of the larger box, but 30% of the smaller one.
+            ((.1, .1, .2, .2), (.17, .05, .8, .8)),
+        )
+        for first, second in cases:
+            for boxes in ((first, second), (second, first)):
+                with self.subTest(boxes=boxes):
+                    with self.assertRaises(ImageError) as error:
+                        self.validate_boxes(boxes)
+                    self.assertEqual(error.exception.code, "geometry_requires_review")
 
 
 def threaded_process(job, provider):
@@ -161,7 +269,7 @@ class PipelineTests(PipelineEnvironment):
         self.assertEqual((result.status, result.error_code), ("failed", "invalid_output"))
         self.assertEqual(result.attempts.count(), 1)
 
-    def test_overlap_keeps_private_detect_for_review_and_imports_nothing(self):
+    def test_duplicate_boxes_keep_private_detect_for_review_and_create_no_crops(self):
         class Overlap(FakeProvider):
             def detect(self, image, run):
                 result = super().detect(image, run)
@@ -169,7 +277,31 @@ class PipelineTests(PipelineEnvironment):
         result = self.process(provider=Overlap())
         self.assertEqual((result.status, result.error_code), ("failed", "geometry_requires_review"))
         self.assertIsNotNone(result.attempts.get().raw_payload)
+        self.assertEqual(result.images.count(), 0)
         self.assertEqual(Receipt.objects.count(), 0)
+
+    def test_small_overlap_creates_and_recognizes_all_six_crops(self):
+        class SixPapers(FakeProvider):
+            def detect(self, image, run):
+                run.check()
+                return six_receipt_detection(image)
+
+        path = Path(self.media.name) / "six-source.png"
+        with Image.new("RGB", (2880, 2160), "white") as image:
+            image.save(path)
+        self.new_job(path)
+        self.job = queue.claim_job()
+        result = process_job(self.job, provider=SixPapers())
+        self.assertEqual((result.status, result.detected_count, result.completed_count), ("succeeded", 6, 6))
+        self.assertEqual(result.images.count(), 6)
+        self.assertEqual(result.attempts.filter(phase="recognize", status="succeeded").count(), 6)
+        expected = six_receipt_detection(PreparedImage(path, "a" * 64, 2880, 2160))
+        for image, receipt in zip(result.images.order_by("position"), expected.receipts, strict=True):
+            self.assertEqual(image.bbox, receipt.bbox.to_dict())
+            self.assertEqual(image.quad, [point.to_dict() for point in receipt.quad])
+            self.assertEqual(image.rotation_degrees, receipt.rotation_degrees)
+            self.assertTrue(storage.media_path(image.file.name).is_file())
+            self.assertIsNotNone(image.normalized_result)
 
     def test_clipped_readable_crop_imports_with_nonblocking_notice(self):
         class Clipped(FakeProvider):

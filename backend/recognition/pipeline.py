@@ -25,6 +25,9 @@ from .statuses import (
 )
 
 
+MAX_RECEIPT_BBOX_OVERLAP_FRACTION = 0.10
+
+
 def _issue(code):
     return {"code": code, "field": "/", "message": "Не удалось завершить обработку изображения."}
 
@@ -98,11 +101,16 @@ class JobPipeline:
             boxes = []
             for receipt in value.receipts:
                 box, _, _ = validate_geometry(receipt.bbox.to_dict(), [p.to_dict() for p in receipt.quad], receipt.rotation_degrees)
-                # Overlapping paper boxes can mix two receipts. Keep the detect
-                # payload for review instead of silently importing mixed crops.
-                if any(min(box["x_max"], old["x_max"]) > max(box["x_min"], old["x_min"])
-                       and min(box["y_max"], old["y_max"]) > max(box["y_min"], old["y_min"]) for old in boxes):
-                    raise ImageError("geometry_requires_review")
+                # Loose axis-aligned boxes of adjacent papers may overlap a little.
+                # Above 10% of the smaller box, keep detect for review to avoid
+                # mixed crops. The smaller area also rejects duplicates/containment.
+                area = (box["x_max"] - box["x_min"]) * (box["y_max"] - box["y_min"])
+                for old in boxes:
+                    overlap_width = max(0, min(box["x_max"], old["x_max"]) - max(box["x_min"], old["x_min"]))
+                    overlap_height = max(0, min(box["y_max"], old["y_max"]) - max(box["y_min"], old["y_min"]))
+                    old_area = (old["x_max"] - old["x_min"]) * (old["y_max"] - old["y_min"])
+                    if overlap_width * overlap_height > MAX_RECEIPT_BBOX_OVERLAP_FRACTION * min(area, old_area):
+                        raise ImageError("geometry_requires_review")
                 boxes.append(box)
             return value
         if not isinstance(result, ReceiptObservation):
