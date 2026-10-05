@@ -7,7 +7,7 @@ from recognition.dto import FieldObservation
 from recognition.import_policy import prepare_observation
 from recognition.importer import _domain_observation, _preflight
 from recognition.providers.codex_cli import PACKAGE_ROOT
-from recognition.providers.fake import receipt_payload
+from recognition.providers.fake import receipt_payload, tax_evidence_payload
 from recognition.resolution import ResolutionError
 from recognition.schema_validation import _schema, validate_observation
 from .import_fixtures import observation, sparse_lidl_format_payload
@@ -300,3 +300,36 @@ class ImportPolicyTests(SimpleTestCase):
         self.assertIsNone(effective.fiscal.register_serial)
         self.assertIsNone(effective.fiscal.tse_transaction)
         self.assertEqual(len(issues), 2)
+
+    def test_prompt_requires_concrete_observed_tax_paths_and_code_link(self):
+        prompt = " ".join((PACKAGE_ROOT / "prompts/receipt.txt").read_text(encoding="utf-8").split())
+        for path in ("/lines/N/tax_rate/kind", "/lines/N/tax_rate/rate", "/taxes/N/tax_rate/kind",
+                     "/taxes/N/tax_rate/rate", "/lines/N/tax_code", "/taxes/N/tax_code",
+                     "/taxes/N/net", "/taxes/N/tax", "/taxes/N/gross"):
+            self.assertIn(path, prompt)
+        for text in ("observed fields entries on their concrete paths", "kind=exempt, rate=null",
+                     "exactly one tax table row has that code with a rate",
+                     "tax_rate kind and rate are null with no observed entries",
+                     "ambiguous or unreadable entry, never a guessed rate", "No wildcard paths",
+                     "Return only schema v2 JSON"):
+            self.assertIn(text, prompt)
+
+    def test_tax_evidence_scenarios_keep_strict_rate_policy(self):
+        details = ["/receipt_number", "/fiscal/signature"]
+        tax_paths = [f"/lines/{i}/tax_rate" for i in range(25)] + ["/taxes/0", "/taxes/1"]
+        for tax_evidence, expected in ((False, details + tax_paths), (True, details)):
+            with self.subTest(tax_evidence=tax_evidence):
+                obs = validate_observation(tax_evidence_payload(tax_evidence=tax_evidence))
+                effective, issues = prepare_observation(obs)
+                self.assertEqual([(v["code"], v["field"]) for v in issues], [("optional_omitted", p) for p in expected])
+                rates = [(line.tax_rate.kind, line.tax_rate.rate, line.tax_code) for line in effective.lines]
+                if tax_evidence:
+                    self.assertEqual(rates, [("vat", Decimal("7.00"), "A")] * 17 + [("vat", Decimal("19.00"), "B")] * 8)
+                    self.assertEqual(effective.taxes, obs.taxes)
+                else:
+                    self.assertEqual(rates, [(None, None, "A")] * 17 + [(None, None, "B")] * 8)
+                    self.assertEqual(effective.taxes, ())
+                # The audit copy keeps what the provider returned.
+                self.assertEqual([str(line.tax_rate.rate) for line in obs.lines], ["7.00"] * 17 + ["19.00"] * 8)
+                self.assertEqual(len(obs.taxes), 2)
+                self.assertEqual(_preflight(_domain_observation(effective)[0]), [])

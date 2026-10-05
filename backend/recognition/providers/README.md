@@ -84,12 +84,31 @@ in upload bodies. Codex failure never selects fake.
 | duplicate_weak | Repeated store/time/total with no fiscal identifiers |
 | pause_detect (pause), pause_recognize | Block selected stage until gate, cancel or deadline |
 | late_completion | Block both stages; released gate still checks cancel/deadline |
+| tax_id_present, tax_id_absent | One receipt without strong keys; only the seller tax ID completeness differs |
+| tax_evidence_missing | One 25-line TESTKAUF receipt, total 23.95; tax values without fields entries |
+| tax_evidence_present | Same receipt at another time/TSE transaction, with observed tax entries |
 
 `FakeProvider(scenario, gate=Event(), entered=Event())` supports deterministic
 tests: wait for entered, then set cancellation or gate. Without a gate, pause
 continues to cancellation/deadline. The fake never imports a receipt and does
 not simulate a database commit gate; that belongs in worker/importer tests.
 Crop `position` is 1-based; position 2 selects K1 receipt 2, others select 1.
+
+The two `tax_evidence_*` scenarios always detect one receipt and ignore the crop
+position. `tax_evidence_payload()` builds the shared fictional paper: TESTKAUF GmbH,
+Musterallee 7, 50667 Koeln, DE/EUR sale, no discounts; 17 x TESTARTIKEL (code A,
+7.00, 1.07), 4 x TESTGETRAENK (code B, 19.00, 1.19) each followed by its PFAND
+deposit (code B, 19.00, 0.25); tax table A net 17.00 tax 1.19, B net 4.84 tax 0.92,
+gross null; total 23.95. `receipt_number` is null/ambiguous and `fiscal.signature`
+null/unreadable; every other populated leaf is observed. `tax_evidence_missing`
+(11:05:00, TSE 550001) drops the fields entries of every `/lines/N/tax_rate/*` and
+`/taxes/*` path, keeping the values: the import succeeds with 25 lines without a
+rate, no tax rows and 29 `optional_omitted` notices. `tax_evidence_present`
+(11:20:00, TSE 550002) keeps them: 17 lines at 7 %, 8 at 19 %, two tax rows and 2
+notices. Different time and transaction make them two receipts of one store, so
+both can be uploaded into one database as different files; the second reuses the
+store and the 21 products. Select them like any other scenario with
+`recognition_worker --fake-scenario <name>` or `RECEIPT_OCR_FAKE_SCENARIO`.
 K1 bbox coordinates are scaled fractions of the actual image dimensions.
 For accurate visual demo crops, use the K1 synthetic single/double image layout.
 Fake cannot validate OCR quality on arbitrary photographs.
