@@ -4,7 +4,8 @@
 .receipt-panel form { display: grid; gap: 16px; min-width: 0; }
 .receipt-actions { display: flex; flex-wrap: wrap; gap: 12px; }
 .receipt-actions > * { max-width: 100%; text-align: center; }
-.receipt-primary { background: #246044; color: #fff; }
+.action-link.receipt-primary { background: #246044; color: #fff; }
+.action-link.receipt-primary:hover { background: #184d34; }
 .receipt-secondary { background: #fff; color: #246044; }
 .receipt-secondary:hover:not(:disabled) { background: #edf5ee; }
 .receipt-filter-grid, .receipt-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
