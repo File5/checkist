@@ -10,6 +10,7 @@ import { emptyProducts, resetFilters, withPage } from './catalog-state'
 import CatalogError from './CatalogError'
 import ProductList from './ProductList'
 import { usePendingMergeMarks } from '../merges/marks'
+import { usePendingClassificationMarks } from '../classification/marks'
 
 type Props = { state: CatalogRequestState<Page<Product>>; route: CatalogRoute; onRetry: () => void; childrenCount?: number }
 
@@ -18,6 +19,7 @@ export default function ProductsSection({ state, route, onRetry, childrenCount =
   const block = useLocalRequestFocus(state)
   // An independent request: its refusal leaves the list as it is, only without marks.
   const merges = usePendingMergeMarks()
+  const classifications = usePendingClassificationMarks()
 
   return <section ref={block} className="ck-catalog-results" aria-labelledby={id} aria-busy={state.kind === 'loading'}>
     <h2 id={id} data-request-focus-target tabIndex={-1}>{route.kind === 'category' ? 'Товары всей ветви' : route.query.q ? 'Результаты поиска' : 'Все товары'}</h2>
@@ -30,7 +32,7 @@ export default function ProductsSection({ state, route, onRetry, childrenCount =
           ? <Link className="action-link" to={resetFilters(route)}>Сбросить фильтры</Link> : undefined} />
       : <>
         <p className="ck-catalog-result-count" role="status">Найдено товаров: {state.data.count.toLocaleString('ru-RU')} · Страница {state.data.page.toLocaleString('ru-RU')} из {state.data.pages.toLocaleString('ru-RU')}</p>
-        <ProductList products={state.data.results} merges={merges} />
+        <ProductList products={state.data.results} merges={merges} classifications={classifications} />
         <Pagination page={state.data.page} pages={state.data.pages} buildPageHref={(page) => withPage(route, page)} label="Страницы товаров" />
       </>)}
   </section>
