@@ -91,7 +91,12 @@ describe('comparison block (Vitest/SSR, not browser acceptance)', () => {
     expect(products.match(/<a href="\/catalog\/products\/\d+">/g)).toEqual([24, 10, 21, 4, 17].map((id) => `<a href="/catalog/products/${id}">`))
     expect(text(products)).toContain('Demo Hähnchenbrust 600g 6,17 EUR/шт 7,8661 EUR/шт +27,49 % 19 шт 18 шт 117,23 EUR 141,59 EUR')
     expect(products.match(/<th scope="col"/g)).toHaveLength(8)
-    expect(eur).toMatch(/<div class="stats-table-scroll" role="region" aria-labelledby="[^"]+" tabindex="0">/)
+    // Both wide tables scroll inside a focusable region named by its heading: the terms and the products.
+    const regions = [...eur.matchAll(/<div class="stats-table-scroll" role="region" aria-labelledby="([^"]+)" tabindex="0">/g)].map((match) => match[1])
+    expect(regions).toHaveLength(2)
+    expect(eur.match(/<div class="stats-table-scroll"/g)).toHaveLength(2)
+    expect(eur).toContain(`<h5 id="${regions[0]}">Из чего сложилось изменение</h5>`)
+    expect(eur).toContain(`<h5 id="${regions[1]}">Товары, купленные в обоих периодах</h5>`)
   })
   it('keeps currencies apart and says so', () => {
     const markup = compare(loaded('compare-2020-2026.json'))

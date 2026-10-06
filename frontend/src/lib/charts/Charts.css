@@ -99,8 +99,10 @@
   padding: 8px 10px; border: 1px solid var(--ck-chart-axis); border-radius: 8px;
   background: var(--ck-chart-surface); box-shadow: 0 4px 16px #263e2a1f; font-size: 0.85rem; line-height: 1.3; pointer-events: none;
 }
-.ck-line-tooltip[data-side="right"] { transform: translateX(12px); }
-.ck-line-tooltip[data-side="left"] { transform: translateX(calc(-100% - 12px)); }
+/* The side decides the anchoring edge (inline `left` or `right`, see lineTooltipAnchor) and the gap is a margin,
+   not a transform: the width is then fitted to the room on that side of the crosshair and stays inside the plot. */
+.ck-line-tooltip[data-side="right"] { margin-left: 12px; }
+.ck-line-tooltip[data-side="left"] { margin-right: 12px; }
 .ck-line-tooltip-title { color: var(--ck-chart-muted); font-weight: 600; }
 .ck-line-tooltip-row { display: grid; grid-template-columns: 34px auto; column-gap: 8px; align-items: center; }
 .ck-line-tooltip-row > span { grid-column: 2; color: var(--ck-chart-muted); font-size: 0.8rem; }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  activeLineX, activePieKey, initialLineSelection, lineKeyCommand, lineReadout, lineSelectionReducer,
+  activeLineX, activePieKey, initialLineSelection, lineKeyCommand, lineReadout, lineSelectionReducer, lineTooltipAnchor,
   noPieHighlight, pieHighlightReducer, stepLineSelection,
 } from './selection'
 import type { LineSelection, LineSelectionAction, PieHighlight, PieHighlightAction } from './selection'
@@ -86,6 +86,19 @@ describe('line selection reducer', () => {
     expect(lineSelectionReducer(idle, { type: 'blur' })).toBe(idle)
     expect(lineSelectionReducer(idle, { type: 'pointer-leave' })).toBe(idle)
   })
+  it('keeps the point a finger tapped after it lifts, until another tap, Escape or blur', () => {
+    const tapped = line([{ type: 'pointer', x: xs[1], touch: true }])
+    expect(tapped).toMatchObject({ activeX: xs[1], source: 'touch' })
+    expect(lineSelectionReducer(tapped, { type: 'pointer', x: xs[1], touch: true })).toBe(tapped)
+    expect(lineSelectionReducer(tapped, { type: 'pointer-leave' })).toBe(tapped)
+    expect(line([{ type: 'pointer', x: xs[2], touch: true }, { type: 'pointer-leave' }], tapped)).toMatchObject({ activeX: xs[2], source: 'touch' })
+    expect(line([key('clear')], tapped).activeX).toBeNull()
+    expect(line([{ type: 'blur' }], tapped).activeX).toBeNull()
+    expect(line([key('previous')], tapped)).toMatchObject({ activeX: xs[0], source: 'keyboard' })
+    // A mouse on the same device takes the selection over and drops it on leaving, as before.
+    expect(line([{ type: 'pointer', x: xs[1] }], tapped)).toMatchObject({ activeX: xs[1], source: 'pointer' })
+    expect(line([{ type: 'pointer', x: xs[1] }, { type: 'pointer-leave' }], tapped).activeX).toBeNull()
+  })
   it('continues from the pointer position when the keyboard takes over', () => {
     expect(line([{ type: 'pointer', x: xs[1] }, key('next')])).toMatchObject({ activeX: xs[2], source: 'keyboard' })
   })
@@ -117,5 +130,31 @@ describe('line readout for the live region', () => {
   it('is empty without a selection and says so when no visible series has data', () => {
     expect(lineReadout(null, series, formatX)).toBe('')
     expect(lineReadout(xs[2], series, formatX)).toBe('месяц 03: нет данных')
+  })
+})
+
+describe('line tooltip anchor', () => {
+  it('hangs right of the crosshair in the left half, anchored by the left edge', () => {
+    expect(lineTooltipAnchor(64, 640)).toEqual({ side: 'right', style: { left: '10%' } })
+    expect(lineTooltipAnchor(320, 640)).toEqual({ side: 'right', style: { left: '50%' } })
+  })
+  it('hangs left of the crosshair in the right half, anchored by the right edge so the room is the left part of the plot', () => {
+    // Anchoring by `left` here would leave only the 11 % and 5 % right of the last point for the width.
+    expect(lineTooltipAnchor(569.6, 640)).toEqual({ side: 'left', style: { right: '11%' } })
+    expect(lineTooltipAnchor(304, 320)).toEqual({ side: 'left', style: { right: '5%' } })
+    expect(lineTooltipAnchor(321, 640)).toEqual({ side: 'left', style: { right: '49.84%' } })
+  })
+  it('always leaves at least half of the plot on the chosen side and never points outside it', () => {
+    for (const width of [240, 320, 640, 1200]) {
+      for (let step = 0; step <= 20; step += 1) {
+        const anchor = lineTooltipAnchor((width * step) / 20, width)
+        const offset = parseFloat('left' in anchor.style ? anchor.style.left : anchor.style.right)
+        expect(offset).toBeGreaterThanOrEqual(0)
+        expect(offset).toBeLessThanOrEqual(50)
+        expect(Object.keys(anchor.style)).toEqual([anchor.side === 'left' ? 'right' : 'left'])
+      }
+    }
+    expect(lineTooltipAnchor(700, 640)).toEqual({ side: 'left', style: { right: '0%' } })
+    expect(lineTooltipAnchor(-5, 640)).toEqual({ side: 'right', style: { left: '0%' } })
   })
 })
