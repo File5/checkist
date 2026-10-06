@@ -1,0 +1,6 @@
+.spending-preview { display: grid; gap: 40px; padding-block: 32px 64px; }
+.spending-preview-head { display: grid; gap: 14px; }
+.spending-preview-head h1 { font-size: 2rem; letter-spacing: -0.03em; }
+.spending-preview-case { display: grid; gap: 12px; min-width: 0; }
+.spending-preview-title { padding-top: 20px; border-top: 2px solid #246044; }
+.spending-preview-note { color: #526158; }
