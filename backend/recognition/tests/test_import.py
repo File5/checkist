@@ -17,7 +17,7 @@ from recognition import importer
 from recognition.importer import ImportBusy, import_receipt
 from recognition.dto import FieldObservation
 from recognition.models import ProcessingJob, ReceiptImage
-from recognition.providers.fake import receipt_payload
+from recognition.providers.fake import receipt_payload, tax_evidence_payload
 from recognition.queue import FenceLost, db_now, request_cancel
 from recognition.resolution import resolve_country, resolve_store
 from stores.models import Country, Currency, Merchant, Store, TaxRate
@@ -891,6 +891,61 @@ class ImportTests(TestCase):
         self.assertEqual(result.issues[0]["code"], "import_failed")
         self.assertNotIn("Private", str(result.issues))
         self.assert_no_domain()
+
+    def assert_tax_evidence_import(self, *, tax_evidence, receipts):
+        result = self.run_import_observation(validate_observation(tax_evidence_payload(tax_evidence=tax_evidence)))
+        self.assertEqual((result.outcome, result.image.status, result.image.import_effect),
+                         ("created", "imported", "created"))
+        expected = ["/receipt_number", "/fiscal/signature"]
+        if not tax_evidence:
+            expected += [f"/lines/{i}/tax_rate" for i in range(25)] + ["/taxes/0", "/taxes/1"]
+        result.image.refresh_from_db()
+        self.assertEqual(result.image.issues, result.issues)
+        self.assertEqual([(v["code"], v["field"]) for v in result.image.issues],
+                         [("optional_omitted", path) for path in expected])
+        receipt = result.receipt
+        self.assertEqual((receipt.total, receipt.receipt_number), (Decimal("23.95"), ""))
+        self.assertNotIn("signature", receipt.fiscal)
+        self.assertEqual(validate_receipt(receipt), [])
+        lines = list(receipt.lines.select_related("tax_rate").order_by("position"))
+        self.assertEqual([line.kind for line in lines].count("product"), 21)
+        self.assertEqual([line.kind for line in lines].count("deposit"), 4)
+        self.assertEqual(len(lines), 25)
+        self.assertEqual([line.tax_code for line in lines], ["A"] * 17 + ["B"] * 8)
+        self.assertEqual([line.tax_rate and (line.tax_rate.kind, line.tax_rate.rate) for line in lines],
+                         [("vat", Decimal("7.00"))] * 17 + [("vat", Decimal("19.00"))] * 8 if tax_evidence else [None] * 25)
+        for line in lines:
+            if line.kind == "deposit":
+                self.assertEqual((line.parent.position, line.product_id), (line.position - 1, None))
+            else:
+                self.assertIsNotNone(line.product_id)
+        self.assertEqual(sorted((t.tax_code, t.tax_rate.rate, t.net, t.tax, t.gross) for t in receipt.taxes.all()),
+                         [("A", Decimal("7.00"), Decimal("17.00"), Decimal("1.19"), Decimal("18.19")),
+                          ("B", Decimal("19.00"), Decimal("4.84"), Decimal("0.92"), Decimal("5.76"))] if tax_evidence else [])
+        self.assertEqual(result.image.normalized_result, validate_observation(
+            tax_evidence_payload(tax_evidence=tax_evidence)).to_dict())
+        self.assertEqual((Receipt.objects.count(), ReceiptLine.objects.count(), ReceiptTax.objects.count()), receipts)
+        self.assertEqual((Merchant.objects.count(), Store.objects.count(), Product.objects.count(),
+                          ProductAlias.objects.count()), (1, 1, 21, 21))
+        return receipt
+
+    def test_tax_evidence_missing_imports_lines_without_rates_or_tax_rows(self):
+        self.assert_tax_evidence_import(tax_evidence=False, receipts=(1, 25, 0))
+
+    def test_tax_evidence_present_imports_rates_and_tax_rows(self):
+        self.assert_tax_evidence_import(tax_evidence=True, receipts=(1, 25, 2))
+
+    def test_tax_evidence_present_after_missing_reuses_store_and_products_and_keeps_first_receipt(self):
+        first = self.assert_tax_evidence_import(tax_evidence=False, receipts=(1, 25, 0))
+        products = set(Product.objects.values_list("pk", flat=True))
+        second = self.assert_tax_evidence_import(tax_evidence=True, receipts=(2, 50, 2))
+        self.assertNotEqual(first.pk, second.pk)
+        self.assertEqual(first.store_id, second.store_id)
+        self.assertEqual(set(Product.objects.values_list("pk", flat=True)), products)
+        self.assertEqual(set(second.lines.exclude(product=None).values_list("product_id", flat=True)), products)
+        # The earlier receipt is not rewritten by the later, better evidenced one.
+        self.assertEqual(first.lines.filter(tax_rate=None).count(), 25)
+        self.assertEqual(first.taxes.count(), 0)
 
 
 @tag("integration")

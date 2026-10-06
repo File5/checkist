@@ -28,3 +28,14 @@ Use ambiguous only when the printed value has multiple plausible readings. A cle
 printed Register identifier is register_serial, and TSE Transaktion is tse_transaction;
 copy each exactly, with observed evidence, even on synthetic test receipts. If an
 optional fiscal/tax/product identifier cannot be read confidently, return null.
+Tax values are used only with observed fields entries on their concrete paths. For every
+line with a printed or linked tax rate add /lines/N/tax_rate/kind and /lines/N/tax_rate/rate;
+for every printed tax table row add /taxes/N/tax_rate/kind and /taxes/N/tax_rate/rate.
+An exempt rate has kind=exempt, rate=null: add only the kind entry, no observed rate entry.
+Also add observed entries for a printed /lines/N/tax_code and /taxes/N/tax_code, and for
+each printed /taxes/N/net, /taxes/N/tax and /taxes/N/gross. N is the zero-based array index.
+A line tax rate may be taken from the tax table only when a tax code (e.g. A or B) is
+printed on that line and exactly one tax table row has that code with a rate: then the
+line's kind and rate are observed. Otherwise the line's tax_rate kind and rate are null
+with no observed entries; keep the printed tax_code. An uncertain tax reading is null
+with an ambiguous or unreadable entry, never a guessed rate.

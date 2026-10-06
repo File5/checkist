@@ -16,8 +16,9 @@ from recognition.dto import PreparedImage, PreparedReceiptImage
 from recognition.process_supervisor import ProcessResult
 from recognition.providers import ProviderError, RunContext, get_provider
 from recognition.providers.codex_cli import CodexCLIProvider, CodexConfig, build_argv, child_environment
-from recognition.providers.fake import FakeProvider, detection_payload, receipt_payload
-from recognition.schema_validation import observation_issues
+from recognition.management.commands.recognition_worker import Command as WorkerCommand
+from recognition.providers.fake import FakeProvider, detection_payload, receipt_payload, tax_evidence_payload
+from recognition.schema_validation import observation_issues, validate_observation
 
 
 class StubProcess:
@@ -290,3 +291,60 @@ class ProviderTests(SimpleTestCase):
         second=provider.recognize(second_crop,self.run_context())
         self.assertEqual(observation_issues(first),[])
         self.assertIn("missing_required",[i["code"] for i in observation_issues(second)])
+
+    def test_tax_evidence_scenarios_are_one_valid_receipt_differing_in_evidence_and_identity(self):
+        missing, present = (FakeProvider(name).recognize(self.crop, self.run_context())
+                            for name in ("tax_evidence_missing", "tax_evidence_present"))
+        for name, obs in (("tax_evidence_missing", missing), ("tax_evidence_present", present)):
+            with self.subTest(scenario=name):
+                self.assertEqual(FakeProvider(name).detect(self.image, self.run_context()).receipt_count, 1)
+                self.assertEqual(obs, validate_observation(tax_evidence_payload(tax_evidence=obs is present)))
+                self.assertEqual(observation_issues(obs), [])
+                self.assertEqual((obs.merchant.legal_name, obs.store.name, obs.store.address_raw, obs.store.country_code),
+                                 ("TESTKAUF GmbH", "TESTKAUF", "Musterallee 7, 50667 Koeln", "DE"))
+                self.assertEqual((obs.operation, obs.currency_code, obs.discounts, str(obs.total)), ("sale", "EUR", (), "23.95"))
+                self.assertEqual([line.position for line in obs.lines], list(range(1, 26)))
+                self.assertEqual([line.kind for line in obs.lines].count("product"), 21)
+                self.assertEqual({(line.raw_name[:12], line.kind, line.tax_code, str(line.tax_rate.rate), str(line.amount),
+                                   str(line.quantity), line.unit) for line in obs.lines},
+                                 {("TESTARTIKEL ", "product", "A", "7.00", "1.07", "1.000", "pcs"),
+                                  ("TESTGETRAENK", "product", "B", "19.00", "1.19", "1.000", "pcs"),
+                                  ("PFAND zu TES", "deposit", "B", "19.00", "0.25", "1.000", "pcs")})
+                for line in obs.lines:
+                    if line.kind == "deposit":
+                        parent = obs.lines[line.parent_position - 1]
+                        self.assertEqual(line.raw_name, "PFAND zu " + parent.raw_name)
+                    else:
+                        self.assertIsNone(line.parent_position)
+                self.assertEqual(sum(line.amount for line in obs.lines), obs.total)
+                self.assertEqual([(t.tax_code, str(t.tax_rate.rate), str(t.net), str(t.tax), t.gross) for t in obs.taxes],
+                                 [("A", "7.00", "17.00", "1.19", None), ("B", "19.00", "4.84", "0.92", None)])
+                self.assertEqual(sum(t.net + t.tax for t in obs.taxes), obs.total)
+                self.assertEqual((obs.receipt_number, obs.fiscal.signature), (None, None))
+                evidence = {f.path: f.status for f in obs.fields}
+                self.assertEqual((evidence["/receipt_number"], evidence["/fiscal/signature"]), ("ambiguous", "unreadable"))
+                self.assertEqual({s for p, s in evidence.items() if p not in {"/receipt_number", "/fiscal/signature"}},
+                                 {"observed"})
+                self.assertEqual(len(evidence), len(obs.fields))
+        tax_paths = {f"/lines/{i}/tax_rate/{key}" for i in range(25) for key in ("kind", "rate")} | {
+            f"/taxes/{i}/{key}" for i in range(2) for key in ("tax_rate/kind", "tax_rate/rate", "tax_code", "net", "tax")}
+        self.assertEqual({f.path for f in present.fields} - {f.path for f in missing.fields}, tax_paths)
+        self.assertEqual({f.path for f in missing.fields} - {f.path for f in present.fields}, set())
+        self.assertTrue({f"/lines/{i}/tax_code" for i in range(25)} <= {f.path for f in missing.fields})
+        # Same paper apart from identity: two receipts of one shop can live in one database.
+        self.assertNotEqual(missing.local_time, present.local_time)
+        self.assertNotEqual(missing.fiscal.tse_transaction, present.fiscal.tse_transaction)
+        self.assertEqual(replace(missing, fields=(), local_time=None, timestamps=None, fiscal=None),
+                         replace(present, fields=(), local_time=None, timestamps=None, fiscal=None))
+
+    def test_tax_evidence_scenarios_are_selectable_by_setting_argument_and_worker_option(self):
+        for name, time_printed in (("tax_evidence_missing", "11:05:00"), ("tax_evidence_present", "11:20:00")):
+            with self.subTest(scenario=name):
+                with override_settings(RECEIPT_OCR_PROVIDER="fake", RECEIPT_OCR_FAKE_SCENARIO=name):
+                    configured = get_provider().recognize(self.crop, self.run_context())
+                with override_settings(RECEIPT_OCR_PROVIDER="fake"):
+                    explicit = get_provider(scenario=name).recognize(self.crop, self.run_context())
+                self.assertEqual(configured, explicit)
+                self.assertEqual(configured.local_time, time_printed)
+                parser = WorkerCommand().create_parser("manage.py", "recognition_worker")
+                self.assertEqual(parser.parse_args(["--fake-scenario", name]).fake_scenario, name)

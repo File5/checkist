@@ -27,7 +27,12 @@ export type JobProgress = {
 }
 export type JobActions = { can_cancel: boolean; can_retry: boolean }
 export type RecognitionError = { code: RecognitionCode; message: string }
-export type RecognitionIssue = RecognitionError & { field: string }
+export const issueSeverities = ['info', 'warning', 'error'] as const
+export type IssueSeverity = typeof issueSeverities[number]
+/** entity/attribute are closed lists on the server; an unlisted slug is displayed as unknown. */
+export type IssueContext = { entity: string; index: number | null; position: number | null; attribute: string | null }
+/** reason/severity/context come all together or, from an older server, not at all. */
+export type RecognitionIssue = RecognitionError & { field: string; reason?: string; severity?: IssueSeverity; context?: IssueContext }
 export type JobItem = { image_id: number; position: number; status: ReceiptImageStatus; receipt_id: number | null }
 /** List projection. The detail and mutation responses add items. */
 export type Job = {

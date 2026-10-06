@@ -27,7 +27,15 @@
         {
           "code": "missing_required",
           "field": "/lines/0/quantity",
-          "message": "Не удалось прочитать обязательное поле."
+          "message": "Не удалось прочитать обязательное поле.",
+          "reason": "missing_required",
+          "severity": "error",
+          "context": {
+            "entity": "line",
+            "index": 0,
+            "position": 1,
+            "attribute": "quantity"
+          }
         }
       ],
       "normalized_result": {
