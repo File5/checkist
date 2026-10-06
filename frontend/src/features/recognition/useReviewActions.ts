@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
 import { confirmReceiptImage, getRecognitionCsrf } from '../../api/recognition'
-import { createReviewActions } from './review-actions'
+import { createReviewActions, reviewFocusTarget } from './review-actions'
 import type { ReviewActionState } from './review-actions'
 
 export function useReviewActions(lifecycle: Parameters<typeof createReviewActions>[2]) {
@@ -14,8 +14,8 @@ export function useReviewActions(lifecycle: Parameters<typeof createReviewAction
 }
 export type ReviewControl = ReturnType<typeof useReviewActions>
 
-/** The pressed button is disabled during its request and disappears with the form after a success:
- * give focus back to it, or to the result message when it is gone. Same rule as useActionFocus of merges.
+/** Applies reviewFocusTarget to the document. The cards are focus owners (data-request-focus-own),
+ * so the tracker of the surrounding request block does not move this focus to its heading.
  */
 export function useReviewFocus<T extends HTMLElement>(state: ReviewActionState) {
   const trigger = useRef<Element | null>(null)
@@ -26,10 +26,10 @@ export function useReviewFocus<T extends HTMLElement>(state: ReviewActionState) 
     const pressed = trigger.current
     trigger.current = null
     const active = document.activeElement
-    // The person moved on while waiting: never take focus from their new place.
-    if (active && active !== document.body && active !== pressed) return
-    if (pressed instanceof HTMLElement && pressed.isConnected && !pressed.matches(':disabled')) pressed.focus()
-    else result.current?.focus()
+    const available = pressed instanceof HTMLElement && pressed.isConnected && !pressed.matches(':disabled')
+    const target = reviewFocusTarget(!active || active === document.body ? 'body' : active === pressed ? 'pressed' : 'elsewhere', available)
+    if (target === 'pressed' && pressed instanceof HTMLElement) pressed.focus()
+    else if (target === 'result') result.current?.focus()
   }, [state])
   return { remember, result }
 }

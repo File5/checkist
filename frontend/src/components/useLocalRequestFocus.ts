@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef } from 'react'
-import { createLocalRequestFocus } from './local-request-focus'
+import { createLocalRequestFocus, insideLocalBlock } from './local-request-focus'
 import type { LocalRequestPhase } from './local-request-focus'
 
 /** Keep the ref's block and its data-request-focus-target mounted across all states. */
@@ -11,7 +11,7 @@ export function useLocalRequestFocus<T extends HTMLElement = HTMLElement>(state:
     if (!scope) return
     const local = createLocalRequestFocus<Element>({
       active: () => document.activeElement ?? document.body,
-      inside: (element) => scope.contains(element),
+      inside: (element) => insideLocalBlock<Element>(scope, element),
       body: (element) => element === document.body,
       available: (element) => element.isConnected && !element.matches(':disabled'),
       isRetry: (element) => element.hasAttribute('data-request-retry'),

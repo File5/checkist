@@ -165,9 +165,8 @@ try {
   /** The card of a crop in a state that only the reducer of the page reaches: the same components, put together here. */
   const formCard = (cut, state, references, message) => h('ol', { className: 'ck-rec-list' }, h('li', { className: 'ck-rec-card' },
     h('h3', null, `Чек ${cut.position} · Требует проверки`),
-    message && h('p', { role: 'status', className: 'ck-rec-result ck-rec-result-failed' }, message),
     h(ui.Issues, { issues: state.issues, status: 'needs_review' }),
-    h(ui.ReviewForm, { imageId: cut.id, state, dispatch: () => {}, countries: references, pending: false, onConfirm: () => {} })))
+    h(ui.ReviewForm, { imageId: cut.id, state, dispatch: () => {}, countries: references, pending: false, refusal: message, onConfirm: () => {} })))
   const edit = (state, ...edits) => edits.reduce(review.reviewReducer, state)
   /** The body exactly as the form would send it; every body is checked against the client's copy of the contract. */
   const body = (state, valid = true) => {

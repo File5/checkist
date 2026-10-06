@@ -87,11 +87,13 @@ export type ReviewFormProps = {
   pending: boolean
   /** Why the confirmation cannot be sent now; undefined when it can. */
   unavailable?: string
+  /** Text of the last refused confirmation of this crop: shown and announced next to the button. */
+  refusal?: string
   onConfirm: () => void
 }
 
 /** Correction form of one needs_review crop. No <form>: Enter in a field must not save a receipt by accident. */
-export default function ReviewForm({ imageId, state, dispatch, countries, countriesFailed = false, onCountriesRetry, pending, unavailable, onConfirm }: ReviewFormProps) {
+export default function ReviewForm({ imageId, state, dispatch, countries, countriesFailed = false, onCountriesRetry, pending, unavailable, refusal, onConfirm }: ReviewFormProps) {
   const dom = useCallback((field: string) => `review-${imageId}-${field.replaceAll('.', '-')}`, [imageId])
   const notice = useRef<HTMLParagraphElement>(null)
   const seen = useRef(state.notice.id)
@@ -105,7 +107,7 @@ export default function ReviewForm({ imageId, state, dispatch, countries, countr
   const box = (field: string, label: string, value: string, hint?: string, ...also: string[]): FieldBox => ({
     id: dom(field), label, hint, problems: problemsAt(state, field, ...also), unread: value === '' && state.unread.includes(field),
   })
-  const input = (field: string, label: string, value: string, change: (value: string) => void, options: { hint?: string; type?: string; mode?: 'decimal' | 'numeric'; max?: number; list?: string; disabled?: boolean } = {}) =>
+  const input = (field: string, label: string, value: string, change: (value: string) => void, options: { hint?: string; type?: string; mode?: 'decimal'; max?: number; list?: string; disabled?: boolean } = {}) =>
     <Field {...box(field, label, value, options.hint)}>{(attrs) => <input {...attrs} type={options.type ?? 'text'} inputMode={options.mode} maxLength={options.max}
       list={options.list} disabled={options.disabled} autoComplete="off" value={value} onChange={(event) => change(event.target.value)} />}</Field>
   const select = (field: string, label: string, value: string, choices: Option[], change: (value: string) => void, hint?: string, ...also: string[]) =>
@@ -129,7 +131,7 @@ export default function ReviewForm({ imageId, state, dispatch, countries, countr
     const id = rowField(list, row.key)
     const choices: Option[] = [...(list === 'lines' ? [['', 'Нет ставки'] as Option] : row.taxKind === '' ? [['', 'Не выбран'] as Option] : []), ['vat', 'НДС'], ['exempt', 'Без налога']]
     return <>
-      {select(`${id}.tax_rate.kind`, 'Налог', row.taxKind, choices, (value) => change({ taxKind: value as 'vat' | 'exempt' | '' }), undefined, `${id}.tax_rate`)}
+      {select(`${id}.tax_rate.kind`, 'Вид налога', row.taxKind, choices, (value) => change({ taxKind: value as 'vat' | 'exempt' | '' }), undefined, `${id}.tax_rate`)}
       {input(`${id}.tax_rate.rate`, 'Ставка НДС, %', row.taxRate, (value) => change({ taxRate: value }), { mode: 'decimal', max: 8, disabled: row.taxKind !== 'vat', hint: row.taxKind === 'vat' ? 'Например 7,00.' : 'Только для НДС.' })}
     </>
   }
@@ -159,7 +161,7 @@ export default function ReviewForm({ imageId, state, dispatch, countries, countr
         <legend>Чек</legend>
         <div className="ck-review-grid">
           {input(headerField('purchasedOn'), 'Дата на чеке', header.purchasedOn, (purchasedOn) => head({ purchasedOn }), { type: 'date' })}
-          {input(headerField('localTime'), 'Местное время', header.localTime, (localTime) => head({ localTime }), { mode: 'numeric', max: 8, hint: 'ЧЧ:ММ или ЧЧ:ММ:СС, как на чеке.' })}
+          {input(headerField('localTime'), 'Местное время', header.localTime, (localTime) => head({ localTime }), { max: 8, hint: 'ЧЧ:ММ или ЧЧ:ММ:СС, как на чеке.' })}
           {input(headerField('utcOffset'), 'Смещение от UTC', header.utcOffset, (utcOffset) => head({ utcOffset }), { max: 6, hint: 'Необязательно: +02:00. Нужно только для часа перевода часов.' })}
           {select(headerField('operation'), 'Операция', header.operation, [['', 'Не указана — определит сервер'], ['sale', 'Покупка'], ['refund', 'Возврат']], (operation) => head({ operation: operation as ReviewHeader['operation'] }))}
           {input(headerField('currency'), 'Валюта', header.currency, (currency) => head({ currency }), { max: 3, list: dom('currencies'), hint: 'Код из трёх букв, например EUR.' })}
@@ -227,9 +229,9 @@ export default function ReviewForm({ imageId, state, dispatch, countries, countr
           <div className="ck-review-grid">
             {rate('taxes', tax, edit)}
             {input(`${id}.tax_code`, 'Код налога', tax.taxCode, (taxCode) => edit({ taxCode }), { max: 8 })}
-            {input(`${id}.net`, 'Без налога', tax.net, (net) => edit({ net }), { mode: 'decimal', max: 20 })}
-            {input(`${id}.tax`, 'Налог', tax.tax, (value) => edit({ tax: value }), { mode: 'decimal', max: 20 })}
-            {input(`${id}.gross`, 'С налогом', tax.gross, (gross) => edit({ gross }), { mode: 'decimal', max: 20, hint: 'Одну из трёх сумм можно оставить пустой.' })}
+            {input(`${id}.net`, 'Сумма без налога', tax.net, (net) => edit({ net }), { mode: 'decimal', max: 20 })}
+            {input(`${id}.tax`, 'Сумма налога', tax.tax, (value) => edit({ tax: value }), { mode: 'decimal', max: 20 })}
+            {input(`${id}.gross`, 'Сумма с налогом', tax.gross, (gross) => edit({ gross }), { mode: 'decimal', max: 20, hint: 'Одну из трёх сумм можно оставить пустой.' })}
           </div>
           <button type="button" className="ck-review-secondary" onClick={() => dispatch({ type: 'remove', list: 'taxes', key: tax.key })}>Удалить налоговый итог {index + 1}</button>
         </fieldset></li>
@@ -237,9 +239,11 @@ export default function ReviewForm({ imageId, state, dispatch, countries, countr
       <button type="button" className="ck-review-secondary" onClick={() => dispatch({ type: 'add', list: 'taxes' })}>Добавить налоговый итог</button>
     </fieldset>
     <p ref={notice} tabIndex={-1} role="status" className="ck-review-notice">{state.notice.text}</p>
+    <p role="status" className="ck-review-refusal">{refusal ?? ''}</p>
     <div className="ck-rec-action-block">
       <div className="ck-rec-actions">
-        <button type="button" data-review-confirm disabled={pending || unavailable !== undefined} aria-describedby={dom('confirm-note')} onClick={onConfirm}>{pending ? 'Сохраняем чек…' : 'Подтвердить и сохранить чек'}</button>
+        {/* Not `disabled` while its own request runs: the pressed button keeps focus, a second press does nothing. */}
+        <button type="button" data-review-confirm disabled={unavailable !== undefined} aria-disabled={pending || undefined} aria-describedby={dom('confirm-note')} onClick={pending ? undefined : onConfirm}>{pending ? 'Сохраняем чек…' : 'Подтвердить и сохранить чек'}</button>
       </div>
       <p id={dom('confirm-note')} className="ck-rec-note">{unavailable ?? 'Одно нажатие — один запрос. После сохранения чек через эту форму изменить нельзя.'}</p>
     </div>

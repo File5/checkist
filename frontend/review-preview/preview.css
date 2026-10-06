@@ -177,6 +177,9 @@ footer { border-top: 1px solid #dce3d8; color: #5a685e; padding: 20px 0 30px; fo
 .ck-rec .ck-review-secondary:hover:not(:disabled) { background: #edf5ee; }
 .ck-rec .ck-review-secondary:disabled { background: #e5ebe3; color: #586655; }
 .ck-review-notice:empty { display: block; margin-top: -16px; }
+.ck-review-refusal { padding: 14px; border-radius: 8px; color: #8c2c22; background: #fff0ed; border: 1px solid #e6c2bb; font-weight: 600; }
+.ck-review-refusal:empty { display: block; padding: 0; border: 0; margin-top: -16px; }
+.ck-rec button[aria-disabled="true"], .ck-rec button[aria-disabled="true"]:hover { background: #e5ebe3; border-color: #d2dccd; color: #586655; cursor: default; }
 .ck-review [tabindex="-1"]:focus-visible, .ck-rec-result:focus-visible { outline: 3px solid #236ad0; outline-offset: 4px; }
 
 /* features/receipts/Receipts.css */
