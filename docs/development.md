@@ -205,6 +205,37 @@ Seed разрешён для `test_*` или `checkist_qa` с необязате
 
 Клиент: существующие npm-команды, QA `npm.cmd run dev -- --port 15173`. Все новые действия требуют CSRF cookie/token (`credentials: same-origin`), в отличие от health. API возвращает относительные URL с фиксированным `MEDIA_URL=/media/`; Vite dev/preview передают `/api` и `/media` на один Django. Сквозная HTTP-проверка и ручная UI-приёмка — в [verification.md](verification.md#распознавание-сквозная-проверка-клиента-и5).
 
+### QA: подтверждение неполного распознавания для клиента
+
+Сервер с вырезками `needs_review` — для клиента формы подтверждения и ручной приёмки ([контракт](api-contract.md#подтверждение-вырезки-needs_review-человеком)). Новые команды и демо-данные не нужны: неполный результат дают существующие fake-сценарии воркера. Запуск — блок [QA: сервер, worker, демо](#qa-сервер-worker-демо) целиком (свой Compose-проект, БД и порты при параллельной работе), отличается только сценарий воркера:
+
+```powershell
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py recognition_worker --fake-scenario partial_success
+```
+
+Затем загрузить `MEDIA/demo/double.png` (клиентом либо HTTP-сценарием из verification.md) и дождаться завершения задания.
+
+| Сценарий воркера | Что получится | Что исправить, чтобы подтверждение прошло |
+| --- | --- | --- |
+| `partial_success` | чек 1 сохранён, чек 2 — `needs_review`: у первой строки не прочитаны количество и цена | ввести количество `1.000` и цену `1.5000` первой строки (либо оставить оба пустыми — сервер выведет одну штуку по сумме `1.50`); после подтверждения задание становится `succeeded` |
+| `partial_missing_quantity` | обе вырезки `needs_review`, та же причина | чек 1 — `2.000` и `1.2900`; чек 2 — `1.000` и `1.5000` |
+| `inconsistent_total` | обе вырезки `needs_review`: итог `123.45` не равен сумме строк | итог `4.42` (чек 1) и `6.00` (чек 2); без правки — `409 review_invalid` с `total_mismatch` |
+
+Суммы синтетических чеков (`recognition/providers/fake.py`): чек 1 — 2.58 + 1.00 + 0.79 + 0.25 минус скидка 0.20 = 4.42 EUR; чек 2 — 1.50 + 4.50 = 6.00 EUR. Смена сценария не перерабатывает уже загруженный файл: для нового сценария нужен другой файл, retry задания либо чистая QA-база. Пока задание не завершено, подтверждение отвечает `409 job_active`; во время импорта воркером — `409 review_busy`.
+
+Проверка без браузера напрямую на Django (id зависят от базы; тела — вне репозитория, образец — `backend/recognition/tests/fixtures/public/review-confirm-request.json`):
+
+```powershell
+$B = 'http://127.0.0.1:18000'
+$T = (curl.exe -s -c jar.txt "$B/api/recognition/csrf/" | ConvertFrom-Json).csrf_token
+$H = @('-b', 'jar.txt', '-H', 'Content-Type: application/json', '-H', "X-CSRFToken: $T", '-H', "Origin: $B")
+curl.exe -s -b jar.txt "$B/api/recognition/receipt-images/?job=1"
+curl.exe -s @H -X POST --data-binary '@confirm.json' "$B/api/recognition/receipt-images/2/confirm/"
+curl.exe -s -b jar.txt "$B/api/recognition/jobs/1/"
+```
+
+`Origin` должен совпадать с адресом Django либо входить в `DJANGO_CSRF_TRUSTED_ORIGINS` (для запросов через Vite — его origin). Подтверждение меняет данные: повторяемый сценарий требует чистой QA-базы.
+
 ### QA: слияние дублей для клиента
 
 Сервер с демо-каталогом дублей — для клиента и ручной приёмки. В терминале из корня сначала **весь** QA environment из [verification.md](verification.md#изолированная-qa-среда), затем:

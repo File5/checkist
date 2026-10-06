@@ -223,6 +223,10 @@ def safe_decimal(value, places):
         return None
 
 
+def safe_country(value):
+    return value if isinstance(value, str) and re.fullmatch(r"[A-Z]{2}", value) else None
+
+
 def safe_int(value):
     return value if type(value) is int and 0 <= value <= 32767 else None
 
@@ -240,6 +244,7 @@ def normalized_public(value):
         "proposed_receipt": {
             "store": None, "store_display_name": safe_text(merchant.get("brand_name"), 100) or safe_text(store.get("name"), 255),
             "address_display": safe_text(store.get("address_raw")),
+            "country": safe_country(store.get("country_code")) or safe_country(merchant.get("country_code")),
             "currency": safe_text(value.get("currency_code"), 3),
             "operation": value.get("operation") if value.get("operation") in ("sale", "refund") else None,
             "purchased_on": safe_text(value.get("purchased_on"), 10),
@@ -284,8 +289,24 @@ def normalized_tax_rate(value):
             "rate": safe_decimal(value.get("rate"), 2)}
 
 
+def confirmation(image):
+    """The private record of a human confirmation kept in ``outcome_snapshot``, or None."""
+    snapshot = image.outcome_snapshot if isinstance(image.outcome_snapshot, dict) else {}
+    confirmed = snapshot.get("confirmed")
+    return confirmed if isinstance(confirmed, dict) else None
+
+
+def confirmed_at(confirmed):
+    value = confirmed.get("at") if confirmed else None
+    pattern = r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,6})?Z"
+    return value if isinstance(value, str) and re.fullmatch(pattern, value) else None
+
+
 def image_object(image, *, detail=False):
     from recognition.images import ImageError, validate_geometry
+    confirmed = confirmation(image)
+    # Issues of a confirmation point into the corrected DTO, not the provider one.
+    normalized = confirmed.get("result") if confirmed else image.normalized_result
     try:
         bbox, quad, rotation = validate_geometry(image.bbox, image.quad, image.rotation_degrees)
     except ImageError:
@@ -298,8 +319,9 @@ def image_object(image, *, detail=False):
         and bool(image.outcome_snapshot.get("receipt_id")),
         "image_url": media_url(image.file), "width": image.width, "height": image.height,
         "bbox": bbox, "clipped": image.clipped, "issues": public_issues(
-            image.issues, status=image.status, normalized=image.normalized_result),
+            image.issues, status=image.status, normalized=normalized),
         "normalized_result": normalized_public(image.normalized_result) if image.status == "needs_review" else None,
+        "confirmed_at": confirmed_at(confirmed),
     }
     if detail:
         result.update(quad=quad, rotation_degrees=rotation)

@@ -4,6 +4,7 @@ from .views.recognition import (
     CancelView, CsrfView, JobView, JobsView, LocalNotFoundView, PhotoView, PhotosView,
     ReceiptImageView, ReceiptImagesView, RetryView,
 )
+from .views.recognition_review import ConfirmView
 
 urlpatterns = [
     re_path(r"^recognition/csrf/$", CsrfView.as_view(), name="recognition-csrf"),
@@ -15,5 +16,7 @@ urlpatterns = [
     re_path(r"^recognition/jobs/(?P<pk>[1-9][0-9]{0,18})/retry/$", RetryView.as_view(), name="recognition-retry"),
     re_path(r"^recognition/receipt-images/$", ReceiptImagesView.as_view(), name="recognition-images"),
     re_path(r"^recognition/receipt-images/(?P<pk>[1-9][0-9]{0,18})/$", ReceiptImageView.as_view(), name="recognition-image"),
+    re_path(r"^recognition/receipt-images/(?P<pk>[1-9][0-9]{0,18})/confirm/$", ConfirmView.as_view(),
+            name="recognition-image-confirm"),
     re_path(r"^recognition/(?:.*/)?$", LocalNotFoundView.as_view(), name="recognition-not-found"),
 ]

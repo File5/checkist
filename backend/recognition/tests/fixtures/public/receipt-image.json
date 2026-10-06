@@ -37,6 +37,7 @@
       "store": null,
       "store_display_name": "Тестовый магазин",
       "address_display": "Teststrasse 12",
+      "country": "DE",
       "currency": "EUR",
       "operation": "sale",
       "purchased_on": "2026-10-04",
@@ -71,6 +72,7 @@
     "discounts": [],
     "taxes": []
   },
+  "confirmed_at": null,
   "quad": [
     {
       "x": 0.1,

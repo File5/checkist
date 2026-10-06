@@ -276,7 +276,7 @@ def public_data():
     make_image(job, id=41, status="imported", receipt=receipt, import_effect="created", outcome_snapshot={"receipt_id": 71})
     make_image(job, id=42, position=2, status="needs_review", normalized_result={
         "merchant": {"brand_name": "Тестовый магазин", "legal_name": "PRIVATE LEGAL", "tax_id": "PRIVATE TAX"},
-        "store": {"address_raw": "Teststrasse 12"}, "currency_code": "EUR", "operation": "sale",
+        "store": {"address_raw": "Teststrasse 12", "country_code": "DE"}, "currency_code": "EUR", "operation": "sale",
         "purchased_on": "2026-10-04", "local_time": "14:35", "total": "4.52", "discount_total": None,
         "prices_include_tax": True, "raw_text": "PRIVATE TEXT", "fiscal": {"secret": "PRIVATE FISCAL"},
         "lines": [{"position": 1, "kind": "product", "raw_name": "МОЛОКО", "quantity": None,
