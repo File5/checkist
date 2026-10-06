@@ -3,6 +3,7 @@ import re
 from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
+from django.db import connection
 from django.db.models import Count, Exists, IntegerField, OuterRef, Q, Subquery, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
@@ -11,6 +12,7 @@ from api.common import amount, iso_date, percent, price, quantity, store_object,
 from receipts.decimal_math import price_context
 from receipts.models import Receipt, ReceiptLine
 from recognition.models import ProcessingJob, ReceiptImage, SourcePhoto
+from recognition.queue import WORKER_LOCK
 from recognition.statuses import EXECUTING_JOB_STATUSES
 
 
@@ -156,13 +158,35 @@ def photo_object(photo):
     }
 
 
+# Two-key advisory locks appear in pg_locks as classid/objid with objsubid = 2.
+# Advisory locks are per database: without that filter a dev/QA worker on the
+# same cluster would look alive to another database.
+WORKER_SLOT_HELD = """
+    SELECT EXISTS (
+        SELECT 1 FROM pg_locks
+        WHERE locktype = 'advisory' AND granted
+          AND classid = %s AND objid = %s AND objsubid = 2
+          AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+    )
+"""
+
+
 def executor_object():
-    # S1 has no persistent idle-worker heartbeat/slot. Only a live execution
-    # lease provides evidence of an available executor. Never infer from Celery.
+    # busy: a live execution lease, even when its worker has just died.
+    # idle: no such lease, but the worker's session lock is held. There is no
+    # stored idle heartbeat/slot; the API only reads the lock and never takes
+    # it, or it could block a starting worker. Never infer from Celery.
     now = timezone.now()
     active = ProcessingJob.objects.filter(status__in=EXECUTING_JOB_STATUSES)
     latest = active.order_by("-heartbeat_at", "-id").values("heartbeat_at", "lease_expires_at").first()
-    return {"available": bool(latest and latest["lease_expires_at"] > now),
+    with connection.cursor() as cursor:
+        cursor.execute(WORKER_SLOT_HELD, WORKER_LOCK)
+        held = cursor.fetchone()[0]
+    if latest and latest["lease_expires_at"] > now:
+        state = "busy"
+    else:
+        state = "idle" if held else "absent"
+    return {"available": state != "absent", "state": state,
             "last_seen_at": utc_datetime(latest["heartbeat_at"]) if latest else None}
 
 
