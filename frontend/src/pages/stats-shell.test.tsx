@@ -9,6 +9,11 @@ const state = vi.hoisted(() => ({ snapshot: undefined as NavigationSnapshot | un
 vi.mock('../navigation', async (importOriginal) => ({
   ...await importOriginal<typeof import('../navigation')>(), useNavigation: () => state.snapshot!,
 }))
+// The shell is checked apart from what the screens show: their content belongs to the tests of features/stats.
+vi.mock('../features/stats', () => ({
+  SpendingPage: ({ query }: { query: unknown }) => <pre data-screen="spending">{JSON.stringify(query)}</pre>,
+  ReceiptsStatsPage: ({ query }: { query: unknown }) => <pre data-screen="receipts-stats">{JSON.stringify(query)}</pre>,
+}))
 
 function render(route: NavigableRoute) {
   state.snapshot = { route, href: buildRoute(route) }
@@ -30,7 +35,7 @@ describe('statistics section in the shell (SSR only, no browser interaction)', (
       `<a aria-current="page" href="${href}">${section}`,
     ])
     expect(html).toContain('aria-label="Раздел статистики"')
-    expect(html).toContain('Раздел в разработке')
+    expect(html.match(/<pre data-screen="[^"]*"/g)).toEqual([`<pre data-screen="${route.kind === 'spending' ? 'spending' : 'receipts-stats'}"`])
     expect(html).not.toContain('aria-label="Раздел каталога"')
   })
   it('keeps both subsections reachable as ordinary links', () => {
@@ -45,15 +50,11 @@ describe('statistics section in the shell (SSR only, no browser interaction)', (
       expect(html).not.toContain('aria-label="Раздел статистики"')
     }
   })
-  it('passes the parsed query to the placeholder without inventing data', () => {
-    const plain = render({ kind: 'spending', query: {} })
-    expect(plain).not.toContain('Сбросить фильтры')
-    const filtered = render({ kind: 'spending', query: { group_by: 'store', store: [3, 5] } })
-    expect(filtered).toContain('Фильтры из адреса сохранены.')
-    expect(filtered).toContain('<a class="action-link" href="/stats">Сбросить фильтры</a>')
-    const receipts = render({ kind: 'receipts-stats', query: { base_from: '2020-01-01', interval: 'year' } })
-    expect(receipts).toContain('Периоды и фильтры из адреса сохранены.')
-    expect(receipts).toContain('<a class="action-link" href="/stats/receipts">Сбросить фильтры</a>')
-    for (const html of [plain, filtered, receipts]) expect(html).not.toMatch(/<svg class="(?!brand-mark)|<table|EUR|\d+[,.]\d{2}/)
+  it('passes the parsed query of the address to the screen unchanged', () => {
+    const screen = (html: string, name: string) => html.split(`<pre data-screen="${name}">`)[1]?.split('</pre>')[0].replaceAll('&quot;', '"')
+    expect(screen(render({ kind: 'spending', query: {} }), 'spending')).toBe('{}')
+    expect(screen(render({ kind: 'spending', query: { group_by: 'store', store: [3, 5] } }), 'spending')).toBe('{"group_by":"store","store":[3,5]}')
+    expect(screen(render({ kind: 'receipts-stats', query: { base_from: '2020-01-01', interval: 'year' } }), 'receipts-stats'))
+      .toBe('{"base_from":"2020-01-01","interval":"year"}')
   })
 })
