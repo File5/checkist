@@ -129,6 +129,13 @@ describe('query', () => {
     ])
     expect(urls()[0]).toContain('store=1%2C2%2C3')
   })
+  it('reads the category of the filter in `parent` under a grouping other than category', async () => {
+    fetchMock.mockImplementation(async () => response('spending-category-generic.json'))
+    const result = await getSpending({ category: 1, group_by: 'generic', currency: 'EUR' })
+    expect(urls()).toEqual(['/api/stats/spending/?currency=EUR&group_by=generic&category=1'])
+    expect(result).toEqual({ kind: 'ok', data: statsFixture('spending-category-generic.json') })
+    expect(result).toMatchObject({ data: { group_by: 'generic', parent: { id: 1, name: 'Продукты питания' } } })
+  })
   it('sends a single store without a comma and keeps a one-sided period', async () => {
     await getSpending({ store: [7], date_to: '2018-12-31' })
     expect(urls()).toEqual(['/api/stats/spending/?date_to=2018-12-31&store=7'])

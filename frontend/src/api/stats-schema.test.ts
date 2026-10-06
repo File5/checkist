@@ -28,7 +28,7 @@ const drop = (target: object, key: string) => { delete (target as Record<string,
 describe('public statistics fixtures', () => {
   it('covers every JSON supplied by backend, including future additions', () => {
     expect([...cases.map(([name]) => name), ...Object.keys(statsErrorFixtures)].sort()).toEqual(statsFixtureNames())
-    expect(cases).toHaveLength(21)
+    expect(cases).toHaveLength(22)
   })
   it.each(cases)('validates %s and requires every root field', (name, validate) => {
     const body = statsFixture(name) as Record<string, unknown>

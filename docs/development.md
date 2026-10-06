@@ -2,7 +2,7 @@
 
 ## Реализовано и планируется
 
-Локально запускаются Django/DRF, React/TypeScript/Vite SPA и host `recognition_worker`; Postgres, Redis и Celery worker — в Linux Docker. SPA пока показывает health через proxy ([frontend.md](frontend.md)). Реализованы stores/catalog/receipts, 13 GET каталога/цен и новый локальный recognition/receipts API: загрузка фото, очередь PostgreSQL, detect/crop/recognize/import, отмена и retry. Провайдеры — Codex CLI и явно выбранный FakeProvider. Данные также вводят через [Django admin](#админка). Серверная часть статистики (траты за период, походы, разложение среднего чека, ряды цен) реализована, [запуск с демо](#qa-статистика-для-клиента) — ниже; её клиент ещё не сделан. Клиент загрузки/чеков, API ручных правок, авторизация пользователей, дашборд и серверные курсы валют ещё не реализованы.
+Локально запускаются Django/DRF, React/TypeScript/Vite SPA и host `recognition_worker`; Postgres, Redis и Celery worker — в Linux Docker. SPA пока показывает health через proxy ([frontend.md](frontend.md)). Реализованы stores/catalog/receipts, 13 GET каталога/цен и новый локальный recognition/receipts API: загрузка фото, очередь PostgreSQL, detect/crop/recognize/import, отмена и retry. Провайдеры — Codex CLI и явно выбранный FakeProvider. Данные также вводят через [Django admin](#админка). Серверная часть статистики (траты за период, походы, разложение среднего чека, ряды цен) реализована, [запуск с демо](#qa-статистика-для-клиента) — ниже; её клиент — экраны `/stats`, `/stats/receipts` и график цен в карточке товара — тоже ([frontend.md](frontend.md#статистика-траты-средний-чек-и-график-цен-ф1ф7)). Клиент загрузки/чеков, API ручных правок, авторизация пользователей, дашборд и серверные курсы валют ещё не реализованы.
 
 ## Версии и установка Windows
 
@@ -274,7 +274,7 @@ npm.cmd run dev -- --port 15173
 
 ### QA: статистика для клиента
 
-Сервер с демо-данными статистики — для клиента следующего этапа и ручной приёмки. **Клиент статистики ещё не сделан**: экранов и адаптеров в SPA нет, сейчас сервер проверяется только HTTP-запросами. В терминале из корня сначала **весь** QA environment из [verification.md](verification.md#изолированная-qa-среда), затем:
+Сервер с демо-данными статистики — для экранов статистики, proxy-скрипта и ручной приёмки. В терминале из корня сначала **весь** QA environment из [verification.md](verification.md#изолированная-qa-среда), затем:
 
 ```powershell
 $env:DJANGO_DEBUG='1'
@@ -303,7 +303,7 @@ curl.exe -s "$B/api/stats/receipts/compare/?base_from=2020-01-01&base_to=2020-12
 curl.exe -s "$B/api/products/1/prices/series/?date_from=2025-01-01"
 ```
 
-Vite dev/preview на 15173 запускается как в разделе выше; proxy `/api` уже передаёт эти пути на Django. Ожидаемые ответы и замер времени — [verification.md](verification.md#статистика-серверная-часть-с5).
+Vite dev/preview на 15173 запускается как в разделе выше (из PowerShell); proxy `/api` уже передаёт эти пути на Django. Экраны — `http://127.0.0.1:15173/stats`, `/stats/receipts` и `/catalog/products/1`; сценарий для человека и демо-числа — [frontend/src/features/stats/ACCEPTANCE.md](../frontend/src/features/stats/ACCEPTANCE.md). Проверка адаптеров настоящим HTTP без браузера, из корня в третьем терминале с тем же environment: `node frontend/scripts/check_stats_proxy.mjs dev http://127.0.0.1:15173` (для сборки — `preview`). Скрипт только читает, повторный запуск безопасен; ему нужна свежая база с демо, имя базы `checkist_qa` либо `checkist_qa_<суффикс>`, порты — не dev. Ожидаемые ответы и замер времени сервера — [verification.md](verification.md#статистика-серверная-часть-с5), проверка клиента — [там же](verification.md#статистика-клиент-ф7).
 
 ### Настоящий Codex в QA
 

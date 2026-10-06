@@ -41,6 +41,8 @@ EXAMPLES = {
     # Траты: категории, drill-down, обобщённые продукты, товары, магазины.
     "spending-category.json": (SPENDING, 200),
     "spending-category-drilldown.json": (f"{SPENDING}?category={FOOD}&currency=EUR", 200),
+    # Категория фильтра приходит в parent и при группировке не по категориям.
+    "spending-category-generic.json": (f"{SPENDING}?category={FOOD}&group_by=generic&currency=EUR", 200),
     "spending-generic.json": (f"{SPENDING}?group_by=generic&currency=EUR&limit=5", 200),
     "spending-product.json": (f"{SPENDING}?group_by=product&limit=3&date_from=2026-01-01&date_to=2026-09-30", 200),
     "spending-store.json": (f"{SPENDING}?group_by=store", 200),
@@ -185,6 +187,9 @@ class PublicExampleFilesTests(SimpleTestCase):
         drill = expected("spending-category-drilldown.json")
         self.assertEqual(drill["parent"]["id"], FOOD)
         self.assertIn(True, [item["direct"] for item in drill["currencies"][0]["items"]])
+        under_category = expected("spending-category-generic.json")
+        self.assertEqual((under_category["group_by"], under_category["parent"]), ("generic", drill["parent"]))
+        self.assertEqual({item["kind"] for item in under_category["currencies"][0]["items"]}, {"generic"})
         self.assertIsNotNone(expected("spending-generic.json")["currencies"][0]["other"])
         self.assertIsNotNone(expected("spending-product.json")["currencies"][0]["items"][0]["quantity"])
         self.assertIn("city", expected("spending-store.json")["currencies"][0]["items"][0])
