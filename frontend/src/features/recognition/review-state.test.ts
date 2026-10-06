@@ -142,24 +142,25 @@ describe('rows and their references', () => {
     }
     const first = { lines: 'name', discounts: 'name', taxes: 'tax_rate.kind' } as const
     const texts = { lines: 'Строка', discounts: 'Скидка', taxes: 'Налоговый итог' } as const
+    const gone = { lines: 'удалена.', discounts: 'удалена.', taxes: 'удалён.' } as const
     it.each(['lines', 'discounts', 'taxes'] as const)('%s: removed from the middle → the first field of the row that took its place', (list) => {
       const before = three()
       const state = reviewReducer(before, { type: 'remove', list, key: before[list][1].key })
       expect(state[list].map((row) => row.key)).toEqual([before[list][0].key, before[list][2].key])
       expect(state.notice.focus).toBe(`${list}.${before[list][2].key}.${first[list]}`)
-      expect(state.notice.text).toContain(`${texts[list]} 2 удален`); expect(state.notice.id).toBe(before.notice.id + 1)
+      expect(state.notice.text).toContain(`${texts[list]} 2 ${gone[list]}`); expect(state.notice.id).toBe(before.notice.id + 1)
     })
     it.each(['lines', 'discounts', 'taxes'] as const)('%s: removed the last → the first field of the previous row', (list) => {
       const before = three()
       const state = reviewReducer(before, { type: 'remove', list, key: before[list][2].key })
       expect(state.notice.focus).toBe(`${list}.${before[list][1].key}.${first[list]}`)
-      expect(state.notice.text).toContain(`${texts[list]} 3 удален`); expect(state.notice.text).not.toContain('перенумерованы')
+      expect(state.notice.text).toContain(`${texts[list]} 3 ${gone[list]}`); expect(state.notice.text).not.toContain('перенумерованы')
     })
     it.each(['lines', 'discounts', 'taxes'] as const)('%s: the list became empty → its «Добавить …» button', (list) => {
       const before = three()
       const state = apply(before, ...before[list].map((row): ReviewEdit => ({ type: 'remove', list, key: row.key })))
       expect(state[list]).toEqual([]); expect(state.notice.focus).toBe(addField(list))
-      expect(state.notice.text).toContain(`${texts[list]} 1 удален`)
+      expect(state.notice.text).toContain(`${texts[list]} 1 ${gone[list]}`)
     })
     it('keeps announcing what the removal changed while focus goes to the next row', () => {
       const before = createReview(source(), [])
@@ -188,6 +189,72 @@ describe('rows and their references', () => {
     const exempt = reviewReducer(state, { type: 'line', key: 1, patch: { taxKind: 'exempt' } })
     expect(exempt.lines[0]).toMatchObject({ taxKind: 'exempt', taxRate: '' })
     expect(buildInput(exempt).input.lines[0].tax_rate).toEqual({ kind: 'exempt', rate: null })
+  })
+})
+
+describe('«Запрос не отправлен…» leaves as soon as it stops being true, without moving focus', () => {
+  const stopped = () => {
+    const state = apply(start(), { type: 'add', list: 'discounts' }, { type: 'add', list: 'taxes' }, { type: 'header', patch: { total: '' } })
+    const reported = reviewReducer(state, { type: 'missing', problems: missingRequired(state) })
+    expect(reported.notice).toEqual({ id: state.notice.id + 1, text: 'Запрос не отправлен: заполните обязательные поля (3).', focus: 'receipt.total' })
+    expect(reported.unsent).toBe(true)
+    return reported
+  }
+  const erased = (before: ReviewState, after: ReviewState) => {
+    expect(after.notice).toEqual({ id: before.notice.id, text: '', focus: before.notice.focus }); expect(after.unsent).toBe(false)
+  }
+  it.each([
+    ['the header', (state: ReviewState): ReviewEdit => ({ type: 'header', patch: { total: state.header.total + '9' } })],
+    ['another field of the header', (): ReviewEdit => ({ type: 'header', patch: { address: 'Teststrasse 13' } })],
+    ['a line', (state: ReviewState): ReviewEdit => ({ type: 'line', key: state.lines[0].key, patch: { quantity: '2' } })],
+    ['a discount', (state: ReviewState): ReviewEdit => ({ type: 'discount', key: state.discounts[0].key, patch: { name: 'Rabatt' } })],
+    ['a tax total', (state: ReviewState): ReviewEdit => ({ type: 'tax', key: state.taxes[0].key, patch: { net: '1' } })],
+  ])('at the first edit of %s', (_name, edit) => {
+    const reported = stopped()
+    erased(reported, reviewReducer(reported, edit(reported)))
+  })
+  it('at the real request, also when nothing was edited in between, and stays away after its refusal', () => {
+    const reported = stopped()
+    const filled = apply(reported, { type: 'header', patch: { total: '9,99' } }, { type: 'discount', key: reported.discounts[0].key, patch: { name: 'Rabatt', amount: '0,10' } })
+    expect(missingRequired(filled)).toEqual({})
+    const sent = reviewReducer(filled, { type: 'sent' })
+    erased(reported, sent); expect(sent).toBe(filled)
+    erased(reported, reviewReducer(reported, { type: 'sent' }))
+    const error = readError(409, publicFixture('review-invalid.json'), true)
+    const refused = reviewReducer(sent, { type: 'refused', error, sent: buildInput(sent).sent })
+    erased(reported, refused)
+    // missing → edit → request → refusal → edit of the marked field → request: nothing brings the text back.
+    erased(reported, apply(refused, { type: 'header', patch: { total: '2,63' } }, { type: 'sent' }))
+  })
+  it('gives its place to the announcement of an added or removed row and is announced again by the next stopped press', () => {
+    const reported = stopped()
+    const added = reviewReducer(reported, { type: 'add', list: 'lines' })
+    expect(added.notice).toEqual({ id: reported.notice.id + 1, text: 'Добавлена строка 2.', focus: `lines.${added.lines[1].key}.name` }); expect(added.unsent).toBe(false)
+    const removed = reviewReducer(reported, { type: 'remove', list: 'taxes', key: reported.taxes[0].key })
+    expect(removed.notice).toEqual({ id: reported.notice.id + 1, text: 'Налоговый итог 1 удалён.', focus: addField('taxes') }); expect(removed.unsent).toBe(false)
+    // The announcement of a row action is a fact that stays true: an edit and a request leave it alone.
+    expect(apply(removed, { type: 'header', patch: { total: '1' } }, { type: 'sent' }).notice).toBe(removed.notice)
+    const edited = reviewReducer(reported, { type: 'header', patch: { address: 'x' } })
+    const again = reviewReducer(edited, { type: 'missing', problems: missingRequired(edited) })
+    expect(again.notice).toEqual({ id: reported.notice.id + 1, text: reported.notice.text, focus: 'receipt.total' }); expect(again.unsent).toBe(true)
+  })
+  it('does not touch a form without that text', () => {
+    const state = start()
+    expect(reviewReducer(state, { type: 'sent' })).toBe(state)
+    expect(reviewReducer(state, { type: 'header', patch: { total: '1' } }).notice).toBe(state.notice)
+  })
+  it('names «Добавить строку» as the place of focus when the header is filled and the list of lines is empty', () => {
+    const empty = reviewReducer(start(), { type: 'remove', list: 'lines', key: 1 })
+    expect(missingRequired(empty)).toEqual({ lines: [problemTexts.lines] })
+    const reported = reviewReducer(empty, { type: 'missing', problems: missingRequired(empty) })
+    expect(reported.notice).toEqual({ id: empty.notice.id + 1, text: 'Запрос не отправлен: заполните обязательные поля (1).', focus: addField('lines') })
+    expect(reported.problems.lines).toEqual([problemTexts.lines])
+    // The button cures it: the text about the empty list and the announcement leave with the added line.
+    const added = reviewReducer(reported, { type: 'add', list: 'lines' })
+    expect(added.problems.lines).toBeUndefined(); expect(added.notice.text).toBe('Добавлена строка 1.')
+    // An empty header field comes first: it is a field of the document and takes focus itself.
+    const headless = reviewReducer(empty, { type: 'header', patch: { total: '' } })
+    expect(reviewReducer(headless, { type: 'missing', problems: missingRequired(headless) }).notice.focus).toBe('receipt.total')
   })
 })
 
@@ -233,6 +300,9 @@ describe('causes and refused paths at the fields', () => {
     expect(reviewReducer(state, { type: 'line', key: before.lines[1].key, patch: { name: 'x' } }).problems[`lines.${before.lines[1].key}`]).toBeUndefined()
     expect(reviewReducer(state, { type: 'tax', key: before.taxes[0].key, patch: { taxRate: '19' } }).problems[`taxes.${before.taxes[0].key}.tax_rate`]).toBeUndefined()
     expect(reviewReducer(state, { type: 'add', list: 'lines' }).problems.lines).toBeUndefined()
+    // A new row cures only the text about the list: the marks of the other rows are still true.
+    expect(reviewReducer(state, { type: 'add', list: 'lines' }).problems).toEqual(Object.fromEntries(Object.entries(state.problems).filter(([id]) => id !== 'lines')))
+    expect(reviewReducer(state, { type: 'add', list: 'discounts' }).problems).toEqual(state.problems)
   })
   it('points store, country, currency and time causes at the field that cures them', () => {
     const sent = { lines: [], discounts: [], taxes: [] }

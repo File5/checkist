@@ -11,8 +11,9 @@ import ReceiptImages from './ReceiptImages'
 import { reviewErrorText } from './labels'
 import ReviewForm from './ReviewForm'
 import type { ReviewFormProps } from './ReviewForm'
-import { buildInput, createReview, reviewReducer } from './review-state'
+import { buildInput, createReview, missingRequired, reviewReducer } from './review-state'
 import type { ReviewEdit, ReviewState } from './review-state'
+import { refusalText } from './review-actions'
 import type { ReviewActionState } from './review-actions'
 
 function image(): ReceiptImageDetail { const value = publicFixture('receipt-image.json'); if (!isReceiptImageDetail(value)) throw new Error('Invalid fixture'); return value }
@@ -166,6 +167,38 @@ describe('review form SSR markup (interaction in a browser stays manual)', () =>
       expect(empty.notice.focus).toBe(`${list}.add`); expect(form(empty), list).toMatch(new RegExp(`<button type="button" ${id(empty.notice.focus!)}[^>]*>Добавить `))
     }
   })
+  const noticeLine = (html: string) => /<p tabindex="-1" role="status" class="ck-review-notice">([^<]*)<\/p>/.exec(html)![1]
+  it('prints «Запрос не отправлен…» only while it is true: not in the pending markup and not next to a refusal', () => {
+    const empty = apply(start(), { type: 'header', patch: { total: '' } })
+    const stopped = reviewReducer(empty, { type: 'missing', problems: missingRequired(empty) })
+    expect(noticeLine(form(stopped))).toBe('Запрос не отправлен: заполните обязательные поля (1).')
+    expect(form(stopped)).toContain('<p id="review-42-receipt-total-error" class="ck-review-error">Заполните поле.</p>')
+    const typed = reviewReducer(stopped, { type: 'header', patch: { total: '9,99' } })
+    expect(form(typed)).not.toContain('Запрос не отправлен'); expect(form(typed)).not.toContain('Заполните поле.')
+    // The second press: the request is sent, «Сохраняем чек…» stands without the text of the stopped press.
+    const sent = reviewReducer(typed, { type: 'sent' })
+    const pending = form(sent, { pending: true })
+    expect(pending).toContain('>Сохраняем чек…</button>'); expect(pending).not.toContain('Запрос не отправлен'); expect(noticeLine(pending)).toBe('')
+    const error = readError(409, publicFixture('review-invalid.json'), true)
+    const refused = form(reviewReducer(sent, { type: 'refused', error, sent: buildInput(sent).sent }), { refusal: reviewErrorText(error) })
+    expect(refused).toContain(`<p role="status" class="ck-review-refusal">${reviewErrorText(error)}</p>`)
+    expect(refused).not.toContain('Запрос не отправлен'); expect(noticeLine(refused)).toBe('')
+    // Also when the press follows the stopped one at once (nothing typed in between, the state of the reducer after `sent`).
+    const direct = reviewReducer(stopped, { type: 'sent' })
+    expect(form(direct, { pending: true })).not.toContain('Запрос не отправлен'); expect(form(direct, { refusal: reviewErrorText(error) })).not.toContain('Запрос не отправлен')
+  })
+  it('has in the document every element that a stopped press names as the place of focus', () => {
+    const id = (field: string) => `id="review-42-${field.replaceAll('.', '-')}"`
+    const filled = apply(createReview(null, []), { type: 'add', list: 'discounts' }, { type: 'add', list: 'taxes' })
+    const blank = apply(filled, { type: 'line', key: filled.lines[0].key, patch: { kind: '' } }, { type: 'tax', key: filled.taxes[0].key, patch: { taxKind: '' } })
+    const missing = Object.keys(missingRequired(blank))
+    expect(missing).toHaveLength(8)
+    for (const field of missing) expect(form(blank), field).toMatch(new RegExp(`<(input|select) ${id(field)}[ >]`))
+    const empty = apply(start(), { type: 'remove', list: 'lines', key: 1 })
+    const stopped = reviewReducer(empty, { type: 'missing', problems: missingRequired(empty) })
+    expect(form(stopped)).toMatch(new RegExp(`<button type="button" ${id(stopped.notice.focus!)}[^>]*>Добавить строку</button>`))
+    expect(form(stopped)).toContain('<p class="ck-review-error" role="alert">Добавьте хотя бы одну строку.</p>')
+  })
   it('names the country field as the place of focus of «Загрузить справочник», which disappears with its press', () => {
     const html = form(start(), { countries: null, countriesFailed: true })
     expect(html).toContain('<button type="button" class="ck-review-secondary" data-review-focus="review-42-receipt-country">Загрузить справочник</button>')
@@ -193,6 +226,17 @@ describe('crop card around the confirmation', () => {
     expect(html).toContain('Подтверждено вручную: <time dateTime="2026-10-04T12:35:00Z">04.10.2026, 12:35 UTC</time>')
     expect(html).not.toContain('Исправление и подтверждение'); expect(html).not.toContain('Причины проверки')
     expect(html).toContain('Тип операции определён автоматически · Операция')
+  })
+  it('replaces the refusal of the last request by the text of a press that the local check stopped', () => {
+    const error = readError(409, { error: { code: 'review_busy' } }, true)
+    const failed: ReviewActionState = { kind: 'failed', imageId: 42, error, message: 'Отказ' }
+    expect(refusalText(failed, 42, null)).toBe('Отказ'); expect(refusalText(failed, 41, null)).toBeUndefined()
+    // The stopped press remembers the refusal it replaced: an edit that erases «Запрос не отправлен…» does not bring it back.
+    expect(refusalText(failed, 42, failed)).toBeUndefined()
+    expect(refusalText({ kind: 'pending', imageId: 42 }, 42, failed)).toBeUndefined(); expect(refusalText({ kind: 'idle' }, 42, null)).toBeUndefined()
+    // The next refusal is a new answer and is shown, also with the same text.
+    expect(refusalText({ ...failed }, 42, failed)).toBe('Отказ')
+    expect(refusalText({ kind: 'done', imageId: 42, image: confirmed().image, message: 'Подтверждено.' }, 42, null)).toBeUndefined()
   })
   it('keeps the person in the form with the refusal announced next to the pressed button, once', () => {
     const error = readError(409, { error: { code: 'review_busy', message: 'Данные сейчас изменяются. Повторите позже.' } }, true)
