@@ -41,12 +41,57 @@ export interface MergesQuery {
   page: number
 }
 
+export const priceModes = ['paid', 'normalized'] as const
+export type PriceMode = typeof priceModes[number]
+export const priceIntervals = ['month', 'day', 'week'] as const
+export type PriceInterval = typeof priceIntervals[number]
+
+/** Product card: history filters plus the price chart. A parsed query never holds the defaults `paid` and `month`. */
+export interface ProductQuery extends HistoryQuery {
+  price?: PriceMode
+  interval?: PriceInterval
+}
+
+export const spendingGroupings = ['category', 'generic', 'product', 'store'] as const
+export type SpendingGroupBy = typeof spendingGroupings[number]
+export const receiptsStatsIntervals = ['month', 'week', 'quarter', 'year'] as const
+export type ReceiptsStatsInterval = typeof receiptsStatsIntervals[number]
+/** The API accepts no more than this many stores in one `store` list. */
+export const maxStatsStores = 20
+
+/** Filters shared by both statistics screens. A parsed `store` is ascending, without repeats and never empty. */
+export interface StatsScopeQuery {
+  country?: string
+  currency?: string
+  store?: number[]
+}
+
+/** `/stats`. A parsed query never holds the default `group_by=category`. */
+export interface SpendingQuery extends StatsScopeQuery {
+  date_from?: string
+  date_to?: string
+  group_by?: SpendingGroupBy
+  category?: number
+  generic?: number
+}
+
+/** `/stats/receipts`. All four dates are optional here; a parsed query never holds the default `interval=month`. */
+export interface ReceiptsStatsQuery extends StatsScopeQuery {
+  base_from?: string
+  base_to?: string
+  current_from?: string
+  current_to?: string
+  interval?: ReceiptsStatsInterval
+}
+
 export type CatalogRoute =
   | { kind: 'catalog'; query: CatalogQuery }
   | { kind: 'category'; categoryId: number; query: CatalogQuery }
 
 export type NavigableRoute = CatalogRoute
-  | { kind: 'product'; productId: number; query: HistoryQuery }
+  | { kind: 'product'; productId: number; query: ProductQuery }
+  | { kind: 'spending'; query: SpendingQuery }
+  | { kind: 'receipts-stats'; query: ReceiptsStatsQuery }
   | { kind: 'health' }
   | { kind: 'receipts'; query: ReceiptsQuery }
   | { kind: 'upload' }
@@ -157,6 +202,88 @@ export function parseHistoryQuery(search: string | URLSearchParams): ParsedQuery
   }
 }
 
+export function parseProductQuery(search: string | URLSearchParams): ParsedQuery<ProductQuery> {
+  const history = parseHistoryQuery(search)
+  const reader = queryReader(search)
+  const price = reader.choice('price', priceModes)
+  const interval = reader.choice('interval', priceIntervals)
+  // The explicit defaults are the same card: keep one canonical address for it.
+  return { query: { ...history.query, ...(price && price !== 'paid' && { price }), ...(interval && interval !== 'month' && { interval }) },
+    invalidFields: [...history.invalidFields, ...reader.invalidFields] }
+}
+
+type QueryReader = ReturnType<typeof queryReader>
+
+// The statistics screens drop a wrong value instead of refusing the whole address:
+// these readers return only values that are safe to send to the API.
+function readCode(reader: QueryReader, name: string, pattern: RegExp): string | undefined {
+  const value = reader.read(name)?.toUpperCase()
+  if (value === undefined || pattern.test(value)) return value
+  reader.invalid(name)
+  return undefined
+}
+
+function readDate(reader: QueryReader, name: string): string | undefined {
+  const value = reader.read(name)
+  if (value === undefined || isCalendarDate(value)) return value
+  reader.invalid(name)
+  return undefined
+}
+
+/** A reversed period is dropped as a whole: neither bound can be trusted alone. */
+function readPeriod(reader: QueryReader, from: string, to: string): [string | undefined, string | undefined] {
+  const start = readDate(reader, from)
+  const end = readDate(reader, to)
+  if (start && end && start > end) { reader.invalid(from); return [undefined, undefined] }
+  return [start, end]
+}
+
+function readStatsScope(reader: QueryReader): StatsScopeQuery {
+  const country = readCode(reader, 'country', /^[A-Z]{2}$/)
+  const currency = readCode(reader, 'currency', /^[A-Z]{3}$/)
+  let store: number[] | undefined
+  const list = reader.read('store')
+  if (list !== undefined) {
+    const ids = list.split(',').map((part) => positiveInteger(part.trim()))
+    const unique = [...new Set(ids)]
+    if (unique.includes(undefined) || unique.length > maxStatsStores) reader.invalid('store')
+    else store = (unique as number[]).sort((a, b) => a - b)
+  }
+  return { ...(country && { country }), ...(currency && { currency }), ...(store && { store }) }
+}
+
+export function parseSpendingQuery(search: string | URLSearchParams): ParsedQuery<SpendingQuery> {
+  const reader = queryReader(search)
+  const [date_from, date_to] = readPeriod(reader, 'date_from', 'date_to')
+  const scope = readStatsScope(reader)
+  const group_by = reader.choice('group_by', spendingGroupings)
+  const category = reader.integer('category')
+  const generic = reader.integer('generic')
+  return {
+    query: {
+      ...(date_from && { date_from }), ...(date_to && { date_to }), ...scope,
+      ...(group_by && group_by !== 'category' && { group_by }), ...(category && { category }), ...(generic && { generic }),
+    },
+    invalidFields: reader.invalidFields,
+  }
+}
+
+/** Only each period's own bounds are checked here; whether the periods overlap is the screen's message to show. */
+export function parseReceiptsStatsQuery(search: string | URLSearchParams): ParsedQuery<ReceiptsStatsQuery> {
+  const reader = queryReader(search)
+  const [base_from, base_to] = readPeriod(reader, 'base_from', 'base_to')
+  const [current_from, current_to] = readPeriod(reader, 'current_from', 'current_to')
+  const scope = readStatsScope(reader)
+  const interval = reader.choice('interval', receiptsStatsIntervals)
+  return {
+    query: {
+      ...(base_from && { base_from }), ...(base_to && { base_to }), ...(current_from && { current_from }), ...(current_to && { current_to }),
+      ...scope, ...(interval && interval !== 'month' && { interval }),
+    },
+    invalidFields: reader.invalidFields,
+  }
+}
+
 export function parseReceiptsQuery(search: string | URLSearchParams): ParsedQuery<ReceiptsQuery> {
   const history = parseHistoryQuery(search)
   const reader = queryReader(search)
@@ -189,14 +316,14 @@ export function parseMergesQuery(search: string | URLSearchParams): ParsedQuery<
   return { query: { ...(status && status !== 'pending' && { status }), page }, invalidFields: reader.invalidFields }
 }
 
-function buildQuery<T>(query: T, keys: (keyof T)[], parse: (search: URLSearchParams) => ParsedQuery<T>): string {
+function buildQuery<T>(query: T, keys: (keyof T)[], parse: (search: URLSearchParams) => ParsedQuery<T>, strict = true): string {
   const params = new URLSearchParams()
   for (const key of keys) {
     const value = query[key]
     if (value !== undefined) params.set(String(key), String(value))
   }
   const { query: normalized, invalidFields } = parse(params)
-  if (invalidFields.length) throw new RangeError('Invalid route query')
+  if (strict && invalidFields.length) throw new RangeError('Invalid route query')
   const result = new URLSearchParams()
   for (const key of keys) {
     const value = normalized[key]
@@ -213,6 +340,30 @@ export function buildCatalogQuery(query: CatalogQuery): string {
 
 export function buildHistoryQuery(query: HistoryQuery): string {
   return buildQuery(query, ['store', 'country', 'currency', 'date_from', 'date_to', 'page'], parseHistoryQuery)
+}
+
+export function buildProductQuery(query: ProductQuery): string {
+  return buildQuery(query, ['store', 'country', 'currency', 'date_from', 'date_to', 'price', 'interval', 'page'], parseProductQuery)
+}
+
+/** Like the address itself, drops wrong values instead of throwing; a store list stays readable: `store=3,5`. */
+export function buildSpendingQuery(query: SpendingQuery): string {
+  return buildQuery(query, ['date_from', 'date_to', 'country', 'currency', 'store', 'group_by', 'category', 'generic'], parseSpendingQuery, false)
+    .replaceAll('%2C', ',')
+}
+
+export function buildReceiptsStatsQuery(query: ReceiptsStatsQuery): string {
+  return buildQuery(query, ['base_from', 'base_to', 'current_from', 'current_to', 'country', 'currency', 'store', 'interval'], parseReceiptsStatsQuery, false)
+    .replaceAll('%2C', ',')
+}
+
+/** Links for the statistics screens: the canonical address of a set of filters. */
+export function spendingHref(query: SpendingQuery = {}): string {
+  return `/stats${buildSpendingQuery(query)}`
+}
+
+export function receiptsStatsHref(query: ReceiptsStatsQuery = {}): string {
+  return `/stats/receipts${buildReceiptsStatsQuery(query)}`
 }
 
 export function buildReceiptsQuery(query: ReceiptsQuery): string {
@@ -236,7 +387,9 @@ export function buildRoute(route: NavigableRoute): string {
   switch (route.kind) {
     case 'catalog': return `/catalog${buildCatalogQuery(route.query)}`
     case 'category': return `/catalog/categories/${buildId(route.categoryId)}${buildCatalogQuery(route.query)}`
-    case 'product': return `/catalog/products/${buildId(route.productId)}${buildHistoryQuery(route.query)}`
+    case 'product': return `/catalog/products/${buildId(route.productId)}${buildProductQuery(route.query)}`
+    case 'spending': return spendingHref(route.query)
+    case 'receipts-stats': return receiptsStatsHref(route.query)
     case 'health': return '/health'
     case 'receipts': return `/receipts${buildReceiptsQuery(route.query)}`
     case 'upload': return '/receipts/upload'
@@ -259,6 +412,9 @@ export function parseRoute(input: string | URL): Route {
   const normalizedPath = path === '/' ? path : path.replace(/\/$/, '')
   if (normalizedPath === '/health') return { kind: 'health' }
   if (normalizedPath === '/receipts/upload') return { kind: 'upload' }
+  // Statistics never answer with invalid-query: a wrong value is dropped and the screen opens without it.
+  if (normalizedPath === '/stats') return { kind: 'spending', query: parseSpendingQuery(url.searchParams).query }
+  if (normalizedPath === '/stats/receipts') return { kind: 'receipts-stats', query: parseReceiptsStatsQuery(url.searchParams).query }
   if (normalizedPath === '/receipts' || normalizedPath === '/recognition/jobs') {
     const receipts = normalizedPath === '/receipts'
     const parsed = receipts ? parseReceiptsQuery(url.searchParams) : parseJobsQuery(url.searchParams)
@@ -296,7 +452,7 @@ export function parseRoute(input: string | URL): Route {
       invalidFields = parsed.invalidFields
       route = { kind: 'category', categoryId: id, query: parsed.query }
     } else {
-      const parsed = parseHistoryQuery(url.searchParams)
+      const parsed = parseProductQuery(url.searchParams)
       invalidFields = parsed.invalidFields
       route = { kind: 'product', productId: id, query: parsed.query }
     }
