@@ -1,0 +1,107 @@
+{
+  "image": {
+    "id": 42,
+    "photo_id": 11,
+    "job_id": 31,
+    "position": 2,
+    "created_at": "2026-10-04T12:35:00Z",
+    "status": "imported",
+    "receipt_id": 72,
+    "receipt_deleted": false,
+    "image_url": "/media/crops/test/crop.png",
+    "width": 8,
+    "height": 16,
+    "bbox": {
+      "x_min": 0.1,
+      "x_max": 0.9,
+      "y_max": 0.9,
+      "y_min": 0.1
+    },
+    "clipped": false,
+    "issues": [
+      {
+        "code": "invalid_value",
+        "field": "/operation",
+        "message": "Значение не прошло проверку.",
+        "reason": "operation_defaulted",
+        "severity": "info",
+        "context": {
+          "entity": "receipt",
+          "index": null,
+          "position": null,
+          "attribute": "operation"
+        }
+      }
+    ],
+    "normalized_result": null,
+    "confirmed_at": "2026-10-04T12:35:00Z",
+    "quad": [
+      {
+        "x": 0.1,
+        "y": 0.1
+      },
+      {
+        "x": 0.9,
+        "y": 0.1
+      },
+      {
+        "x": 0.9,
+        "y": 0.9
+      },
+      {
+        "x": 0.1,
+        "y": 0.9
+      }
+    ],
+    "rotation_degrees": 0.0
+  },
+  "job": {
+    "id": 31,
+    "photo_id": 11,
+    "retry_of": null,
+    "status": "succeeded",
+    "stage": "finished",
+    "version": 2,
+    "created_at": "2026-10-04T12:35:00Z",
+    "started_at": null,
+    "finished_at": "2026-10-04T12:35:00Z",
+    "cancel_requested_at": null,
+    "heartbeat_at": null,
+    "stalled": false,
+    "executor": {
+      "available": false,
+      "last_seen_at": null
+    },
+    "progress": {
+      "detected": 2,
+      "current_position": null,
+      "completed": 2,
+      "imported": 2,
+      "reused": 0,
+      "review": 0,
+      "failed": 0,
+      "cancelled": 0
+    },
+    "review_required": false,
+    "error": null,
+    "actions": {
+      "can_cancel": false,
+      "can_retry": false
+    },
+    "items_count": 2,
+    "items": [
+      {
+        "image_id": 41,
+        "position": 1,
+        "status": "imported",
+        "receipt_id": 71
+      },
+      {
+        "image_id": 42,
+        "position": 2,
+        "status": "imported",
+        "receipt_id": 72
+      }
+    ]
+  }
+}

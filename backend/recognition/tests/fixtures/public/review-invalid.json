@@ -1,0 +1,47 @@
+{
+  "error": {
+    "code": "review_invalid",
+    "message": "Исправленные данные не прошли проверку."
+  },
+  "issues": [
+    {
+      "code": "invalid_value",
+      "field": "/operation",
+      "message": "Значение не прошло проверку.",
+      "reason": "operation_defaulted",
+      "severity": "info",
+      "context": {
+        "entity": "receipt",
+        "index": null,
+        "position": null,
+        "attribute": "operation"
+      }
+    },
+    {
+      "code": "invalid_value",
+      "field": "/taxes",
+      "message": "Значение не прошло проверку.",
+      "reason": "optional_omitted",
+      "severity": "warning",
+      "context": {
+        "entity": "tax",
+        "index": null,
+        "position": null,
+        "attribute": null
+      }
+    },
+    {
+      "code": "total_mismatch",
+      "field": "/total",
+      "message": "Сумма чека не совпадает с суммой позиций.",
+      "reason": "total_mismatch",
+      "severity": "error",
+      "context": {
+        "entity": "receipt",
+        "index": null,
+        "position": null,
+        "attribute": "total"
+      }
+    }
+  ]
+}

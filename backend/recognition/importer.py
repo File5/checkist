@@ -108,7 +108,18 @@ def _detect_product_merges(receipt):
         logger.error("Product merge detection after import failed: %s", type(error).__name__)
 
 
-def _preflight(observation, derived=()):
+def effective_observation(observation):
+    """Import policy and arithmetic of one observation: (effective, notices, derived)."""
+    effective, notices = prepare_observation(observation)
+    effective, derived = _domain_observation(effective)
+    if any(v["code"] == "operation_defaulted" for v in notices):
+        derived.append("/operation")
+    if observation.prices_include_tax is None:
+        derived.append("/prices_include_tax")
+    return effective, notices, derived
+
+
+def _preflight(observation, derived=(), *, store=None):
     issues = [issue(v["code"], v["path"]) for v in observation_issues(observation)]
     notices = [v for v in issues if v["code"] == "total_mismatch"
                and (v["field"] == "/discount_total" or v["field"].endswith("/discount_amount"))]
@@ -123,6 +134,9 @@ def _preflight(observation, derived=()):
         allowed.add("/store/name")
     if observation.store.branch_code:
         allowed.add("/store/address_raw")
+    if store is not None:
+        # A shop chosen by a person needs neither a printed name nor an address.
+        allowed.update({"/store/name", "/store/address_raw"})
     issues = [v for v in issues if not (v["code"] == "missing_required" and v["field"] in allowed)]
     for evidence in observation.fields:
         parts = evidence.path.split("/")
@@ -197,13 +211,16 @@ def _duplicate(header):
     return selected[0] if selected else None
 
 
-def _create_graph(header, observation, country, derived):
+def _create_graph(header, observation, country, derived, confirmed=None):
     stamp = observation.timestamps.fiscal if observation.timestamps.fiscal.time else observation.timestamps.header
-    receipt = clean_save(Receipt(**header, extra={"recognition": {
+    recognition = {
         "derived": derived, "time_precision": stamp.precision,
         "country_source": "observed" if observation.store.country_code or observation.merchant.country_code else "fallback",
         "timezone": header["store"].timezone, "utc_offset_printed": observation.utc_offset_printed,
-    }}))
+    }
+    if confirmed is not None:
+        recognition["confirmed"] = confirmed
+    receipt = clean_save(Receipt(**header, extra={"recognition": recognition}))
     issues, lines = [], {}
     def tax_rate(rate, field):
         # prepare_observation already requires observed kind/rate, and may
@@ -355,12 +372,19 @@ def _update_graph(receipt, header, observation):
     return receipt, ImportEffect.UPDATED if changed else ImportEffect.LINKED, issues
 
 
-def _import_domain(observation, derived, *, require_duplicate=False, link_only=False):
-    notices = _preflight(observation, derived)
-    country = resolve_country(observation)
+def _import_domain(observation, derived, *, require_duplicate=False, link_only=False, store=None, confirmed=None):
+    """Resolve, deduplicate and write one effective observation; raises ResolutionError.
+
+    ``store`` is a shop already chosen by a person: it replaces store and
+    country resolution. ``confirmed`` is recorded in ``extra`` of a NEW receipt
+    only; an existing receipt is never rewritten.
+    """
+    notices = _preflight(observation, derived, store=store)
+    country = resolve_country(observation) if store is None else store.country
     with transaction.atomic():
-        store = resolve_store(observation, country, allow_create=observation.currency_code is not None,
-                              notices=notices)
+        if store is None:
+            store = resolve_store(observation, country, allow_create=observation.currency_code is not None,
+                                  notices=notices)
         if store is None:
             raise ResolutionError(issue("missing_required", "/currency_code"))
         currency = resolve_currency(observation, store=store)
@@ -382,7 +406,9 @@ def _import_domain(observation, derived, *, require_duplicate=False, link_only=F
         return receipt, effect, notices + issues
     if require_duplicate:
         raise ResolutionError(issue("identity_conflict", "/"))
-    receipt, effect, issues = _create_graph(header, observation, country, derived)
+    # The worker's call stays exactly as it was; only a confirmation adds its mark.
+    mark = () if confirmed is None else (confirmed,)
+    receipt, effect, issues = _create_graph(header, observation, country, derived, *mark)
     return receipt, effect, notices + issues
 
 
@@ -406,12 +432,7 @@ def import_receipt(image, observation, *, run_token, version, on_saved=None):
     image_id = image.pk
     normalized = observation.to_dict()
     with price_context():
-        effective, notices = prepare_observation(observation)
-        effective, derived = _domain_observation(effective)
-        if any(v["code"] == "operation_defaulted" for v in notices):
-            derived.append("/operation")
-        if observation.prices_include_tax is None:
-            derived.append("/prices_include_tax")
+        effective, notices, derived = effective_observation(observation)
         with transaction.atomic(durable=True):
             with connection.cursor() as cursor:
                 cursor.execute("SELECT pg_try_advisory_xact_lock(%s)", [IMPORT_LOCK])

@@ -73,6 +73,8 @@ flowchart LR
   R --> I[Atomic import + image outcome]
   I --> DB[Receipt / lines / products]
   I --> Q[needs_review / failed + issues]
+  Q --> H[POST confirm: правки человека]
+  H --> I
   P --> G[GET job / images / receipts]
   I --> G
 ```
@@ -87,12 +89,14 @@ Provider выполняет только извлечение, без ORM. `Fake
 
 Import сериализован отдельной transaction advisory-блокировкой и fenced job row. Точные store/product/alias/GTIN совпадения переиспользуются, новые магазины и товары создаются автоматически; неподтверждённая идентичность оставляет issues. Повторное фото связывается по сильному ключу либо точному store/time/total и дополняет только пустые поля и непривязанные товары при совместимой структуре строк. Суммы и существующие значения не перезаписываются. Неполный/противоречивый результат сохраняется на вырезке, domain-записи откатываются; часть needs_review может иметь Receipt, например при несопоставленном товаре.
 
+Неполный результат исправляет и подтверждает человек: `POST /api/recognition/receipt-images/{id}/confirm/` принимает исправленные данные вырезки `needs_review` и в одной транзакции проводит их через тот же доменный импорт (`recognition/review.py` поверх `importer._import_domain`), под тем же мьютексом и блокировками задания и вырезки, что у воркера. Черновика на сервере нет, провайдер не вызывается, закрытые реквизиты берутся из сохранённого результата распознавания. Успех меняет вырезку на imported/reused/updated и пересчитывает завершённое задание (partial_succeeded → succeeded, когда успешны все вырезки); отказ ничего не сохраняет. Подтверждение допустимо только после завершения задания. Контракт — [api-contract.md](api-contract.md#подтверждение-вырезки-needs_review-человеком), хранение — [data-model.md](data-model.md#подтверждение-вырезки-человеком).
+
 Cancel queued сразу даёт cancelled, running — cancel_requested до остановки провайдера. Перед импортом проверяется durable cancel; последний import и terminal status фиксируются одним commit. Уже сохранённые чеки остаются. Ошибка одного crop не теряет другие; terminal statuses: succeeded, partial_succeeded (включая только review), failed, cancelled. Повтор провайдера — максимум одна дополнительная попытка для transient ошибок; budget 2400 с от первого claim, detect 90 с, recognize 180 с/crop.
 
 Доступ новых API: DEBUG + `ALLOW_LOCAL_RECOGNITION_API=1` + loopback peer; unsafe методы требуют CSRF даже для анонима. Авторизации пользователей/владельца чека нет. Health/Celery не проверяют OCR-воркер, Codex или его auth. Запуск — [development.md](development.md#распознавание-запуск-для-клиента), проверки — [verification.md](verification.md#распознавание-сквозная-серверная-проверка).
 
 ## Планируется
 
-Клиент загрузки фото/чеков, экраны каталога и цен, ручное сопоставление/редактирование через API, дашборд, серверные курсы валют и пользовательское разграничение. OpenAI API/Claude CLI пока не реализованы. Production-архитектура, retention/cleanup и deployment не определены; защита ручных админских правок от параллельного OCR исключена из v1.
+Клиент загрузки фото/чеков, экраны каталога и цен, ручное сопоставление товаров и правка сохранённого чека через API, дашборд, серверные курсы валют и пользовательское разграничение. OpenAI API/Claude CLI пока не реализованы. Production-архитектура, retention/cleanup и deployment не определены; защита ручных админских правок от параллельного OCR исключена из v1.
 
 Контракт, модель данных и реальные ограничения проверки: [api-contract.md](api-contract.md), [data-model.md](data-model.md), [verification.md](verification.md).
