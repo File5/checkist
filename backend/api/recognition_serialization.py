@@ -161,12 +161,17 @@ def photo_object(photo):
 # Two-key advisory locks appear in pg_locks as classid/objid with objsubid = 2.
 # Advisory locks are per database: without that filter a dev/QA worker on the
 # same cluster would look alive to another database.
+# The same statement tells whether the worker executes a batch of generic product
+# suggestions (a classification run with a live lease): one query, as before.
 WORKER_SLOT_HELD = """
     SELECT EXISTS (
         SELECT 1 FROM pg_locks
         WHERE locktype = 'advisory' AND granted
           AND classid = %s AND objid = %s AND objsubid = 2
           AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+    ), EXISTS (
+        SELECT 1 FROM classification_classificationrun
+        WHERE status = 'running' AND lease_expires_at > clock_timestamp()
     )
 """
 
@@ -181,8 +186,8 @@ def executor_object():
     latest = active.order_by("-heartbeat_at", "-id").values("heartbeat_at", "lease_expires_at").first()
     with connection.cursor() as cursor:
         cursor.execute(WORKER_SLOT_HELD, WORKER_LOCK)
-        held = cursor.fetchone()[0]
-    if latest and latest["lease_expires_at"] > now:
+        held, classifying = cursor.fetchone()
+    if (latest and latest["lease_expires_at"] > now) or classifying:
         state = "busy"
     else:
         state = "idle" if held else "absent"

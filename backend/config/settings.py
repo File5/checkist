@@ -101,6 +101,7 @@ INSTALLED_APPS = [
     "receipts.apps.ReceiptsConfig",
     "recognition.apps.RecognitionConfig",
     "merges.apps.MergesConfig",
+    "classification.apps.ClassificationConfig",
     "api.apps.ApiConfig",
 ]
 MIDDLEWARE = [
@@ -232,6 +233,16 @@ merge_detect_flag = env_text("PRODUCT_MERGE_AUTO_DETECT", "0").lower()
 if merge_detect_flag not in {"0", "1", "true", "false"}:
     raise ImproperlyConfigured("PRODUCT_MERGE_AUTO_DETECT: expected 0, 1, true or false.")
 PRODUCT_MERGE_AUTO_DETECT = merge_detect_flag in {"1", "true"}
+# Generic product suggestions right after a receipt import. Off by default: turning
+# it on lets the next import queue a model request about the new products.
+classification_suggest_flag = env_text("PRODUCT_CLASSIFICATION_AUTO_SUGGEST", "0").lower()
+if classification_suggest_flag not in {"0", "1", "true", "false"}:
+    raise ImproperlyConfigured("PRODUCT_CLASSIFICATION_AUTO_SUGGEST: expected 0, 1, true or false.")
+PRODUCT_CLASSIFICATION_AUTO_SUGGEST = classification_suggest_flag in {"1", "true"}
+# Deadline of one model request, products per request and products per run.
+PRODUCT_CLASSIFICATION_TIMEOUT_SECONDS = env_integer("PRODUCT_CLASSIFICATION_TIMEOUT_SECONDS", 180, 1, 2400)
+PRODUCT_CLASSIFICATION_BATCH_SIZE = env_integer("PRODUCT_CLASSIFICATION_BATCH_SIZE", 25, 1, 50)
+PRODUCT_CLASSIFICATION_RUN_LIMIT = env_integer("PRODUCT_CLASSIFICATION_RUN_LIMIT", 200, 1, 1000)
 MEDIA_ROOT = env_directory("MEDIA_ROOT", BASE_DIR.parent / "media")
 # Fixed v1 prefix shared with the client URL guards and Vite dev/preview proxy.
 MEDIA_URL = os.environ.get("MEDIA_URL", "/media/")

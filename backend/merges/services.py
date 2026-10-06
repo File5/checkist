@@ -12,6 +12,7 @@ with a full rollback and no hidden retry. Writers outside the mutex (admin,
 raw ORM/SQL) are only covered by the row locks.
 """
 import json
+import logging
 from collections import defaultdict
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -28,6 +29,8 @@ from merges.models import (
 )
 from receipts.dedup import name_key
 from receipts.models import ProductAlias, ReceiptLine
+
+logger = logging.getLogger(__name__)
 
 Status = ProductMerge.Status
 Role = ProductMergeMember.Role
@@ -392,6 +395,17 @@ def _resolve(group, status):
     group.save(update_fields=["status", "resolved_at", "version", "target_ref"])
 
 
+def _notify_classification(target_id, absorbed_ids):
+    """Classification records of the merged products, in a savepoint; never fails the merge."""
+    try:
+        with transaction.atomic():
+            from classification import services as classification  # lazy: classification imports merges
+
+            classification.after_merge_confirmed(target_id=target_id, absorbed_ids=absorbed_ids)
+    except Exception as error:
+        logger.error("Classification step after merge confirmation failed: %s", type(error).__name__)
+
+
 def _fresh(group_id):
     return ProductMerge.objects.get(pk=group_id)
 
@@ -631,6 +645,7 @@ def confirm(group_id, *, version, target_product_id, name_product_id=None, resol
         Product.objects.filter(pk__in=absorbed).delete()
         target.save()
         _resolve(group, Status.CONFIRMED)
+        _notify_classification(target_product_id, absorbed)
     return _fresh(group_id)
 
 
