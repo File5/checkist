@@ -1,0 +1,11 @@
+{
+  "base": {
+    "date_from": "2017-01-01",
+    "date_to": "2017-12-31"
+  },
+  "current": {
+    "date_from": "2018-01-01",
+    "date_to": "2018-12-31"
+  },
+  "currencies": []
+}

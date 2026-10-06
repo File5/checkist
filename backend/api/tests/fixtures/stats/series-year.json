@@ -1,0 +1,179 @@
+{
+  "interval": "year",
+  "date_from": null,
+  "date_to": null,
+  "currencies": [
+    {
+      "currency": "EUR",
+      "refunds_excluded": 1,
+      "buckets": [
+        {
+          "period_start": "2019-01-01",
+          "receipts_count": 48,
+          "total": "1249.81",
+          "avg_receipt": "26.04",
+          "median_receipt": "25.46",
+          "lines_count": 528,
+          "lines_per_receipt": "11.00",
+          "paid_per_line": "2.3671"
+        },
+        {
+          "period_start": "2020-01-01",
+          "receipts_count": 48,
+          "total": "1296.41",
+          "avg_receipt": "27.01",
+          "median_receipt": "27.28",
+          "lines_count": 552,
+          "lines_per_receipt": "11.50",
+          "paid_per_line": "2.3486"
+        },
+        {
+          "period_start": "2021-01-01",
+          "receipts_count": 48,
+          "total": "1435.92",
+          "avg_receipt": "29.92",
+          "median_receipt": "29.70",
+          "lines_count": 576,
+          "lines_per_receipt": "12.00",
+          "paid_per_line": "2.4929"
+        },
+        {
+          "period_start": "2022-01-01",
+          "receipts_count": 48,
+          "total": "1595.03",
+          "avg_receipt": "33.23",
+          "median_receipt": "33.39",
+          "lines_count": 600,
+          "lines_per_receipt": "12.50",
+          "paid_per_line": "2.6584"
+        },
+        {
+          "period_start": "2023-01-01",
+          "receipts_count": 48,
+          "total": "1824.62",
+          "avg_receipt": "38.01",
+          "median_receipt": "37.94",
+          "lines_count": 624,
+          "lines_per_receipt": "13.00",
+          "paid_per_line": "2.9241"
+        },
+        {
+          "period_start": "2024-01-01",
+          "receipts_count": 48,
+          "total": "1945.36",
+          "avg_receipt": "40.53",
+          "median_receipt": "40.49",
+          "lines_count": 648,
+          "lines_per_receipt": "13.50",
+          "paid_per_line": "3.0021"
+        },
+        {
+          "period_start": "2025-01-01",
+          "receipts_count": 48,
+          "total": "2054.98",
+          "avg_receipt": "42.81",
+          "median_receipt": "42.49",
+          "lines_count": 672,
+          "lines_per_receipt": "14.00",
+          "paid_per_line": "3.0580"
+        },
+        {
+          "period_start": "2026-01-01",
+          "receipts_count": 36,
+          "total": "1646.08",
+          "avg_receipt": "45.72",
+          "median_receipt": "45.52",
+          "lines_count": 528,
+          "lines_per_receipt": "14.67",
+          "paid_per_line": "3.1176"
+        }
+      ]
+    },
+    {
+      "currency": "KZT",
+      "refunds_excluded": 0,
+      "buckets": [
+        {
+          "period_start": "2019-01-01",
+          "receipts_count": 12,
+          "total": "30987.63",
+          "avg_receipt": "2582.30",
+          "median_receipt": "2531.50",
+          "lines_count": 60,
+          "lines_per_receipt": "5.00",
+          "paid_per_line": "516.4605"
+        },
+        {
+          "period_start": "2020-01-01",
+          "receipts_count": 12,
+          "total": "36651.51",
+          "avg_receipt": "3054.29",
+          "median_receipt": "2892.32",
+          "lines_count": 66,
+          "lines_per_receipt": "5.50",
+          "paid_per_line": "555.3259"
+        },
+        {
+          "period_start": "2021-01-01",
+          "receipts_count": 12,
+          "total": "43737.13",
+          "avg_receipt": "3644.76",
+          "median_receipt": "3619.55",
+          "lines_count": 72,
+          "lines_per_receipt": "6.00",
+          "paid_per_line": "607.4601"
+        },
+        {
+          "period_start": "2022-01-01",
+          "receipts_count": 12,
+          "total": "48409.85",
+          "avg_receipt": "4034.15",
+          "median_receipt": "3856.73",
+          "lines_count": 72,
+          "lines_per_receipt": "6.00",
+          "paid_per_line": "672.3590"
+        },
+        {
+          "period_start": "2023-01-01",
+          "receipts_count": 12,
+          "total": "62142.05",
+          "avg_receipt": "5178.50",
+          "median_receipt": "5428.50",
+          "lines_count": 78,
+          "lines_per_receipt": "6.50",
+          "paid_per_line": "796.6929"
+        },
+        {
+          "period_start": "2024-01-01",
+          "receipts_count": 12,
+          "total": "70897.00",
+          "avg_receipt": "5908.08",
+          "median_receipt": "5740.90",
+          "lines_count": 84,
+          "lines_per_receipt": "7.00",
+          "paid_per_line": "844.0119"
+        },
+        {
+          "period_start": "2025-01-01",
+          "receipts_count": 12,
+          "total": "77953.82",
+          "avg_receipt": "6496.15",
+          "median_receipt": "6649.50",
+          "lines_count": 84,
+          "lines_per_receipt": "7.00",
+          "paid_per_line": "928.0217"
+        },
+        {
+          "period_start": "2026-01-01",
+          "receipts_count": 9,
+          "total": "67312.93",
+          "avg_receipt": "7479.21",
+          "median_receipt": "7836.00",
+          "lines_count": 67,
+          "lines_per_receipt": "7.44",
+          "paid_per_line": "1004.6706"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "group_by": "category",
+  "date_from": "2026-03-14",
+  "date_to": "2026-03-14",
+  "parent": null,
+  "currencies": [
+    {
+      "currency": "EUR",
+      "totals": {
+        "receipts_count": 1,
+        "receipts_total": "-7.14",
+        "lines_paid": "-7.14",
+        "difference": "0.00"
+      },
+      "items": [
+        {
+          "kind": "category",
+          "id": 6,
+          "name": "Не разобрано",
+          "direct": false,
+          "unassigned": true,
+          "amount": "-7.14",
+          "share_percent": null,
+          "lines_count": 1,
+          "receipts_count": 1,
+          "quantity": null,
+          "unit": null
+        }
+      ],
+      "other": null
+    }
+  ]
+}

@@ -1,0 +1,71 @@
+{
+  "group_by": "product",
+  "date_from": null,
+  "date_to": null,
+  "parent": null,
+  "currencies": [
+    {
+      "currency": "EUR",
+      "totals": {
+        "receipts_count": 372,
+        "receipts_total": null,
+        "lines_paid": "545.75",
+        "difference": null
+      },
+      "items": [
+        {
+          "kind": "product",
+          "id": 1,
+          "name": "Demo Frischmilch 1,5% 1L",
+          "direct": false,
+          "unassigned": false,
+          "amount": "391.36",
+          "share_percent": "71.71",
+          "lines_count": 279,
+          "receipts_count": 279,
+          "quantity": "419.000",
+          "unit": "pcs"
+        },
+        {
+          "kind": "product",
+          "id": 2,
+          "name": "Demo Landmilch 3,5% 1L",
+          "direct": false,
+          "unassigned": false,
+          "amount": "154.39",
+          "share_percent": "28.29",
+          "lines_count": 93,
+          "receipts_count": 93,
+          "quantity": "140.000",
+          "unit": "pcs"
+        }
+      ],
+      "other": null
+    },
+    {
+      "currency": "KZT",
+      "totals": {
+        "receipts_count": 93,
+        "receipts_total": null,
+        "lines_paid": "69769.00",
+        "difference": null
+      },
+      "items": [
+        {
+          "kind": "product",
+          "id": 3,
+          "name": "Демо Молоко 2,5% 1 л",
+          "direct": false,
+          "unassigned": false,
+          "amount": "69769.00",
+          "share_percent": "100.00",
+          "lines_count": 93,
+          "receipts_count": 93,
+          "quantity": "140.000",
+          "unit": "pcs"
+        }
+      ],
+      "other": null
+    }
+  ]
+}

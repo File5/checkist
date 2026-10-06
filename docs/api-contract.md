@@ -982,6 +982,176 @@ Line.product=null → matching_status=unmatched; ambiguous здесь отсут
 
 Откат: `manage.py product_merges cancel-pending`, затем `migrate merges zero`; подробности и необратимые ограничения — [data-model.md](data-model.md#откат-merges).
 
+## Реализовано: статистика трат, походы и ряды цен (серверная часть)
+
+Четыре эндпоинта только на чтение в приложении `backend/api/`; моделей, миграций и индексов нет — всё считается из `receipts_receipt`, `receipts_receiptline`, каталога и `merges` (только чтение). **Клиент статистики ещё не сделан:** экранов `/stats`, графика цен в карточке товара и адаптеров в SPA нет, потребитель — следующий этап. 13 GET каталога и цен, `/api/receipts/` и их эталоны не менялись.
+
+| Эндпоинт | Что отдаёт | Доступ |
+| --- | --- | --- |
+| `GET /api/stats/spending/` | Траты за период по категориям, обобщённым продуктам, товарам или магазинам | локальный |
+| `GET /api/stats/receipts/series/` | Походы по времени: число чеков, средний и медианный чек, позиций на чек | локальный |
+| `GET /api/stats/receipts/compare/` | Разложение изменения среднего чека между двумя периодами | локальный |
+| `GET /api/products/{id}/prices/series/` | Ряды цен товара по магазинам и похожих товаров по странам | анонимный, как 13 GET |
+
+Расчёты — `backend/receipts/spending.py` и `backend/receipts/basket.py` (арифметика без БД), views — `backend/api/views/stats_spending.py`, `stats_receipts.py`, `price_series.py`, общие фильтры — `backend/api/stats_common.py`.
+
+### Доступ к статистике
+
+- `/api/stats/*` — как `/api/receipts/`: `DEBUG` + `ALLOW_LOCAL_RECOGNITION_API=1` + loopback, иначе `403 permission_denied` (в том числе на неизвестный путь под `/api/stats/`). Ответы несут `Cache-Control: no-store`. CSRF для чтения не нужен. Причина: эндпоинты раскрывают суммы всех чеков и несопоставленные строки. Ошибка БД (таймаут, разрыв) — `503 database_unavailable`.
+- `/api/products/{id}/prices/series/` — как остальные 13 GET: `AllowAny`, анонимно, флаг не проверяется; ошибка БД — `500 internal_error`. Он отдаёт то же, что уже открытые `/prices/` и `/comparison/`, и карточка товара не должна зависеть от флага.
+- Пользователей и владельца данных нет: перед любым внешним развёртыванием доступ нужно закрыть, как и для остальных API.
+
+### Общие правила статистики
+
+- Только `GET` (а также `HEAD` и `OPTIONS`), JSON, завершающий `/`. Query разбирает `api.params.Params`: неизвестные параметры игнорируются, пустые равны отсутствующим, все ошибки — одним `400 invalid_parameter` с `fields`.
+- Период — по `Receipt.purchased_on` (локальная дата магазина), **обе границы включительно**; от часового пояса сервера не зависит. Неделя — с понедельника.
+- Деньги — строки с 2 знаками; цена за единицу и индексы цен — 4; количество — 3; проценты, `lines_per_receipt`, `months` и `receipts_per_month` — 2. `ROUND_HALF_UP`, `Decimal` от БД до JSON.
+- **Валюты не складываются и не пересчитываются:** ответ — массив блоков по коду валюты чека, курсы не принимаются. Чеки одного магазина в двух валютах дают два блока.
+- Слитые товары: строки поглощённого товара уже перенесены на оставляемый; строка, которая ещё указывает на поглощённый, относится к оставляемому (`target_ref` ожидающей группы). Id и название поглощённого наружу не выходят; поглощённый id в пути рядов цен — `404`. Отмена группы возвращает прежние суммы.
+- Закрытые поля чека (`raw_text`, `fiscal`, номера, `legal_name`, `tax_id`) в ответы не входят; магазин — `{"id", "name", "city", "country"}`.
+- Число SQL-запросов не зависит от объёма данных (`assertNumQueries`): траты — 3–4, ряды походов — 3, сравнение — 2–3, плюс до трёх запросов на проверку `country`, `currency`, `store` и один на названия магазинов при `group_by=store`; ряды цен — до 10.
+- Общие фильтры `/api/stats/*`: `date_from`, `date_to` (`ГГГГ-ММ-ДД`, необязательны), `country` (код страны магазина), `currency` (код валюты чека), `store` (один или несколько id через запятую, не больше 20; несуществующий — `400` «Магазин не найден.»).
+
+### `GET /api/stats/spending/`
+
+| Параметр | Значение |
+| --- | --- |
+| общие фильтры | см. выше; без дат — вся история |
+| `group_by` | `category` (по умолчанию), `generic`, `product`, `store` |
+| `category` | id категории: только строки товаров этой категории с потомками; при `group_by=category` секторы — её прямые подкатегории |
+| `generic` | id обобщённого продукта |
+| `limit` | число обычных элементов до «прочего»: 1–50, по умолчанию 10 |
+
+Несуществующие `category` и `generic` — `200` с `"currencies": []`.
+
+- В траты входят **все чеки**, включая возвраты со своим знаком. Значение элемента — `Σ (amount − discount_amount)` его строк. Скидка на весь чек по строкам не распределяется.
+- `group_by=category` без `category` — корневые категории вместе с потомками; с `category=N` — прямые подкатегории `N` плюс элемент самой `N` с `"direct": true` для товаров, лежащих прямо в ней; `parent` — `{"id", "name", "path"}` категории фильтра, иначе `null`.
+- Особые элементы идут после обычных и в «прочее» не сворачиваются: `unmatched` (строки `kind=product` без товара), `service`, `deposit` (залог и возврат тары чистой суммой); у них `id` и `name` — `null`. При `group_by=store` особых элементов нет, значение магазина — `Σ Receipt.total`, у элемента дополнительно `city` и `country`.
+- `unassigned: true` — у категории и обобщённого продукта «Не разобрано» (туда импорт кладёт новые товары; настоящую категорию назначает человек в админке).
+- `totals.receipts_total` — `Σ Receipt.total`; `lines_paid` — сумма всех элементов и «прочего»; `difference = receipts_total − lines_paid` (скидки на весь чек, налог сверх цен, округление). С фильтром `category` или `generic` считаются только строки сопоставленных товаров: особых элементов нет, `receipts_total` и `difference` — `null`, `receipts_count` — число чеков с такими строками, значение магазина — сумма этих строк.
+- `share_percent` — доля от суммы **положительных** элементов блока (показанных и «прочего»); у элемента с суммой ≤ 0 — `null`.
+- `quantity` и `unit` — только при `group_by=product` и одной единице у всех строк товара, иначе `null`.
+- Порядок: блоки по коду валюты; обычные элементы по сумме по убыванию, затем `name`, `id`; затем `unmatched`, `service`, `deposit`. `other` — `{"count", "amount", "share_percent"}` обычных элементов после первых `limit` либо `null`.
+
+Тождества (проверяются на эталонах и на демо): `Σ items.amount + other.amount = totals.lines_paid`; `lines_paid + difference = receipts_total`.
+
+### `GET /api/stats/receipts/series/`
+
+Общие фильтры и `interval`: `month` (по умолчанию), `week`, `quarter`, `year`. Поход — чек `operation=sale`; возвраты не входят, их число по валюте — `refunds_excluded`. Интервалы без походов не включаются; валюта без походов блока не даёт. Больше 1000 интервалов в ответе — `400 range_too_large`.
+
+Интервал: `period_start`, `receipts_count`, `total`, `avg_receipt`, `median_receipt` (`percentile_cont(0.5)`, 2 знака), `lines_count` (строки `kind=product` с положительным количеством), `lines_per_receipt`, `paid_per_line = total / lines_count` (4 знака, `null` при нуле строк).
+
+### `GET /api/stats/receipts/compare/`
+
+| Параметр | Значение |
+| --- | --- |
+| `base_from`, `base_to`, `current_from`, `current_to` | все четыре обязательны: без любого — `400`, `fields.<имя>: ["Обязательный параметр."]`; `base_to` должна быть раньше `current_from`, иначе `fields.current_from: ["Периоды не должны пересекаться."]` |
+| `country`, `currency`, `store` | общие фильтры |
+| `limit` | число товаров в `products`: 1–100, по умолчанию 20 |
+
+Блок валюты: `base` и `current` (поля интервала из рядов походов плюс `months` — длина периода в днях / 30,4375, `receipts_per_month`, `refunds_excluded`), `change` (`avg_receipt`, `avg_receipt_percent`), `effects`, `price_index`, `products`, `products_total`.
+
+#### Методика разложения
+
+По периоду и валюте: `R` — число походов, `T` — `Σ Receipt.total`, `L` — число строк `kind=product` с положительным количеством. Средний чек `a = T / R`, позиций на чек `n = L / R`, сумма на позицию `p = T / L`; `a = n × p`.
+
+- **количество** (`effects.quantity`) = `(n₂ − n₁) × (p₁ + p₂) / 2`;
+- **индекс цен** — Фишера по товарам, купленным в обоих периодах (ключ — товар и единица строки; цена периода — оплаченная сумма / количество): `laspeyres = Σ p₂q₁ / Σ p₁q₁`, `paasche = Σ p₂q₂ / Σ p₁q₂`, `fisher = √(laspeyres × paasche)`;
+- **цены** (`effects.price`) = `(n₁ + n₂) / 2 × p₁ × (fisher − 1)`;
+- **состав** (`effects.mix`) = `(n₁ + n₂) / 2 × (p₂ − p₁ × fisher)` — остаток: другие товары, залоги, услуги, скидки на чек, несопоставленные строки.
+
+`change.avg_receipt` — разность уже округлённых средних; `quantity + price + mix = change.avg_receipt` **точно**: остаток округления относится в `mix`. `price_per_line = price + mix` отдаётся всегда. `*_percent` — доля слагаемого в изменении, `null` при нулевом изменении.
+
+**Допущение, которое клиент обязан показать:** индекс измерен только на совпавших товарах и перенесён на всю корзину. Насколько он представителен, показывают `price_index.coverage_base_percent` и `coverage_current_percent` — доля оплаченной суммы товарных строк периода, приходящаяся на совпавшие товары. Несопоставленные строки в индекс не входят. Пара «товар, единица» берётся, только если в обоих периодах её количество и оплаченная сумма положительны.
+
+- `effects` — `null` целиком, если в любом периоде нет походов или нет строк товаров; без походов в одном из периодов `change.avg_receipt` тоже `null`.
+- Совпавших товаров нет — `price_index: null`, `effects.price`, `effects.mix` и их проценты — `null`, `effects.price_per_line` заполнено, `products: []`.
+- `products` — совпавшие товары по убыванию `|current.amount − base.amount|`, затем `name`, `id`, `unit`; `products_total` равно `price_index.matched_products`.
+- Блок валюты есть, если **походы** есть хотя бы в одном периоде; иначе `"currencies": []`.
+
+### `GET /api/products/{id}/prices/series/`
+
+| Параметр | Значение |
+| --- | --- |
+| `date_from`, `date_to` | как у `/prices/` |
+| `country` | один или несколько кодов через запятую, не больше 20 |
+| `currency` | код валюты |
+| `interval` | `month` (по умолчанию), `day`, `week` |
+| `price` | `paid` (по умолчанию) — оплаченная цена за единицу строки; `normalized` — за кг / л / шт |
+| `similar` | `generic` (по умолчанию) или `none` |
+| `similar_limit` | 1–20, по умолчанию 8 |
+
+- Ряд своего товара (`role: "own"`) — на тройку «магазин, валюта, единица»; не больше 20 рядов с наибольшим числом наблюдений, иначе `own_truncated: true`.
+- Ряд похожего товара (`role: "similar"`) — на «товар, страна, валюта, единица», `store: null`. **Похожий — видимый товар того же обобщённого продукта**; первые `similar_limit` по числу наблюдений в окне, затем `name`, `id`. Цены разных валют и единиц в один ряд не попадают; цена за штуку у похожих товаров может относиться к разным фасовкам.
+- `similar.status`: `ok`; `disabled` (`similar=none`); `generic_unassigned` — товар в «Не разобрано», похожих не ищем; `none` — других товаров с наблюдениями нет.
+- `comparable` — единица ряда равна `base_unit` обобщённого продукта; возможно только при `price=normalized`. При `normalized` наблюдения без нормализованной цены пропускаются, их число для своего товара — `skipped_without_normalized`; при `paid` поле равно 0.
+- Точка: `period_start`, `count`, `min`, `max`, `avg` (простое среднее), `last` (последнее наблюдение интервала). Наблюдения — как в истории цен: строки `kind=product` с положительным количеством из чеков продажи.
+- Порядок `series`: свои по убыванию наблюдений, затем `store.id`; потом похожие по `product.name`, `product.id`, `country`, `currency`, `unit`.
+- Больше 1000 точек суммарно — `400 range_too_large`. Товар без наблюдений — `200`, `series: []`. Несуществующий или поглощённый id — `404 not_found`.
+
+### Ошибки статистики
+
+Формат прежний — `{"error": {"code", "message", "fields?"}}`, новых кодов нет.
+
+| HTTP | code | Когда |
+| --- | --- | --- |
+| 400 | `invalid_parameter` | дата, код, id, `group_by` / `interval` / `price` / `similar` / `limit` вне допустимого, пропущена обязательная дата, пересечение периодов |
+| 400 | `range_too_large` | больше 1000 интервалов или точек |
+| 403 | `permission_denied` | `/api/stats/*` вне локального режима |
+| 404 | `not_found` | товар в пути рядов цен; неизвестный путь |
+| 405 / 406 | как у соседних API | метод, `Accept`; небезопасный метод на `/api/stats/*` отвечает так же, как на `/api/receipts/` |
+| 503 | `database_unavailable` | только `/api/stats/*` |
+
+### Эталонные ответы статистики
+
+`backend/api/tests/fixtures/stats/*.json` — **полные тела настоящих HTTP-ответов** на демо `seed_stats_demo` (UTF-8, LF, отступ 2); по ним клиент проверяет runtime-схемы. `backend/api/tests/test_stats_public.py` сверяет каждый файл с ответом сервера целиком и проверяет тождества. Id в эталонах — как на свежей базе после `migrate` и `seed_stats_demo`: категории «Продукты питания» 1 и «Молочные продукты» 2, обобщённый продукт «Молоко» 1, товары молока 1 / 2 / 3, яблоки 6, печенье 11, магазины 1 / 2 / 3. `P` ниже — `base_from=2020-01-01&base_to=2020-12-31&current_from=2026-01-01&current_to=2026-09-30`.
+
+| Файл | Запрос | Что показывает |
+| --- | --- | --- |
+| `spending-category.json` | `/api/stats/spending/` | две валюты, корневые категории, `unmatched` / `service` / `deposit` |
+| `spending-category-drilldown.json` | `…/spending/?category=1&currency=EUR` | `parent`, подкатегории, `direct: true`, `receipts_total: null` |
+| `spending-generic.json` | `…/spending/?group_by=generic&currency=EUR&limit=5` | `other`, `unassigned` |
+| `spending-product.json` | `…/spending/?group_by=product&limit=3&date_from=2026-01-01&date_to=2026-09-30` | `quantity` и `unit` |
+| `spending-store.json` | `…/spending/?group_by=store` | `city`, `country`, без особых элементов |
+| `spending-generic-filter.json` | `…/spending/?generic=1&group_by=product` | фильтр `generic` |
+| `spending-refund-day.json` | `…/spending/?date_from=2026-03-14&date_to=2026-03-14` | возврат: отрицательная сумма, `share_percent: null` |
+| `spending-empty.json` | `…/spending/?date_from=2018-01-01&date_to=2018-12-31` | пусто |
+| `series-year.json` | `/api/stats/receipts/series/?interval=year` | 2019–2026, `refunds_excluded` |
+| `series-month.json` | `…/series/?currency=EUR&date_from=2026-01-01&date_to=2026-09-30` | девять месяцев |
+| `series-empty.json` | `…/series/?date_to=2018-12-31` | пусто |
+| `compare-2020-2026.json` | `/api/stats/receipts/compare/?P&limit=5` | главный вопрос демо: EUR и KZT |
+| `compare-no-matched-products.json` | `…/compare/?base_from=2020-01-04&base_to=2020-01-04&current_from=2026-02-18&current_to=2026-02-18&currency=EUR` | `price_index: null`, `price` и `mix` — `null` |
+| `compare-one-sided.json` | `…/compare/?base_from=2018-01-01&base_to=2018-12-31&current_from=2026-09-01&current_to=2026-09-30&currency=KZT` | походы в одном периоде: `effects: null` |
+| `compare-empty.json` | `…/compare/?base_from=2017-01-01&base_to=2017-12-31&current_from=2018-01-01&current_to=2018-12-31` | пусто |
+| `price-series-milk-paid.json` | `/api/products/1/prices/series/?date_from=2025-01-01` | «Молоко»: свой ряд и похожие в DE и KZ |
+| `price-series-milk-normalized.json` | `/api/products/1/prices/series/?price=normalized&date_from=2025-01-01` | цена за литр, `comparable: true` |
+| `price-series-apples-normalized.json` | `/api/products/6/prices/series/?price=normalized&date_from=2026-01-01` | весовой товар: два своих ряда по магазинам |
+| `price-series-unassigned.json` | `/api/products/11/prices/series/?date_from=2026-01-01` | `generic_unassigned` |
+| `price-series-similar-none.json` | `/api/products/1/prices/series/?similar=none&interval=week&date_from=2026-09-01` | `disabled` |
+| `price-series-empty.json` | `/api/products/1/prices/series/?date_to=2018-12-31` | `series: []`, статус `none` |
+| `error-invalid-parameter.json` | `…/spending/?date_from=2026-13-01&country=de1&currency=E&store=99&group_by=brand&category=x&limit=0` | 400 с `fields` |
+| `error-required-parameter.json` | `/api/stats/receipts/compare/` | 400: четыре обязательные даты |
+| `error-periods-overlap.json` | `…/compare/?base_from=2020-01-01&base_to=2026-01-01&current_from=2026-01-01&current_to=2026-09-30` | 400: пересечение периодов |
+| `error-range-too-large.json` | — | 400; на демо 1000 интервалов не набрать, тест получает тело с уменьшенным пределом |
+| `error-permission-denied.json` | `/api/stats/spending/` при `ALLOW_LOCAL_RECOGNITION_API=0` | 403 |
+| `error-not-found.json` | `/api/products/999999/prices/series/` | 404 |
+
+Числа демо для главного вопроса (EUR, 2020 против января — сентября 2026): средний чек 27.01 → 45.72 (+18.71), из них количество 8.65, цены 7.39, состав 2.67; индекс Фишера 1.2404, покрытие 96.97 % и 79.05 %.
+
+### Уточнения к согласованному контракту статистики
+
+Формат ответов, параметры, коды и тексты ошибок соответствуют контракту; несовместимых отступлений нет. Уточнено то, что контракт оставлял неоднозначным:
+
+- Блок валюты в сравнении и в рядах походов есть, только если в периоде есть **походы** (чеки продажи). Период, в котором у валюты только возвраты, блока не даёт, и их число в `refunds_excluded` тогда не видно.
+- `effects.price_per_line` присутствует всегда, когда `effects` не `null`.
+- Сортировка `products` в сравнении при равных суммах и названиях доведена до `id`, `unit`.
+- С фильтром `category` или `generic` значение магазина при `group_by=store` — сумма отобранных строк, а `receipts_count` — число чеков с такими строками.
+- Небезопасный метод на `/api/stats/*` отвечает как на `/api/receipts/` (`403 csrf_failed` без токена), а не `405`.
+
+### Производительность и откат статистики
+
+Индекса по `purchased_on` нет. Замер на демо-базе (466 чеков, 5604 строки) — [verification.md](verification.md#статистика-серверная-часть-с5): самый медленный запрос — 132 мс при критерии 500 мс, поэтому индекс не добавлялся. На базе существенно больше демо время не измерялось. Откат — revert кода; данных и схемы эндпоинты не меняют.
+
 ## Планируется
 
-Пользовательская авторизация и разграничение данных, API ручного редактирования/сопоставления, статистический дашборд, хранение курсов и production hosting не реализованы. Сквозное выполнение HTTP/worker/import с fake проверено С6; исторический реальный smoke С6 сохранил needs_review без автоимпорта. В И4 реальный Codex на single/double создал 2 Receipt, 6 строк и 5 товаров без дублей ([результаты](verification.md#фактические-результаты-и4)). Реальные фото и новый UI требуют [ручной приёмки](verification.md#ручная-приёмка-ocr-человеком); формы HTTP-слоя С5 не изменены.
+Пользовательская авторизация и разграничение данных, API ручного редактирования/сопоставления, клиент статистики (серверная часть — [выше](#реализовано-статистика-трат-походы-и-ряды-цен-серверная-часть)) и дашборд на главной, хранение курсов и production hosting не реализованы. Сквозное выполнение HTTP/worker/import с fake проверено С6; исторический реальный smoke С6 сохранил needs_review без автоимпорта. В И4 реальный Codex на single/double создал 2 Receipt, 6 строк и 5 товаров без дублей ([результаты](verification.md#фактические-результаты-и4)). Реальные фото и новый UI требуют [ручной приёмки](verification.md#ручная-приёмка-ocr-человеком); формы HTTP-слоя С5 не изменены.

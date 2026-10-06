@@ -1,0 +1,81 @@
+{
+  "group_by": "category",
+  "date_from": null,
+  "date_to": null,
+  "parent": {
+    "id": 1,
+    "name": "Продукты питания",
+    "path": [
+      {
+        "id": 1,
+        "name": "Продукты питания"
+      }
+    ]
+  },
+  "currencies": [
+    {
+      "currency": "EUR",
+      "totals": {
+        "receipts_count": 372,
+        "receipts_total": null,
+        "lines_paid": "5590.75",
+        "difference": null
+      },
+      "items": [
+        {
+          "kind": "category",
+          "id": 2,
+          "name": "Молочные продукты",
+          "direct": false,
+          "unassigned": false,
+          "amount": "2143.07",
+          "share_percent": "38.33",
+          "lines_count": 999,
+          "receipts_count": 372,
+          "quantity": null,
+          "unit": null
+        },
+        {
+          "kind": "category",
+          "id": 1,
+          "name": "Продукты питания",
+          "direct": true,
+          "unassigned": false,
+          "amount": "1428.00",
+          "share_percent": "25.54",
+          "lines_count": 352,
+          "receipts_count": 240,
+          "quantity": null,
+          "unit": null
+        },
+        {
+          "kind": "category",
+          "id": 4,
+          "name": "Овощи и фрукты",
+          "direct": false,
+          "unassigned": false,
+          "amount": "1325.00",
+          "share_percent": "23.70",
+          "lines_count": 531,
+          "receipts_count": 331,
+          "quantity": null,
+          "unit": null
+        },
+        {
+          "kind": "category",
+          "id": 3,
+          "name": "Хлеб",
+          "direct": false,
+          "unassigned": false,
+          "amount": "694.68",
+          "share_percent": "12.43",
+          "lines_count": 358,
+          "receipts_count": 268,
+          "quantity": null,
+          "unit": null
+        }
+      ],
+      "other": null
+    }
+  ]
+}

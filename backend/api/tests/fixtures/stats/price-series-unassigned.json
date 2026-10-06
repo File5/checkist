@@ -1,0 +1,175 @@
+{
+  "product": {
+    "id": 11,
+    "name": "Demo Butterkeks",
+    "base_unit": "pcs"
+  },
+  "generic": {
+    "id": 15,
+    "name": "Не разобрано",
+    "base_unit": "pcs"
+  },
+  "price": "paid",
+  "interval": "month",
+  "skipped_without_normalized": 0,
+  "series": [
+    {
+      "role": "own",
+      "product": {
+        "id": 11,
+        "name": "Demo Butterkeks"
+      },
+      "store": {
+        "id": 1,
+        "name": "Zahlenfrisch",
+        "city": "Musterstadt",
+        "country": "DE"
+      },
+      "country": "DE",
+      "currency": "EUR",
+      "unit": "pcs",
+      "comparable": false,
+      "observations": 14,
+      "points": [
+        {
+          "period_start": "2026-01-01",
+          "count": 2,
+          "min": "1.5500",
+          "max": "1.5500",
+          "avg": "1.5500",
+          "last": "1.5500"
+        },
+        {
+          "period_start": "2026-02-01",
+          "count": 2,
+          "min": "1.5500",
+          "max": "1.5500",
+          "avg": "1.5500",
+          "last": "1.5500"
+        },
+        {
+          "period_start": "2026-03-01",
+          "count": 1,
+          "min": "1.5500",
+          "max": "1.5500",
+          "avg": "1.5500",
+          "last": "1.5500"
+        },
+        {
+          "period_start": "2026-04-01",
+          "count": 2,
+          "min": "1.5500",
+          "max": "1.5500",
+          "avg": "1.5500",
+          "last": "1.5500"
+        },
+        {
+          "period_start": "2026-05-01",
+          "count": 1,
+          "min": "1.5500",
+          "max": "1.5500",
+          "avg": "1.5500",
+          "last": "1.5500"
+        },
+        {
+          "period_start": "2026-06-01",
+          "count": 2,
+          "min": "1.5500",
+          "max": "1.5500",
+          "avg": "1.5500",
+          "last": "1.5500"
+        },
+        {
+          "period_start": "2026-07-01",
+          "count": 2,
+          "min": "1.4050",
+          "max": "1.5600",
+          "avg": "1.4825",
+          "last": "1.4050"
+        },
+        {
+          "period_start": "2026-08-01",
+          "count": 1,
+          "min": "1.5600",
+          "max": "1.5600",
+          "avg": "1.5600",
+          "last": "1.5600"
+        },
+        {
+          "period_start": "2026-09-01",
+          "count": 1,
+          "min": "1.5600",
+          "max": "1.5600",
+          "avg": "1.5600",
+          "last": "1.5600"
+        }
+      ]
+    },
+    {
+      "role": "own",
+      "product": {
+        "id": 11,
+        "name": "Demo Butterkeks"
+      },
+      "store": {
+        "id": 2,
+        "name": "Beispielkorb",
+        "city": "Beispielhausen",
+        "country": "DE"
+      },
+      "country": "DE",
+      "currency": "EUR",
+      "unit": "pcs",
+      "comparable": false,
+      "observations": 5,
+      "points": [
+        {
+          "period_start": "2026-02-01",
+          "count": 1,
+          "min": "1.6400",
+          "max": "1.6400",
+          "avg": "1.6400",
+          "last": "1.6400"
+        },
+        {
+          "period_start": "2026-03-01",
+          "count": 1,
+          "min": "1.6400",
+          "max": "1.6400",
+          "avg": "1.6400",
+          "last": "1.6400"
+        },
+        {
+          "period_start": "2026-06-01",
+          "count": 1,
+          "min": "1.6400",
+          "max": "1.6400",
+          "avg": "1.6400",
+          "last": "1.6400"
+        },
+        {
+          "period_start": "2026-07-01",
+          "count": 1,
+          "min": "1.6500",
+          "max": "1.6500",
+          "avg": "1.6500",
+          "last": "1.6500"
+        },
+        {
+          "period_start": "2026-09-01",
+          "count": 1,
+          "min": "1.6500",
+          "max": "1.6500",
+          "avg": "1.6500",
+          "last": "1.6500"
+        }
+      ]
+    }
+  ],
+  "own_truncated": false,
+  "similar": {
+    "status": "generic_unassigned",
+    "products_total": 0,
+    "products_shown": 0
+  }
+}

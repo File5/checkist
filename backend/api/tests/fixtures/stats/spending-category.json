@@ -1,0 +1,149 @@
+{
+  "group_by": "category",
+  "date_from": null,
+  "date_to": null,
+  "parent": null,
+  "currencies": [
+    {
+      "currency": "EUR",
+      "totals": {
+        "receipts_count": 373,
+        "receipts_total": "13041.07",
+        "lines_paid": "13083.66",
+        "difference": "-42.59"
+      },
+      "items": [
+        {
+          "kind": "category",
+          "id": 1,
+          "name": "Продукты питания",
+          "direct": false,
+          "unassigned": false,
+          "amount": "5590.75",
+          "share_percent": "42.73",
+          "lines_count": 2240,
+          "receipts_count": 372,
+          "quantity": null,
+          "unit": null
+        },
+        {
+          "kind": "category",
+          "id": 6,
+          "name": "Не разобрано",
+          "direct": false,
+          "unassigned": true,
+          "amount": "5184.91",
+          "share_percent": "39.63",
+          "lines_count": 1832,
+          "receipts_count": 373,
+          "quantity": null,
+          "unit": null
+        },
+        {
+          "kind": "category",
+          "id": 5,
+          "name": "Бытовая химия",
+          "direct": false,
+          "unassigned": false,
+          "amount": "1767.78",
+          "share_percent": "13.51",
+          "lines_count": 533,
+          "receipts_count": 287,
+          "quantity": null,
+          "unit": null
+        },
+        {
+          "kind": "unmatched",
+          "id": null,
+          "name": null,
+          "direct": false,
+          "unassigned": false,
+          "amount": "336.88",
+          "share_percent": "2.57",
+          "lines_count": 124,
+          "receipts_count": 124,
+          "quantity": null,
+          "unit": null
+        },
+        {
+          "kind": "service",
+          "id": null,
+          "name": null,
+          "direct": false,
+          "unassigned": false,
+          "amount": "75.84",
+          "share_percent": "0.58",
+          "lines_count": 23,
+          "receipts_count": 23,
+          "quantity": null,
+          "unit": null
+        },
+        {
+          "kind": "deposit",
+          "id": null,
+          "name": null,
+          "direct": false,
+          "unassigned": false,
+          "amount": "127.50",
+          "share_percent": "0.97",
+          "lines_count": 269,
+          "receipts_count": 220,
+          "quantity": null,
+          "unit": null
+        }
+      ],
+      "other": null
+    },
+    {
+      "currency": "KZT",
+      "totals": {
+        "receipts_count": 93,
+        "receipts_total": "438091.92",
+        "lines_paid": "439741.92",
+        "difference": "-1650.00"
+      },
+      "items": [
+        {
+          "kind": "category",
+          "id": 1,
+          "name": "Продукты питания",
+          "direct": false,
+          "unassigned": false,
+          "amount": "281279.92",
+          "share_percent": "63.96",
+          "lines_count": 321,
+          "receipts_count": 93,
+          "quantity": null,
+          "unit": null
+        },
+        {
+          "kind": "category",
+          "id": 6,
+          "name": "Не разобрано",
+          "direct": false,
+          "unassigned": true,
+          "amount": "143033.00",
+          "share_percent": "32.53",
+          "lines_count": 231,
+          "receipts_count": 93,
+          "quantity": null,
+          "unit": null
+        },
+        {
+          "kind": "unmatched",
+          "id": null,
+          "name": null,
+          "direct": false,
+          "unassigned": false,
+          "amount": "15429.00",
+          "share_percent": "3.51",
+          "lines_count": 31,
+          "receipts_count": 31,
+          "quantity": null,
+          "unit": null
+        }
+      ],
+      "other": null
+    }
+  ]
+}

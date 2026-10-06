@@ -1,0 +1,55 @@
+{
+  "base": {
+    "date_from": "2020-01-04",
+    "date_to": "2020-01-04"
+  },
+  "current": {
+    "date_from": "2026-02-18",
+    "date_to": "2026-02-18"
+  },
+  "currencies": [
+    {
+      "currency": "EUR",
+      "base": {
+        "receipts_count": 1,
+        "months": "0.03",
+        "receipts_per_month": "30.44",
+        "refunds_excluded": 0,
+        "total": "23.54",
+        "avg_receipt": "23.54",
+        "median_receipt": "23.54",
+        "lines_count": 11,
+        "lines_per_receipt": "11.00",
+        "paid_per_line": "2.1400"
+      },
+      "current": {
+        "receipts_count": 1,
+        "months": "0.03",
+        "receipts_per_month": "30.44",
+        "refunds_excluded": 0,
+        "total": "44.90",
+        "avg_receipt": "44.90",
+        "median_receipt": "44.90",
+        "lines_count": 14,
+        "lines_per_receipt": "14.00",
+        "paid_per_line": "3.2071"
+      },
+      "change": {
+        "avg_receipt": "21.36",
+        "avg_receipt_percent": "90.74"
+      },
+      "effects": {
+        "quantity": "8.02",
+        "price": null,
+        "mix": null,
+        "price_per_line": "13.34",
+        "quantity_percent": "37.55",
+        "price_percent": null,
+        "mix_percent": null
+      },
+      "price_index": null,
+      "products": [],
+      "products_total": 0
+    }
+  ]
+}

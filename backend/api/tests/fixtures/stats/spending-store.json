@@ -1,0 +1,77 @@
+{
+  "group_by": "store",
+  "date_from": null,
+  "date_to": null,
+  "parent": null,
+  "currencies": [
+    {
+      "currency": "EUR",
+      "totals": {
+        "receipts_count": 373,
+        "receipts_total": "13041.07",
+        "lines_paid": "13041.07",
+        "difference": "0.00"
+      },
+      "items": [
+        {
+          "kind": "store",
+          "id": 1,
+          "name": "Zahlenfrisch",
+          "direct": false,
+          "unassigned": false,
+          "amount": "9667.68",
+          "share_percent": "74.13",
+          "lines_count": 3773,
+          "receipts_count": 280,
+          "quantity": null,
+          "unit": null,
+          "city": "Musterstadt",
+          "country": "DE"
+        },
+        {
+          "kind": "store",
+          "id": 2,
+          "name": "Beispielkorb",
+          "direct": false,
+          "unassigned": false,
+          "amount": "3373.39",
+          "share_percent": "25.87",
+          "lines_count": 1248,
+          "receipts_count": 93,
+          "quantity": null,
+          "unit": null,
+          "city": "Beispielhausen",
+          "country": "DE"
+        }
+      ],
+      "other": null
+    },
+    {
+      "currency": "KZT",
+      "totals": {
+        "receipts_count": 93,
+        "receipts_total": "438091.92",
+        "lines_paid": "438091.92",
+        "difference": "0.00"
+      },
+      "items": [
+        {
+          "kind": "store",
+          "id": 3,
+          "name": "Статмаркет",
+          "direct": false,
+          "unassigned": false,
+          "amount": "438091.92",
+          "share_percent": "100.00",
+          "lines_count": 583,
+          "receipts_count": 93,
+          "quantity": null,
+          "unit": null,
+          "city": "Алматы",
+          "country": "KZ"
+        }
+      ],
+      "other": null
+    }
+  ]
+}
