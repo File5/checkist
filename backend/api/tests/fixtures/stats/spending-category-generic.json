@@ -1,0 +1,159 @@
+{
+  "group_by": "generic",
+  "date_from": null,
+  "date_to": null,
+  "parent": {
+    "id": 1,
+    "name": "Продукты питания",
+    "path": [
+      {
+        "id": 1,
+        "name": "Продукты питания"
+      }
+    ]
+  },
+  "currencies": [
+    {
+      "currency": "EUR",
+      "totals": {
+        "receipts_count": 372,
+        "receipts_total": null,
+        "lines_paid": "5590.75",
+        "difference": null
+      },
+      "items": [
+        {
+          "kind": "generic",
+          "id": 11,
+          "name": "Курица",
+          "direct": false,
+          "unassigned": false,
+          "amount": "1213.44",
+          "share_percent": "21.70",
+          "lines_count": 173,
+          "receipts_count": 173,
+          "quantity": null,
+          "unit": null
+        },
+        {
+          "kind": "generic",
+          "id": 3,
+          "name": "Сыр",
+          "direct": false,
+          "unassigned": false,
+          "amount": "928.99",
+          "share_percent": "16.62",
+          "lines_count": 267,
+          "receipts_count": 246,
+          "quantity": null,
+          "unit": null
+        },
+        {
+          "kind": "generic",
+          "id": 6,
+          "name": "Хлеб",
+          "direct": false,
+          "unassigned": false,
+          "amount": "694.68",
+          "share_percent": "12.43",
+          "lines_count": 358,
+          "receipts_count": 268,
+          "quantity": null,
+          "unit": null
+        },
+        {
+          "kind": "generic",
+          "id": 7,
+          "name": "Яблоки",
+          "direct": false,
+          "unassigned": false,
+          "amount": "549.05",
+          "share_percent": "9.82",
+          "lines_count": 174,
+          "receipts_count": 174,
+          "quantity": null,
+          "unit": null
+        },
+        {
+          "kind": "generic",
+          "id": 1,
+          "name": "Молоко",
+          "direct": false,
+          "unassigned": false,
+          "amount": "545.75",
+          "share_percent": "9.76",
+          "lines_count": 372,
+          "receipts_count": 372,
+          "quantity": null,
+          "unit": null
+        },
+        {
+          "kind": "generic",
+          "id": 9,
+          "name": "Картофель",
+          "direct": false,
+          "unassigned": false,
+          "amount": "473.13",
+          "share_percent": "8.46",
+          "lines_count": 180,
+          "receipts_count": 180,
+          "quantity": null,
+          "unit": null
+        },
+        {
+          "kind": "generic",
+          "id": 4,
+          "name": "Сливочное масло",
+          "direct": false,
+          "unassigned": false,
+          "amount": "424.86",
+          "share_percent": "7.60",
+          "lines_count": 179,
+          "receipts_count": 179,
+          "quantity": null,
+          "unit": null
+        },
+        {
+          "kind": "generic",
+          "id": 8,
+          "name": "Бананы",
+          "direct": false,
+          "unassigned": false,
+          "amount": "302.82",
+          "share_percent": "5.42",
+          "lines_count": 177,
+          "receipts_count": 177,
+          "quantity": null,
+          "unit": null
+        },
+        {
+          "kind": "generic",
+          "id": 2,
+          "name": "Йогурт",
+          "direct": false,
+          "unassigned": false,
+          "amount": "243.47",
+          "share_percent": "4.35",
+          "lines_count": 181,
+          "receipts_count": 181,
+          "quantity": null,
+          "unit": null
+        },
+        {
+          "kind": "generic",
+          "id": 10,
+          "name": "Макароны",
+          "direct": false,
+          "unassigned": false,
+          "amount": "214.56",
+          "share_percent": "3.84",
+          "lines_count": 179,
+          "receipts_count": 179,
+          "quantity": null,
+          "unit": null
+        }
+      ],
+      "other": null
+    }
+  ]
+}

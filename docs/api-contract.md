@@ -984,7 +984,7 @@ Line.product=null → matching_status=unmatched; ambiguous здесь отсут
 
 ## Реализовано: статистика трат, походы и ряды цен (серверная часть)
 
-Четыре эндпоинта только на чтение в приложении `backend/api/`; моделей, миграций и индексов нет — всё считается из `receipts_receipt`, `receipts_receiptline`, каталога и `merges` (только чтение). **Клиент статистики ещё не сделан:** экранов `/stats`, графика цен в карточке товара и адаптеров в SPA нет, потребитель — следующий этап. 13 GET каталога и цен, `/api/receipts/` и их эталоны не менялись.
+Четыре эндпоинта только на чтение в приложении `backend/api/`; моделей, миграций и индексов нет — всё считается из `receipts_receipt`, `receipts_receiptline`, каталога и `merges` (только чтение). Потребитель — клиент статистики: экраны `/stats`, `/stats/receipts` и график цен в карточке товара ([frontend.md](frontend.md#статистика-траты-средний-чек-и-график-цен-ф1ф7)). 13 GET каталога и цен, `/api/receipts/` и их эталоны не менялись.
 
 | Эндпоинт | Что отдаёт | Доступ |
 | --- | --- | --- |
@@ -1110,6 +1110,7 @@ Line.product=null → matching_status=unmatched; ambiguous здесь отсут
 | --- | --- | --- |
 | `spending-category.json` | `/api/stats/spending/` | две валюты, корневые категории, `unmatched` / `service` / `deposit` |
 | `spending-category-drilldown.json` | `…/spending/?category=1&currency=EUR` | `parent`, подкатегории, `direct: true`, `receipts_total: null` |
+| `spending-category-generic.json` | `…/spending/?category=1&group_by=generic&currency=EUR` | `parent` при группировке не по категориям, только обобщённые продукты, `receipts_total: null` |
 | `spending-generic.json` | `…/spending/?group_by=generic&currency=EUR&limit=5` | `other`, `unassigned` |
 | `spending-product.json` | `…/spending/?group_by=product&limit=3&date_from=2026-01-01&date_to=2026-09-30` | `quantity` и `unit` |
 | `spending-store.json` | `…/spending/?group_by=store` | `city`, `country`, без особых элементов |
