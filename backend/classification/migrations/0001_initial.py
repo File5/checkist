@@ -11,7 +11,6 @@ class Migration(migrations.Migration):
     dependencies = [
         ('catalog', '0001_initial'),
         ('receipts', '0001_initial'),
-        ('merges', '0001_initial'),
     ]
 
     operations = [

@@ -194,9 +194,9 @@ class CatalogFreedomTests(TestCase):
 
     def test_migration_touches_only_new_tables(self):
         migration = MigrationLoader(connection).get_migration("classification", "0001_initial")
-        self.assertEqual(sorted(migration.dependencies), [
-            ("catalog", "0001_initial"), ("merges", "0001_initial"), ("receipts", "0001_initial"),
-        ])
+        # No dependency on merges: there is no foreign key to it, and with one
+        # `migrate merges zero` would silently drop these tables with pending records in them.
+        self.assertEqual(sorted(migration.dependencies), [("catalog", "0001_initial"), ("receipts", "0001_initial")])
         created = {
             operation.name.lower() for operation in migration.operations if type(operation).__name__ == "CreateModel"
         }
