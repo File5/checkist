@@ -36,7 +36,7 @@
 .stats-stores { display: grid; gap: 10px; }
 .stats-store-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 16px; max-height: 232px; overflow-y: auto; list-style: none; margin: 0; padding: 4px; }
 .stats-check { display: flex; align-items: flex-start; gap: 10px; min-height: 44px; padding: 10px 4px; cursor: pointer; }
-.stats-check input { flex: 0 0 auto; width: 20px; height: 20px; margin: 2px 0 0; accent-color: #246044; }
+.stats-check input { flex: 0 0 auto; width: 20px; height: 20px; min-height: 0; margin: 2px 0 0; accent-color: #246044; }
 .stats-reference-error { display: grid; justify-items: start; gap: 10px; }
 .stats-actions { display: flex; flex-wrap: wrap; gap: 12px; }
 .stats-secondary { background: #fff; color: #246044; }
@@ -76,6 +76,7 @@
 .stats-warning { padding: 12px 14px; border: 1px solid #d9b469; border-left-width: 6px; border-radius: 8px; background: #fff4dc; color: #5c3a08; }
 
 .stats-table-scroll { max-width: 100%; overflow-x: auto; border: 1px solid #d7e0d3; border-radius: 8px; overscroll-behavior-x: contain; }
+.stats-table-scroll:focus-visible { outline-offset: 2px; }
 .stats-table { width: 100%; border-collapse: collapse; }
 .stats-table caption { padding: 12px; text-align: left; color: #526158; font-size: 0.9rem; }
 .stats-table th, .stats-table td { padding: 10px 12px; text-align: left; vertical-align: top; border-top: 1px solid #d7e0d3; }

@@ -15,6 +15,7 @@ import type { BarSegment, EffectPart, Verdict } from './receipts-wording'
 const count = (value: number) => value.toLocaleString('ru-RU')
 
 function Decomposition({ block, result }: { block: CompareCurrency; result: Verdict }) {
+  const id = useId()
   const { parts } = result
   const bar = decompositionBar(parts)
   const segment = (item: BarSegment) => (
@@ -23,7 +24,7 @@ function Decomposition({ block, result }: { block: CompareCurrency; result: Verd
   )
   return (
     <section className="stats-decomposition">
-      <h5>Из чего сложилось изменение</h5>
+      <h5 id={id}>Из чего сложилось изменение</h5>
       {bar && <div className="stats-bar" aria-hidden="true">
         <div className="stats-bar-track">
           {bar.negative.map(segment)}
@@ -35,7 +36,7 @@ function Decomposition({ block, result }: { block: CompareCurrency; result: Verd
           {bar.positive.length > 0 && <span className="stats-bar-scale-end">увеличивает чек →</span>}
         </div>
       </div>}
-      <div className="stats-table-scroll">
+      <div className="stats-table-scroll" role="region" aria-labelledby={id} tabIndex={0}>
         <table className="stats-table">
           <caption>
             Слагаемые в сумме дают изменение среднего чека точно. Полоса над таблицей показывает те же числа: заштрихованные части уменьшают чек.

@@ -4,7 +4,7 @@ import { cleanPoints, layoutLineChart, markerPath, periodStarts, seriesStyle } f
 import type { SeriesStyle } from './line.ts'
 import { coordinate as c, nearestIndex } from './scale.ts'
 import type { ChartInterval } from './scale.ts'
-import { activeLineX, initialLineSelection, lineKeyCommand, lineReadout, lineSelectionReducer } from './selection.ts'
+import { activeLineX, initialLineSelection, lineKeyCommand, lineReadout, lineSelectionReducer, lineTooltipAnchor } from './selection.ts'
 import './Charts.css'
 
 export interface LineChartPoint {
@@ -129,9 +129,10 @@ export default function LineChart({
     const box = event.currentTarget.getBoundingClientRect()
     if (!(box.width > 0)) return
     const index = nearestIndex(layout.xPositions, ((event.clientX - box.left) / box.width) * layout.width)
-    dispatch({ type: 'pointer', x: index === null ? null : layout.xs[index] })
+    dispatch({ type: 'pointer', x: index === null ? null : layout.xs[index], touch: event.pointerType === 'touch' })
   }
   const { plot } = layout
+  const tooltip = activePosition === null ? null : lineTooltipAnchor(activePosition, layout.width)
 
   return (
     <div className="ck-chart ck-line" role="group" aria-label={title}>
@@ -208,13 +209,8 @@ export default function LineChart({
           })}
         </svg>
         {visible.length === 0 && <p className="ck-line-overlay">Все серии скрыты. Включите серию в списке над графиком.</p>}
-        {activeX !== null && activePosition !== null && (
-          <div
-            className="ck-line-tooltip"
-            data-side={activePosition > layout.width / 2 ? 'left' : 'right'}
-            style={{ left: `${c((activePosition / layout.width) * 100)}%` }}
-            aria-hidden="true"
-          >
+        {activeX !== null && tooltip !== null && (
+          <div className="ck-line-tooltip" data-side={tooltip.side} style={tooltip.style} aria-hidden="true">
             <span className="ck-line-tooltip-title">{formatX(activeX)}</span>
             {readoutSeries.map((entry, index) => {
               const value = entry.values.get(activeX)

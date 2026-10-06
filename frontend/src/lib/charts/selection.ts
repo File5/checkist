@@ -1,4 +1,5 @@
 /** Selection and keyboard logic of the charts as pure reducers: tested in Node, used by the components. */
+import { coordinate } from './scale.ts'
 
 /* Pie: the sector and its legend row are highlighted together, by pointer or by focus. */
 
@@ -30,14 +31,15 @@ export function activePieKey(state: PieHighlight, keys: readonly string[]): stri
 export interface LineSelection {
   /** `period_start` of the selected interval. */
   activeX: string | null
-  source: 'keyboard' | 'pointer' | null
+  /** `touch`: a finger has no hover, so the point it tapped stays selected after it lifts. */
+  source: 'keyboard' | 'pointer' | 'touch' | null
   /** Keys of the series switched off in the legend. */
   hidden: readonly string[]
 }
 export type LineKeyCommand = 'previous' | 'next' | 'first' | 'last' | 'clear'
 export type LineSelectionAction =
   | { type: 'key'; command: LineKeyCommand; xs: readonly string[] }
-  | { type: 'pointer'; x: string | null }
+  | { type: 'pointer'; x: string | null; touch?: boolean }
   | { type: 'pointer-leave' }
   | { type: 'blur' }
   | { type: 'toggle'; key: string }
@@ -78,17 +80,29 @@ export function lineSelectionReducer(state: LineSelection, action: LineSelection
       const activeX = stepLineSelection(state.activeX, action.command, action.xs)
       return activeX === null ? cleared(state) : { ...state, activeX, source: 'keyboard' }
     }
-    case 'pointer':
+    case 'pointer': {
       if (action.x === null) return state
-      return state.activeX === action.x && state.source === 'pointer' ? state : { ...state, activeX: action.x, source: 'pointer' }
-    // The pointer leaving must not drop a selection the keyboard owns, and vice versa.
+      const source = action.touch ? 'touch' : 'pointer'
+      return state.activeX === action.x && state.source === source ? state : { ...state, activeX: action.x, source }
+    }
+    // The pointer leaving must not drop a selection the keyboard owns, and vice versa. A lifted finger also
+    // "leaves": its selection stays until another tap, Escape or the focus moving away.
     case 'pointer-leave': return state.source === 'pointer' ? cleared(state) : state
-    case 'blur': return state.source === 'keyboard' ? cleared(state) : state
+    case 'blur': return state.source === 'keyboard' || state.source === 'touch' ? cleared(state) : state
     case 'toggle': {
       const hidden = state.hidden.includes(action.key) ? state.hidden.filter((key) => key !== action.key) : [...state.hidden, action.key]
       return { ...state, hidden }
     }
   }
+}
+
+export interface LineTooltipAnchor { side: 'left' | 'right'; style: { left: string } | { right: string } }
+
+/** Where the tooltip hangs: on the roomier side of the crosshair and anchored by the plot edge of that side, so
+    the room left for its shrink-to-fit width is the room on that side — at least half of the plot. */
+export function lineTooltipAnchor(position: number, width: number): LineTooltipAnchor {
+  const share = Math.min(100, Math.max(0, (position / width) * 100))
+  return share > 50 ? { side: 'left', style: { right: `${coordinate(100 - share)}%` } } : { side: 'right', style: { left: `${coordinate(share)}%` } }
 }
 
 /** The selection only counts while its interval exists among the visible series. */
