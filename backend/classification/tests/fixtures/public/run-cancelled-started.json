@@ -1,0 +1,19 @@
+{
+  "id": 2,
+  "status": "cancelled",
+  "trigger": "manual",
+  "scope": "all",
+  "version": 5,
+  "created_at": "2026-10-06T10:20:00Z",
+  "started_at": "2026-10-06T10:20:05Z",
+  "finished_at": "2026-10-06T10:21:00Z",
+  "progress": {
+    "requested": 2,
+    "processed": 1,
+    "applied": 1,
+    "unknown": 0,
+    "skipped": 0
+  },
+  "remaining": 0,
+  "error": null
+}

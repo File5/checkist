@@ -389,6 +389,29 @@ MEDIA: original сохраняется без изменений; upright previe
 
 `migrate classification zero` удаляет шесть таблиц и каталог не трогает. После обеих команд каталог совпадает с видом до предположений, **кроме** подтверждённых классификаций и принятых вместе с ними категорий и обобщённых продуктов (они остаются обычными записями каталога без следа происхождения) и правок человека. Без `cancel-pending` ожидающие товары останутся в предложенных обобщённых продуктах без пометки и без возможности возврата — только восстановлением из `pg_dump`. Повторный `migrate` создаёт пустые таблицы: история, журнал созданного и память отказов не восстанавливаются. HTTP-слой, шаг после слияния, расширенный `executor.busy` и настройки откатываются revert кода; до него выполните `cancel-pending`.
 
+**`migrate classification zero` без отката кода ломает локальный API и воркер.** Код продолжает читать удалённые таблицы: `executor` считается запросом к `classification_classificationrun`, воркер каждый проход восстанавливает lease запусков. Проверено в QA (2026-10-07, fake, настоящие маршруты на базе после `cancel-pending` и `migrate classification zero`):
+
+| Что | Ответ при удалённых таблицах |
+| --- | --- |
+| старые 13 GET (`/api/countries/`, `/stores/`, `/brands/`, `/categories/`, `/categories/{id}/`, `/generic-products/`, `/generic-products/{id}/`, `/products/`, `/products/{id}/`, `/products/{id}/prices/`, `/prices/summary/`, `/alternatives/`, `/generic-products/{id}/comparison/`) | `200`, формат прежний |
+| `/api/receipts/`, `/api/product-merges/`, `/api/recognition/photos/` (GET) | `200` |
+| `/api/recognition/csrf/`, `/api/recognition/jobs/`, `/api/recognition/jobs/{id}/` — всё, что отдаёт `executor` | `500` |
+| `/api/product-classifications/`, `/status/`, `/runs/` и остальные маршруты предположений | `500` |
+| `manage.py recognition_worker` | печатает `Recognition worker ready.` и выходит с кодом 1 (`Recognition worker database is unavailable…`); задания распознавания не берутся |
+| `product_classifications suggest` / `cancel-pending` / `reconcile` | код 1, `ProgrammingError` о несуществующей таблице |
+
+Так как `500` отдаёт и `/api/recognition/csrf/`, клиент не получает CSRF-токен: загрузка фото, отмена, повтор, подтверждение вырезки и действия над дублями из интерфейса недоступны, хотя их таблицы целы. Чеки, каталог и история распознавания при этом не меняются. `/api/health/` эти таблицы не читает (в проверке Celery-воркер QA не запускался, поэтому health отвечал `503` и до, и после удаления таблиц).
+
+Безопасный порядок отката:
+
+1. Остановить `recognition_worker` и не принимать новые загрузки (остановить Django либо выставить `ALLOW_LOCAL_RECOGNITION_API=0`); дождаться, пока не останется запуска `running`.
+2. `pg_dump` базы — подтверждённое и память отказов из таблиц `classification` иначе не восстановить.
+3. `product_classifications cancel-pending`; повторять при отказе «занято», пока в выводе не станут пустыми `cancelled` и `runs_cancelled`.
+4. `migrate classification zero`.
+5. Сразу revert кода на состояние без `classification` (приложение, HTTP-слой, шаг воркера, запрос `executor`) и перезапуск Django и воркера. До этого шага сервер и воркер запускать нельзя.
+
+Если таблицы удалены, а код вернуть сразу нельзя, работу восстанавливает `migrate` (создаёт пустые таблицы `classification`; проверено: те же маршруты снова `200`, воркер — код 0) с `PRODUCT_CLASSIFICATION_AUTO_SUGGEST=0`, чтобы импорт не ставил новых запусков. История и память отказов при этом пусты.
+
 ## JSON-поля
 
 Отдельных колонок под эти данные нет; набор ключей не фиксирован и не проверяется. Ниже — ключи, которые использует код и образцы `backend/receipts/tests/samples.py`.

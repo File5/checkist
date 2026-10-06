@@ -7,6 +7,7 @@ records. APIClient dispatches the real routes in process with cookie/Origin/CSRF
 MEDIA and scratch are temporary. Fake provider and fake classifier only: no model
 call, no socket, no browser.
 """
+from datetime import timedelta
 from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -19,9 +20,10 @@ from django.test import TransactionTestCase, override_settings, tag
 
 from api.tests.classification_factories import local_client
 from api.tests.test_product_classifications_api import CLOSED_KEYS, GROUPS, RUN_KEYS, keys
-from classification import demo, runner
+from classification import context, demo, queue, runner, services
 from classification.classifier import FakeClassifier
 from classification.models import ClassificationRun
+from recognition.queue import db_now
 from recognition.management.commands.recognition_worker import worker_slot
 from stores.models import Country, Currency
 
@@ -223,6 +225,155 @@ class ButtonThroughWorkerTests(QueueHttpEnvironment):
         again = self.press(202)["run"]
         self.assertEqual(self.worker(), [f"Classification run {again['id']}: succeeded"])
         self.assertEqual(self.state()["pending_count"], demo.EXPECTED["pending"])
+        self.assertNothingClosed()
+
+
+@override_settings(PRODUCT_CLASSIFICATION_BATCH_SIZE=4)
+class RunFieldCombinationsTests(QueueHttpEnvironment):
+    """Combinations of the run fields the table of docs/api-contract.md lists and no public example shows.
+
+    Every state is reached by the real queue, the worker command or the
+    ``product_classifications`` command; only a crashed process is imitated, by
+    moving the lease of its run into the past.
+    """
+    COMMAND = "classification.management.commands.product_classifications.get_classifier"
+
+    def setUp(self):
+        super().setUp()
+        demo.seed_demo()
+
+    def run_body(self, run_id):
+        body = self.get(f"{BASE}runs/{run_id}/")
+        self.assertEqual(set(body), RUN_KEYS)
+        return body
+
+    def shape(self, body):
+        """(status, started, finished, error code, processed, requested)."""
+        return (
+            body["status"], body["started_at"] is not None, body["finished_at"] is not None,
+            body["error"] and body["error"]["code"], body["progress"]["processed"], body["progress"]["requested"],
+        )
+
+    def expire(self, run_id):
+        """The process that held the run is gone and its lease ran out."""
+        ClassificationRun.objects.filter(pk=run_id, status="running").update(
+            lease_expires_at=db_now() - timedelta(seconds=1))
+
+    def suggest(self, **options):
+        call_command("product_classifications", "suggest", stdout=StringIO(), **options)
+
+    def watching(self, seen):
+        """A fake classifier that reads the public state while the model is asked."""
+        test = self
+
+        class Watching(FakeClassifier):
+            def classify(self, request, context):
+                seen.append(test.state()["run"])
+                return super().classify(request, context)
+
+        return Watching("mixed")
+
+    def test_running_run_keeps_the_progress_of_the_batches_before(self):
+        run = self.press(202)["run"]
+        self.assertEqual(self.worker(), [f"Classification run {run['id']}: queued"])
+        seen = []
+        with patch(f"{WORKER}.get_classifier", return_value=self.watching(seen)):
+            self.assertEqual(self.worker(), [f"Classification run {run['id']}: queued"])
+        (during,) = seen
+        self.assertEqual(self.shape(during), ("running", True, False, None, 4, 10))
+        self.assertEqual(self.shape(self.run_body(run["id"])), ("queued", True, False, None, 8, 10))
+        self.assertNothingClosed()
+
+    def test_command_run_is_running_from_its_creation_until_its_last_batch_is_closed(self):
+        seen = []
+        finish_run = services.finish_run
+
+        def closing(run, **options):
+            # The cursor passed the last batch in its own transaction; the final status comes next.
+            seen.append(self.state()["run"])
+            return finish_run(run, **options)
+
+        with patch(self.COMMAND, return_value=self.watching(seen)), \
+                patch.object(services, "finish_run", side_effect=closing):
+            self.suggest(limit=8)
+        self.assertEqual(
+            [self.shape(body) for body in seen],
+            [("running", True, False, None, 0, 8), ("running", True, False, None, 4, 8),
+             ("running", True, False, None, 8, 8)],
+        )
+        self.assertEqual({(body["trigger"], body["scope"], body["remaining"]) for body in seen}, {("command", "all", 2)})
+        finished = self.state()["run"]
+        self.assertEqual(self.shape(finished), ("succeeded", True, True, None, 8, 8))
+        self.assertEqual((finished["id"], finished["remaining"]), (seen[0]["id"], 2))
+        self.assertNothingClosed()
+
+    def test_expired_lease_requeues_the_started_run_twice_and_then_fails_it_as_worker_lost(self):
+        run = self.press(202)["run"]
+        self.worker()
+        for _ in range(queue.MAX_RECOVERIES):
+            self.assertEqual(queue.claim_run().pk, run["id"])
+            self.expire(run["id"])
+            # The API does not recover: the run stays ``running`` until the next pass of a worker.
+            self.assertEqual(self.shape(self.run_body(run["id"])), ("running", True, False, None, 4, 10))
+            queue.recover_expired_runs()
+            self.assertEqual(self.shape(self.run_body(run["id"])), ("queued", True, False, None, 4, 10))
+        queue.claim_run()
+        self.expire(run["id"])
+        queue.recover_expired_runs()
+        failed = self.run_body(run["id"])
+        self.assertEqual(self.shape(failed), ("failed", True, True, "worker_lost", 4, 10))
+        self.assertEqual(failed["error"]["message"], "Обработчик перестал отвечать.")
+        self.assertEqual(self.state()["run"], failed)
+        self.assertNothingClosed()
+
+    def test_input_too_large_fails_the_run_before_its_first_batch(self):
+        run = self.press(202)["run"]
+        with patch.object(context, "MAX_INPUT_BYTES", 1):
+            self.assertEqual(self.worker(), [f"Classification run {run['id']}: failed"])
+        failed = self.run_body(run["id"])
+        self.assertEqual(self.shape(failed), ("failed", True, True, "input_too_large", 0, 10))
+        self.assertEqual(failed["error"]["message"], "Каталог слишком велик для одного запроса к модели.")
+        self.assertEqual(failed["progress"], {"requested": 10, "processed": 0, "applied": 0, "unknown": 0, "skipped": 0})
+        self.assertNothingClosed()
+
+    def test_cancel_pending_and_suggest_close_an_expired_run_as_failed_not_cancelled(self):
+        first = self.press(202)["run"]
+        queue.claim_run()
+        self.expire(first["id"])
+        self.assertEqual(services.cancel_pending()["runs_cancelled"], [])
+        self.assertEqual(self.shape(self.run_body(first["id"])), ("failed", True, True, "worker_lost", 0, 10))
+
+        second = self.press(202)["run"]
+        self.worker()
+        queue.claim_run()
+        self.expire(second["id"])
+        self.suggest(fake_scenario="mixed")
+        self.assertEqual(self.shape(self.run_body(second["id"])), ("failed", True, True, "worker_lost", 4, 10))
+        command = self.state()["run"]
+        self.assertEqual((command["trigger"], command["status"]), ("command", "succeeded"))
+        self.assertGreater(command["id"], second["id"])
+        self.assertNothingClosed()
+
+    def test_command_run_lost_after_its_last_batch_fails_with_everything_processed(self):
+        run = services.start_run()
+        services.advance_run(run, len(run.product_ids))
+        self.expire(run.pk)
+        self.assertEqual(self.shape(self.run_body(run.pk)), ("running", True, False, None, 10, 10))
+        services.cancel_pending()
+        self.assertEqual(self.shape(self.run_body(run.pk)), ("failed", True, True, "worker_lost", 10, 10))
+        self.assertNothingClosed()
+
+    def test_worker_recovers_a_lost_command_run_into_the_queue_and_closes_it(self):
+        run = services.start_run()
+        services.advance_run(run, len(run.product_ids))
+        self.expire(run.pk)
+        # The pass of the worker: recovery puts the run in the queue, the claim finds nothing left.
+        queue.recover_expired_runs()
+        waiting = self.run_body(run.pk)
+        self.assertEqual(self.shape(waiting), ("queued", True, False, None, 10, 10))
+        self.assertEqual(waiting["trigger"], "command")
+        self.assertEqual(self.worker(), [f"Classification run {run.pk}: succeeded"])
+        self.assertEqual(self.shape(self.run_body(run.pk)), ("succeeded", True, True, None, 10, 10))
         self.assertNothingClosed()
 
 

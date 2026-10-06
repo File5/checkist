@@ -986,7 +986,7 @@ Line.product=null → matching_status=unmatched; ambiguous здесь отсут
 
 ## Реализовано: локальный API предположений категорий товаров
 
-Товар, созданный распознаванием, лежит в служебном «Не разобрано». Приложение `backend/classification/` предполагает для него обобщённый продукт (существующий либо новый, с путём категории) и применяет предположение **сразу**: `Product.generic` меняется, запись-предположение помнит прежнее и предложенное значение и ждёт человека. Человек подтверждает, выбирает другой существующий обобщённый продукт или отклоняет. Модель и правила — [data-model.md](data-model.md#classification-предположение-обобщённого-продукта), подписи сервиса — `backend/classification/README.md`. Код HTTP: `backend/api/views/product_classifications.py`, `urls_product_classifications.py`, `product_classification_serialization.py`. Эталонные ответы для клиента — `backend/classification/tests/fixtures/public/*.json` (35 файлов); тест `api.tests.test_product_classifications_public` сверяет каждый целиком с настоящим HTTP-ответом на вымышленном каталоге с явными id.
+Товар, созданный распознаванием, лежит в служебном «Не разобрано». Приложение `backend/classification/` предполагает для него обобщённый продукт (существующий либо новый, с путём категории) и применяет предположение **сразу**: `Product.generic` меняется, запись-предположение помнит прежнее и предложенное значение и ждёт человека. Человек подтверждает, выбирает другой существующий обобщённый продукт или отклоняет. Модель и правила — [data-model.md](data-model.md#classification-предположение-обобщённого-продукта), подписи сервиса — `backend/classification/README.md`. Код HTTP: `backend/api/views/product_classifications.py`, `urls_product_classifications.py`, `product_classification_serialization.py`. Эталонные ответы для клиента — `backend/classification/tests/fixtures/public/*.json` (40 файлов); тест `api.tests.test_product_classifications_public` сверяет каждый целиком с настоящим HTTP-ответом на вымышленном каталоге с явными id.
 
 ### Что предположения меняют в 13 GET каталога и цен
 
@@ -1112,6 +1112,47 @@ Line.product=null → matching_status=unmatched; ambiguous здесь отсут
 | `input_too_large` | «Каталог слишком велик для одного запроса к модели.» |
 | `internal_error` | «Запуск завершился ошибкой.» |
 
+#### Допустимые сочетания полей Запуска
+
+Запуск многократно возвращается в `queued`, поэтому `status` сам по себе не говорит, начата ли работа. Ниже — **все** сочетания (13), достижимые кодом (`classification/queue.py`, `services.py`, `runner.py`, команды); одинаково для `GET /status/` (`run`), `GET /runs/`, `GET /runs/{id}/` и `POST /runs/` (`run`). «есть» — строка времени, «—» — `null`. `P` — `progress.processed`, `R` — `progress.requested` (`R ≥ 1`).
+
+| № | `status` | `started_at` | `finished_at` | `error` | `P` и `R` | Как получается | Чем закреплено |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | `queued` | — | — | — | `P = 0` | поставлен кнопкой либо импортом, воркер ещё не брал | `status-queued.json`, `run-created.json`, `run-existing.json` |
+| 2 | `queued` | есть | — | — | `0 < P < R` | **между пакетами**; так же — `Ctrl+C`, потеря слота и восстановление истёкшей lease во втором и следующих пакетах | `status-between-batches.json`; `test_expired_lease_requeues_the_started_run_twice_and_then_fails_it_as_worker_lost` |
+| 3 | `queued` | есть | — | — | `P = 0` | `Ctrl+C`, потеря слота либо восстановление истёкшей lease во время **первого** пакета: начат, но ни один товар не пройден | `run-requeued.json` |
+| 4 | `running` | есть | — | — | `0 ≤ P < R` | воркер выполняет пакет (`P = 0` — первый); запуск упавшего воркера с истёкшей lease до следующего прохода; запуск команды `suggest` (создаётся сразу `running` и сам в очередь не возвращается) | `status-running.json`; `test_running_run_keeps_the_progress_of_the_batches_before`, `test_command_run_is_running_from_its_creation_until_its_last_batch_is_closed` |
+| 5 | `running` | есть | — | — | `P = R` | только запуск команды `suggest`: последний пакет пройден, итоговый статус пишется следующей транзакцией (либо процесс команды убит в этот момент) | тот же тест команды; `test_command_run_lost_after_its_last_batch_fails_with_everything_processed` |
+| 6 | `succeeded` | есть | есть | — | `P = R` | пройден последний пакет | `status.json`, `run.json`, `runs.json` |
+| 7 | `failed` | есть | есть | объект | `P = 0` | сбой первого пакета: `auth_required`, `input_too_large`, `invalid_output` и другие коды; `worker_lost` — lease истекла в третий раз, либо запуск с истёкшей lease закрыли `cancel-pending` или `suggest` | `run-failed.json`; `test_failed_run_shows_the_public_error_and_the_button_queues_a_new_one`, `test_input_too_large_fails_the_run_before_its_first_batch`, `test_cancel_pending_and_suggest_close_an_expired_run_as_failed_not_cancelled` |
+| 8 | `failed` | есть | есть | объект | `0 < P < R` | сбой после одного или нескольких пакетов; применённое остаётся применённым | `run-failed-after-batches.json`; `test_expired_lease_requeues_…`, `test_cancel_pending_and_suggest_close_…` |
+| 9 | `failed` | есть | есть | объект | `P = R` | только запуск команды `suggest`, прерванный между последним пакетом и итоговым статусом (сочетание 5): `worker_lost` либо `internal_error` | `test_command_run_lost_after_its_last_batch_fails_with_everything_processed` |
+| 10 | `cancelled` | — | есть | — | `P = 0` | `cancel-pending` отменил запуск, который воркер не брал | `run-cancelled.json` |
+| 11 | `cancelled` | есть | есть | — | `0 ≤ P < R` | `cancel-pending` отменил начатый запуск из очереди (сочетания 2 и 3) | `run-cancelled-started.json` |
+| 12 | `queued` | есть | — | — | `P = R` | только запуск команды `suggest`, убитый в сочетании 5: воркер вернул его в очередь по истёкшей lease; следующий проход закрывает его как `succeeded` | `test_worker_recovers_a_lost_command_run_into_the_queue_and_closes_it` |
+| 13 | `cancelled` | есть | есть | — | `P = R` | `cancel-pending` отменил запуск из сочетания 12 | отдельной проверки нет: тот же переход `queued → cancelled`, что в сочетании 11 |
+
+Эталоны — в `backend/classification/tests/fixtures/public/`, тесты — `RunFieldCombinationsTests` и `ButtonThroughWorkerTests` в `backend/api/tests/test_product_classifications_queue.py`; все проверяют настоящий HTTP-ответ.
+
+Что из этого следует и на что клиент может опираться при проверке формата:
+
+- `finished_at` заполнен тогда и только тогда, когда статус конечный (`succeeded`, `failed`, `cancelled`).
+- `error` — объект тогда и только тогда, когда `status: "failed"`.
+- `started_at: null` бывает только у `queued` и `cancelled`, и тогда `P = 0`. У `running`, `succeeded` и `failed` он заполнен всегда: в `failed` запуск попадает только из `running`; `cancel-pending` запуск с истёкшей lease закрывает как `failed` / `worker_lost`, а не `cancelled`.
+- **Заполненный `started_at` у `queued` и `cancelled` — норма, а не ошибка формата**: захват ставит `started_at` один раз, и возврат в очередь его не очищает.
+- `P = R` — у `succeeded` всегда. У остальных статусов — только у запуска команды `suggest`, прерванного после последнего пакета (сочетания 5, 9, 12, 13); запуск кнопки и импорта вне `succeeded` всегда имеет `P < R`.
+- `remaining` — целое `≥ 0` при любом статусе и от него не зависит: больше нуля, когда кандидатов больше `PRODUCT_CLASSIFICATION_RUN_LIMIT`, а у команды — ещё и при `--limit`.
+- `trigger: "command"` в `queued` и `cancelled` бывает только после того, как воркер вернул в очередь запуск упавшей команды (сочетания 2, 3, 12 и отмена из них); `manual` и `import` проходят сочетания 1–4, 6–8, 10, 11.
+- `POST /runs/` возвращает `run` в любом неконечном сочетании (1–5, 12) либо `null`; `202` — всегда сочетание 1.
+
+Чего проверять **нельзя**:
+
+- `applied + unknown + skipped` против `P`. Счётчики пишутся отдельной транзакцией раньше курсора, а после восстановления истёкшей lease пакет повторяется: уже применённые товары добавляются в `skipped`. Сумма бывает больше `P` и даже больше `R`, а `applied > 0` возможно при `P = 0`.
+- Порядок `created_at` и `started_at`: первое — часы процесса, поставившего запуск, остальные времена — часы базы. `finished_at ≥ started_at`.
+- `P ≤ R` верно, пока `PRODUCT_CLASSIFICATION_RUN_LIMIT` не уменьшили ниже уже пройденного у запуска, ждущего между пакетами: расширение такого запуска кнопкой либо импортом обрежет список, и до следующего прохода воркера `queued` покажет `P ≥ R`. Это единственное исключение из таблицы; оно требует смены настройки посреди запуска.
+
+Минимальная проверка формата, которая не отвергнет ни один настоящий ответ: `finished_at` и `error` согласованы со `status` по первым двум правилам, `started_at` обязателен у `running`, `succeeded`, `failed`, остальное — типы и неотрицательность.
+
 Состояние (`GET /status/`):
 
 ```json
@@ -1194,6 +1235,13 @@ Line.product=null → matching_status=unmatched; ambiguous здесь отсут
 | `status.json`, `status-queued.json`, `status-running.json`, `status-empty.json` | GET `/status/` — после завершённого запуска; запуск в очереди без воркера; пакет выполняется (`executor.state: "busy"`, `last_seen_at: null`); пустая база |
 | `run-created.json`, `run-existing.json`, `run-nothing.json` | POST `/runs/` — 202; 200 с активным запуском; 200, ставить нечего |
 | `run.json`, `run-failed.json`, `runs.json` | GET `/runs/1/`; запуск с ошибкой; GET `/runs/` |
+| `status-between-batches.json` | GET `/status/` — запуск 2 **между пакетами**: `queued`, `started_at` заполнен, пройден 1 товар из 2 (пакет — один товар), воркера рядом нет |
+| `run-cancelled-started.json` | GET `/runs/2/` — тот же запуск после `cancel-pending`: `cancelled` с заполненным `started_at` |
+| `run-requeued.json` | GET `/runs/3/` — `Ctrl+C` воркера во время первого пакета: `queued`, `started_at` заполнен, `processed: 0` |
+| `run-failed-after-batches.json` | GET `/runs/3/` — сбой третьего пакета (`auth_required`): `failed`, `processed: 2` из 7, два применённых остаются |
+| `run-cancelled.json` | GET `/runs/4/` — `cancel-pending` до первого пакета: `cancelled`, `started_at: null` |
+
+Последние пять файлов добавлены после проверки интерфейса (2026-10-07) и получены настоящей очередью: `claim_run` → пакет с fake → возврат в `queued`, `release_run`, `cancel_pending`; тест `test_examples_of_a_run_stopped_between_and_after_batches`. Запуски 3 и 4 в них идут после отмены ожидающих записей, поэтому их `requested` (7 и 5) с остальными файлами не связан. Всего файлов 40; какое сочетание полей закрепляет каждый — [таблица сочетаний](#допустимые-сочетания-полей-запуска).
 | `error-classification-resolved.json`, `error-classification-changed.json`, `error-classification-busy.json` | три новых кода 409 |
 | `error-classification-resolved-items.json`, `error-classification-changed-items.json` | отказ массового подтверждения с `fields` |
 | `error-invalid-parameter.json`, `error-invalid-parameter-service.json`, `error-invalid-parameter-items.json` | `generic_id` не найден; служебный; больше 100 записей |
@@ -1203,7 +1251,7 @@ Line.product=null → matching_status=unmatched; ambiguous здесь отсут
 
 ### Предположения: уточнения и отступления от контракта К1
 
-Содержимое всех 35 эталонов совпало с текстом контракта К1 §9; пути, формы, коды и тексты ошибок соответствуют §8. Уточнено и отличается:
+Содержимое 35 эталонов, названных в К1, совпало с текстом контракта К1 §9 (пять файлов о запуске, остановленном между пакетами и после них, добавлены позже и в К1 не описаны: формат Запуска в них тот же); пути, формы, коды и тексты ошибок соответствуют §8. Уточнено и отличается:
 
 - Файлы эталонов записаны в каноническом виде `indent=2` (каждый ключ на своей строке), а в тексте К1 вложенные объекты были в одну строку; значения те же.
 - Список Записей — 9 SQL-запросов (целевой потолок К1 — 8): `services.describe` шага С1 читает журнал созданных обобщённых продуктов и журнал созданных категорий двумя запросами. Запись — 8, Состояние — 5, Запуск — 1, как намечено.
@@ -1229,12 +1277,13 @@ Line.product=null → matching_status=unmatched; ambiguous здесь отсут
 | --- | --- |
 | `status: "queued"`, `started_at: null`, `progress.processed: 0` | запуск ждёт воркера; без воркера (`executor.state: "absent"`) ждёт бесконечно — срока ожидания в очереди нет |
 | `status: "running"` | прямо сейчас выполняется пакет; `executor.state` при этом `busy` |
-| `status: "queued"`, `started_at` заполнен, `0 < progress.processed < progress.requested` | запуск **между пакетами**: это продолжающаяся работа, а не новая постановка. `progress` и ожидающие записи растут после каждого пакета, `version` — при каждом переходе |
+| `status: "queued"`, `started_at` заполнен, `0 < progress.processed < progress.requested` | запуск **между пакетами**: это продолжающаяся работа, а не новая постановка. `progress` и ожидающие записи растут после каждого пакета, `version` — при каждом переходе. Эталон — `status-between-batches.json` |
+| `status: "queued"`, `started_at` заполнен, `progress.processed: 0` | воркер остановлен (`Ctrl+C`, потеря слота) либо lease истекла во время первого пакета: запуск ждёт следующего прохода. Эталон — `run-requeued.json` |
 | `status: "succeeded"`, `processed = requested` | все пакеты пройдены; ответы «не знаю» (`unknown`) и отброшенные (`skipped`) успеху не мешают |
 | `status: "failed"`, `error.code` | сбой запроса к модели после исчерпания попыток, неверный ответ, `input_too_large`, `worker_lost`, `internal_error`. Пакеты, применённые до сбоя, остаются применёнными: `processed` и записи не откатываются |
-| `status: "cancelled"` | запуск из очереди отменён командой `product_classifications cancel-pending` |
+| `status: "cancelled"` | запуск из очереди отменён командой `product_classifications cancel-pending`; если воркер уже брал его, `started_at` заполнен и `progress.processed` может быть больше нуля |
 
-Запуск многократно переходит `queued → running → queued`, поэтому клиент определяет «идёт работа» по активному запуску (`queued` либо `running`), а не только по `running`. Исход запуска не меняет ни чек, ни вырезку, ни задание распознавания.
+Полный перечень сочетаний `status`, `started_at`, `finished_at`, `error` и `progress` — [таблица](#допустимые-сочетания-полей-запуска). Запуск многократно переходит `queued → running → queued`, поэтому клиент определяет «идёт работа» по активному запуску (`queued` либо `running`), а не только по `running`. Исход запуска не меняет ни чек, ни вырезку, ни задание распознавания.
 
 **`POST /runs/` и очередь.** База допускает не больше одного `queued` и одного `running`. Пока пакет выполняется (`running`), кнопка возвращает этот запуск (`200`, `created: false`) и ничего рядом не ставит. Запуск в очереди, в том числе между пакетами, возвращается как есть; если это запуск импорта (`scope: "products"`), он расширяется до всех кандидатов (`scope: "all"`, `version + 1`), а товары, уже пройденные пакетами, остаются на месте. После конечного статуса кнопка ставит новый запуск (`202`), если есть кандидаты; товар с ответом «не знаю» остаётся кандидатом ручного запуска.
 

@@ -1,5 +1,6 @@
 """Эталонные JSON для клиента сверяются целиком с настоящими HTTP-ответами."""
 import json
+from contextlib import ExitStack
 from datetime import timedelta
 from unittest.mock import patch
 
@@ -12,11 +13,17 @@ from api.tests.classification_factories import (
     local_client, public_classification_data, restart_ids, start_run,
 )
 from catalog.models import Category, GenericProduct, Product
-from classification import services
+from classification import queue, services, worker
+from classification.classifier import FakeClassifier
 from classification.models import ClassificationRun, ProductClassification
 
 BASE = "/api/product-classifications/"
 REQUESTS = {"confirm-request.json", "confirm-other-request.json", "reject-request.json", "confirm-many-request.json"}
+# Запуск, остановленный между пакетами и после них, проверяет отдельный тест настоящей очередью.
+STOPPED = {
+    "status-between-batches.json", "run-requeued.json", "run-failed-after-batches.json",
+    "run-cancelled-started.json", "run-cancelled.json",
+}
 EXAMPLES = REQUESTS | {
     "classifications.json", "classification-pending.json", "classification-confirmed.json",
     "classification-confirmed-other.json", "classification-rejected.json", "classification-superseded.json",
@@ -28,7 +35,7 @@ EXAMPLES = REQUESTS | {
     "error-invalid-parameter-items.json", "error-invalid-request.json", "error-permission-denied.json",
     "error-csrf-failed.json", "error-not-found.json", "error-page-out-of-range.json",
     "error-database-unavailable.json",
-}
+} | STOPPED
 # Файлы пустой базы проверяет отдельный тест.
 EMPTY = {"status-empty.json", "run-nothing.json"}
 
@@ -130,7 +137,7 @@ class PublicExamplesTests(TestCase):
             self.check("classification-rejected.json", self.post("3/reject/", self.request("reject-request.json")))
             self.check("confirm-many.json", self.post("confirm/", self.request("confirm-many-request.json")))
 
-        self.assertEqual(self.seen, EXAMPLES - EMPTY)
+        self.assertEqual(self.seen, EXAMPLES - EMPTY - STOPPED)
         # Отклонение убрало созданные «Колбаса» и «Мясные продукты»; подтверждение приняло «Кефир».
         self.assertFalse(GenericProduct.objects.filter(pk=SAUSAGE_ID).exists())
         self.assertFalse(Category.objects.filter(pk=MEAT).exists())
@@ -140,6 +147,57 @@ class PublicExamplesTests(TestCase):
              18: MILK_ID, 19: SERVICE_ID},
         )
         self.assertEqual(ClassificationRun.objects.count(), 3)
+
+    def at(self, moment):
+        """Время базы и создания строк: эталоны сравниваются целиком."""
+        stack = ExitStack()
+        for target in ("classification.queue.db_now", "classification.services._db_now", "django.utils.timezone.now"):
+            stack.enter_context(patch(target, return_value=moment))
+        return stack
+
+    def batch(self, scenario="mixed"):
+        """Проход воркера по очереди предположений: захват и один пакет с fake."""
+        run = queue.claim_run()
+        return worker.process_batch(run, classifier=FakeClassifier(scenario))
+
+    @override_settings(PRODUCT_CLASSIFICATION_BATCH_SIZE=1, RECEIPT_OCR_PROVIDER="fake")
+    def test_examples_of_a_run_stopped_between_and_after_batches(self):
+        public_classification_data()
+        # Запуск 2 по товарам 15 и 19, пакет — один товар.
+        with self.at(QUEUED):
+            self.assertEqual(self.post("runs/", {}).status_code, 202)
+        with self.at(QUEUED + timedelta(seconds=5)):
+            self.assertEqual(self.batch().status, "queued")
+            # Между пакетами: запуск снова в очереди, уже начатый.
+            self.check("status-between-batches.json", self.client.get(BASE + "status/"))
+        with self.at(QUEUED + timedelta(minutes=1)):
+            # ``cancel-pending`` отменяет начатый запуск из очереди и возвращает ожидающие товары.
+            self.assertEqual(services.cancel_pending()["runs_cancelled"], [2])
+            self.check("run-cancelled-started.json", self.client.get(BASE + "runs/2/"))
+
+        with self.at(QUEUED + timedelta(minutes=2)):
+            self.assertEqual(self.post("runs/", {}).status_code, 202)
+        with self.at(QUEUED + timedelta(minutes=2, seconds=5)):
+            # Ctrl+C воркера во время первого пакета: начат, но ни один товар не пройден.
+            self.assertEqual(queue.release_run(queue.claim_run()).status, "queued")
+            self.check("run-requeued.json", self.client.get(BASE + "runs/3/"))
+        with self.at(QUEUED + timedelta(minutes=2, seconds=30)):
+            self.assertEqual([self.batch().status, self.batch().status], ["queued", "queued"])
+            # Сбой третьего пакета: два применённых остаются применёнными.
+            self.assertEqual(self.batch("auth_failure").status, "failed")
+            self.check("run-failed-after-batches.json", self.client.get(BASE + "runs/3/"))
+
+        with self.at(QUEUED + timedelta(minutes=3)):
+            self.assertEqual(self.post("runs/", {}).status_code, 202)
+        with self.at(QUEUED + timedelta(minutes=4)):
+            # Запуск, который воркер не брал, отменён из очереди.
+            self.assertEqual(services.cancel_pending()["runs_cancelled"], [4])
+            self.check("run-cancelled.json", self.client.get(BASE + "runs/4/"))
+        self.assertEqual(self.seen, STOPPED)
+        self.assertEqual(
+            list(ClassificationRun.objects.order_by("pk").values_list("status", flat=True)),
+            ["succeeded", "cancelled", "failed", "cancelled"],
+        )
 
     def test_examples_of_an_empty_database(self):
         self.check("status-empty.json", self.client.get(BASE + "status/"))
