@@ -73,7 +73,7 @@ function StoreChooser({ id, store, problems, disabled, onStore }: {
     {store && <button type="button" className="ck-review-secondary" disabled={disabled} onClick={() => choose(null)}>Не использовать выбранный магазин</button>}
     <Field id={id} label="Найти существующий магазин" problems={[...problems, ...(short ? ['Введите не меньше двух символов.'] : [])]} hint="Вывеска, название или город. Поиск не меняет данные формы.">
       {(attrs) => <div className="ck-review-search">
-        <input {...attrs} type="search" maxLength={100} value={text} disabled={disabled} onChange={(event) => setText(event.target.value)}
+        <input {...attrs} type="search" maxLength={100} value={text} disabled={disabled} onChange={(event) => { setText(event.target.value); setShort(false) }}
           onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); search() } }} />
         <button type="button" className="ck-review-secondary" disabled={disabled} onClick={search}>Найти</button>
       </div>}

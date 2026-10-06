@@ -37,6 +37,8 @@ export type ReviewState = {
   unread: string[]
   /** Announcement of the last local action; `focus` names the field or button that takes focus (null only before any action). */
   notice: { id: number; text: string; focus: string | null }
+  /** The announcement says that the request was not sent: true from a stopped press until the next edit or the real request. */
+  unsent: boolean
 }
 export type ReviewEdit =
   | { type: 'header'; patch: Partial<ReviewHeader> }
@@ -46,6 +48,8 @@ export type ReviewEdit =
   | { type: 'add'; list: ReviewList }
   | { type: 'remove'; list: ReviewList; key: number }
   | { type: 'missing'; problems: Record<string, string[]> }
+  /** The confirmation is being sent now. */
+  | { type: 'sent' }
   | { type: 'refused'; error: LocalApiFailure; sent: SentKeys }
 
 /** Same order as the store labels of the price history: the id first, so that equal names stay distinct. */
@@ -123,7 +127,7 @@ export function decimalText(text: string, places: number): string | null {
 }
 
 export function createReview(result: NormalizedResult | null, issues: RecognitionIssue[]): ReviewState {
-  const base = { issues, problems: {}, notice: { id: 0, text: '', focus: null } }
+  const base = { issues, problems: {}, notice: { id: 0, text: '', focus: null }, unsent: false }
   const header: ReviewHeader = {
     store: null, storeName: '', address: '', country: '', currency: '', operation: '', purchasedOn: '', localTime: '', utcOffset: '', total: '', pricesIncludeTax: '',
   }
@@ -285,16 +289,22 @@ function cleared(problems: Record<string, string[]>, base: string, props: string
 const without = (problems: Record<string, string[]>, prefix: string) => Object.fromEntries(
   Object.entries(problems).filter(([id]) => id !== prefix && !id.startsWith(`${prefix}.`)))
 const numbers = (values: number[]) => values.join(', ')
+/** «Запрос не отправлен…» is erased as soon as it stops being true. The id stays, so the form moves no focus:
+ * it remains in the edited field or on the pressed button.
+ */
+const settled = (state: ReviewState): ReviewState => state.unsent ? { ...state, unsent: false, notice: { ...state.notice, text: '' } } : state
 
-export function reviewReducer(state: ReviewState, edit: ReviewEdit): ReviewState {
+export function reviewReducer(current: ReviewState, edit: ReviewEdit): ReviewState {
+  if (edit.type === 'sent') return settled(current)
+  const state = edit.type === 'missing' || edit.type === 'refused' ? current : settled(current)
   const notice = (text: string, focus: string | null) => ({ id: state.notice.id + 1, text, focus })
   switch (edit.type) {
     case 'header': return { ...state, header: { ...state.header, ...edit.patch }, problems: cleared(state.problems, 'receipt', Object.keys(edit.patch), false) }
     case 'line': {
       const patch = { ...edit.patch }
-      const current = state.lines.find((line) => line.key === edit.key)
-      if (!current) return state
-      const kind = patch.kind ?? current.kind
+      const row = state.lines.find((line) => line.key === edit.key)
+      if (!row) return state
+      const kind = patch.kind ?? row.kind
       if (kind !== 'deposit') patch.parent = null
       if (patch.taxKind !== undefined && patch.taxKind !== 'vat') patch.taxRate = ''
       // Only a product line can carry a deposit: its deposits lose the link together with its kind.
@@ -319,7 +329,8 @@ export function reviewReducer(state: ReviewState, edit: ReviewEdit): ReviewState
     }
     case 'add': {
       const key = state.nextKey
-      const added = { ...state, nextKey: key + 1, problems: without(state.problems, edit.list) }
+      // Only the text about the list itself leaves: the marks of the other rows are still true.
+      const added = { ...state, nextKey: key + 1, problems: Object.fromEntries(Object.entries(state.problems).filter(([id]) => id !== edit.list)) }
       if (edit.list === 'lines') return { ...added, lines: [...state.lines, emptyLine(key)], notice: notice(`Добавлена строка ${state.lines.length + 1}.`, firstField('lines', key)) }
       if (edit.list === 'discounts') return {
         ...added, discounts: [...state.discounts, { key, line: null, name: '', amount: '' }],
@@ -332,9 +343,9 @@ export function reviewReducer(state: ReviewState, edit: ReviewEdit): ReviewState
     }
     case 'remove': {
       const index = state[edit.list].findIndex((row) => row.key === edit.key)
-      if (index < 0) return state
+      if (index < 0) return current
       const problems = without(state.problems, rowField(edit.list, edit.key))
-      const removed = `${rowNames[edit.list]} ${index + 1} удален${edit.list === 'taxes' ? '' : 'а'}.`
+      const removed = `${rowNames[edit.list]} ${index + 1} ${edit.list === 'taxes' ? 'удалён' : 'удалена'}.`
       if (edit.list === 'discounts') {
         const discounts = state.discounts.filter((row) => row.key !== edit.key)
         return { ...state, discounts, problems, notice: notice(removed, afterRemoval('discounts', discounts, index)) }
@@ -355,8 +366,11 @@ export function reviewReducer(state: ReviewState, edit: ReviewEdit): ReviewState
       }
     }
     case 'missing': {
-      const count = Object.keys(edit.problems).length
-      return { ...state, problems: { ...state.problems, ...edit.problems }, notice: notice(`Запрос не отправлен: заполните обязательные поля (${count}).`, Object.keys(edit.problems)[0]) }
+      const ids = Object.keys(edit.problems)
+      if (ids.length === 0) return state
+      // An empty list of lines has no field: its «Добавить строку» button takes focus.
+      const focus = ids[0] === 'lines' ? addField('lines') : ids[0]
+      return { ...state, unsent: true, problems: { ...state.problems, ...edit.problems }, notice: notice(`Запрос не отправлен: заполните обязательные поля (${ids.length}).`, focus) }
     }
     case 'refused': {
       // The answer describes the rows as they were sent; a row removed while waiting has no field to mark any more.

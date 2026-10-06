@@ -17,6 +17,13 @@ export function reviewFocusTarget(active: 'pressed' | 'body' | 'elsewhere', pres
   return pressedAvailable ? 'pressed' : 'result'
 }
 
+/** The refusal printed in the form of a crop: the answer to its last request. It leaves for good when a later press
+ * is stopped by the local check (`superseded` is the state at that press), and with the next request.
+ */
+export function refusalText(state: ReviewActionState, imageId: number, superseded: ReviewActionState | null): string | undefined {
+  return state.kind === 'failed' && state.imageId === imageId && state !== superseded ? state.message : undefined
+}
+
 /** A pressed button that disappears with its own press names the lasting field that takes focus instead of it. */
 export const focusAfterAttribute = 'data-review-focus'
 export function focusAfterPress(target: { closest(selector: string): { getAttribute(name: string): string | null } | null }): string | null {
