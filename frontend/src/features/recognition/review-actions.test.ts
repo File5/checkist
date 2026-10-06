@@ -6,7 +6,8 @@ import { publicFixture } from '../../api/recognition-test-support'
 import type { LocalApiFailure, LocalApiResult } from '../../api/types'
 import { acceptJob, isActive, reviewErrorText, reviewKeepsState } from './labels'
 import { createPollingRequest } from './polling'
-import { createReviewActions } from './review-actions'
+import { createReviewActions, rememberConfirmed } from './review-actions'
+import type { ConfirmedCrops } from './review-actions'
 
 function confirmed(): ReviewConfirmResult { const data = publicFixture('review-confirmed.json'); if (!isReviewConfirmResult(data)) throw new Error('Invalid fixture'); return data }
 function job(): JobDetail { const data = publicFixture('job.json'); if (!isJobDetail(data)) throw new Error('Invalid fixture'); return data }
@@ -129,6 +130,66 @@ describe('crop confirmation state machine', () => {
     // An older job version read later is not accepted over the answer of the confirmation.
     expect(acceptJob(confirmed().job, job())).toBe(false)
     actions.dispose(); request.dispose()
+  })
+  it.each([
+    ['review_invalid', 409], ['invalid_parameter', 400], ['invalid_request', 400], ['csrf_failed', 403], ['permission_denied', 403],
+  ] as const)('reads the crop list that the second confirmation interrupted, after its refusal without a reread (%s)', async (reason, status) => {
+    type Crops = { id: number; status: string }[]
+    const stale: Crops = [{ id: 41, status: 'needs_review' }, { id: 42, status: 'needs_review' }]
+    const saved: Crops = [{ id: 41, status: 'imported' }, { id: 42, status: 'needs_review' }]
+    const signals: AbortSignal[] = []
+    const reads: ((value: LocalApiResult<Crops>) => void)[] = []
+    const crops = createPollingRequest<Crops>((signal) => { signals.push(signal); return new Promise((yes) => { reads.push(yes) }) })
+    const jobRead = vi.fn(async (): Promise<LocalApiResult<JobDetail>> => ({ kind: 'ok', data: job() }))
+    const jobs = createPollingRequest<JobDetail>(jobRead, isActive, acceptJob)
+    const kinds: string[] = []
+    crops.start(); jobs.start(); reads[0]({ kind: 'ok', data: stale }); await flush()
+    crops.subscribe(() => kinds.push(crops.getSnapshot().kind))
+    let answer!: (value: LocalApiResult<ReviewConfirmResult>) => void
+    const confirm = vi.fn(() => new Promise<LocalApiResult<ReviewConfirmResult>>((yes) => { answer = yes }))
+    // The wiring of JobPage: both reads pause; a success reads the crops once, a refusal rereads only when the saved state may differ.
+    const actions = createReviewActions(confirm, async () => ({ kind: 'ok', data: csrf() }), {
+      pause: () => { jobs.pause(); crops.pause() },
+      success: (result) => { jobs.setData(result.job); jobs.resume(false); crops.resume(true) },
+      failure: (_error, reread) => { jobs.resume(reread); crops.resume(reread) },
+    })
+    const first = actions.run(41, input); answer({ kind: 'ok', data: confirmed() }); await first
+    expect(signals).toHaveLength(2) // the list read after the success is in flight
+    const second = actions.run(42, input)
+    expect(signals[1].aborted).toBe(true); expect(signals).toHaveLength(2)
+    answer({ kind: 'error', reason, status }); expect(await second).toMatchObject({ reason })
+    expect(signals).toHaveLength(3); expect(signals[2].aborted).toBe(false)
+    // The cancelled read answers late and is ignored; the new one brings the saved first crop.
+    reads[1]({ kind: 'ok', data: stale }); reads[2]({ kind: 'ok', data: saved }); await flush()
+    expect(crops.getSnapshot()).toEqual({ kind: 'ok', data: saved, refreshing: false })
+    // The list never left `ok`: its cards stay mounted, so the form of crop 42 keeps what the person typed.
+    expect(new Set(kinds)).toEqual(new Set(['ok']))
+    // The job came with the answer of the first confirmation: no read of it is owed.
+    expect(jobRead).toHaveBeenCalledTimes(1); expect(jobs.getSnapshot()).toMatchObject({ data: { version: 2 } })
+    expect(confirm).toHaveBeenCalledTimes(2)
+    actions.dispose(); crops.dispose(); jobs.dispose()
+  })
+  it('remembers every confirmed crop of the screen, so that the next confirmation does not show it as unconfirmed again', () => {
+    const none: ConfirmedCrops = new Map()
+    const image = confirmed().image
+    expect(rememberConfirmed(none, { kind: 'idle' })).toBe(none); expect(rememberConfirmed(none, { kind: 'pending', imageId: 41 })).toBe(none)
+    const first = rememberConfirmed(none, { kind: 'done', imageId: 41, image, message: '' })
+    expect([...first]).toEqual([[41, image]]); expect(none.size).toBe(0)
+    // The same answer is not stored twice: the component would otherwise render without end.
+    expect(rememberConfirmed(first, { kind: 'done', imageId: 41, image, message: '' })).toBe(first)
+    const error: LocalApiFailure = { kind: 'error', reason: 'review_invalid', status: 409 }
+    expect(rememberConfirmed(first, { kind: 'pending', imageId: 42 })).toBe(first); expect(rememberConfirmed(first, { kind: 'failed', imageId: 42, error, message: '' })).toBe(first)
+    expect([...rememberConfirmed(first, { kind: 'done', imageId: 42, image, message: '' }).keys()]).toEqual([41, 42])
+  })
+  it('does not read the crop list after a refusal without a reread when no read was interrupted', async () => {
+    const load = vi.fn(async (): Promise<LocalApiResult<number>> => ({ kind: 'ok', data: 1 }))
+    const crops = createPollingRequest<number>(load)
+    crops.start(); await flush()
+    const error = readError(409, publicFixture('review-invalid.json'), true)
+    const actions = createReviewActions(failing(error), vi.fn(), { pause: crops.pause, success: vi.fn(), failure: (_error, reread) => crops.resume(reread) })
+    await actions.run(42, input); await flush()
+    expect(load).toHaveBeenCalledTimes(1)
+    actions.dispose(); crops.dispose()
   })
   it('has a client text for every refusal of the contract and never rereads for a refusal that saved nothing', () => {
     const reasons = ['invalid_request', 'invalid_parameter', 'csrf_failed', 'permission_denied', 'not_found', 'job_active', 'review_unavailable', 'review_resolved',

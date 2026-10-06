@@ -3,7 +3,7 @@ import { readError } from '../../api/http'
 import type { NormalizedLine, NormalizedResult, ReceiptImageDetail } from '../../api/recognition'
 import { isReceiptImageDetail, isReviewConfirmInput } from '../../api/recognition-schema'
 import { issue, publicFixture } from '../../api/recognition-test-support'
-import { buildInput, createReview, decimalText, fieldProblems, issueProblems, missingRequired, problemTexts, reviewReducer, storeLabel } from './review-state'
+import { addField, buildInput, createReview, decimalText, fieldProblems, issueProblems, missingRequired, problemTexts, reviewReducer, storeLabel } from './review-state'
 import type { ReviewEdit, ReviewState } from './review-state'
 
 function image(): ReceiptImageDetail { const value = publicFixture('receipt-image.json'); if (!isReceiptImageDetail(value)) throw new Error('Invalid fixture'); return value }
@@ -116,7 +116,7 @@ describe('rows and their references', () => {
     const { input } = buildInput(state)
     expect(input.lines.map((item) => [item.position, item.source_position, item.parent_position, item.name])).toEqual([[1, 2, null, 'PFAND'], [2, 3, null, 'ТОВАР 3'], [3, 4, 2, 'ТОВАР 4']])
     expect(input.discounts.map((item) => [item.position, item.line_position])).toEqual([[1, 2], [2, null], [3, null]])
-    expect(state.notice).toMatchObject({ focus: null, text: 'Строка 1 удалена. Следующие строки перенумерованы. Снята связь залога: строки 1. Скидки 2 теперь относятся ко всему чеку.' })
+    expect(state.notice).toMatchObject({ focus: `lines.${before.lines[1].key}.name`, text: 'Строка 1 удалена. Следующие строки перенумерованы. Снята связь залога: строки 1. Скидки 2 теперь относятся ко всему чеку.' })
     expect(isReviewConfirmInput(input)).toBe(true)
   })
   it('gives a new line the next position, no source and focus, and renumbers discounts and taxes', () => {
@@ -131,7 +131,45 @@ describe('rows and their references', () => {
     expect(input.discounts.map((item) => [item.position, item.line_position, item.name])).toEqual([[1, 1, 'Rabatt A'], [2, null, 'Karte'], [3, 5, 'Neu']])
     expect(apply(before, { type: 'add', list: 'lines' }).notice).toMatchObject({ text: 'Добавлена строка 5.', focus: `lines.${added.key}.name` })
     expect(apply(before, { type: 'add', list: 'taxes' }).notice.text).toBe('Добавлен налоговый итог 1.')
-    expect(apply(before, { type: 'remove', list: 'discounts', key: before.discounts[1].key }).notice).toMatchObject({ text: 'Скидка 2 удалена.', focus: null })
+    expect(apply(before, { type: 'remove', list: 'discounts', key: before.discounts[1].key }).notice).toMatchObject({ text: 'Скидка 2 удалена.', focus: `discounts.${before.discounts[2].key}.name` })
+  })
+  describe('focus after a removal stays at the place of the edit, never on the announcement at the end of the form', () => {
+    const three = () => {
+      const state = apply(createReview(result([line(1), line(2), line(3)], { discounts: [1, 2, 3].map((position) => ({ position, line_position: null, name: `Rabatt ${position}`, amount: '0.10' })) }), []),
+        { type: 'add', list: 'taxes' }, { type: 'add', list: 'taxes' }, { type: 'add', list: 'taxes' })
+      expect([state.lines.length, state.discounts.length, state.taxes.length]).toEqual([3, 3, 3])
+      return state
+    }
+    const first = { lines: 'name', discounts: 'name', taxes: 'tax_rate.kind' } as const
+    const texts = { lines: 'Строка', discounts: 'Скидка', taxes: 'Налоговый итог' } as const
+    it.each(['lines', 'discounts', 'taxes'] as const)('%s: removed from the middle → the first field of the row that took its place', (list) => {
+      const before = three()
+      const state = reviewReducer(before, { type: 'remove', list, key: before[list][1].key })
+      expect(state[list].map((row) => row.key)).toEqual([before[list][0].key, before[list][2].key])
+      expect(state.notice.focus).toBe(`${list}.${before[list][2].key}.${first[list]}`)
+      expect(state.notice.text).toContain(`${texts[list]} 2 удален`); expect(state.notice.id).toBe(before.notice.id + 1)
+    })
+    it.each(['lines', 'discounts', 'taxes'] as const)('%s: removed the last → the first field of the previous row', (list) => {
+      const before = three()
+      const state = reviewReducer(before, { type: 'remove', list, key: before[list][2].key })
+      expect(state.notice.focus).toBe(`${list}.${before[list][1].key}.${first[list]}`)
+      expect(state.notice.text).toContain(`${texts[list]} 3 удален`); expect(state.notice.text).not.toContain('перенумерованы')
+    })
+    it.each(['lines', 'discounts', 'taxes'] as const)('%s: the list became empty → its «Добавить …» button', (list) => {
+      const before = three()
+      const state = apply(before, ...before[list].map((row): ReviewEdit => ({ type: 'remove', list, key: row.key })))
+      expect(state[list]).toEqual([]); expect(state.notice.focus).toBe(addField(list))
+      expect(state.notice.text).toContain(`${texts[list]} 1 удален`)
+    })
+    it('keeps announcing what the removal changed while focus goes to the next row', () => {
+      const before = createReview(source(), [])
+      const state = reviewReducer(before, { type: 'remove', list: 'lines', key: before.lines[2].key })
+      expect(state.notice).toEqual({ id: 1, focus: `lines.${before.lines[3].key}.name`, text: 'Строка 3 удалена. Следующие строки перенумерованы. Снята связь залога: строки 3. Скидки 1 теперь относятся ко всему чеку.' })
+    })
+    it('does nothing for a row that is already gone', () => {
+      const before = three()
+      expect(reviewReducer(before, { type: 'remove', list: 'taxes', key: 999 })).toBe(before)
+    })
   })
   it('drops the deposit link when either side stops fitting it', () => {
     const before = createReview(source(), [])

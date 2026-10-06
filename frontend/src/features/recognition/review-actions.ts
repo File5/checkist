@@ -17,6 +17,26 @@ export function reviewFocusTarget(active: 'pressed' | 'body' | 'elsewhere', pres
   return pressedAvailable ? 'pressed' : 'result'
 }
 
+/** A pressed button that disappears with its own press names the lasting field that takes focus instead of it. */
+export const focusAfterAttribute = 'data-review-focus'
+export function focusAfterPress(target: { closest(selector: string): { getAttribute(name: string): string | null } | null }): string | null {
+  return target.closest(`[${focusAfterAttribute}]`)?.getAttribute(focusAfterAttribute) ?? null
+}
+/** A field replaced by another element under the same id (the country input by the select of the loaded reference)
+ * gets focus back only if it was the last focused control of the form and nothing else holds focus now.
+ */
+export function replacedFieldKeepsFocus(lastFocused: string | null, field: string, active: 'body' | 'elsewhere'): boolean {
+  return active === 'body' && lastFocused === field
+}
+
+/** Answers of the confirmations of this screen by crop. A saved crop is shown from its answer until a list read brings it,
+ * also while the next crop is being confirmed and the reads are paused.
+ */
+export type ConfirmedCrops = ReadonlyMap<number, ReceiptImageDetail>
+export function rememberConfirmed(saved: ConfirmedCrops, state: ReviewActionState): ConfirmedCrops {
+  return state.kind === 'done' && saved.get(state.imageId) !== state.image ? new Map(saved).set(state.imageId, state.image) : saved
+}
+
 function doneText(image: ReceiptImageDetail): string {
   const receipt = image.receipt_id === null ? '' : ` №${image.receipt_id}`
   if (image.status === 'reused') return `Подтверждено. Вырезка привязана к уже сохранённому чеку${receipt}: его значения не изменены, исправления к нему не применены.`

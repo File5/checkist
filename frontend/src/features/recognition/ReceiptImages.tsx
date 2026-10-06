@@ -1,6 +1,6 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
-import type { ReceiptImage } from '../../api/recognition'
+import type { ReceiptImage, ReceiptImageDetail } from '../../api/recognition'
 import { focusOwnerAttribute } from '../../components/local-request-focus'
 import RecognitionIssues from '../../components/RecognitionIssues'
 import RequestState from '../../components/RequestState'
@@ -9,18 +9,21 @@ import { Link } from '../../navigation'
 import { imageLabels } from './labels'
 import MediaImage from './MediaImage'
 import ReviewResult from './ReviewResult'
+import { rememberConfirmed } from './review-actions'
+import type { ConfirmedCrops } from './review-actions'
 import { useReviewFocus } from './useReviewActions'
 import type { ReviewControl } from './useReviewActions'
 
 const noReview: ReviewControl = { state: { kind: 'idle' }, run: async () => undefined }
 
-function ImageCard({ item, finished, busy, review, remember, result }: {
-  item: ReceiptImage; finished: boolean; busy: boolean; review: ReviewControl; remember: () => void; result: RefObject<HTMLParagraphElement | null>
+function ImageCard({ item, confirmed, finished, busy, review, remember, result }: {
+  item: ReceiptImage; confirmed: ReceiptImageDetail | undefined; finished: boolean; busy: boolean; review: ReviewControl; remember: () => void; result: RefObject<HTMLParagraphElement | null>
 }) {
   const action = review.state
   const addressed = action.kind !== 'idle' && action.imageId === item.id
-  // The answer of the confirmation is shown at once; the list read that follows brings the same crop.
-  const shown = addressed && action.kind === 'done' && item.status === 'needs_review' ? action.image : item
+  // The answer of the confirmation is shown at once and until the list read that follows brings the same crop,
+  // also when that read waits for the confirmation of another crop.
+  const shown = confirmed && item.status === 'needs_review' ? confirmed : item
   const linked = shown.confirmed_at !== null && (shown.status === 'reused' || shown.status === 'updated')
   // While the form is shown, a refusal is printed in the form, next to the pressed button; the card states everything else.
   const message = addressed && (action.kind === 'done' || action.kind === 'failed') && shown.status !== 'needs_review' ? action.message : ''
@@ -53,7 +56,10 @@ export default function ReceiptImages({ images, finished = false, busy = false, 
   busy?: boolean; review?: ReviewControl
 }) {
   const focus = useReviewFocus<HTMLParagraphElement>(review.state)
+  const [saved, setSaved] = useState<ConfirmedCrops>(new Map())
+  const confirmed = rememberConfirmed(saved, review.state)
+  if (confirmed !== saved) setSaved(confirmed)
   if (images.length === 0) return <RequestState kind="empty" message={finished ? 'Обработка закончена без вырезок чеков. Посмотрите статус и причины задания.' : 'Вырезок пока нет. Они появятся после поиска чеков на фото.'} />
   return <ol className="ck-rec-list">{[...images].sort((a, b) => a.position - b.position).map((item) =>
-    <ImageCard key={item.id} item={item} finished={finished} busy={busy} review={review} remember={focus.remember} result={focus.result} />)}</ol>
+    <ImageCard key={item.id} item={item} confirmed={confirmed.get(item.id)} finished={finished} busy={busy} review={review} remember={focus.remember} result={focus.result} />)}</ol>
 }
