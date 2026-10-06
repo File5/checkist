@@ -4,6 +4,8 @@
 
 Реализованы backend scaffold (health API, Postgres/Redis probes, Celery task/CLI, Compose), React/TypeScript/Vite SPA с настоящим health API через proxy и предметная модель данных чеков — приложения `catalog`, `stores`, `receipts` с миграциями и тестами ([data-model.md](data-model.md)) — и HTTP API чтения этой модели, приложение `api` с 13 GET-эндпоинтами ([api-contract.md](api-contract.md#реализовано-api-чтения-каталога-и-цен)). Контрактные тесты health используют mocks; integration-tag tests работают с реальными Postgres и Redis; выполнение очереди и result backend проверяет отдельный `check_services`. Ограничения БД, каскады, сиды, дедупликацию, проверку чека и историю цен проверяют integration tests трёх приложений на реальном Postgres. API чтения проверяют тесты `api`: без БД — разбор параметров, пагинация, сериализация, курсы и формат ошибок; с тегом `integration` — эндпоинты через тестовый клиент Django на реальном Postgres; настоящий HTTP — сценарии `curl.exe` [ниже](#http-api-чтения). Django admin (`/admin/`, 12 моделей и inline чека) проверяют `test_admin.py` трёх приложений и `health/tests/test_admin_site.py` через `django.test.Client`: это HTTP-запросы к настоящим страницам админки без браузера. Vitest проверяет клиентский API-адаптер с mocked fetch; CLI `backend/scripts/check_health_proxy.mjs` — настоящий HTTP и тот же адаптер через proxy в Node 24.
 
+Реализована серверная часть статистики — траты за период, походы, разложение изменения среднего чека и ряды цен: [проверки, замер времени и результаты](#статистика-серверная-часть-с5); клиента статистики ещё нет.
+
 Реализован `recognition`: фото/вырезки MEDIA, очередь PostgreSQL, host-worker, FakeProvider/Codex CLI, автоматический импорт, локальный HTTP upload/cancel/retry и чтение всех строк чеков. Новый сквозной набор — [ниже](#распознавание-сквозная-серверная-проверка). Человек исправляет и подтверждает вырезку `needs_review` одним POST — [проверка и приёмка](#подтверждение-вырезки-needs_review-итог-интеграции). Пользовательского входа, HTTP правки сохранённого чека и дашборда пока нет. Каталог и цены SPA уже подключены к API ([frontend.md](frontend.md)); И4 не меняет клиентские экраны распознавания и не подтверждает их React/proxy/UI интеграцию. Админку проверяют отдельно [без браузера](#админка-проверки-без-браузера) и [человеком](#ручная-приёмка-админки-человеком).
 
 Ни сборка образа, ни `check`, ни mocked API tests не доказывают реальную HTTP/клиентскую интеграцию. Визуальную и интерактивную приёмку выполняет человек; автоматический обход browser UI запрещён. HTTP, CLI и unit tests можно автоматизировать.
@@ -50,20 +52,20 @@ docker compose -p checkist_qa up -d --build --wait --wait-timeout 120 worker
 ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py check_services
 ```
 
-Ожидается exit 0, отсутствие новых миграций, 335 тестов без БД и 1135 integration, затем JSON с `celery_task.result={"message":"pong"}`. На пустой БД `migrate` применяет 24 миграции: 18 стандартных и 6 собственных, включая recognition.0001_initial и merges.0001_initial. Числа соответствуют текущему коду и могут измениться вместе с тестами. Команда без тега БД не использует; integration нельзя заменять skip/eager. Runner создаёт и удаляет **`test_checkist_qa`**; Redis tests используют QA Redis DB 2 и уникальные ключи. Recognition tests используют временный MEDIA и fake/mock, настоящий Codex не вызывают. Не запускайте два DB-runner одновременно с одним именем test DB: --noinput может пересоздать БД другого своего прогона.
+Ожидается exit 0, отсутствие новых миграций, 400 тестов без БД и 1252 integration, затем JSON с `celery_task.result={"message":"pong"}`. На пустой БД `migrate` применяет 24 миграции: 18 стандартных и 6 собственных, включая recognition.0001_initial и merges.0001_initial. Числа соответствуют текущему коду и могут измениться вместе с тестами. Команда без тега БД не использует; integration нельзя заменять skip/eager. Runner создаёт и удаляет **`test_checkist_qa`**; Redis tests используют QA Redis DB 2 и уникальные ключи. Recognition tests используют временный MEDIA и fake/mock, настоящий Codex не вызывают. Не запускайте два DB-runner одновременно с одним именем test DB: --noinput может пересоздать БД другого своего прогона.
 
 | Приложение | Без БД (`--exclude-tag=integration`) | С БД (`--tag=integration`) |
 | --- | --- | --- |
 | `catalog` | 9 | 80 |
 | `stores` | 14 | 79 |
-| `receipts` | 18 | 238 |
+| `receipts` | 69 | 253 |
 | `health` | 26 | 7 |
-| `api` | 118 | 404 |
+| `api` | 132 | 506 |
 | `recognition` | 127 | 233 |
 | `merges` | 23 | 94 |
-| Всего | 335 | 1135 |
+| Всего | 400 | 1252 |
 
-Текущие числа — прогон слитого main 2026-10-06 (подтверждение вырезки и [executor.state](#состояние-воркера-executorstate) вместе): 335 / 1135, exit 0, отдельный QA-проект, `PRODUCT_MERGE_AUTO_DETECT=0`; к 335 / 1130 ветки подтверждения добавились 5 integration-тестов `api` из executor.state. Итог подтверждён прогоном, разбивка по приложениям получена сложением. Числа ветки подтверждения 335 / 1130 подтверждены [третьим заходом после проверки интерфейса](#фактические-результаты-третий-заход-после-проверки-интерфейса-2026-10-06) 2026-10-06 (сервер не менялся, 335 / 1130), до него — [повторным заходом](#фактические-результаты-повторный-заход-после-проверки-интерфейса-2026-10-06), и впервые получены в [итоговом прогоне подтверждения вырезки](#фактические-результаты-итог-интеграции-подтверждения-2026-10-06) 2026-10-06: к прежним 322 / 1074 добавились 13 тестов без БД (`recognition.tests.test_review`) и 56 integration (`recognition.tests.test_review` — 25, `api.tests.test_recognition_review_api` — 19, `test_recognition_review_concurrency` — 8, `test_recognition_review_e2e` — 4). До этого, после объединения И6 и слияния дублей: 322 / 1074 (api 118 / 368, recognition 114 / 208) — прогон [И6](#и6-налоговые-evidence-и-сгруппированные-замечания) 2026-10-06 (промпт v5, fake-сценарии налоговых evidence, `reason`/`severity`/`context` у issues, сквозной тест fake → HTTP). Исторический Р3: 268/892 (api 112/305, recognition 89/183). Числа включают три регрессии настроек MEDIA_URL в Р1, 24 integration-регрессии Р2 и 8 без БД / 2 integration в Р3; команды и фактические результаты — [Р1](#media_url-р1-фиксированный-префикс-и-регрессии), [Р2](#р2-полнота-инн-и-идентичность-магазина). И4 после согласованного уточнения: 257/866, итоговый прогон [ниже](#повторный-прогон-после-согласованного-уточнения-и4), Windows, DB `checkist_qa_i4_final` / `test_checkist_qa_i4_final`, Postgres 25475, Redis 16405. Исторический С6: 247/846; merge-прогон без recognition: 179/671; F3–F6 до merge, без api: 67/404. Эти исторические результаты ниже сохраняются со своими датами и scope. Subtests отдельно не считаются. Гонки — TransactionTestCase и отдельные Postgres-соединения. Журналы ожидаемых безопасных HTTP 400/403/409/500 в негативных тестах не означают failure теста; окончательный exit code и сводка runner обязательны.
+Текущие числа — прогон [серверной части статистики](#фактические-результаты-с5-2026-10-07) 2026-10-07: 400 / 1252, exit 0, отдельный QA-проект, `PRODUCT_MERGE_AUTO_DETECT=0`; к прежним 335 / 1135 этап добавил 65 тестов без БД (`receipts` — 51, `api` — 14) и 117 integration (`receipts` — 15, `api` — 102). Тестовая БД создаётся с отключённым autovacuum — [почему](#autovacuum-в-тестовой-бд). До этого — прогон слитого main 2026-10-06 (подтверждение вырезки и [executor.state](#состояние-воркера-executorstate) вместе): 335 / 1135, exit 0, отдельный QA-проект, `PRODUCT_MERGE_AUTO_DETECT=0`; к 335 / 1130 ветки подтверждения добавились 5 integration-тестов `api` из executor.state. Итог подтверждён прогоном, разбивка по приложениям получена сложением. Числа ветки подтверждения 335 / 1130 подтверждены [третьим заходом после проверки интерфейса](#фактические-результаты-третий-заход-после-проверки-интерфейса-2026-10-06) 2026-10-06 (сервер не менялся, 335 / 1130), до него — [повторным заходом](#фактические-результаты-повторный-заход-после-проверки-интерфейса-2026-10-06), и впервые получены в [итоговом прогоне подтверждения вырезки](#фактические-результаты-итог-интеграции-подтверждения-2026-10-06) 2026-10-06: к прежним 322 / 1074 добавились 13 тестов без БД (`recognition.tests.test_review`) и 56 integration (`recognition.tests.test_review` — 25, `api.tests.test_recognition_review_api` — 19, `test_recognition_review_concurrency` — 8, `test_recognition_review_e2e` — 4). До этого, после объединения И6 и слияния дублей: 322 / 1074 (api 118 / 368, recognition 114 / 208) — прогон [И6](#и6-налоговые-evidence-и-сгруппированные-замечания) 2026-10-06 (промпт v5, fake-сценарии налоговых evidence, `reason`/`severity`/`context` у issues, сквозной тест fake → HTTP). Исторический Р3: 268/892 (api 112/305, recognition 89/183). Числа включают три регрессии настроек MEDIA_URL в Р1, 24 integration-регрессии Р2 и 8 без БД / 2 integration в Р3; команды и фактические результаты — [Р1](#media_url-р1-фиксированный-префикс-и-регрессии), [Р2](#р2-полнота-инн-и-идентичность-магазина). И4 после согласованного уточнения: 257/866, итоговый прогон [ниже](#повторный-прогон-после-согласованного-уточнения-и4), Windows, DB `checkist_qa_i4_final` / `test_checkist_qa_i4_final`, Postgres 25475, Redis 16405. Исторический С6: 247/846; merge-прогон без recognition: 179/671; F3–F6 до merge, без api: 67/404. Эти исторические результаты ниже сохраняются со своими датами и scope. Subtests отдельно не считаются. Гонки — TransactionTestCase и отдельные Postgres-соединения. Журналы ожидаемых безопасных HTTP 400/403/409/500 в негативных тестах не означают failure теста; окончательный exit code и сводка runner обязательны.
 
 Unit/contract tests health покрывают точный 200, комбинации 503, сохранение независимых checks, анонимность, игнорирование query/Authorization, 405, 406, безопасный 500 при DEBUG, отсутствие публикации task из health, параллельность probes, cleanup кеша, bounded publication retries и негативную env-валидацию. Это не сетевой замер времени отказа.
 
@@ -74,6 +76,110 @@ Unit/contract tests health покрывают точный 200, комбинац
 Регрессии D1 и E1: `api.tests.test_request_errors` — 24 теста (17 без БД, 7 integration); два дополнительных теста в `test_errors` проверяют семейство Django request exceptions и безопасный 415. Граница 1000/1001 проверена на всех 13 маршрутах при обоих DEBUG, с точным JSON, без SQL при отказе. Проверяются percent-кодирование/UTF-8/суррогаты, Host, Accept/Content-Type, конструкторы настоящих WSGI/ASGI request, длинные значения, повторения/пустые имена/массивы, ID, отсутствие чтения body при GET/405, запись без слэша и редактирование access log. E1 проверяет однократное декодирование пути, регистр hex, начальные //, двойное кодирование, dot segments, absolute-form, пустые/битые targets и сохранение обычных путей вне API; нормализация сверена с настоящими парсером runserver и WSGIRequest. Неизвестные `RuntimeError`, `ValueError`, `LookupError`, `UnicodeDecodeError` из view остаются безопасным 500. Запуск: `manage.py test api.tests.test_request_errors api.tests.test_errors --noinput --verbosity=0` — 49 тестов. Полный WSGI-вызов с SQL использует `TransactionTestCase`: сигнал `request_started` закрывает соединение в атомарном обычном `TestCase`.
 
 Регрессии `api.tests.test_read_resilience`: точные значения обоих маршрутов сравнения на границах моделей и курсов, отрицательная оплаченная цена при большой скидке, среднее и процент динамики нормализованных цен. Конкурентное удаление проверяет `TransactionTestCase` с autocommit: `connection.execute_wrapper` перед чтением последних цен коммитит удаление строки и чека через отдельное psycopg-соединение в тестовую БД; результаты SQL не подменяются. Покрыты `price_summary`, карточка и список товаров, оба сравнения (сравнимые и несравнимые предложения), сводка истории, карточка и список обобщённых продуктов, удаление единственной группы и сохранение более раннего наблюдения. Runner очищает данные через flush. Запуск: `manage.py test api.tests.test_read_resilience --tag=integration --noinput --verbosity=2` — 19 тестов.
+
+## Статистика: серверная часть (С5)
+
+Контракт — [api-contract.md](api-contract.md#реализовано-статистика-трат-походы-и-ряды-цен-серверная-часть), запуск сервера с демо — [development.md](development.md#qa-статистика-для-клиента). Проверяется только сервер: **клиент статистики ещё не сделан**, экранов и proxy-скрипта для него нет.
+
+Что покрыто тестами:
+
+- без БД — арифметика разложения и индекса цен, свёртка «прочего», дерево категорий, разбор параметров (`receipts.tests.test_spending`, `test_basket`, `api.tests.test_stats_spending`, `test_prices_series`), детерминированность демо (`receipts.tests.test_demo`), эталонные файлы: набор, UTF-8/LF, отсутствие закрытых полей, тождества и наличие всех необязательных форм (`api.tests.test_stats_public`);
+- integration — суммы и знаки, границы периода, фильтры, сортировка и `limit`, `range_too_large`, все `400`, доступ `403`, слитые товары, `assertNumQueries` по каждому эндпоинту, `503`; полные ответы на демо против эталонов `backend/api/tests/fixtures/stats/*.json`; тождества `Σ items + other = lines_paid`, `lines_paid + difference = receipts_total`, `quantity + price + mix = change` на матрице фильтров и периодов; согласованность разрезов между собой и рядов походов со сторонами сравнения; ожидающая группа слияния скрывает поглощённый товар во всех четырёх эндпоинтах, а её отмена возвращает прежние ответы целиком.
+
+Команды после полного QA environment (`P` — `./backend/.venv/Scripts/python.exe -X utf8`):
+
+```powershell
+$env:PRODUCT_MERGE_AUTO_DETECT='0'
+P backend/manage.py test api.tests.test_stats_public receipts.tests.test_demo --noinput --verbosity=2
+P backend/manage.py test api.tests.test_stats_spending api.tests.test_stats_receipts api.tests.test_prices_series receipts.tests.test_spending receipts.tests.test_basket --noinput
+```
+
+`api.tests.test_stats_public` — 15 тестов (5 без БД, 10 integration). Эталоны сверяются с ответами целиком; при намеренном изменении контракта или `receipts/demo.py` файлы пересобираются с настоящего сервера на свежей базе (запросы — в `EXAMPLES` теста) и изменение перечисляется как несовместимость для клиента.
+
+### Autovacuum в тестовой БД
+
+`backend/config/test_runner.py` (`TEST_RUNNER`) после создания тестовой базы отключает autovacuum на её таблицах. Причина найдена в этом этапе: полный integration-набор падал нестабильно (два прогона из трёх до исправления) с `statement timeout` в запросах статистики по демо и в `PriceSeriesRangeTests`. `TestCase` держит тысячи строк в незакоммиченной транзакции; autovacuum, пришедший за мёртвыми строками предыдущего теста, записывал в `pg_class` у `receipts_receiptline` `reltuples = 0` при `relpages = 460` (зафиксировано опросом `pg_class` во время прогона), после чего планировщик оценивал таблицу в одну строку и соединял вложенными циклами. На отдельной базе с такой же подменой статистики `GET /api/stats/spending/?country=KZ` занял 1100 мс вместо 13 мс после `ANALYZE`. С отключённым autovacuum `reltuples` остаётся `-1` весь прогон, и оценки считаются от настоящего размера таблицы. Ожидания тестов не менялись; на рабочую базу настройка не влияет.
+
+Тот же эффект возможен и вне тестов, если autovacuum увидит таблицу во время большой незакоммиченной загрузки; обычный импорт чеков коммитит по одному чеку, а после `seed_stats_demo` статистику обновляет autovacuum либо ручной `ANALYZE`.
+
+### HTTP без браузера и замер времени
+
+Сервер по [development.md](development.md#qa-статистика-для-клиента) на свежей базе. Ожидается:
+
+- `seed_stats_demo` — `{"created": true, "merchants": 3, "products": 39, "receipts": 466, "lines": 5604, "discounts": 151}`, повтор — `{"created": false}`;
+- ответы на запросы из [таблицы эталонов](api-contract.md#эталонные-ответы-статистики) совпадают с файлами (кроме `error-range-too-large.json` и `error-permission-denied.json`: первый на демо не воспроизводится, для второго сервер запускается с `ALLOW_LOCAL_RECOGNITION_API=0`);
+- каждый запрос статистики быстрее 500 мс.
+
+Замер — одиннадцать последовательных запросов на URL настоящим HTTP к `runserver` (Python `urllib`, время от отправки до конца чтения тела); «первый» — холодный запрос, медиана и максимум — по остальным десяти.
+
+### Фактические результаты С5, 2026-10-07
+
+Ветка `orca/task_mux4o9pmi7`. Windows 11, Python 3.13.9 (venv основного checkout, `pip check` — exit 0, зависимости не менялись), Docker Desktop. Стандартный проект `checkist_qa` не использовался: QA общая, в это время работал чужой Compose-проект `checkist_qa_b1cls`, он не трогался. Свой изолированный проект `checkist_qa_c5` с чистыми томами: БД `checkist_qa_c5` (тестовая — `test_checkist_qa_c5`), Postgres 25465, Redis 16465, Django 18065; `PRODUCT_MERGE_AUTO_DETECT=0`, `RECEIPT_OCR_PROVIDER=fake`, `MEDIA_ROOT` и scratch — временные каталоги; модельных вызовов не было. `P` — `python.exe -X utf8` из venv.
+
+#### Проверено и прошло
+
+| Команда | Exit | Результат |
+| --- | --- | --- |
+| `docker compose -p checkist_qa_c5 config --quiet`; `up -d --wait --wait-timeout 90 postgres redis` | 0 | оба контейнера healthy |
+| `P backend/manage.py check` | 0 | no issues |
+| `P backend/manage.py makemigrations --check --dry-run` | 0 | No changes detected |
+| `P backend/manage.py migrate --noinput` на пустой базе | 0 | 24 миграции, новых нет |
+| `P backend/manage.py seed_stats_demo` дважды | 0 / 0 | `{"created": true, "merchants": 3, "products": 39, "receipts": 466, "lines": 5604, "discounts": 151}`; повтор `{"created": false}` |
+| `P backend/manage.py runserver 127.0.0.1:18065 --noreload`; 25 эталонов собраны настоящим HTTP (`urllib`) | 0 | статусы 200 / 400 / 404 по таблице эталонов; эти же файлы затем совпали с ответами тестового клиента |
+| `P backend/manage.py test api.tests.test_stats_public --noinput` | 0 | 15 тестов, OK |
+| `P backend/manage.py test catalog stores receipts health api recognition merges --exclude-tag=integration --verbosity=2` | 0 | 400 тестов, OK, 17.2 с; по приложениям 9 / 14 / 69 / 26 / 132 / 127 / 23 |
+| `P backend/manage.py test catalog stores receipts health api recognition merges --tag=integration --noinput --verbosity=2` (с `config.test_runner.Runner`) | 0 | 1252 теста, OK, 313.3 с; по приложениям 80 / 79 / 253 / 7 / 506 / 233 / 94 |
+
+Замер времени на демо-базе (466 чеков, 5604 строки), мс:
+
+| Запрос | Первый | Медиана | Максимум | Размер, байт |
+| --- | --- | --- | --- | --- |
+| `/api/stats/spending/` | 79.5 | 61.3 | 82.2 | 2156 |
+| `/api/stats/spending/?group_by=generic` | 54.4 | 60.8 | 79.2 | 4490 |
+| `/api/stats/spending/?group_by=product&limit=50` | 53.1 | 53.3 | 66.3 | 9231 |
+| `/api/stats/spending/?group_by=store` | 41.0 | 42.9 | 70.9 | 1067 |
+| `/api/stats/spending/?category=1` | 59.7 | 55.7 | 61.9 | 2101 |
+| `/api/stats/spending/?generic=1&group_by=product` | 36.4 | 36.1 | 68.4 | 987 |
+| `/api/stats/spending/?date_from=2026-01-01&date_to=2026-09-30&store=1,2` | 24.0 | 40.3 | 48.3 | 1397 |
+| `/api/stats/receipts/series/` (93 месяца, две валюты) | 46.1 | 42.6 | 51.5 | 34680 |
+| `/api/stats/receipts/series/?interval=week` | 27.8 | 28.3 | 51.0 | 78089 |
+| `/api/stats/receipts/series/?interval=quarter` | 40.0 | 21.5 | 44.1 | 11791 |
+| `/api/stats/receipts/series/?interval=year` | 45.1 | 21.9 | 41.7 | 3186 |
+| `/api/stats/receipts/compare/?P` (2020 против 2026) | 35.2 | 30.1 | 45.9 | 9153 |
+| `/api/stats/receipts/compare/?…2019–2022 против 2023–2026&limit=100` | 42.6 | 45.6 | 50.9 | 10148 |
+| `/api/stats/receipts/compare/?P&store=1` | 46.3 | 45.5 | 46.6 | 5530 |
+| `/api/products/1/prices/series/` | 49.5 | 57.8 | 73.2 | 29810 |
+| `/api/products/1/prices/series/?price=normalized` | 85.0 | 97.7 | 131.9 | 29807 |
+| `/api/products/1/prices/series/?interval=day` | 90.2 | 71.0 | 92.1 | 48594 |
+| `/api/products/1/prices/series/?interval=week&similar_limit=20` | 60.9 | 62.2 | 80.7 | 48595 |
+| `/api/products/6/prices/series/?price=normalized` | 100.4 | 90.6 | 99.3 | 19676 |
+| `/api/products/11/prices/series/` | 33.5 | 33.1 | 50.5 | 14812 |
+| `/api/products/1/prices/series/?similar=none` | 47.0 | 40.1 | 56.1 | 9925 |
+
+Самый медленный из 231 запроса — 131.9 мс: критерий «быстрее 500 мс» выполнен, индекс по `purchased_on` и миграция не добавлялись. Замер сделан до добавления `config/test_runner.py`; код эндпоинтов и демо после замера не менялся.
+
+Сквозная сверка С1–С4 с контрактом: несовместимых расхождений не найдено, код эндпоинтов и демо не правился; уточнения перечислены в [api-contract.md](api-contract.md#уточнения-к-согласованному-контракту-статистики). 13 GET, `/api/receipts/` и их эталоны не менялись — их тесты прошли без правок ожиданий.
+
+#### Проверено и не прошло
+
+На окончательном состоянии — ничего. До добавления `config/test_runner.py`:
+
+- полный integration-набор — exit 1, 1251 тест, 76 отказов, все в `api.tests.test_stats_public` (`503 database_unavailable`, внутри — `canceling statement due to statement timeout`);
+- `manage.py test api --tag=integration` — exit 1, 75 отказов там же; повтор той же команды — exit 0;
+- полный integration-набор после пробной правки (`ANALYZE` в конце `seed_demo`, затем отменена) — exit 1, 4 отказа в `api.tests.test_prices_series.PriceSeriesRangeTests` (`500` по той же причине).
+
+Причина и исправление — [выше](#autovacuum-в-тестовой-бд); после него полный набор прошёл дважды подряд и отдельно `receipts api` — один раз, `autovacuum_count` у `receipts_receiptline` за прогон — 0.
+
+#### Не проверено и почему
+
+- Клиент статистики: его нет. Runtime-схемы клиента на эталонах, proxy-скрипт и экраны — следующий этап; ручная приёмка в браузере — человеком.
+- Время запросов на базе больше демо и на настоящих данных dev-базы: не измерялось, dev-база не использовалась. Шаги: тот же замер на копии настоящей базы; при запросе дольше 500 мс — отдельная задача на индекс `receipts_receipt(purchased_on)`.
+- `error-range-too-large.json` настоящим HTTP: на демо не набрать 1000 интервалов; тело получено тестовым клиентом с уменьшенным пределом, сами границы 1000 / 1001 покрыты тестами С2 и С3.
+- `403` настоящим HTTP при `ALLOW_LOCAL_RECOGNITION_API=0` и `503` при недоступной БД: покрыты integration-тестами через тестовый клиент, отдельный сервер без флага не запускался. Шаги: тот же запуск с `$env:ALLOW_LOCAL_RECOGNITION_API='0'`, `curl.exe -s -i "$B/api/stats/spending/"` — ожидается `403` и тело из `error-permission-denied.json`, а `"$B/api/products/1/prices/series/"` — `200`.
+- Vite proxy для новых путей, `check_services`, Celery worker, frontend `lint` / `test` / `build`, proxy-скрипты: не запускались — клиент и очередь в этой задаче не менялись.
+- Установка зависимостей с нуля в новый venv: не выполнялась, `requirements` не менялись; использован venv основного checkout.
+
+После прогона свой `runserver` остановлен, временная база `checkist_qa_c5_stale` удалена, `docker compose -p checkist_qa_c5 down` — exit 0; тома `checkist_qa_c5_postgres_data` / `checkist_qa_c5_redis_data` сохранены, в базе `checkist_qa_c5` осталось демо статистики.
 
 ## Слияние дублей: HTTP без браузера
 

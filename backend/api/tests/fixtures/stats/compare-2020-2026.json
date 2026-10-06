@@ -1,0 +1,294 @@
+{
+  "base": {
+    "date_from": "2020-01-01",
+    "date_to": "2020-12-31"
+  },
+  "current": {
+    "date_from": "2026-01-01",
+    "date_to": "2026-09-30"
+  },
+  "currencies": [
+    {
+      "currency": "EUR",
+      "base": {
+        "receipts_count": 48,
+        "months": "12.02",
+        "receipts_per_month": "3.99",
+        "refunds_excluded": 0,
+        "total": "1296.41",
+        "avg_receipt": "27.01",
+        "median_receipt": "27.28",
+        "lines_count": 552,
+        "lines_per_receipt": "11.50",
+        "paid_per_line": "2.3486"
+      },
+      "current": {
+        "receipts_count": 36,
+        "months": "8.97",
+        "receipts_per_month": "4.01",
+        "refunds_excluded": 1,
+        "total": "1646.08",
+        "avg_receipt": "45.72",
+        "median_receipt": "45.52",
+        "lines_count": 528,
+        "lines_per_receipt": "14.67",
+        "paid_per_line": "3.1176"
+      },
+      "change": {
+        "avg_receipt": "18.71",
+        "avg_receipt_percent": "69.27"
+      },
+      "effects": {
+        "quantity": "8.65",
+        "price": "7.39",
+        "mix": "2.67",
+        "price_per_line": "10.06",
+        "quantity_percent": "46.23",
+        "price_percent": "39.50",
+        "mix_percent": "14.27"
+      },
+      "price_index": {
+        "fisher": "1.2404",
+        "laspeyres": "1.2403",
+        "paasche": "1.2405",
+        "matched_products": 24,
+        "coverage_base_percent": "96.97",
+        "coverage_current_percent": "79.05"
+      },
+      "products": [
+        {
+          "product": {
+            "id": 24,
+            "name": "Demo Hähnchenbrust 600g"
+          },
+          "unit": "pcs",
+          "base": {
+            "price": "6.1700",
+            "quantity": "19.000",
+            "amount": "117.23"
+          },
+          "current": {
+            "price": "7.8661",
+            "quantity": "18.000",
+            "amount": "141.59"
+          },
+          "price_change_percent": "27.49"
+        },
+        {
+          "product": {
+            "id": 10,
+            "name": "Demo Gouda Scheiben 400g"
+          },
+          "unit": "pcs",
+          "base": {
+            "price": "3.0768",
+            "quantity": "19.000",
+            "amount": "58.46"
+          },
+          "current": {
+            "price": "3.8653",
+            "quantity": "19.000",
+            "amount": "73.44"
+          },
+          "price_change_percent": "25.62"
+        },
+        {
+          "product": {
+            "id": 21,
+            "name": "Demo Küchenrolle"
+          },
+          "unit": "pcs",
+          "base": {
+            "price": "2.7208",
+            "quantity": "25.000",
+            "amount": "68.02"
+          },
+          "current": {
+            "price": "3.3106",
+            "quantity": "18.000",
+            "amount": "59.59"
+          },
+          "price_change_percent": "21.68"
+        },
+        {
+          "product": {
+            "id": 4,
+            "name": "Demo Roggenbrot 500g"
+          },
+          "unit": "pcs",
+          "base": {
+            "price": "1.5234",
+            "quantity": "29.000",
+            "amount": "44.18"
+          },
+          "current": {
+            "price": "1.9344",
+            "quantity": "27.000",
+            "amount": "52.23"
+          },
+          "price_change_percent": "26.98"
+        },
+        {
+          "product": {
+            "id": 17,
+            "name": "Demo Sauerrahmbutter 250g"
+          },
+          "unit": "pcs",
+          "base": {
+            "price": "2.0490",
+            "quantity": "20.000",
+            "amount": "40.98"
+          },
+          "current": {
+            "price": "2.6811",
+            "quantity": "18.000",
+            "amount": "48.26"
+          },
+          "price_change_percent": "30.85"
+        }
+      ],
+      "products_total": 24
+    },
+    {
+      "currency": "KZT",
+      "base": {
+        "receipts_count": 12,
+        "months": "12.02",
+        "receipts_per_month": "1.00",
+        "refunds_excluded": 0,
+        "total": "36651.51",
+        "avg_receipt": "3054.29",
+        "median_receipt": "2892.32",
+        "lines_count": 66,
+        "lines_per_receipt": "5.50",
+        "paid_per_line": "555.3259"
+      },
+      "current": {
+        "receipts_count": 9,
+        "months": "8.97",
+        "receipts_per_month": "1.00",
+        "refunds_excluded": 0,
+        "total": "67312.93",
+        "avg_receipt": "7479.21",
+        "median_receipt": "7836.00",
+        "lines_count": 67,
+        "lines_per_receipt": "7.44",
+        "paid_per_line": "1004.6706"
+      },
+      "change": {
+        "avg_receipt": "4424.92",
+        "avg_receipt_percent": "144.88"
+      },
+      "effects": {
+        "quantity": "1516.66",
+        "price": "2822.60",
+        "mix": "85.66",
+        "price_per_line": "2908.26",
+        "quantity_percent": "34.28",
+        "price_percent": "63.79",
+        "mix_percent": "1.94"
+      },
+      "price_index": {
+        "fisher": "1.7853",
+        "laspeyres": "1.7926",
+        "paasche": "1.7780",
+        "matched_products": 11,
+        "coverage_base_percent": "95.89",
+        "coverage_current_percent": "97.04"
+      },
+      "products": [
+        {
+          "product": {
+            "id": 37,
+            "name": "Демо Курица охлаждённая 1 кг"
+          },
+          "unit": "pcs",
+          "base": {
+            "price": "1828.6000",
+            "quantity": "5.000",
+            "amount": "9143.00"
+          },
+          "current": {
+            "price": "3364.3333",
+            "quantity": "6.000",
+            "amount": "20186.00"
+          },
+          "price_change_percent": "83.98"
+        },
+        {
+          "product": {
+            "id": 39,
+            "name": "Демо Печенье сливочное"
+          },
+          "unit": "pcs",
+          "base": {
+            "price": "459.6667",
+            "quantity": "3.000",
+            "amount": "1379.00"
+          },
+          "current": {
+            "price": "759.1429",
+            "quantity": "7.000",
+            "amount": "5314.00"
+          },
+          "price_change_percent": "65.15"
+        },
+        {
+          "product": {
+            "id": 31,
+            "name": "Демо Чай чёрный 100 г"
+          },
+          "unit": "pcs",
+          "base": {
+            "price": "740.6000",
+            "quantity": "5.000",
+            "amount": "3703.00"
+          },
+          "current": {
+            "price": "1250.6667",
+            "quantity": "6.000",
+            "amount": "7504.00"
+          },
+          "price_change_percent": "68.87"
+        },
+        {
+          "product": {
+            "id": 3,
+            "name": "Демо Молоко 2,5% 1 л"
+          },
+          "unit": "pcs",
+          "base": {
+            "price": "371.5000",
+            "quantity": "18.000",
+            "amount": "6687.00"
+          },
+          "current": {
+            "price": "678.2857",
+            "quantity": "14.000",
+            "amount": "9496.00"
+          },
+          "price_change_percent": "82.58"
+        },
+        {
+          "product": {
+            "id": 32,
+            "name": "Демо Яблоки весовые"
+          },
+          "unit": "kg",
+          "base": {
+            "price": "519.9084",
+            "quantity": "5.350",
+            "amount": "2781.51"
+          },
+          "current": {
+            "price": "941.3327",
+            "quantity": "5.200",
+            "amount": "4894.93"
+          },
+          "price_change_percent": "81.06"
+        }
+      ],
+      "products_total": 11
+    }
+  ]
+}

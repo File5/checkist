@@ -1,0 +1,22 @@
+{
+  "product": {
+    "id": 1,
+    "name": "Demo Frischmilch 1,5% 1L",
+    "base_unit": "l"
+  },
+  "generic": {
+    "id": 1,
+    "name": "Молоко",
+    "base_unit": "l"
+  },
+  "price": "paid",
+  "interval": "month",
+  "skipped_without_normalized": 0,
+  "series": [],
+  "own_truncated": false,
+  "similar": {
+    "status": "none",
+    "products_total": 0,
+    "products_shown": 0
+  }
+}

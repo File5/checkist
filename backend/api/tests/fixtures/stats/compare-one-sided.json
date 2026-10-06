@@ -1,0 +1,47 @@
+{
+  "base": {
+    "date_from": "2018-01-01",
+    "date_to": "2018-12-31"
+  },
+  "current": {
+    "date_from": "2026-09-01",
+    "date_to": "2026-09-30"
+  },
+  "currencies": [
+    {
+      "currency": "KZT",
+      "base": {
+        "receipts_count": 0,
+        "months": "11.99",
+        "receipts_per_month": "0.00",
+        "refunds_excluded": 0,
+        "total": "0.00",
+        "avg_receipt": null,
+        "median_receipt": null,
+        "lines_count": 0,
+        "lines_per_receipt": null,
+        "paid_per_line": null
+      },
+      "current": {
+        "receipts_count": 1,
+        "months": "0.99",
+        "receipts_per_month": "1.01",
+        "refunds_excluded": 0,
+        "total": "7836.00",
+        "avg_receipt": "7836.00",
+        "median_receipt": "7836.00",
+        "lines_count": 7,
+        "lines_per_receipt": "7.00",
+        "paid_per_line": "1119.4286"
+      },
+      "change": {
+        "avg_receipt": null,
+        "avg_receipt_percent": null
+      },
+      "effects": null,
+      "price_index": null,
+      "products": [],
+      "products_total": 0
+    }
+  ]
+}

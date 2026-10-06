@@ -1,0 +1,230 @@
+{
+  "product": {
+    "id": 6,
+    "name": "Demo Äpfel lose",
+    "base_unit": "kg"
+  },
+  "generic": {
+    "id": 7,
+    "name": "Яблоки",
+    "base_unit": "kg"
+  },
+  "price": "normalized",
+  "interval": "month",
+  "skipped_without_normalized": 0,
+  "series": [
+    {
+      "role": "own",
+      "product": {
+        "id": 6,
+        "name": "Demo Äpfel lose"
+      },
+      "store": {
+        "id": 1,
+        "name": "Zahlenfrisch",
+        "city": "Musterstadt",
+        "country": "DE"
+      },
+      "country": "DE",
+      "currency": "EUR",
+      "unit": "kg",
+      "comparable": true,
+      "observations": 14,
+      "points": [
+        {
+          "period_start": "2026-01-01",
+          "count": 1,
+          "min": "3.1415",
+          "max": "3.1415",
+          "avg": "3.1415",
+          "last": "3.1415"
+        },
+        {
+          "period_start": "2026-02-01",
+          "count": 2,
+          "min": "3.1364",
+          "max": "3.1364",
+          "avg": "3.1364",
+          "last": "3.1364"
+        },
+        {
+          "period_start": "2026-03-01",
+          "count": 2,
+          "min": "3.1404",
+          "max": "3.1404",
+          "avg": "3.1404",
+          "last": "3.1404"
+        },
+        {
+          "period_start": "2026-04-01",
+          "count": 1,
+          "min": "3.1440",
+          "max": "3.1440",
+          "avg": "3.1440",
+          "last": "3.1440"
+        },
+        {
+          "period_start": "2026-05-01",
+          "count": 2,
+          "min": "3.1396",
+          "max": "3.1440",
+          "avg": "3.1418",
+          "last": "3.1396"
+        },
+        {
+          "period_start": "2026-06-01",
+          "count": 1,
+          "min": "3.1396",
+          "max": "3.1396",
+          "avg": "3.1396",
+          "last": "3.1396"
+        },
+        {
+          "period_start": "2026-07-01",
+          "count": 2,
+          "min": "3.1714",
+          "max": "3.1714",
+          "avg": "3.1714",
+          "last": "3.1714"
+        },
+        {
+          "period_start": "2026-08-01",
+          "count": 2,
+          "min": "3.1750",
+          "max": "3.1750",
+          "avg": "3.1750",
+          "last": "3.1750"
+        },
+        {
+          "period_start": "2026-09-01",
+          "count": 1,
+          "min": "3.1657",
+          "max": "3.1657",
+          "avg": "3.1657",
+          "last": "3.1657"
+        }
+      ]
+    },
+    {
+      "role": "own",
+      "product": {
+        "id": 6,
+        "name": "Demo Äpfel lose"
+      },
+      "store": {
+        "id": 2,
+        "name": "Beispielkorb",
+        "city": "Beispielhausen",
+        "country": "DE"
+      },
+      "country": "DE",
+      "currency": "EUR",
+      "unit": "kg",
+      "comparable": true,
+      "observations": 5,
+      "points": [
+        {
+          "period_start": "2026-01-01",
+          "count": 1,
+          "min": "3.3268",
+          "max": "3.3268",
+          "avg": "3.3268",
+          "last": "3.3268"
+        },
+        {
+          "period_start": "2026-02-01",
+          "count": 1,
+          "min": "3.3268",
+          "max": "3.3268",
+          "avg": "3.3268",
+          "last": "3.3268"
+        },
+        {
+          "period_start": "2026-05-01",
+          "count": 1,
+          "min": "3.3273",
+          "max": "3.3273",
+          "avg": "3.3273",
+          "last": "3.3273"
+        },
+        {
+          "period_start": "2026-06-01",
+          "count": 1,
+          "min": "3.3273",
+          "max": "3.3273",
+          "avg": "3.3273",
+          "last": "3.3273"
+        },
+        {
+          "period_start": "2026-09-01",
+          "count": 1,
+          "min": "3.3617",
+          "max": "3.3617",
+          "avg": "3.3617",
+          "last": "3.3617"
+        }
+      ]
+    },
+    {
+      "role": "similar",
+      "product": {
+        "id": 32,
+        "name": "Демо Яблоки весовые"
+      },
+      "store": null,
+      "country": "KZ",
+      "currency": "KZT",
+      "unit": "kg",
+      "comparable": true,
+      "observations": 5,
+      "points": [
+        {
+          "period_start": "2026-01-01",
+          "count": 1,
+          "min": "924.0000",
+          "max": "924.0000",
+          "avg": "924.0000",
+          "last": "924.0000"
+        },
+        {
+          "period_start": "2026-03-01",
+          "count": 1,
+          "min": "924.0000",
+          "max": "924.0000",
+          "avg": "924.0000",
+          "last": "924.0000"
+        },
+        {
+          "period_start": "2026-04-01",
+          "count": 1,
+          "min": "924.0000",
+          "max": "924.0000",
+          "avg": "924.0000",
+          "last": "924.0000"
+        },
+        {
+          "period_start": "2026-07-01",
+          "count": 1,
+          "min": "959.0038",
+          "max": "959.0038",
+          "avg": "959.0038",
+          "last": "959.0038"
+        },
+        {
+          "period_start": "2026-08-01",
+          "count": 1,
+          "min": "959.0000",
+          "max": "959.0000",
+          "avg": "959.0000",
+          "last": "959.0000"
+        }
+      ]
+    }
+  ],
+  "own_truncated": false,
+  "similar": {
+    "status": "ok",
+    "products_total": 1,
+    "products_shown": 1
+  }
+}
