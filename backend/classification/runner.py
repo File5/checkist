@@ -105,8 +105,11 @@ def _classify(request, *, classifier, run, context, record):
                 _wait(delay, context)
             except ProviderError as stopped:
                 return None, stopped.code, text
-        except BaseException:
-            _finish_attempt(attempt, error_code="internal_error")
+        except BaseException as error:
+            # Ctrl+C of the worker is not a failure of the step.
+            _finish_attempt(
+                attempt, error_code="worker_lost" if isinstance(error, KeyboardInterrupt) else "internal_error",
+            )
             raise
         else:
             return response, attempt, ""

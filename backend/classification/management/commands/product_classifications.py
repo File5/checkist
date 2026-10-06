@@ -60,8 +60,8 @@ class Command(BaseCommand):
             return get_classifier(scenario=scenario)
         except ProviderError:
             raise CommandError(
-                f"No classifier for RECEIPT_OCR_PROVIDER={settings.RECEIPT_OCR_PROVIDER}: "
-                "only the explicit fake is installed (the codex_cli classifier comes with the worker step)."
+                f"Classifier settings for RECEIPT_OCR_PROVIDER={settings.RECEIPT_OCR_PROVIDER} are invalid; "
+                "a failure never selects the fake."
             ) from None
 
     def suggest(self, options):

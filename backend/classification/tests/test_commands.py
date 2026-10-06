@@ -267,15 +267,33 @@ class SuggestCommandTests(TestCase):
         self.assertFalse(ClassificationRun.objects.exists())
 
     def test_fake_scenario_needs_the_fake_provider(self):
-        with override_settings(RECEIPT_OCR_PROVIDER="codex_cli"):
-            for options, text in ((("--fake-scenario", "mixed"), "requires RECEIPT_OCR_PROVIDER=fake"),
-                                  ((), "No classifier for RECEIPT_OCR_PROVIDER=codex_cli"),
-                                  (("--dry-run",), "No classifier for RECEIPT_OCR_PROVIDER=codex_cli")):
-                with self.subTest(options=options), self.assertRaises(CommandError) as caught:
-                    call_command("product_classifications", "suggest", *options, stdout=io.StringIO())
-                self.assertIn(text, str(caught.exception))
-        self.assertFalse(ClassificationRun.objects.exists())
+        # The executable does not exist: the real classifier is selected, but no process can start here.
+        with override_settings(RECEIPT_OCR_PROVIDER="codex_cli", RECEIPT_OCR_CODEX_EXECUTABLE="nonexistent-checkist-codex"), \
+                patch.object(FakeClassifier, "classify", side_effect=AssertionError("a failure never selects the fake")), \
+                patch("recognition.process_supervisor.ProcessSupervisor.run",
+                      side_effect=AssertionError("no process in tests")):
+            with self.assertRaises(CommandError) as caught:
+                call_command("product_classifications", "suggest", "--fake-scenario", "mixed", stdout=io.StringIO())
+            self.assertIn("requires RECEIPT_OCR_PROVIDER=fake", str(caught.exception))
+            self.assertFalse(ClassificationRun.objects.exists())
+            with self.assertRaises(CommandError) as caught:
+                call_command("product_classifications", "suggest", "--dry-run", stdout=io.StringIO())
+            self.assertIn("The run failed: configuration_error", str(caught.exception))
+            self.assertFalse(ClassificationRun.objects.exists())
+            with self.assertRaises(CommandError) as caught:
+                call_command("product_classifications", "suggest", stdout=io.StringIO())
+            self.assertIn("The run failed: configuration_error", str(caught.exception))
+        run = ClassificationRun.objects.get()
+        self.assertEqual((run.status, run.error_code, run.provider), ("failed", "configuration_error", "codex_cli"))
+        self.assertEqual(list(run.attempts.values_list("status", "error_code")), [("failed", "configuration_error")])
         self.assertEqual(snapshot(*CATALOG_MODELS), self.original)
+
+    def test_broken_provider_settings_are_a_command_error(self):
+        with override_settings(RECEIPT_OCR_PROVIDER="codex_cli", RECEIPT_OCR_MODEL=""), \
+                self.assertRaises(CommandError) as caught:
+            call_command("product_classifications", "suggest", stdout=io.StringIO())
+        self.assertIn("Classifier settings for RECEIPT_OCR_PROVIDER=codex_cli are invalid", str(caught.exception))
+        self.assertFalse(ClassificationRun.objects.exists())
 
     def test_running_worker_batch_means_busy(self):
         now = timezone.now()
@@ -452,7 +470,7 @@ class RunBatchTests(TestCase):
                     runner.execute(run, classifier=classifier)
                 run.refresh_from_db()
                 self.assertEqual((run.status, run.error_code), ("failed", code))
-                self.assertEqual(ClassificationAttempt.objects.get().error_code, "internal_error")
+                self.assertEqual(ClassificationAttempt.objects.get().error_code, code)
         self.assertEqual(generic_of(MILK), "Не разобрано")
 
     def test_retry_delay_follows_recognition(self):

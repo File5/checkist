@@ -29,7 +29,8 @@ from stores.models import Country, Currency, Store
 
 from .dto import FiscalObservation, MerchantObservation, ProductHint, StoreObservation
 from .importer import (
-    IMPORT_LOCK, RECEIPT_UNIQUES, _constraint_name, _detect_product_merges, _import_domain, effective_observation,
+    IMPORT_LOCK, RECEIPT_UNIQUES, _constraint_name, _detect_product_merges, _import_domain,
+    _request_product_classification, effective_observation,
 )
 from .models import ProcessingJob, ReceiptImage
 from .queue import db_now, refresh_progress
@@ -675,6 +676,8 @@ def _confirm(image, store, digest, normalized, effective, notices, derived, inde
         raise ReviewBusy() from None
     if settings.PRODUCT_MERGE_AUTO_DETECT:
         _detect_product_merges(receipt)
+    if settings.PRODUCT_CLASSIFICATION_AUTO_SUGGEST:
+        _request_product_classification(receipt)
 
     issues = notices + _to_body(issues, indexes)
     if image.clipped:

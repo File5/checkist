@@ -108,6 +108,37 @@ def _detect_product_merges(receipt):
         logger.error("Product merge detection after import failed: %s", type(error).__name__)
 
 
+def _request_product_classification(receipt):
+    """Queue a generic product suggestion for the products of this receipt, in its own savepoint.
+
+    Only a row of the classification queue is written; the model is asked later
+    by the worker, in another pass of its loop. Runs inside the import
+    transaction: the row is committed and rolled back together with the
+    receipt. A failure rolls back the savepoint only and never the receipt; a
+    manual run catches up. The log names the error class, never receipt data.
+    """
+    from classification import services  # lazy: classification.services imports IMPORT_LOCK from this module
+
+    def request():
+        with transaction.atomic():
+            product_ids = sorted(set(
+                ReceiptLine.objects.filter(
+                    receipt=receipt, kind=ReceiptLine.Kind.PRODUCT, product__isnull=False,
+                ).values_list("product_id", flat=True)
+            ))
+            if product_ids:
+                services.request_run(trigger="import", product_ids=product_ids)
+
+    try:
+        try:
+            request()
+        except IntegrityError:
+            # The worker put its run back in the queue at the same moment: now it is visible.
+            request()
+    except Exception as error:
+        logger.error("Product classification request after import failed: %s", type(error).__name__)
+
+
 def effective_observation(observation):
     """Import policy and arithmetic of one observation: (effective, notices, derived)."""
     effective, notices = prepare_observation(observation)
@@ -484,6 +515,9 @@ def import_receipt(image, observation, *, run_token, version, on_saved=None):
                     status, issues = ImageStatus.FAILED, [issue("import_failed", "/", "Не удалось сохранить чек.")]
                 if receipt is not None and settings.PRODUCT_MERGE_AUTO_DETECT:
                     _detect_product_merges(receipt)
+                if receipt is not None and settings.PRODUCT_CLASSIFICATION_AUTO_SUGGEST:
+                    # After the duplicate search: absorbed products do not get into the run.
+                    _request_product_classification(receipt)
                 if status is None:
                     status = ImageStatus.NEEDS_REVIEW if receipt is None else {
                         ImportEffect.CREATED: ImageStatus.IMPORTED, ImportEffect.LINKED: ImageStatus.REUSED,

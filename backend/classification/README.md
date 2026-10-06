@@ -92,7 +92,7 @@
 
 Причины пропуска пункта в `run.stats` и `ApplyResult.skipped`: `unknown_generic`, `service_target`, `name_invalid`, `category_invalid`, `generic_ambiguous`, `category_ambiguous`, `rejected_before`, `not_eligible`, `catalog_conflict`, `catalog_busy`; в `stats` дополнительно `unknown`.
 
-`get_classifier` выбирает по `RECEIPT_OCR_PROVIDER`: `fake` — `FakeClassifier` (сценарий из аргумента, иначе из переменной окружения `PRODUCT_CLASSIFICATION_FAKE_SCENARIO`, иначе `mixed`). Ветки `codex_cli` на шаге С1 нет: фабрика поднимает `ProviderError("configuration_error")` — её добавляет С2 (`classification.codex.CodexClassifier`). Сбой никогда не включает fake.
+`get_classifier` выбирает по `RECEIPT_OCR_PROVIDER`: `fake` — `FakeClassifier` (сценарий из аргумента, иначе из переменной окружения `PRODUCT_CLASSIFICATION_FAKE_SCENARIO`, иначе `mixed`); `codex_cli` — `classification.codex.CodexClassifier` (шаг С2; модель — `RECEIPT_OCR_MODEL`). Сбой никогда не включает fake. Очередь запусков, шаг воркера, автозапуск после импорта и измерение времени запроса — [QUEUE.md](QUEUE.md).
 
 Сценарии `FakeClassifier(scenario="mixed", *, gate=None, entered=None)`: `mixed`, `existing`, `new_category`, `unknown`, `provider_error`, `auth_failure`, `invalid_output`, `foreign_product`, `missing_product`, `service_target`, `rejected_again`, `pause`. У неверного ответа `ProviderError.private_output` несёт текст ответа — он попадает в `BatchResult.invalid_output_text`.
 
@@ -100,7 +100,7 @@
 
 - `merges/services.py`: `_notify_classification(target_id, absorbed_ids)` после `_resolve(group, Status.CONFIRMED)` в `confirm()`, в savepoint; сбой шага пишет в журнал только класс ошибки и слияние не отменяет. Если шаг не выполнился, запись остаётся `pending` без товара и переходит к наследнику либо закрывается первой же сверкой.
 - `api/recognition_serialization.py`: `executor.state = "busy"` также при `ClassificationRun` в `running` с живой lease; проверка добавлена в тот же оператор, что читает `pg_locks`, число запросов прежнее; `last_seen_at` при этом — heartbeat выполняющегося задания распознавания либо `null`.
-- `config/settings.py` и `.env.example`: `PRODUCT_CLASSIFICATION_AUTO_SUGGEST` (0), `PRODUCT_CLASSIFICATION_TIMEOUT_SECONDS` (180, 1..2400), `PRODUCT_CLASSIFICATION_BATCH_SIZE` (25, 1..50), `PRODUCT_CLASSIFICATION_RUN_LIMIT` (200, 1..1000). Флаг автозапуска на шаге С1 только читается настройками: вызов из импорта добавляет С2.
+- `config/settings.py` и `.env.example`: `PRODUCT_CLASSIFICATION_AUTO_SUGGEST` (0), `PRODUCT_CLASSIFICATION_TIMEOUT_SECONDS` (180, 1..2400), `PRODUCT_CLASSIFICATION_BATCH_SIZE` (25, 1..50), `PRODUCT_CLASSIFICATION_RUN_LIMIT` (200, 1..1000). Флаг автозапуска включает постановку запуска в очередь из импорта и из подтверждения вырезки (шаг С2, [QUEUE.md](QUEUE.md)).
 
 ## Команды
 
