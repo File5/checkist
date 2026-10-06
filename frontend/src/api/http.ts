@@ -39,7 +39,8 @@ export function readError(status: number, body: unknown, local: boolean): LocalA
     403: ['csrf_failed', 'permission_denied'],
     405: ['method_not_allowed'], 406: ['not_acceptable'],
     409: ['job_active', 'job_terminal', 'retry_not_allowed', 'merge_conflict', 'merge_resolved', 'merge_changed', 'merge_busy',
-      'review_unavailable', 'review_resolved', 'review_busy', 'review_invalid'],
+      'review_unavailable', 'review_resolved', 'review_busy', 'review_invalid',
+      'classification_resolved', 'classification_changed', 'classification_busy'],
     413: ['upload_too_large'], 415: ['unsupported_media_type'],
     503: ['storage_unavailable', 'database_unavailable'],
   }
