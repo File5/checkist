@@ -1,3 +1,4 @@
+import { isRecognitionIssue } from './recognition-schema.ts'
 import type { ApiFailure, ApiResult, LocalApiFailure, LocalApiResult, RequestOptions } from './types.ts'
 
 export type Query = Record<string, string | number | boolean | undefined>
@@ -14,7 +15,7 @@ export function apiUrl(base: string, path: string, query: Query = {}): string {
   return `${normalized}/${path}${search ? `?${search}` : ''}`
 }
 
-function readError(status: number, body: unknown, local: boolean): LocalApiFailure {
+export function readError(status: number, body: unknown, local: boolean): LocalApiFailure {
   const invalid: LocalApiFailure = { kind: 'error', reason: 'invalid_response', status }
   if (typeof body !== 'object' || body === null || Array.isArray(body) || !('error' in body)) return invalid
   const error = body.error
@@ -37,11 +38,18 @@ function readError(status: number, body: unknown, local: boolean): LocalApiFailu
     400: ['unsupported_format', 'invalid_image', 'image_too_large'],
     403: ['csrf_failed', 'permission_denied'],
     405: ['method_not_allowed'], 406: ['not_acceptable'],
-    409: ['job_active', 'job_terminal', 'retry_not_allowed', 'merge_conflict', 'merge_resolved', 'merge_changed', 'merge_busy'],
+    409: ['job_active', 'job_terminal', 'retry_not_allowed', 'merge_conflict', 'merge_resolved', 'merge_changed', 'merge_busy',
+      'review_unavailable', 'review_resolved', 'review_busy', 'review_invalid'],
     413: ['upload_too_large'], 415: ['unsupported_media_type'],
     503: ['storage_unavailable', 'database_unavailable'],
   }
   if (local && typeof code === 'string' && localCodes[status as keyof typeof localCodes]?.includes(code)) {
+    if (code === 'review_invalid') {
+      // The causes travel next to `error`; without them the refusal cannot be shown at its fields.
+      const issues = 'issues' in body ? body.issues : undefined
+      if (!Array.isArray(issues) || issues.length > 1000 || !issues.every(isRecognitionIssue)) return invalid
+      return { kind: 'error', reason: code, status, issues }
+    }
     return { kind: 'error', reason: code as LocalApiFailure['reason'], status, ...(fields ? { fields } : {}) }
   }
   if (status === 500 && code === 'internal_error') return { kind: 'error', reason: 'server', status }

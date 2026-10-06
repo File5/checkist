@@ -1,50 +1,39 @@
-import type { NormalizedResult, NormalizedTaxRate } from '../../api/recognition'
-import { formatAmount, formatPercent, formatPrice, formatPurchasedOn, formatQuantity } from '../../lib/format'
+import { useReducer } from 'react'
+import { getCountries } from '../../api/countries'
+import type { ReceiptImage } from '../../api/recognition'
+import RecognitionIssues from '../../components/RecognitionIssues'
+import ReviewForm from './ReviewForm'
+import { buildInput, createReview, missingRequired, reviewReducer } from './review-state'
+import type { ReviewControl } from './useReviewActions'
+import { useRequest } from './useRequest'
 
-const missing = 'Не прочитано'
-const kinds = { product: 'Товар', service: 'Услуга', deposit: 'Залог', deposit_return: 'Возврат залога' }
-const yesNo = (value: boolean | null) => value === null ? missing : value ? 'Да' : 'Нет'
-function taxLabel(rate: NormalizedTaxRate) { return rate.kind === null ? missing : rate.kind === 'exempt' ? 'Без налога' : `НДС · ${formatPercent(rate.rate)}` }
+const loadCountries = (signal: AbortSignal) => getCountries({ all: true }, { signal })
 
-export default function ReviewResult({ result }: { result: NormalizedResult | null }) {
-  if (!result) return <p>Распознанные данные недоступны. Причины проверки приведены выше.</p>
-  const receipt = result.proposed_receipt
-  const currency = receipt.currency ?? ''
-  const amount = (value: string | null) => value === null ? missing : formatAmount(value, currency)
-  return <details className="ck-rec-review" open>
-    <summary>Распознанные данные для проверки</summary>
-    <p className="ck-rec-note">Это неполный результат распознавания. Редактирование и подтверждение через этот экран пока недоступны.</p>
-    <dl className="ck-rec-facts">
-      <div><dt>Магазин</dt><dd>{receipt.store_display_name ?? missing}</dd></div>
-      <div><dt>Адрес</dt><dd>{receipt.address_display ?? missing}</dd></div>
-      <div><dt>Дата на чеке</dt><dd>{receipt.purchased_on === null ? missing : formatPurchasedOn(receipt.purchased_on) === '—' ? receipt.purchased_on : formatPurchasedOn(receipt.purchased_on)}</dd></div>
-      <div><dt>Местное время</dt><dd>{receipt.local_time ?? missing}</dd></div>
-      <div><dt>Операция</dt><dd>{receipt.operation === null ? missing : receipt.operation === 'sale' ? 'Покупка' : 'Возврат'}</dd></div>
-      <div><dt>Валюта</dt><dd>{receipt.currency ?? missing}</dd></div>
-      <div><dt>Итого</dt><dd>{amount(receipt.total)}</dd></div>
-      <div><dt>Скидка на чек</dt><dd>{amount(receipt.discount_total)}</dd></div>
-      <div><dt>Налог включён в цены</dt><dd>{yesNo(receipt.prices_include_tax)}</dd></div>
-    </dl>
-    <h4>Распознанные строки ({result.lines.length})</h4>
-    {result.lines.length === 0 ? <p>Строки не прочитаны.</p> : <ol className="ck-rec-list">{result.lines.map((line, index) => <li className="ck-rec-card" key={index}>
-      <p><strong>{line.name ?? missing}</strong> · строка {line.position ?? missing} · {line.kind === null ? missing : kinds[line.kind]}</p>
-      <dl className="ck-rec-facts">
-        <div><dt>Количество</dt><dd>{line.quantity === null ? missing : formatQuantity(line.quantity, line.unit)}</dd></div>
-        <div><dt>Цена за единицу</dt><dd>{line.unit_price === null ? missing : formatPrice(line.unit_price, currency, line.unit)}</dd></div>
-        <div><dt>Сумма</dt><dd>{amount(line.amount)}</dd></div>
-        <div><dt>Скидка</dt><dd>{amount(line.discount_amount)}</dd></div>
-        <div><dt>Налог</dt><dd>{taxLabel(line.tax_rate)} · {amount(line.tax_amount)}</dd></div>
-        <div><dt>Связанная строка</dt><dd>{line.parent_position ?? 'Не указана'}</dd></div>
-        <div><dt>Код магазина</dt><dd>{line.store_item_code ?? missing}</dd></div>
-        <div><dt>Штрихкод</dt><dd>{line.barcode ?? missing}</dd></div>
-        <div><dt>Код налога</dt><dd>{line.tax_code ?? missing}</dd></div>
-        <div><dt>Подакцизный</dt><dd>{yesNo(line.is_excise)}</dd></div>
-        <div><dt>Маркированный</dt><dd>{yesNo(line.is_marked)}</dd></div>
-      </dl>
-    </li>)}</ol>}
-    <h4>Скидки ({result.discounts.length})</h4>
-    {result.discounts.length === 0 ? <p>Скидки не прочитаны.</p> : <ul>{result.discounts.map((discount, index) => <li key={index}>{discount.name ?? missing}: {amount(discount.amount)} · позиция {discount.position ?? missing} · строка {discount.line_position ?? 'Не указана'}</li>)}</ul>}
-    <h4>Налоги ({result.taxes.length})</h4>
-    {result.taxes.length === 0 ? <p>Налоговые итоги не прочитаны.</p> : <ul>{result.taxes.map((tax, index) => <li key={index}>{taxLabel(tax.tax_rate)} · код {tax.tax_code ?? missing} · без налога {amount(tax.net)} · налог {amount(tax.tax)} · с налогом {amount(tax.gross)}</li>)}</ul>}
-  </details>
+/** Causes and the correction form of one needs_review crop. The form is created once from normalized_result
+ * and then belongs to the person: later reads of the same crop never overwrite what was typed.
+ */
+export default function ReviewResult({ image, finished, busy, review, remember }: {
+  image: ReceiptImage; finished: boolean; busy: boolean; review: ReviewControl; remember: () => void
+}) {
+  const [state, dispatch] = useReducer(reviewReducer, image, (item) => createReview(item.normalized_result, item.issues))
+  const countries = useRequest(loadCountries)
+  const saving = review.state.kind === 'pending'
+  const pending = review.state.kind === 'pending' && review.state.imageId === image.id
+  const confirm = () => {
+    const missing = missingRequired(state)
+    if (Object.keys(missing).length > 0) { dispatch({ type: 'missing', problems: missing }); return }
+    const { input, sent } = buildInput(state)
+    remember()
+    // The refusal is tied to the rows as they were sent, even if the person keeps editing afterwards.
+    void review.run(image.id, input).then((error) => { if (error) dispatch({ type: 'refused', error, sent }) })
+  }
+  const unavailable = !finished ? 'Задание ещё не завершено: подтверждение станет доступно после окончания обработки. Править поля можно уже сейчас.'
+    : busy ? 'Выполняется другое действие с заданием. Дождитесь его результата.'
+      : saving && !pending ? 'Сохраняется другой чек этого задания. Дождитесь результата.' : undefined
+  return <>
+    <RecognitionIssues issues={state.issues} status="needs_review" />
+    {image.normalized_result === null && <p className="ck-rec-warning">Распознанные данные недоступны. Заполните чек вручную по изображению.</p>}
+    <ReviewForm imageId={image.id} state={state} dispatch={dispatch} pending={pending} unavailable={unavailable} onConfirm={confirm}
+      countries={countries.state.kind === 'ok' ? countries.state.data.results : null} countriesFailed={countries.state.kind === 'error'} onCountriesRetry={countries.request.refresh} />
+  </>
 }

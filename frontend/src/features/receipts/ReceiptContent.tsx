@@ -33,6 +33,7 @@ export function ReceiptImages({ images, receiptId }: { images: ReceiptImage[]; r
     <h3>Фото №{image.photo_id} · вырезка {image.position}</h3>
     <ReceiptMedia url={image.image_url} alt={`Вырезка ${image.position} с фото №${image.photo_id}, чек №${receiptId}`} />
     <p>{imageLabels[image.status]}</p>
+    {image.confirmed_at !== null && <p className="receipt-note">Подтверждено вручную: <time dateTime={image.confirmed_at}>{formatObservedAt(image.confirmed_at)}</time></p>}
     <RecognitionIssues issues={image.issues} status={image.status} />
     <Link className="action-link" to={`/recognition/jobs/${image.job_id}`}>Задание №{image.job_id}</Link>
   </li>)}</ul>

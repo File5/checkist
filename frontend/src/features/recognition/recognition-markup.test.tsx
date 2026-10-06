@@ -39,14 +39,15 @@ describe('recognition SSR markup (interactive UI remains manual)', () => {
     const accepted = renderToStaticMarkup(<ActionButtons job={job()} state={{ kind: 'message', id: 31, message: 'Ждём сервер', cancelSubmitted: true }} run={vi.fn()} />)
     expect(accepted).toMatch(/disabled=""[^>]*>Отменить/)
   })
-  it('shows incomplete recognized data, translated issue and linked receipts without provider text', () => {
+  it('shows incomplete recognized data in the correction form, translated issue and linked receipts without provider text', () => {
     const data = image(); data.receipt_id = 71; data.issues[0].message = 'private issue message'
     const html = renderToStaticMarkup(<ReceiptImages images={[data]} />)
     expect(html).toContain('Требует проверки'); expect(html).toContain('<h4>Причины проверки</h4>')
     expect(html).toContain('Не удалось прочитать обязательное поле · Количество'); expect(html).toContain('Строки: 1')
-    expect(html).toContain('Распознанные данные для проверки'); expect(html).toContain('МОЛОКО'); expect(html).toContain('Не прочитано')
-    expect(html).toContain('4,52'); expect(html).toContain('1,29'); expect(html).toContain('href="/receipts/71"')
-    expect(html).not.toContain('private issue message'); expect(html).not.toContain('черновик')
+    expect(html).toContain('<h4>Исправление и подтверждение</h4>'); expect(html).toContain('value="МОЛОКО"'); expect(html).toContain('Не прочитано')
+    expect(html).toContain('value="4,52"'); expect(html).toContain('value="1,2900"'); expect(html).toContain('href="/receipts/71"')
+    expect(html).not.toContain('private issue message'); expect(html).not.toContain('пока недоступны')
+    expect(html).not.toContain('Распознанные данные для проверки')
   })
   it.each(Object.keys(imageLabels) as (keyof typeof imageLabels)[])('displays crop %s with safe media', (status) => {
     const data = { ...image(), status, normalized_result: status === 'needs_review' ? image().normalized_result : null }
@@ -84,7 +85,7 @@ describe('recognition SSR markup (interactive UI remains manual)', () => {
     expect(html).toContain('Необязательные реквизиты чека не прочитаны уверенно и не сохранены. Значения не показываются.')
     expect(html).not.toContain('Причины проверки'); expect(html).not.toContain('Некорректное значение')
     expect(html).not.toContain('private issue message'); expect(html).not.toContain('Значение не прошло проверку')
-    expect(html).not.toContain('aria-live'); expect(html).not.toContain('Распознанные данные для проверки')
+    expect(html).not.toContain('aria-live'); expect(html).not.toContain('Исправление и подтверждение')
   })
   it('shows line rates, tax totals and requisites in one order for a reversed answer with a foreign group between them', () => {
     const clipped = issue('clipped', 'warning', { entity: 'geometry', attribute: 'clipped' }, { code: 'clipped', field: '/clipped' })
@@ -95,7 +96,7 @@ describe('recognition SSR markup (interactive UI remains manual)', () => {
       '<p class="rec-issues-title">Часть чека обрезана · Обрезанный чек</p>'])
     expect(html).toContain(`Строки: ${Array.from({ length: 25 }, (_, index) => index + 1).join(', ')}`); expect(html).toContain('Налоговые итоги №: 1, 2')
   })
-  it('keeps review causes always visible and apart from collapsed notes, with unchanged review data', () => {
+  it('keeps review causes always visible and apart from collapsed notes, above the correction form', () => {
     const data = image()
     data.issues = [issue('optional_omitted', 'warning', { attribute: 'receipt_metadata' }), ...data.issues,
       issue('total_mismatch', 'error', { attribute: 'total' }, { code: 'total_mismatch', field: '/total', message: 'private issue message' }),
@@ -106,7 +107,8 @@ describe('recognition SSR markup (interactive UI remains manual)', () => {
     expect(causes).toContain('Не удалось прочитать обязательное поле · Количество'); expect(causes).toContain('Сумма строк не совпадает с итогом · Итого')
     expect(notes).toContain('<details><summary>Не прочитан 1 реквизит</summary>'); expect(notes).toContain('Тип операции определён автоматически · Операция')
     expect(notes.indexOf('Не прочитан 1 реквизит')).toBeLessThan(notes.indexOf('Тип операции определён автоматически'))
-    expect(notes).toContain('<details class="ck-rec-review" open=""><summary>Распознанные данные для проверки</summary>'); expect(notes).toContain('МОЛОКО')
+    expect(notes).toContain('<section class="ck-review" aria-label="Исправление и подтверждение распознанных данных">'); expect(notes).toContain('value="МОЛОКО"')
+    // No <form>: Enter in a field must never save a receipt.
     expect(html).not.toContain('private issue message'); expect(html).not.toContain('<form')
     const failed = renderToStaticMarkup(<ReceiptImages images={[{ ...data, status: 'failed', normalized_result: null }]} />)
     expect(failed).toContain('<h4>Причины ошибки</h4>'); expect(failed).not.toContain('Причины проверки')

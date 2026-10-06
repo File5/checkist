@@ -60,7 +60,9 @@ describe('page block states with public API data (SSR)', () => {
     mocked.states = [success(fixture('job.json', isJobDetail)), { kind: 'error', error: { kind: 'error', reason: 'storage_unavailable' } }, success({ results: [fixture('receipt-image.json', isReceiptImage)] })]
     const html = renderToStaticMarkup(<JobPage jobId={31} />)
     expect(html).toContain('Сервис временно недоступен'); expect(html).toContain('Требует проверки')
-    expect(html).toContain('Распознанные данные для проверки'); expect(html).toContain('МОЛОКО')
+    expect(html).toContain('Исправление и подтверждение'); expect(html).toContain('value="МОЛОКО"')
+    // job.json is finished: the confirmation is offered, with no draft promised.
+    expect(html).toMatch(/<button type="button" data-review-confirm="true" aria-describedby="[^"]+">Подтвердить и сохранить чек<\/button>/)
   })
   it('shows cancel_requested separately from cancelled with disabled cancel and keeps processing updates visible', () => {
     mocked.states = [success(fixture('job-cancel-requested.json', isJobDetail)), { kind: 'loading' }, { kind: 'loading' }]

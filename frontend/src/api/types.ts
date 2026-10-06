@@ -1,4 +1,6 @@
 /** Wire types for backend 5e1adfa. Decimal values stay strings throughout the client. */
+import type { RecognitionIssue } from './recognition-types.ts'
+
 export type Decimal = string
 export type ISODate = string
 export type ISODateTime = string
@@ -15,6 +17,7 @@ export type LocalApiErrorReason = ApiErrorReason
   | 'csrf_failed' | 'permission_denied'
   | 'job_active' | 'job_terminal' | 'retry_not_allowed'
   | 'merge_conflict' | 'merge_resolved' | 'merge_changed' | 'merge_busy'
+  | 'review_unavailable' | 'review_resolved' | 'review_busy' | 'review_invalid'
   | 'upload_too_large' | 'unsupported_media_type' | 'unsupported_format' | 'invalid_image' | 'image_too_large'
   | 'storage_unavailable' | 'database_unavailable' | 'method_not_allowed' | 'not_acceptable'
 export type ApiFailure = {
@@ -26,7 +29,11 @@ export type ApiFailure = {
 }
 export type ApiResult<T> = { kind: 'ok'; data: T } | ApiFailure | { kind: 'aborted' }
 /** New errors do not widen the exhaustive catalog/price error handlers. */
-export type LocalApiFailure = Omit<ApiFailure, 'reason'> & { reason: LocalApiErrorReason }
+export type LocalApiFailure = Omit<ApiFailure, 'reason'> & {
+  reason: LocalApiErrorReason
+  /** Only with review_invalid: causes in the shape of crop issues, indexed by the arrays of the sent body. */
+  issues?: RecognitionIssue[]
+}
 export type LocalApiResult<T> = { kind: 'ok'; data: T } | LocalApiFailure | { kind: 'aborted' }
 export type RequestOptions = { signal?: AbortSignal; baseUrl?: string }
 export type Results<T> = { results: T[] }
