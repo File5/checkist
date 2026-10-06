@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "merge_changed",
+    "message": "Состав группы изменился."
+  }
+}

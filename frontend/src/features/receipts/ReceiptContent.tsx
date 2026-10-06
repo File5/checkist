@@ -1,6 +1,7 @@
 import type { Discount, Line, Receipt, Tax } from '../../api/receipts'
 import type { ReceiptImage } from '../../api/recognition'
-import { imageLabels, issueLabels } from '../../lib/recognition-labels'
+import RecognitionIssues from '../../components/RecognitionIssues'
+import { imageLabels } from '../../lib/recognition-labels'
 import { formatObservedAt, formatPercent, formatQuantity } from '../../lib/format'
 import { Link } from '../../navigation'
 import ReceiptMedia from './ReceiptMedia'
@@ -32,8 +33,7 @@ export function ReceiptImages({ images, receiptId }: { images: ReceiptImage[]; r
     <h3>Фото №{image.photo_id} · вырезка {image.position}</h3>
     <ReceiptMedia url={image.image_url} alt={`Вырезка ${image.position} с фото №${image.photo_id}, чек №${receiptId}`} />
     <p>{imageLabels[image.status]}</p>
-    {image.issues.length > 0 && <ul className="receipt-warning" aria-label="Замечания распознавания">{image.issues.map((issue, index) =>
-      <li key={`${issue.code}-${issue.field}-${index}`}>{issueLabels[issue.code]}</li>)}</ul>}
+    <RecognitionIssues issues={image.issues} status={image.status} />
     <Link className="action-link" to={`/recognition/jobs/${image.job_id}`}>Задание №{image.job_id}</Link>
   </li>)}</ul>
 }

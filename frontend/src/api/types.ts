@@ -14,6 +14,7 @@ export type ApiErrorReason =
 export type LocalApiErrorReason = ApiErrorReason
   | 'csrf_failed' | 'permission_denied'
   | 'job_active' | 'job_terminal' | 'retry_not_allowed'
+  | 'merge_conflict' | 'merge_resolved' | 'merge_changed' | 'merge_busy'
   | 'upload_too_large' | 'unsupported_media_type' | 'unsupported_format' | 'invalid_image' | 'image_too_large'
   | 'storage_unavailable' | 'database_unavailable' | 'method_not_allowed' | 'not_acceptable'
 export type ApiFailure = {

@@ -1,4 +1,4 @@
-import type { CatalogQuery, HistoryQuery, JobsQuery, ReceiptsQuery } from '../navigation'
+import type { CatalogQuery, HistoryQuery, JobsQuery, MergesQuery, ReceiptsQuery } from '../navigation'
 
 /** The shell owns the page's single h1. Feature screens render below it. */
 export interface CatalogPageProps {
@@ -22,3 +22,7 @@ export interface JobsPageProps { query: JobsQuery }
 export interface JobPageProps { jobId: number; returnTo?: string }
 export interface ReceiptsPageProps { query: ReceiptsQuery }
 export interface ReceiptPageProps { receiptId: number; returnTo?: string }
+
+/** Product merge screens of the catalog section; `returnTo` is the group list with its filter. */
+export interface MergesPageProps { query: MergesQuery }
+export interface MergePageProps { groupId: number; returnTo?: string }

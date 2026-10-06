@@ -546,7 +546,7 @@ Queued cancel сразу даёт cancelled/200; running — cancel_requested/20
 
 Retry разрешён failed/partial_succeeded/cancelled, создаёт новое queued задание с retry_of, старое не меняется. **Любой active Job этого Photo проверяется первым** и даёт 409 job_active, включая повтор retry старого Job; иначе succeeded — 409 retry_not_allowed. `actions.can_retry` учитывает active Job того же фото. `can_cancel=true` только queued/running. Действия — подсказки текущего снимка; сервер проверяет состояния снова под блокировкой.
 
-Технический отказ после принятия 202 виден в HTTP 200 Job.error (`{code,message}`) и/или ReceiptImage.issues. Это не браузерный HTTP 401. Разрешённые error/issue коды: `missing_required`, `invalid_value`, `total_mismatch`, `tax_mismatch`, `timezone_unknown`, `time_ambiguous`, `weak_identity`, `identity_conflict`, `product_unmatched`, `product_ambiguous`, `product_conflict`, `geometry_requires_review`, `clipped`, `overlap`, `timeout`, `worker_lost`, `storage_unavailable`, `provider_error`, `invalid_output`, `auth_required`, `rate_limited`, `provider_unavailable`, `network_unavailable`, `configuration_error`, `invalid_input`, `cancelled`, `no_receipts`, `too_many_receipts`. Сообщения фиксированные русские; неизвестный job error заменяется provider_error, неизвестный issue code — invalid_value. API не публикует stderr, raw_payload, invalid_output_text, provider notes, run_token, lease/deadline или exception text. `retryable` отдельным полем в К2 Job не задан и не добавлен; возможность повторить — actions.can_retry.
+Технический отказ после принятия 202 виден в HTTP 200 Job.error (`{code,message}`) и/или ReceiptImage.issues. Это не браузерный HTTP 401. Разрешённые error/issue коды: `missing_required`, `invalid_value`, `total_mismatch`, `tax_mismatch`, `timezone_unknown`, `time_ambiguous`, `weak_identity`, `identity_conflict`, `product_unmatched`, `product_ambiguous`, `product_conflict`, `geometry_requires_review`, `clipped`, `overlap`, `timeout`, `worker_lost`, `storage_unavailable`, `provider_error`, `invalid_output`, `auth_required`, `rate_limited`, `provider_unavailable`, `network_unavailable`, `configuration_error`, `invalid_input`, `cancelled`, `no_receipts`, `too_many_receipts`. Сообщения фиксированные русские; неизвестный job error заменяется provider_error, неизвестный issue code — invalid_value (исходная причина из закрытого перечня остаётся в `reason`, см. [issues вырезки](#issues-вырезки-reason-severity-context)). API не публикует stderr, raw_payload, invalid_output_text, provider notes, run_token, lease/deadline или exception text. `retryable` отдельным полем в К2 Job не задан и не добавлен; возможность повторить — actions.can_retry.
 
 Эталоны: [Job detail](../backend/recognition/tests/fixtures/public/job.json), [страница Job](../backend/recognition/tests/fixtures/public/jobs.json), [running](../backend/recognition/tests/fixtures/public/job-running.json), [cancel_requested](../backend/recognition/tests/fixtures/public/job-cancel-requested.json).
 
@@ -564,11 +564,91 @@ Quad задаётся TL, TR, BR, BL относительно текста бу�
 а не к пикселям вырезки. Тот же угол передаётся OCR; выпрямления нет. Корректные повёрнутые
 quad больше не отвергаются и не превращаются в null при сериализации detail.
 
-`issues` — список `{code,field,message}` с фиксированными сообщениями. Допускаются только известные безопасные JSON pointers полей шапки/позиции/геометрии; закрытые/неизвестные пути заменяются `/`. Значения provider message/note и произвольные JSON-ключи не копируются.
+`issues` — список `{code,field,message,reason,severity,context}` с фиксированными сообщениями. Для `code`/`field`/`message` допускаются только известные безопасные JSON pointers полей шапки/позиции/геометрии; закрытые/неизвестные пути заменяются `/`. Значения provider message/note и произвольные JSON-ключи не копируются.
 
-И4 сохраняет публичные формы, эталоны и список кодов. Успешная вырезка тоже может иметь issues: default operation=sale, валюта из страны существующего магазина, пропущенные необязательные реквизиты/налоги, конфликт товарной подсказки или несовместимая часть повторного фото. Внутренние operation_defaulted/optional_omitted/currency_inferred и прочие неизвестные коды проходят прежний allowlist как invalid_value; закрытый fiscal pointer заменяется `/`. Нового severity-поля нет. Клиент определяет исход по status/progress, а не по одному наличию issues. Перед needs_review импортёр применяет безопасные арифметические выводы недостающего значения строки из двух observed чисел и pcs для штучной строки без признаков веса. Непригодное наблюдение (обязательные данные после этих выводов, грубая сумма или конфликт сильных ключей) остаётся needs_review. Исходный DTO не переписывается, новые поля ответа не добавлены. Правила импорта и причины — [модель данных](data-model.md#recognition-фотографии-и-очередь), [проверка И4](verification.md#фактические-результаты-и4).
+#### Issues вырезки: reason, severity, context
 
-Р2 также сохраняет публичные формы, доступ и список кодов. Два разных фото с одинаковыми совместимыми данными чека, но с ИНН продавца только на одном из них, используют один однозначно известный Store и Receipt; обе ReceiptImage связаны с ним, строки/товары/скидки/налоги не дублируются. Пустой ИНН известного Merchant дополняется только при однозначном совпадении страны, точных названий и адреса/филиала. Разные непустые ИНН не объединяются; несколько совместимых точек требуют needs_review. Внутренние merchant_conflict/store_ambiguous/store_conflict проходят существующий allowlist как invalid_value; закрытый `/merchant/tax_id` заменяется `/`, значения ИНН наружу не передаются. Полные правила и ограничения — [модель данных](data-model.md#recognition-фотографии-и-очередь), [приёмка Р2](verification.md#р2-полнота-инн-и-идентичность-магазина).
+List и detail `/api/recognition/receipt-images/` отдают у **каждого** issue шесть ключей; `reason`, `severity`, `context` присутствуют всегда все три. `code`, `field`, `message` и их правила не изменились.
+
+```json
+{"code": "invalid_value", "field": "/lines/0/tax_rate", "message": "Значение не прошло проверку.",
+ "reason": "optional_omitted", "severity": "warning",
+ "context": {"entity": "line", "index": 0, "position": 1, "attribute": "tax_rate"}}
+```
+
+| Поле | Тип | Значения |
+| --- | --- | --- |
+| `reason` | string | закрытый перечень из 50 значений ниже |
+| `severity` | string | `info` \| `warning` \| `error` |
+| `context` | object, не null | всегда ровно 4 ключа |
+| `context.entity` | string | `receipt` \| `line` \| `tax` \| `discount` \| `geometry` \| `unknown` |
+| `context.index` | int \| null | 0..9999, индекс исходного массива с нуля |
+| `context.position` | int \| null | 1..32767, только для `line` и `discount` |
+| `context.attribute` | string \| null | закрытый набор ниже; `null` — замечание ко всей сущности |
+
+**`reason`** — исходный код из БД, если он входит в перечень, иначе `unknown`:
+
+- 28 кодов из списка выше (тогда `reason` совпадает с `code`);
+- 21 внутренний, у которого `code` остаётся `invalid_value`: `optional_omitted`, `operation_defaulted`, `currency_inferred`, `ambiguous_value`, `country_unknown`, `currency_unknown`, `import_busy`, `import_failed`, `merchant_conflict`, `merchant_tax_id_invalid`, `product_package_invalid`, `receipt_conflict`, `receipt_invalid`, `receipt_line_conflict`, `receipt_structure_conflict`, `store_ambiguous`, `store_conflict`, `tax_rate_invalid`, `tax_rate_unconfirmed`, `timestamp_ambiguous`, `timestamp_conflict`;
+- `unknown` — всё остальное: прочие коды (в том числе коды проверки файла `invalid_image`, `file_too_large`) и нестроковые значения.
+
+**`severity`** зависит от причины и статуса вырезки:
+
+| Причина | Важность |
+| --- | --- |
+| `operation_defaulted`, `currency_inferred` | `info` |
+| `optional_omitted`, `clipped`, `cancelled` | `warning` |
+| все остальные, включая `unknown` | `error`, если статус вырезки `needs_review` или `failed`; иначе `warning` |
+
+`severity` — подсказка для показа. Она не влияет на `status`, `progress`, `review_required`.
+
+**`context`** вычисляется из сохранённого `field` до его замены на `/`:
+
+| Сохранённый `field` | entity | attribute |
+| --- | --- | --- |
+| `/` | `receipt` | `null` |
+| `/geometry`, `/bbox`, `/quad`, `/rotation_degrees`, `/clipped` | `geometry` | `null` для `/geometry`, иначе `bbox`, `quad`, `rotation_degrees`, `clipped` |
+| остальные публичные пути шапки | `receipt` | путь без первого `/`, вложенный через `_`: `identity`, `merchant`, `store`, `operation`, `currency` (также для `/currency_code`), `purchased_on`, `local_time`, `total`, `discount_total`, `prices_include_tax`, `merchant_country_code`, `merchant_brand_name`, `store_country_code`, `store_name`, `store_address_raw`, `store_city` |
+| публичные `/lines`, `/discounts`, `/taxes` — без индекса, с индексом, с индексом и полем | `line` / `discount` / `tax` | третий сегмент: `position`, `kind`, `parent_position`, `name` (также для `raw_name`), `product`, `quantity`, `unit`, `unit_price`, `amount`, `discount_amount`, `tax_amount`, `tax_code`, `tax_rate`, `net`, `tax`, `gross`, `line_position`, `barcode`, `store_item_code`, `is_excise`, `is_marked`; без третьего сегмента `null` |
+| закрытый путь внутри строки `/lines/N/…` (N — 1–4 цифры, далее 1–4 сегмента `[a-z0-9_]+`) | `line` | `product`, если третий сегмент — `product_hint`; иначе `unknown` |
+| любой другой закрытый путь вида `^/[a-z0-9_]+(/[a-z0-9_]+){0,3}$` (номер чека, смена, касса, `/fiscal/*`, ИНН, юридическое название и т. п.; сюда же попадают непубличные подпути `/discounts/N/…` и `/taxes/N/…`) | `receipt` | `receipt_metadata` |
+| не строка или не похоже на путь | `unknown` | `unknown` |
+
+`receipt_metadata` — единая метка «закрытый реквизит чека»: ни имя поля, ни значение не раскрываются, два таких замечания неразличимы. У закрытых путей публичный `field` по-прежнему `/`.
+
+`index` и `position`:
+
+- `index` — целое из второго сегмента пути как есть (`/lines/0007/amount` → 7); для `receipt`, `geometry`, `unknown` и для пути без индекса — `null`.
+- `position` — `normalized_result[коллекция][index]["position"]` сохранённого DTO вырезки, если DTO — объект, коллекция — список, индекс в границах, элемент — объект, значение — целое (не boolean) в 1..32767. Иначе `null`. Берётся из сохранённого DTO при любом статусе вырезки, хотя публичное поле `normalized_result` остаётся только у `needs_review`.
+- Для `tax` `position` всегда `null`.
+- Повреждённый DTO, индекс вне границ, нестроковые `code`/`field` исключений не дают: HTTP 200, `position: null` либо `unknown`. Элементы `issues`, не являющиеся объектами, пропускаются, как и раньше.
+
+Ещё примеры (остальные ключи вырезки опущены):
+
+```json
+{"code":"invalid_value","field":"/taxes/1","message":"Значение не прошло проверку.",
+ "reason":"optional_omitted","severity":"warning",
+ "context":{"entity":"tax","index":1,"position":null,"attribute":null}}
+
+{"code":"invalid_value","field":"/","message":"Значение не прошло проверку.",
+ "reason":"optional_omitted","severity":"warning",
+ "context":{"entity":"receipt","index":null,"position":null,"attribute":"receipt_metadata"}}
+
+{"code":"invalid_value","field":"/","message":"Значение не прошло проверку.",
+ "reason":"unknown","severity":"error",
+ "context":{"entity":"unknown","index":null,"position":null,"attribute":"unknown"}}
+```
+
+Совместимость и границы:
+
+- Изменение аддитивное. Клиент, который читает только `code`/`field`/`message` и допускает добавочные ключи объекта, работает без правок; несовместимых изменений нет. Новому клиенту следует принимать незнакомые значения `reason`, `entity`, `attribute` как `unknown`: перечни могут пополняться.
+- Не раскрываются: значения и имена закрытых полей (номер чека, смена, касса, fiscal, ИНН и его тип, юридическое название), `raw_text`, `fields`/`warnings`/notes провайдера, тексты исключений, сохранённые `message`, `line_id`. Одноимённые ключи `reason`/`severity`/`context`, если они оказались в сохранённом issue, игнорируются. Новые поля содержат только значения закрытых перечней и целые числа.
+- Не меняются: лимит 1000 issues, URL, фильтры, пагинация, `normalized_result` только у `needs_review`, число SQL-запросов list/detail (используются уже загруженные поля вырезки), Job, Receipt, Line, Discount, Tax, upload/cancel/retry, прежние 13 GET и `/api/health/`, доступ (DEBUG + флаг + loopback, CSRF).
+- Миграций схемы нет: это проекция сохранённых JSON-полей. Исторические вырезки получают `reason`/`context` из уже сохранённых issues без повторного распознавания. Откат — revert кода и тестов, данные не затрагиваются.
+
+И4 сохраняет публичные формы, эталоны и список кодов. Успешная вырезка тоже может иметь issues: default operation=sale, валюта из страны существующего магазина, пропущенные необязательные реквизиты/налоги, конфликт товарной подсказки или несовместимая часть повторного фото. Внутренние operation_defaulted/optional_omitted/currency_inferred и прочие неизвестные коды проходят прежний allowlist как invalid_value; закрытый fiscal pointer заменяется `/`. Сам И4 поля важности не добавлял; позже к issue добавлены `reason`/`severity`/`context` ([описание](#issues-вырезки-reason-severity-context)), которые различают эти причины без изменения `code`/`field`/`message`. Клиент по-прежнему определяет исход по status/progress, а не по одному наличию issues. Перед needs_review импортёр применяет безопасные арифметические выводы недостающего значения строки из двух observed чисел и pcs для штучной строки без признаков веса. Непригодное наблюдение (обязательные данные после этих выводов, грубая сумма или конфликт сильных ключей) остаётся needs_review. Исходный DTO не переписывается, И4 новых полей ответа не добавлял. Правила импорта и причины — [модель данных](data-model.md#recognition-фотографии-и-очередь), [проверка И4](verification.md#фактические-результаты-и4).
+
+Р2 также сохраняет публичные формы, доступ и список кодов. Два разных фото с одинаковыми совместимыми данными чека, но с ИНН продавца только на одном из них, используют один однозначно известный Store и Receipt; обе ReceiptImage связаны с ним, строки/товары/скидки/налоги не дублируются. Пустой ИНН известного Merchant дополняется только при однозначном совпадении страны, точных названий и адреса/филиала. Разные непустые ИНН не объединяются; несколько совместимых точек требуют needs_review. Внутренние merchant_conflict/store_ambiguous/store_conflict проходят существующий allowlist как invalid_value (в `reason` — исходная причина); закрытый `/merchant/tax_id` заменяется `/` с `context.attribute=receipt_metadata`, значения ИНН наружу не передаются. Полные правила и ограничения — [модель данных](data-model.md#recognition-фотографии-и-очередь), [приёмка Р2](verification.md#р2-полнота-инн-и-идентичность-магазина).
 
 Ф2+Ф3 сохраняет JSON-формы, доступ, список кодов и схему БД. Печатные LF/CR/tab в адресе и текстовых названиях observation нормализуются до проверки (адрес — через `, `, остальные разрешённые поля — через пробел), `Z`/`z` в смещениях времени — в `+00:00`. Иные управляющие символы/неверные offsets отклоняются. Успешный импорт строки product/deposit с observed amount и отсутствующими quantity/unit_price использует quantity=1, unit=pcs, unit_price=amount; отрицательный deposit_return — quantity=−1, unit_price=abs(amount). Для целого напечатанного количества без unit используется pcs независимо от весовой строки другого товара. Нечитаемые/неоднозначные поля и признаки веса в самой строке не получают это умолчание. При отсутствии суммы и операндов сохраняется needs_review; напечатанные числа/скидки не заменяются. Derived pointers остаются внутренними в extra, публичный Receipt/Line выдаёт обычные Decimal-строки. Нормализованный DTO сохраняет null вместо выведенных количества/цены, но канонический адрес/offset; raw_text и timestamps по-прежнему закрыты. Повторы не создают дублей. Старый terminal needs_review требует штатного retry; откат кода не удаляет уже импортированные данные. Точные условия — [модель данных](data-model.md#recognition-фотографии-и-очередь). Несовместимых изменений HTTP нет.
 
@@ -649,6 +729,122 @@ Line.product=null → matching_status=unmatched; ambiguous здесь отсут
 - Нормализованные provider notes/произвольные сообщения и неизвестные коды/пути не копируются; для неизвестных сохранённых кодов предусмотрены безопасные заменители. `/media/` только DEBUG на Django, Vite dev/preview проксируют этот фиксированный префикс.
 
 Другие формы К2 Photo/Job/Receipt/Line/Discount/Tax сохранены; успешные формы прежних 13 GET и health не меняются. Новых миграций, настроек и зависимостей С5 нет. Откат С5 — revert его кода/тестов/docs: записи С1 и файлы сохраняются, очистка БД/томов не нужна; откат миграции recognition принадлежит С1 и требует отдельной процедуры/backup.
+
+## Реализовано: локальный API слияния дублей товаров (С2)
+
+Приложение `backend/merges/` ищет товары-дубли одного продавца и сливает их **предварительно**: строки чеков и написания поглощаемых товаров сразу переносятся на оставляемый, исходная принадлежность пишется в журнал, человек подтверждает либо отменяет группу. Модель и правила — [data-model.md](data-model.md#merges-слияние-дублей-товаров). Код HTTP: `backend/api/views/product_merges.py`, `urls_product_merges.py`, `product_merge_serialization.py`. Эталонные ответы для клиента — `backend/merges/tests/fixtures/public/*.json`; тест `api.tests.test_product_merges_public` сверяет их целиком с настоящими HTTP-ответами.
+
+### Что меняется в 13 GET каталога и цен
+
+**Поглощённый товар** — активная запись ожидающей группы с ролью `source`. Формы ответов, анонимный доступ, коды ошибок и число SQL-запросов прежние, полей не добавлено; меняется только состав.
+
+| GET | Изменение состава |
+| --- | --- |
+| `/api/countries/` | `products_count` меньше естественно: строки перенесены |
+| `/api/stores/` | нет |
+| `/api/brands/` | `products_count` без поглощённых |
+| `/api/categories/`, `/{id}/` | `products_count`, `products_total`, `generic_products[].products_count` без поглощённых |
+| `/api/generic-products/`, `/{id}/` | `products_count` без поглощённых; `countries` — по строкам чеков |
+| `/api/products/` | поглощённых нет в `results`, `count` и `pages` меньше; оставляемый несёт объединённые `prices`, `observations`, `last_observed_at`; фильтры и сортировки — по полям оставляемого |
+| `/api/products/{id}/` | оставляемый: `aliases` включает перенесённые написания, `stores` и `prices` объединены, `alternatives_count` без поглощённых; поглощённый id — `404 not_found` |
+| `/api/products/{id}/prices/`, `/prices/summary/` | оставляемый: все покупки группы; поглощённый id — `404 not_found` |
+| `/api/products/{id}/alternatives/` | поглощённые не входят в набор; поглощённый id как исходный — `404 not_found` |
+| `/api/generic-products/{id}/comparison/` | поглощённые не входят в набор |
+
+- Поиск `q` в `/api/products/` по-прежнему ищет по названию, бренду, модели и GTIN видимого товара; по написаниям слитых записей не ищет.
+- Локальный API чеков: `name` строки — напечатанное `raw_name`, `product` строки показывает оставляемый товар; `/api/receipts/?product=<поглощённый id>` — пустой список.
+- После отмены группы товары снова видны; после подтверждения поглощённых товаров нет вовсе — тот же `404`. Перенаправления нет: карточка товара в SPA при `not_found` запрашивает `GET /api/product-merges/?product={id}`.
+
+### Доступ и тело
+
+Префикс `/api/product-merges/`, завершающий `/` обязателен. Доступ как у API распознавания: `DEBUG` + `ALLOW_LOCAL_RECOGNITION_API=1` + loopback, иначе `403 permission_denied`; POST требует CSRF и от анонима (`403 csrf_failed`), токен — `GET /api/recognition/csrf/`, заголовок `X-CSRFToken`; каждый ответ несёт `Cache-Control: no-store`; только JSON. Нет `Idempotency-Key`, `MutationRequest`, владельца.
+
+Тело POST — JSON-объект UTF-8 до 4096 байт, `Content-Type: application/json` (иначе `415 unsupported_media_type`). Пустое тело, не объект, повторный или неизвестный ключ, `NaN`/`Infinity`, превышение размера — `400 invalid_request`. Отсутствующий обязательный ключ и неверный тип значения — `400 invalid_parameter` с `fields`. Идентификаторы и `version` — целые от 1 (не строки и не `true`).
+
+| Метод и путь | Запрос | Ответ 200 |
+| --- | --- | --- |
+| GET `/product-merges/` | `status` (`pending` / `confirmed` / `cancelled`; без него — все), `product` (id товара в любой роли, в том числе уже удалённого), `page`, `page_size` (50, максимум 200) | Страница кратких групп, порядок `-id` |
+| GET `/product-merges/{id}/` | — | Группа |
+| GET `/product-merges/{id}/lines/` | `page`, `page_size` (50, максимум 200) | Страница покупок, порядок `purchased_at, receipt_id, position` |
+| POST `/product-merges/detect/` | `{}` | `{"created": n, "extended": n, "group_ids": [...]}` |
+| POST `/product-merges/{id}/confirm/` | `{"version": int, "target_product_id": int, "name_product_id"?: int, "resolutions"?: {поле: product_id}}` | Группа `confirmed` |
+| POST `/product-merges/{id}/cancel/` | `{}` | Группа `cancelled` |
+| POST `/product-merges/{id}/exclude/` | `{"version": int, "product_id": int}` | Группа (`pending` либо `cancelled`) |
+
+Другой метод на существующем пути — `405 method_not_allowed`; неизвестный путь под префиксом — `404 not_found`. Число запросов чтения не зависит от числа групп: список — 7, группа — 7 (8, если у продавца нет вывески), покупки — 3.
+
+### Группа, краткая форма, покупка
+
+```json
+{"id": 2, "status": "pending", "version": 1,
+ "created_at": "2026-10-06T10:00:00Z", "resolved_at": null,
+ "target_product_id": 5,
+ "members": [
+  {"product_id": 5, "role": "target", "state": "active", "exists": true,
+   "name": "Steinhof.PizzaSpezial", "brand": null, "model": "", "gtin": "",
+   "package": null, "generic": {"id": 91, "name": "Не разобрано", "base_unit": "pcs"},
+   "classified": false, "lines_count": 1,
+   "first_purchased_on": "2026-06-29", "last_purchased_on": "2026-06-29",
+   "aliases": [{"store_name": "Demomarkt", "raw_name": "Steinhof.PizzaSpezial", "store_item_code": ""}]}
+ ],
+ "conflicts": [],
+ "lines_count": 5, "new_lines_count": 1,
+ "actions": {"can_confirm": true, "can_cancel": true, "can_exclude": true}}
+```
+
+- `members` — все записи группы по возрастанию `product_id`; `role` — `target` / `source`, `state` — `active` / `excluded`. `brand` — `{"id", "name"}` либо `null`, `package` — `{"quantity": "10.000", "unit": "pcs"}` либо `null`. `classified: false` — обобщённый продукт служебный «Не разобрано».
+- `lines_count`, даты и `aliases` (до 50) записи — по журналу, то есть исходная принадлежность. У исключённой записи и у записей отменённой группы журнала нет: `0`, `null`, `[]`. После подтверждения у удалённых записей `exists: false`, название и факты — из снимка.
+- `conflicts` — `[{"field": "generic", "product_ids": [2, 36]}]`, по живым данным при каждом чтении; поля: `generic`, `brand`, `package`, `gtin`, `model`, `attributes`. У завершённой группы — `[]`.
+- `lines_count` группы: у ожидающей — все строки оставляемого товара, `new_lines_count` — те из них, которых нет в журнале (пришли после слияния); у подтверждённой — размер журнала и `0`; у отменённой — `0`.
+- `actions` — все три `true` только у ожидающей группы. `version` растёт при изменении состава (добавление записи поиском, исключение); подтверждение и отмена её не меняют.
+- **Краткая форма** в списке — те же поля, у записей нет `aliases`, вместо `conflicts` — булево `has_conflicts`.
+- **Покупка** в `/lines/`: `{"line_id", "receipt_id", "position", "purchased_on", "store": {"id", "name", "city", "country"}, "name", "quantity", "unit", "unit_price", "amount", "discount_amount", "currency", "origin_product_id"}`. `name` — напечатанное `raw_name`; `origin_product_id: null` — строка пришла после слияния. У отменённой группы список пуст. Десятичные — строками по общим правилам.
+- Закрытые поля (`raw_text`, `fiscal`, `extra`, юридическое название, налоговый номер, номера чека, кассы и смены) не отдаются; название магазина — вывеска продавца либо название магазина.
+
+### Подтверждение, отмена, исключение
+
+- `target_product_id` — любая активная запись; другая, чем `target_product_id` группы, переносит на себя все ссылки. Название оставляемого товара не меняется; `name_product_id` берёт название указанной активной записи. Произвольный текст не принимается.
+- Факты: одно непустое значение в группе при пустом у оставляемой — заполняется; заполненное не перезаписывается. Два и более разных непустых значения — конфликт: без `resolutions` — `409 merge_conflict`, ничего не сохранено. `resolutions: {"generic": 2}` — взять значение записи 2; принимается только запись с непустым значением спорного поля.
+- Подтверждение удаляет поглощённые товары, не обнуляя ни одной ссылки строки и не удаляя написаний. Совпадение результата с посторонним товаром по названию+бренду+фасовке либо GTIN — `409 merge_conflict` с `fields.name` либо `fields.gtin`, полный откат.
+- Отмена возвращает каждой записи её строки и написания; строка, пришедшая за время ожидания, уходит владельцу своего написания. Все пары записей пишутся как отклонённые и новым поиском не предлагаются.
+- Исключение восстанавливает одну запись (можно и оставляемую — остальные сливаются на оставляемую по умолчанию), `version + 1`; если осталось меньше двух записей — группа `cancelled`.
+- `detect` ищет по всему каталогу; повтор без изменений каталога — `created: 0, extended: 0, group_ids: []`.
+
+### Повторы и ошибки
+
+| Ситуация | Ответ |
+| --- | --- |
+| Повтор `confirm` подтверждённой группы с тем же `target_product_id` (любая `version`) | 200, та же Группа, без записей |
+| `confirm` подтверждённой с другим `target_product_id`; `confirm` или `exclude` отменённой | 409 `merge_resolved` |
+| Повтор `cancel` отменённой | 200, та же Группа |
+| `cancel` или `exclude` подтверждённой | 409 `merge_resolved` |
+| Повтор `exclude` уже исключённой записи (любая `version`, в том числе если исключение отменило группу) | 200, текущая Группа |
+| `version` не равна текущей | 409 `merge_changed`, ничего не сохранено |
+| `product_id` / `target_product_id` / `name_product_id` не из активных записей; ключ `resolutions` — не спорное поле либо запись без значения | 400 `invalid_parameter`, `fields` |
+| Идёт импорт чека или другая операция слияния; ожидание блокировки строк дольше `statement_timeout` 2000 мс | 409 `merge_busy`, полный откат, без скрытого повтора |
+| Группы нет, id вне диапазона | 404 `not_found` |
+| Прочий отказ БД | 503 `database_unavailable` |
+
+Новые коды (все HTTP 409): `merge_conflict` «Данные товаров противоречат друг другу.», `merge_resolved` «Слияние уже завершено.», `merge_changed` «Состав группы изменился.», `merge_busy` «Каталог сейчас изменяется. Повторите позже.». Формат общий: `{"error": {"code", "message", "fields?"}}`, `fields` — `{"имя": ["сообщение", ...]}`. Порядок проверок: доступ и CSRF → тело → существование группы → состояние → `version` → параметры. Изменяющий запрос клиент автоматически не повторяет.
+
+Каждая изменяющая операция — одна транзакция под той же неблокирующей advisory-блокировкой, что импорт чека (`IMPORT_LOCK`): импорт и слияния идут строго по очереди.
+
+### Поиск после импорта чека
+
+При `PRODUCT_MERGE_AUTO_DETECT=1` импортёр после успешного сохранения чека один раз вызывает поиск по товарам строк этого чека — в отдельном savepoint внутри той же транзакции. Новое написание попадает в группу сразу. Сбой шага откатывает только savepoint, пишет в журнал класс ошибки без данных чека и импорт не отменяет; следующий `detect` доводит состояние. При `0` (по умолчанию, так в `.env.example`) импорт ведёт себя как раньше, а поиск запускают `POST /detect/` или `manage.py product_merges detect [--dry-run]`.
+
+### Уточнения и отступления от согласованного контракта
+
+Формы «Группа», краткая группа, покупка, ответ `detect`, пути, коды и тексты ошибок соответствуют контракту. Уточнено то, что контракт не определял:
+
+- `fields` у `merge_conflict` и `invalid_parameter` — общий формат `{"имя": ["сообщение"]}`; id записей с разными значениями клиент берёт из `conflicts` Группы, а не из ошибки. Ключ решения в `fields` — `resolutions.<поле>`.
+- Отсутствующий обязательный ключ тела — `400 invalid_parameter` с `fields` (а не `invalid_request`); неизвестный или повторный ключ — `400 invalid_request`. `"name_product_id": null` — `invalid_parameter`: ключ нужно не передавать.
+- В записи группы нет поля `attributes`, хотя конфликт по `attributes` возможен: клиент видит его в `conflicts` и решает выбором записи.
+- Повтор `confirm` с тем же `target_product_id` и повтор `exclude` исключённой записи отвечают 200 и при устаревшей `version`.
+- Журнал исключённой записи и отменённой группы удаляется: их `lines_count: 0`, `aliases: []`, `/lines/` отменённой группы пуст.
+- Дополнительные эталонные примеры: `group-pending-conflict.json`, `error-invalid-parameter.json`.
+
+Откат: `manage.py product_merges cancel-pending`, затем `migrate merges zero`; подробности и необратимые ограничения — [data-model.md](data-model.md#откат-merges).
 
 ## Планируется
 

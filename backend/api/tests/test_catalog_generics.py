@@ -1,6 +1,8 @@
 from django.test import TestCase, tag
 
 from api.tests import factories
+from api.tests.merge_factories import demo_groups
+from merges import demo
 from catalog.models import Category, GenericProduct
 from catalog.units import BaseUnit
 
@@ -106,3 +108,31 @@ class GenericProductsTests(TestCase):
             with self.subTest(pk=pk):
                 response = self.client.get(f"/api/generic-products/{pk}/")
                 self.assertEqual((response.status_code, response.json()), (404, NOT_FOUND))
+
+
+# --- ожидающее слияние дублей: поглощённые товары скрыты, формы ответов прежние ---
+@tag("integration")
+class PendingMergeGenericsTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        demo_groups()
+
+    def test_counters_skip_absorbed_products(self):
+        with self.assertNumQueries(4):
+            body = self.client.get("/api/generic-products/").json()
+        rows = {generic["name"]: generic for generic in body["results"]}
+        self.assertEqual(
+            {name: row["products_count"] for name, row in rows.items()},
+            {demo.SERVICE_GENERIC_NAME: 22, demo.MILK_GENERIC: 1, demo.OTHER_MILK_GENERIC: 0},
+        )
+        # Страны — по строкам чеков: у обобщённого продукта без видимых товаров наблюдений не осталось.
+        self.assertEqual({name: row["countries"] for name, row in rows.items()},
+                         {demo.SERVICE_GENERIC_NAME: ["DE"], demo.MILK_GENERIC: ["DE"], demo.OTHER_MILK_GENERIC: []})
+        self.assertEqual(set(rows[demo.MILK_GENERIC]),
+                         {"id", "name", "base_unit", "category", "products_count", "countries"})
+
+    def test_detail_counter(self):
+        generic = GenericProduct.objects.get(name=demo.SERVICE_GENERIC_NAME)
+        with self.assertNumQueries(3):
+            body = self.client.get(f"/api/generic-products/{generic.pk}/").json()
+        self.assertEqual((body["products_count"], body["countries"]), (22, ["DE"]))

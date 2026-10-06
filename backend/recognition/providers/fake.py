@@ -18,6 +18,7 @@ SCENARIOS = (
     "provider_error", "malformed_schema", "partial_missing_quantity", "inconsistent_total",
     "duplicate_strong", "duplicate_weak", "partial_success", "pause_detect", "pause_recognize", "late_completion",
     "tax_id_present", "tax_id_absent", "rotated_receipt", "rotated_two_receipts",
+    "tax_evidence_missing", "tax_evidence_present",
 )
 ALIASES = {"success": "success2", "single": "one_receipt", "invalid_output": "malformed_schema",
            "incomplete": "partial_missing_quantity", "repeat": "duplicate_strong", "pause": "pause_detect"}
@@ -86,6 +87,11 @@ def receipt_payload(position=1):
                           tse_transaction="12345" if second else "98765")
     if not second:
         data["lines"][0]["discount_amount"] = "0.20"
+    _observe(data)
+    return data
+
+
+def _observe(data):
     def evidence(obj, path=""):
         if isinstance(obj, dict):
             for key, value in obj.items():
@@ -96,6 +102,40 @@ def receipt_payload(position=1):
         elif obj is not None:
             data["fields"].append({"path":path, "status":"observed", "confidence":1, "note":None})
     evidence(copy.deepcopy(data))
+
+
+def tax_evidence_payload(*, tax_evidence=True):
+    """Public test helper: one fictional 25-line receipt, total 23.95 EUR.
+
+    Both variants print the same seller, lines and tax table; time and TSE
+    transaction differ, so they are two receipts of one store. Without tax
+    evidence the fields entries of every line tax_rate and of the whole tax
+    table are absent, while the values themselves stay in the payload.
+    """
+    time_printed = "11:20:00" if tax_evidence else "11:05:00"
+    data = receipt_payload()
+    data["merchant"].update(legal_name="TESTKAUF GmbH", brand_name="TESTKAUF")
+    data["store"].update(name="TESTKAUF", address_raw="Musterallee 7, 50667 Koeln", postal_code="50667",
+                         city="Koeln", street="Musterallee", house="7")
+    data.update(local_time=time_printed, receipt_number=None, total="23.95", discount_total="0.00", discounts=[])
+    data["fiscal"].update(register_serial="TEST-KASSE-07", tse_transaction="550002" if tax_evidence else "550001")
+    data["timestamps"]["header"]["time"] = time_printed
+    lines = [_line(n, f"TESTARTIKEL {n:02d}", "1.000", "pcs", "1.0700", "1.07") for n in range(1, 18)]
+    for n in range(1, 5):
+        position = 16 + 2 * n
+        lines.append(_line(position, f"TESTGETRAENK {n:02d}", "1.000", "pcs", "1.1900", "1.19", "19.00"))
+        lines.append(_line(position + 1, f"PFAND zu TESTGETRAENK {n:02d}", "1.000", "pcs", "0.2500", "0.25", "19.00",
+                           kind="deposit", parent=position))
+    data["lines"] = lines
+    data["taxes"] = [{"tax_rate":{"kind":"vat","rate":"7.00"},"tax_code":"A","net":"17.00","tax":"1.19","gross":None},
+                     {"tax_rate":{"kind":"vat","rate":"19.00"},"tax_code":"B","net":"4.84","tax":"0.92","gross":None}]
+    data["fields"] = []
+    _observe(data)
+    data["fields"] += [{"path":"/receipt_number", "status":"ambiguous", "confidence":None, "note":None},
+                       {"path":"/fiscal/signature", "status":"unreadable", "confidence":None, "note":None}]
+    if not tax_evidence:
+        data["fields"] = [f for f in data["fields"] if not f["path"].startswith("/taxes/")
+                          and "/tax_rate/" not in f["path"]]
     return data
 
 
@@ -125,7 +165,7 @@ class FakeProvider:
 
     def detect(self, prepared_image, run):
         self._stage("detect", run)
-        count = 0 if self.scenario == "no_receipts" else 11 if self.scenario == "too_many_receipts" else 1 if self.scenario in ("one_receipt", "duplicate_strong", "duplicate_weak", "tax_id_present", "tax_id_absent") else 2
+        count = 0 if self.scenario == "no_receipts" else 11 if self.scenario == "too_many_receipts" else 1 if self.scenario in ("one_receipt", "duplicate_strong", "duplicate_weak", "tax_id_present", "tax_id_absent", "tax_evidence_missing", "tax_evidence_present") else 2
         data = detection_payload(prepared_image, count)
         if self.scenario in {"rotated_receipt", "rotated_two_receipts"}:
             data["receipts"] = rotated_demo_receipts(single=self.scenario == "rotated_receipt")
@@ -167,6 +207,8 @@ class FakeProvider:
                 data["merchant"].update(tax_id="DE999999994", tax_id_type="vat_id")
                 data["fields"].extend({"path": path, "status": "observed", "confidence": 1, "note": None}
                                       for path in ("/merchant/tax_id", "/merchant/tax_id_type"))
+        if self.scenario in {"tax_evidence_missing", "tax_evidence_present"}:
+            data = tax_evidence_payload(tax_evidence=self.scenario == "tax_evidence_present")
         if self.scenario == "malformed_schema":
             data["total"] = 4.42
         try:

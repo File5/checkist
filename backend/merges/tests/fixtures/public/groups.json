@@ -1,0 +1,228 @@
+{
+  "count": 3,
+  "page": 1,
+  "page_size": 50,
+  "pages": 1,
+  "results": [
+    {
+      "id": 3,
+      "status": "cancelled",
+      "version": 1,
+      "created_at": "2026-10-06T10:00:00Z",
+      "resolved_at": "2026-10-06T10:00:00Z",
+      "target_product_id": 18,
+      "members": [
+        {
+          "product_id": 18,
+          "role": "target",
+          "state": "active",
+          "exists": true,
+          "name": "Eier 10er Freilandh.",
+          "brand": null,
+          "model": "",
+          "gtin": "",
+          "package": {
+            "quantity": "10.000",
+            "unit": "pcs"
+          },
+          "generic": {
+            "id": 91,
+            "name": "Не разобрано",
+            "base_unit": "pcs"
+          },
+          "classified": false,
+          "lines_count": 0,
+          "first_purchased_on": null,
+          "last_purchased_on": null
+        },
+        {
+          "product_id": 38,
+          "role": "source",
+          "state": "active",
+          "exists": true,
+          "name": "Eier 10er Freiland",
+          "brand": null,
+          "model": "",
+          "gtin": "",
+          "package": {
+            "quantity": "10.000",
+            "unit": "pcs"
+          },
+          "generic": {
+            "id": 91,
+            "name": "Не разобрано",
+            "base_unit": "pcs"
+          },
+          "classified": false,
+          "lines_count": 0,
+          "first_purchased_on": null,
+          "last_purchased_on": null
+        }
+      ],
+      "has_conflicts": false,
+      "lines_count": 0,
+      "new_lines_count": 0,
+      "actions": {
+        "can_confirm": false,
+        "can_cancel": false,
+        "can_exclude": false
+      }
+    },
+    {
+      "id": 2,
+      "status": "pending",
+      "version": 1,
+      "created_at": "2026-10-06T10:00:00Z",
+      "resolved_at": null,
+      "target_product_id": 5,
+      "members": [
+        {
+          "product_id": 5,
+          "role": "target",
+          "state": "active",
+          "exists": true,
+          "name": "Steinhof.PizzaSpezial",
+          "brand": null,
+          "model": "",
+          "gtin": "",
+          "package": null,
+          "generic": {
+            "id": 91,
+            "name": "Не разобрано",
+            "base_unit": "pcs"
+          },
+          "classified": false,
+          "lines_count": 1,
+          "first_purchased_on": "2026-06-29",
+          "last_purchased_on": "2026-06-29"
+        },
+        {
+          "product_id": 26,
+          "role": "source",
+          "state": "active",
+          "exists": true,
+          "name": "Steinhof PizzaSpezial",
+          "brand": null,
+          "model": "",
+          "gtin": "",
+          "package": null,
+          "generic": {
+            "id": 91,
+            "name": "Не разобрано",
+            "base_unit": "pcs"
+          },
+          "classified": false,
+          "lines_count": 1,
+          "first_purchased_on": "2026-10-01",
+          "last_purchased_on": "2026-10-01"
+        },
+        {
+          "product_id": 43,
+          "role": "source",
+          "state": "active",
+          "exists": true,
+          "name": "Steinof.PizzaSpezial",
+          "brand": null,
+          "model": "",
+          "gtin": "",
+          "package": null,
+          "generic": {
+            "id": 91,
+            "name": "Не разобрано",
+            "base_unit": "pcs"
+          },
+          "classified": false,
+          "lines_count": 2,
+          "first_purchased_on": "2026-06-09",
+          "last_purchased_on": "2026-07-06"
+        }
+      ],
+      "has_conflicts": false,
+      "lines_count": 5,
+      "new_lines_count": 1,
+      "actions": {
+        "can_confirm": true,
+        "can_cancel": true,
+        "can_exclude": true
+      }
+    },
+    {
+      "id": 1,
+      "status": "confirmed",
+      "version": 1,
+      "created_at": "2026-10-06T10:00:00Z",
+      "resolved_at": "2026-10-06T10:00:00Z",
+      "target_product_id": 2,
+      "members": [
+        {
+          "product_id": 2,
+          "role": "target",
+          "state": "active",
+          "exists": true,
+          "name": "GQ EgSB H-Milch 1,5%",
+          "brand": null,
+          "model": "",
+          "gtin": "",
+          "package": null,
+          "generic": {
+            "id": 92,
+            "name": "Молоко",
+            "base_unit": "l"
+          },
+          "classified": true,
+          "lines_count": 1,
+          "first_purchased_on": "2026-06-09",
+          "last_purchased_on": "2026-06-09"
+        },
+        {
+          "product_id": 14,
+          "role": "source",
+          "state": "active",
+          "exists": false,
+          "name": "GG EgSB H-Milch 1,5%",
+          "brand": null,
+          "model": "",
+          "gtin": "",
+          "package": null,
+          "generic": {
+            "id": 91,
+            "name": "Не разобрано",
+            "base_unit": "pcs"
+          },
+          "classified": false,
+          "lines_count": 1,
+          "first_purchased_on": "2026-06-29",
+          "last_purchased_on": "2026-06-29"
+        },
+        {
+          "product_id": 36,
+          "role": "source",
+          "state": "active",
+          "exists": false,
+          "name": "GO EgSB H-Milch 1,5%",
+          "brand": null,
+          "model": "",
+          "gtin": "",
+          "package": null,
+          "generic": {
+            "id": 93,
+            "name": "H-Milch (демо)",
+            "base_unit": "l"
+          },
+          "classified": true,
+          "lines_count": 1,
+          "first_purchased_on": "2026-10-01",
+          "last_purchased_on": "2026-10-01"
+        }
+      ],
+      "has_conflicts": false,
+      "lines_count": 3,
+      "new_lines_count": 0,
+      "actions": {
+        "can_confirm": false,
+        "can_cancel": false,
+        "can_exclude": false
+      }
+    }
+  ]
+}

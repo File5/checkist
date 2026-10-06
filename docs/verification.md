@@ -45,12 +45,12 @@ docker compose -p checkist_qa up -d --wait --wait-timeout 90 postgres redis
 ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py migrate --noinput
 docker compose -p checkist_qa up -d --build --wait --wait-timeout 120 worker
 ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py makemigrations --check --dry-run
-./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test catalog stores receipts health api recognition --exclude-tag=integration --verbosity=2
-./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test catalog stores receipts health api recognition --tag=integration --verbosity=2
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test catalog stores receipts health api recognition merges --exclude-tag=integration --verbosity=2
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test catalog stores receipts health api recognition merges --tag=integration --verbosity=2
 ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py check_services
 ```
 
-Ожидается exit 0, отсутствие новых миграций, 268 тестов без БД и 892 integration, затем JSON с `celery_task.result={"message":"pong"}`. На пустой БД `migrate` применяет 23 миграции: 18 стандартных и 5 собственных, включая recognition.0001_initial. Числа соответствуют текущему коду и могут измениться вместе с тестами. Команда без тега БД не использует; integration нельзя заменять skip/eager. Runner создаёт и удаляет **`test_checkist_qa`**; Redis tests используют QA Redis DB 2 и уникальные ключи. Recognition tests используют временный MEDIA и fake/mock, настоящий Codex не вызывают. Не запускайте два DB-runner одновременно с одним именем test DB: --noinput может пересоздать БД другого своего прогона.
+Ожидается exit 0, отсутствие новых миграций, 322 теста без БД и 1074 integration, затем JSON с `celery_task.result={"message":"pong"}`. На пустой БД `migrate` применяет 24 миграции: 18 стандартных и 6 собственных, включая recognition.0001_initial и merges.0001_initial. Числа соответствуют текущему коду и могут измениться вместе с тестами. Команда без тега БД не использует; integration нельзя заменять skip/eager. Runner создаёт и удаляет **`test_checkist_qa`**; Redis tests используют QA Redis DB 2 и уникальные ключи. Recognition tests используют временный MEDIA и fake/mock, настоящий Codex не вызывают. Не запускайте два DB-runner одновременно с одним именем test DB: --noinput может пересоздать БД другого своего прогона.
 
 | Приложение | Без БД (`--exclude-tag=integration`) | С БД (`--tag=integration`) |
 | --- | --- | --- |
@@ -58,11 +58,12 @@ docker compose -p checkist_qa up -d --build --wait --wait-timeout 120 worker
 | `stores` | 14 | 79 |
 | `receipts` | 18 | 238 |
 | `health` | 26 | 7 |
-| `api` | 112 | 305 |
-| `recognition` | 89 | 183 |
-| Всего | 268 | 892 |
+| `api` | 118 | 368 |
+| `recognition` | 114 | 208 |
+| `merges` | 23 | 94 |
+| Всего | 322 | 1074 |
 
-Текущие числа включают три регрессии настроек MEDIA_URL в Р1, 24 integration-регрессии Р2 и 8 без БД / 2 integration в Р3; команды и фактические результаты — [Р1](#media_url-р1-фиксированный-префикс-и-регрессии), [Р2](#р2-полнота-инн-и-идентичность-магазина). И4 после согласованного уточнения: 257/866, итоговый прогон [ниже](#повторный-прогон-после-согласованного-уточнения-и4), Windows, DB `checkist_qa_i4_final` / `test_checkist_qa_i4_final`, Postgres 25475, Redis 16405. Исторический С6: 247/846; merge-прогон без recognition: 179/671; F3–F6 до merge, без api: 67/404. Эти исторические результаты ниже сохраняются со своими датами и scope. Subtests отдельно не считаются. Гонки — TransactionTestCase и отдельные Postgres-соединения. Журналы ожидаемых безопасных HTTP 400/403/409/500 в негативных тестах не означают failure теста; окончательный exit code и сводка runner обязательны.
+Текущие числа — прогон [И6](#и6-налоговые-evidence-и-сгруппированные-замечания) 2026-10-06 (промпт v5, fake-сценарии налоговых evidence, `reason`/`severity`/`context` у issues, сквозной тест fake → HTTP). Исторический Р3: 268/892 (api 112/305, recognition 89/183). Числа включают три регрессии настроек MEDIA_URL в Р1, 24 integration-регрессии Р2 и 8 без БД / 2 integration в Р3; команды и фактические результаты — [Р1](#media_url-р1-фиксированный-префикс-и-регрессии), [Р2](#р2-полнота-инн-и-идентичность-магазина). И4 после согласованного уточнения: 257/866, итоговый прогон [ниже](#повторный-прогон-после-согласованного-уточнения-и4), Windows, DB `checkist_qa_i4_final` / `test_checkist_qa_i4_final`, Postgres 25475, Redis 16405. Исторический С6: 247/846; merge-прогон без recognition: 179/671; F3–F6 до merge, без api: 67/404. Эти исторические результаты ниже сохраняются со своими датами и scope. Subtests отдельно не считаются. Гонки — TransactionTestCase и отдельные Postgres-соединения. Журналы ожидаемых безопасных HTTP 400/403/409/500 в негативных тестах не означают failure теста; окончательный exit code и сводка runner обязательны.
 
 Unit/contract tests health покрывают точный 200, комбинации 503, сохранение независимых checks, анонимность, игнорирование query/Authorization, 405, 406, безопасный 500 при DEBUG, отсутствие публикации task из health, параллельность probes, cleanup кеша, bounded publication retries и негативную env-валидацию. Это не сетевой замер времени отказа.
 
@@ -73,6 +74,150 @@ Unit/contract tests health покрывают точный 200, комбинац
 Регрессии D1 и E1: `api.tests.test_request_errors` — 24 теста (17 без БД, 7 integration); два дополнительных теста в `test_errors` проверяют семейство Django request exceptions и безопасный 415. Граница 1000/1001 проверена на всех 13 маршрутах при обоих DEBUG, с точным JSON, без SQL при отказе. Проверяются percent-кодирование/UTF-8/суррогаты, Host, Accept/Content-Type, конструкторы настоящих WSGI/ASGI request, длинные значения, повторения/пустые имена/массивы, ID, отсутствие чтения body при GET/405, запись без слэша и редактирование access log. E1 проверяет однократное декодирование пути, регистр hex, начальные //, двойное кодирование, dot segments, absolute-form, пустые/битые targets и сохранение обычных путей вне API; нормализация сверена с настоящими парсером runserver и WSGIRequest. Неизвестные `RuntimeError`, `ValueError`, `LookupError`, `UnicodeDecodeError` из view остаются безопасным 500. Запуск: `manage.py test api.tests.test_request_errors api.tests.test_errors --noinput --verbosity=0` — 49 тестов. Полный WSGI-вызов с SQL использует `TransactionTestCase`: сигнал `request_started` закрывает соединение в атомарном обычном `TestCase`.
 
 Регрессии `api.tests.test_read_resilience`: точные значения обоих маршрутов сравнения на границах моделей и курсов, отрицательная оплаченная цена при большой скидке, среднее и процент динамики нормализованных цен. Конкурентное удаление проверяет `TransactionTestCase` с autocommit: `connection.execute_wrapper` перед чтением последних цен коммитит удаление строки и чека через отдельное psycopg-соединение в тестовую БД; результаты SQL не подменяются. Покрыты `price_summary`, карточка и список товаров, оба сравнения (сравнимые и несравнимые предложения), сводка истории, карточка и список обобщённых продуктов, удаление единственной группы и сохранение более раннего наблюдения. Runner очищает данные через flush. Запуск: `manage.py test api.tests.test_read_resilience --tag=integration --noinput --verbosity=2` — 19 тестов.
+
+## Слияние дублей: HTTP без браузера
+
+Контракт — [api-contract.md](api-contract.md#реализовано-локальный-api-слияния-дублей-товаров-с2). Нужна **чистая** QA-база (демо-названия не должны совпадать с существующими товарами): новый том либо отдельный `-p`, например `checkist_qa_merge`, с теми же портами. После полного QA environment:
+
+```powershell
+$env:DJANGO_DEBUG='1'
+$env:ALLOW_LOCAL_RECOGNITION_API='1'
+$env:PRODUCT_MERGE_AUTO_DETECT='1'
+$env:MEDIA_ROOT=Join-Path $env:TEMP 'checkist-qa-recognition-media'
+$env:RECEIPT_OCR_TEMP_ROOT=Join-Path $env:TEMP 'checkist-qa-recognition-scratch'
+docker compose -p checkist_qa up -d --wait --wait-timeout 90 postgres redis
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py migrate --noinput
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py seed_product_merge_demo
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py product_merges detect --dry-run
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py product_merges detect
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py runserver 127.0.0.1:18000 --noreload
+```
+
+Ожидается: seed — `{"created": true, "merchants": 2, "products": 35, "receipts": 9, "lines": 42}`, повтор — `{"created": false}`; `--dry-run` — `created: 7`, `group_ids: []`, в БД 0 групп; `detect` — `created: 7`, `group_ids: [1..7]`; повтор — `created: 0, extended: 0`. На чистой базе группы: 1 молоко (товары 1, 6, 13, 18, 21; оставляемый 1; конфликт `generic` у 1 и 13), 2 пицца (2, 9, 15), 3 Zimbo (4, 17), 4 Roulade (5, 16), 5 яйца (7, 14), 6 тост (8, 19), 7 Maultaschen (11, 20, 22). «Pizza Hot Dog» — товар 3, в группы не входит, как и ложная пара 10 / 12.
+
+Во втором терминале (cookie и токен CSRF обязательны для POST):
+
+```powershell
+$B = 'http://127.0.0.1:18000'
+$T = (curl.exe -s -c jar.txt "$B/api/recognition/csrf/" | ConvertFrom-Json).csrf_token
+$H = @('-b', 'jar.txt', '-H', 'Content-Type: application/json', '-H', "X-CSRFToken: $T", '-H', "Origin: $B")
+curl.exe -s -b jar.txt "$B/api/product-merges/"
+curl.exe -s -b jar.txt "$B/api/product-merges/2/"
+curl.exe -s -b jar.txt "$B/api/product-merges/2/lines/"
+curl.exe -s "$B/api/products/?q=pizza"
+curl.exe -s -o NUL -w '%{http_code}' "$B/api/products/9/"
+curl.exe -s @H -X POST --data '{}' "$B/api/product-merges/2/cancel/"
+curl.exe -s @H -X POST --data '{\"version\":1,\"target_product_id\":4}' "$B/api/product-merges/3/confirm/"
+curl.exe -s @H -X POST --data '{\"version\":1,\"target_product_id\":1}' "$B/api/product-merges/1/confirm/"
+curl.exe -s @H -X POST --data '{\"version\":1,\"target_product_id\":1,\"resolutions\":{\"generic\":1}}' "$B/api/product-merges/1/confirm/"
+curl.exe -s @H -X POST --data '{\"version\":1,\"product_id\":20}' "$B/api/product-merges/7/exclude/"
+```
+
+Ожидается по порядку: 7 групп; группа пиццы с тремя записями и `lines_count: 4`; 4 покупки с `origin_product_id` 15, 2, 15, 9; `count: 2` (товары 3 и 2); `404`; группа `cancelled` (повтор — тот же ответ 200, `q=pizza` — 4, товар 9 снова 200); группа `confirmed` (повтор — 200, другой `target_product_id` и `cancel` — `409 merge_resolved`, товар 17 — 404, `?product=17` находит группу 3); `409 merge_conflict` с `fields.generic`, группа остаётся `pending`; с `resolutions` — `confirmed`, у товара 1 обобщённый продукт «Молоко»; исключение — `pending`, `version: 2`, товар 20 снова 200, повтор — тот же ответ. В конце: 30 товаров, 9 чеков, 42 строки, строк без товара нет; группы — 4 `pending`, 2 `confirmed`, 1 `cancelled`. Остановите свой `runserver` и `docker compose -p <проект> down` (тома сохраняются).
+
+### Клиент через Vite proxy без браузера
+
+Тот же сервер на **свежей** базе после `seed_product_merge_demo` и `detect` (до curl-сценария выше: оба сценария меняют одни и те же группы). В терминалах сервера, Vite и скрипта — полный QA environment и блок выше, дополнительно `$env:DJANGO_CSRF_TRUSTED_ORIGINS='http://127.0.0.1:15173,http://localhost:15173'` (точный origin Vite). Команды `npm.cmd` и `node` запускайте из PowerShell: Git Bash переписывает `VITE_API_BASE_URL=/api` в `C:/Program Files/Git/api`, и 31 тест адаптеров падает на сравнении URL.
+
+```powershell
+Set-Location frontend
+npm.cmd ci
+npm.cmd run lint
+npm.cmd run test
+npm.cmd run build
+npm.cmd run dev -- --port 15173        # либо npm.cmd run preview -- --port 15173
+# третий терминал, из корня:
+node frontend/scripts/check_product_merges_proxy.mjs http://127.0.0.1:15173
+```
+
+Ожидается exit 0 и последняя строка `{"result":"passed", …, "groups":{"pending":4,"confirmed":2,"cancelled":1},"requests":59,"posts":19,"statuses":[200,400,404,409],"browser_ui":"not tested"}`. Скрипт вызывает настоящие адаптеры клиента через proxy, отказывается работать с dev-портами и с базой, имя которой не `checkist_qa[_суффикс]`; повторный запуск на той же базе не пройдёт — нужна новая. Для второго прогона (preview) достаточно копии свежей базы: до запуска сервера `CREATE DATABASE checkist_qa_<суффикс> TEMPLATE <свежая база>` и тот же `POSTGRES_DB` в трёх терминалах.
+
+### Ручная приёмка человеком
+
+Экраны `/catalog/merges`, `/catalog/merges/{id}`, пометки в каталоге и карточке, подсказка слитого товара: запуск, тестовые данные и девять шагов сценария (включая `merge_changed`, `merge_resolved`, отказ сети, клавиатуру, адаптив и screen reader) — [frontend/src/features/merges/ACCEPTANCE.md](../frontend/src/features/merges/ACCEPTANCE.md); там же статические превью экранов. Автоматический обход UI запрещён.
+
+Админка на `http://127.0.0.1:18000/admin/` (нужен `createsuperuser` в QA): товар ожидающей группы удалить нельзя — штатный отказ со ссылкой на запись группы; модели `merges` открываются только на чтение; после подтверждения строки и написания показывают оставляемый товар; ручная приёмка F4/F6 — без изменений.
+
+### Фактические результаты Б1 (окончательная ветка), 2026-10-06
+
+Повтор всех проверок слияния на окончательном состоянии ветки после С1, С2, Ф1, Ф2: коммит `10fce95`, ветка `orca/task_muvty04w6n`; код продукта и тесты в этой задаче не менялись. Windows 11, Python 3.13.9 (новый venv из `backend/requirements.txt`, `pip check` — exit 0), Node 24.18.0, npm 11.16.0. Изолированный Compose-проект `checkist_qa_b1` с чистыми томами: БД `checkist_qa_b1` (тестовая — `test_checkist_qa_b1`), Postgres 25497, Redis 16427, Django 18097, Vite 15197; `MEDIA_ROOT` и scratch — отдельные временные каталоги; `RECEIPT_OCR_PROVIDER=fake`, модельных вызовов не было. `P` — `./backend/.venv/Scripts/python.exe -X utf8`.
+
+#### Проверено и прошло
+
+| Команда | Exit | Результат |
+| --- | --- | --- |
+| `docker compose -p checkist_qa_b1 config --quiet`; `up -d --wait --wait-timeout 90 postgres redis`; TCP-пробы 25497 и 16427 | 0 | оба контейнера healthy, `TCP OK` |
+| `P backend/manage.py check` | 0 | no issues |
+| `P backend/manage.py makemigrations --check --dry-run` | 0 | No changes detected |
+| `P backend/manage.py migrate --noinput` на пустой базе | 0 | 24 миграции, включая `merges.0001_initial` |
+| `P backend/manage.py test catalog stores receipts health api recognition merges --exclude-tag=integration --verbosity=2` | 0 | 312 тестов, OK, 17.3 с; по приложениям 9 / 14 / 18 / 26 / 112 / 110 / 23 |
+| `P backend/manage.py test catalog stores receipts health api recognition merges --tag=integration --noinput --verbosity=2` | 0 | 1058 тестов, OK, 252.3 с; по приложениям 80 / 79 / 238 / 7 / 358 / 202 / 94 |
+| `npm.cmd ci` (PowerShell) | 0 | 188 пакетов, 0 vulnerabilities |
+| `npm.cmd run lint` | 0 | без предупреждений |
+| `npm.cmd run test` | 0 | 39 файлов, 1181 тест |
+| `npm.cmd run build` | 0 | 107 модулей |
+| `seed_product_merge_demo` дважды | 0 / 0 | `{"created": true, "merchants": 2, "products": 35, "receipts": 9, "lines": 42}`; повтор `{"created": false}` |
+| `product_merges detect --dry-run`; `detect` дважды | 0 / 0 / 0 | `created: 7`, `group_ids: []`; затем `created: 7`, `group_ids: [1..7]`, группа 1 — товары 1, 6, 13, 18, 21, оставляемый 1; повтор `created: 0, extended: 0` |
+| `node frontend/scripts/check_product_merges_proxy.mjs http://127.0.0.1:15197` через `npm.cmd run dev -- --port 15197`, база `checkist_qa_b1` | 0 | `passed`: 59 запросов, 19 POST, статусы 200 / 400 / 404 / 409, группы 4 ожидают / 2 подтверждены / 1 отменена |
+| То же через `npm.cmd run preview -- --port 15197` (сборка), база `checkist_qa_b1_preview` — копия свежей базы | 0 | тот же результат |
+| Итог в БД после сценария dev (`psql`) | 0 | 30 товаров, 9 чеков, 42 строки, 0 строк без товара; в журналах обоих `runserver` нет traceback |
+| `curl.exe` `/catalog/merges` (dev) и `/catalog/merges/2` (preview) через Vite | 0 | HTTP 200 |
+
+Расхождений клиента и сервера не найдено, дефектов сервера не найдено.
+
+#### Проверено и не прошло
+
+Продукт — нет. Ошибка запуска, не дефект: первый прогон `npm.cmd run test` из Git Bash с QA environment дал exit 1, 31 из 1181 теста упал в восьми файлах (семь `src/api/*.test.ts` и `features/merges/actions.test.ts`) — оболочка превратила `VITE_API_BASE_URL=/api` в `C:/Program Files/Git/api` (`expected 'C:/Program Files/Git/api/products/?has_prices=1' to be '/api/products/?has_prices=1'`). Повтор тех же команд из PowerShell, как предписано документами, — строки таблицы выше. Код и тесты не менялись.
+
+#### Не проверено и почему
+
+- Экраны React и админка в браузере: клики, фокус, клавиатура, screen reader, узкий экран, Back/Forward, cookie-политика браузера для CSRF — принимает человек, автоматический обход UI запрещён. Шаги — [ACCEPTANCE.md](../frontend/src/features/merges/ACCEPTANCE.md) и раздел выше.
+- `merge_busy` на живом сервере: нужен импорт чека или другое слияние в тот же момент. Покрыто тестами сервера на отдельных соединениях и тестом клиента на эталонном ответе.
+- `merge_conflict` с `fields.name` / `fields.gtin` на живом сервере: в демо-данных нет совпадения с посторонним товаром. Покрыто тестами сервера и разметки клиента.
+- Реальный Codex и сквозной `recognition_worker` с `PRODUCT_MERGE_AUTO_DETECT=1`: модельные вызовы не выполнялись, шаг после импорта проверен тестами импортёра на fake-данных.
+- Время поиска на каталоге больше демо (35 товаров) не измерялось: поиск квадратичен в пределах товаров одного продавца.
+- Dev-база не мигрировалась и не менялась: `merges.0001_initial`, `detect` и включение `PRODUCT_MERGE_AUTO_DETECT` на dev — отдельное решение владельца.
+- `check_services` и QA Celery worker не запускались (слияние их не затрагивает); поэтому `/api/health/` через Vite отвечал 503 — ожидаемо без worker.
+- curl-сценарий сервера из раздела выше и запрет при `ALLOW_LOCAL_RECOGNITION_API=0` на живом сервере в этом прогоне не повторялись: те же запросы прошли через адаптеры клиента, запрет покрыт integration-тестами `api`; фактические результаты curl — в С2 ниже, запрета через Vite — в ACCEPTANCE.md.
+
+После прогона свои `runserver` и Vite остановлены, `docker compose -p checkist_qa_b1 down` — exit 0; тома `checkist_qa_b1_postgres_data` / `checkist_qa_b1_redis_data` сохранены. В томе оставлена нетронутая копия свежей базы с демо и семью ожидающими группами — `checkist_qa_b1_manual` — для ручной приёмки.
+
+### Фактические результаты С2, 2026-10-05
+
+Windows 11, Python 3.13 из venv, изолированный Compose-проект `checkist_qa_muvr1r9t4m` (БД `checkist_qa`, Postgres 25432, Redis 16379, чистые тома), ветка `orca/task_muvr1r9t4m`. `P` — `./backend/.venv/Scripts/python.exe -X utf8`.
+
+#### Проверено и прошло
+
+| Команда | Exit | Результат |
+| --- | --- | --- |
+| `docker compose -p checkist_qa_muvr1r9t4m config --quiet`; `up -d --wait --wait-timeout 90 postgres redis` | 0 | оба контейнера healthy |
+| `P backend/manage.py check` | 0 | no issues |
+| `P backend/manage.py makemigrations --check --dry-run` | 0 | No changes detected |
+| `P backend/manage.py test catalog stores receipts health api recognition merges --exclude-tag=integration` | 0 | 312 тестов, OK |
+| `P backend/manage.py test catalog stores receipts health api recognition merges --tag=integration` | 0 | 1058 тестов, OK, 222.8 с |
+| `P backend/manage.py migrate --noinput` | 0 | применены все миграции, включая `merges.0001_initial` |
+| `seed_product_merge_demo` дважды | 0 / 0 | `created: true`, 35 товаров, 9 чеков, 42 строки; повтор `created: false` |
+| `product_merges detect --dry-run` | 0 | `created: 7`, `group_ids: []`; в БД после него 0 групп, 0 записей, 35 товаров, 42 строки |
+| `product_merges detect` дважды | 0 / 0 | `created: 7`, `group_ids: [1..7]`, составы и оставляемые записи как выше; повтор `created: 0, extended: 0` |
+| `runserver 127.0.0.1:18000 --noreload` и `curl.exe` | — | все ответы сценария выше получены с указанными кодами; POST без токена — `403 csrf_failed`; `{"dry_run": true}` — `400 invalid_request`; тело без `version` — `400 invalid_parameter`; `text/plain` — `415`; `/product-merges/999/` — `404`; все ответы нового API с `Cache-Control: no-store` |
+| Итог в БД после сценария | 0 | 30 товаров, 9 чеков, 42 строки, 0 строк без товара, 35 написаний, 5 отклонённых пар; группы 4 / 2 / 1; в журнале сервера нет traceback |
+
+Запросы сценария выполнялись `curl.exe` из Git Bash с теми же путями, заголовками и телами; для PowerShell-блока выше отдельно проверена только передача JSON-аргументов (`\"` внутри одинарных кавычек, Windows PowerShell 5.1).
+
+Новые тесты: `api.tests.test_product_merges_api` — 33, `api.tests.test_product_merges_public` — 2 (12 эталонных JSON сверены целиком), `recognition.tests.test_import_merges` — 6, по 2–4 теста с ожидающей группой в `test_catalog_products`, `test_catalog_reference`, `test_catalog_categories`, `test_catalog_generics`, `test_prices_points`, `test_prices_summary`, `test_compare_api` (всего 18). Прежние тесты этих файлов и их `assertNumQueries` не менялись.
+
+#### Проверено и не прошло
+
+Нет.
+
+#### Не проверено и почему
+
+- Клиент, Vite proxy и `frontend/scripts/check_product_merges_proxy.mjs` — этап клиента; `frontend/**` не менялся, `npm`-команды не запускались.
+- Экраны и админка в браузере — принимает человек, автоматический обход UI запрещён; шаги — выше и в плане контракта.
+- Реальный Codex и `recognition_worker`: шаг после импорта проверен тестами импортёра на fake-данных, сквозной запуск worker с `PRODUCT_MERGE_AUTO_DETECT=1` не выполнялся.
+- Dev-база: не мигрировалась и не менялась; `merges.0001_initial` на dev применит владелец.
+- Время поиска на каталоге больше демо (35 товаров) не измерялось: поиск квадратичен в пределах товаров одного продавца.
+- `check_services` и Celery worker в этом прогоне не запускались — слияние их не затрагивает.
 
 ## Распознавание: сквозная серверная проверка
 
@@ -528,6 +673,176 @@ Windows/PowerShell, Python 3.13.9, Node 24.18.0/npm 11.16.0. Backend-код/ко
 10. **Настоящий Codex:** остановить fake. Новый отдельный real QA или фото, ещё не обработанное fake; succeeded demo retry недоступен. В worker-терминале того же env установить `RECEIPT_OCR_PROVIDER=codex_cli`, `RECEIPT_OCR_MODEL=gpt-6.1-sol`, `RECEIPT_OCR_CODEX_EXECUTABLE=Join-Path $env:LOCALAPPDATA 'Programs/OpenAI/Codex/bin/codex.exe'`; проверить существующий auth, не менять его. Запустить `./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py recognition_worker` (либо --once с замером). Загрузить single/double через UI, сверить каждый crop/Receipt/строку/товар/суммы и время; затем повтор. Реальные разрешённые к облачной обработке фото вне git проверять по эталону с поворотом/бликами/нечитаемыми полями и timezone магазина. При failed/auth_required/network_unavailable сохранить фактический код; exit worker 0 не равен успешному OCR.
 
 Записать результаты, размеры экрана и фактические ошибки; скриншоты с разрешёнными синтетическими данными может приложить человек. В конце Ctrl+C своих API/Vite/OCR-worker, `docker compose -p $env:COMPOSE_PROJECT_NAME down`, без `-v`. Показ [frontend/I5_ACCEPTANCE.md](../frontend/I5_ACCEPTANCE.md) — отчёт/данные/запуск, не макет или подтверждение визуальной приёмки.
+
+## И6: налоговые evidence и сгруппированные замечания
+
+Сквозная проверка слитой ветки: промпт v5 с налоговыми evidence, fake-сценарии `tax_evidence_missing` / `tax_evidence_present`, `reason`/`severity`/`context` у issues list/detail `/api/recognition/receipt-images/` ([контракт](api-contract.md#issues-вырезки-reason-severity-context)) и клиентский компонент сгруппированных замечаний ([frontend.md](frontend.md#сгруппированные-замечания-распознавания)). Серверный код, контракт и миграции на этом этапе не менялись; добавлен только сквозной тест. Fake возвращает фиксированные DTO и не читает пиксели: он проверяет контракт и импорт, а не чтение чека моделью.
+
+Автотест без сокета и браузера (`TransactionTestCase`, PostgreSQL, APIClient с cookie/Origin/CSRF, временные MEDIA/scratch, upload → `recognition_worker --once --fake-scenario …` → GET):
+
+```powershell
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test api.tests.test_recognition_tax_evidence_e2e --tag=integration --noinput --verbosity=2
+```
+
+Четыре теста. `tax_evidence_missing`: точное равенство всех 29 issues в list (`?job=`, `?receipt=`) и detail — `code=invalid_value`, `reason=optional_omitted`, `severity=warning`; 2 × `field="/"` (receipt, null, null, `receipt_metadata`), 25 × `/lines/i/tax_rate` (line, i, i+1, `tax_rate`), 2 × `/taxes/i` (tax, i, null, null); чек `review_required=false`, 25 строк (21 товар, 4 залога) с `tax_code` и без ставок, `/api/receipts/{id}/taxes/` пуст. `tax_evidence_present`: ровно 2 issues реквизитов, ставки 17 × 7.00 и 8 × 19.00, два налоговых итога. Оба в одной базе разными файлами: второй чек того же магазина, те же 21 товар, первый чек и его 29 замечаний не меняются. `inconsistent_total`: `needs_review`, `total_mismatch` с `severity=error`, `optional_omitted` остаётся `warning`. Все тела ответов проверяются на отсутствие имён и значений закрытых реквизитов (`receipt_number`, `fiscal`, `signature`, `tse_transaction`, `register_serial`, `legal_name`, `tax_id`, `raw_text`, серийный номер кассы, номера транзакций, юридическое название).
+
+Сервер отдаёт issues в сохранённом порядке: сначала 2 реквизита, затем 25 ставок строк, затем 2 налоговых итога. Клиент от этого порядка не зависит: внутри блока одной важности он ставит ставки строк, налоговые итоги и реквизиты в фиксированном порядке, остальные группы — по первому вхождению ([frontend.md](frontend.md#сгруппированные-замечания-распознавания)), поэтому группы идут так: «НДС не использован в 25 строках», «Пропущены 2 налоговых итога», «Не прочитаны 2 реквизита».
+
+### Настоящий HTTP без браузера
+
+Отдельная QA этой проверки; перед запуском убедиться, что имя и порты свободны. В **каждом** терминале — весь блок:
+
+```powershell
+$env:COMPOSE_PROJECT_NAME='checkist_qa_muvq_g'
+$env:POSTGRES_DB=$env:COMPOSE_PROJECT_NAME
+$env:POSTGRES_USER='checkist'
+$env:POSTGRES_PASSWORD='checkist_dev_only'
+$env:POSTGRES_HOST='127.0.0.1'
+$env:POSTGRES_PORT='25483'
+$env:REDIS_PORT='16413'
+$env:CELERY_BROKER_URL='redis://127.0.0.1:16413/0'
+$env:CELERY_RESULT_BACKEND='redis://127.0.0.1:16413/1'
+$env:DJANGO_CACHE_URL='redis://127.0.0.1:16413/2'
+$env:VITE_API_BASE_URL='/api'
+$env:DEV_API_PROXY_TARGET='http://127.0.0.1:18083'
+$env:DJANGO_DEBUG='1'
+$env:DJANGO_ALLOWED_HOSTS='127.0.0.1,localhost'
+$env:ALLOW_LOCAL_RECOGNITION_API='1'
+$env:DJANGO_CSRF_TRUSTED_ORIGINS='http://127.0.0.1:15183'
+$env:MEDIA_ROOT=Join-Path $env:TEMP "$($env:COMPOSE_PROJECT_NAME)-media"
+$env:RECEIPT_OCR_TEMP_ROOT=Join-Path $env:TEMP "$($env:COMPOSE_PROJECT_NAME)-scratch"
+$env:RECEIPT_OCR_PROVIDER='fake'
+```
+
+Терминал API, каждая команда отдельно с проверкой `$LASTEXITCODE`:
+
+```powershell
+docker compose -p $env:COMPOSE_PROJECT_NAME config --quiet
+docker compose -p $env:COMPOSE_PROJECT_NAME up -d --wait --wait-timeout 90 postgres redis
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py check
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py makemigrations --check --dry-run
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py migrate --noinput
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py seed_recognition_demo
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py seed_recognition_demo --rotated
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py runserver 127.0.0.1:18083 --noreload
+```
+
+Seed создаёт четыре синтетических PNG в `MEDIA/demo`: `single.png`, `double.png`, `single_rotated.png`, `double_rotated.png` — каждому сценарию нужен свой, ещё не загруженный файл. Терминал worker с тем же env, по одному worker за раз (Ctrl+C перед сменой сценария):
+
+```powershell
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py recognition_worker --fake-scenario tax_evidence_missing
+```
+
+Третий терминал с тем же env. Определить функцию и вызвать её для файла:
+
+```powershell
+function Invoke-QaUpload([string]$Name) {
+    $apiBase='http://127.0.0.1:18083'
+    $cookieFile=Join-Path $env:RECEIPT_OCR_TEMP_ROOT 'qa-http-cookies.txt'
+    $csrfFile=Join-Path $env:RECEIPT_OCR_TEMP_ROOT 'qa-http-csrf.json'
+    $uploadFile=Join-Path $env:RECEIPT_OCR_TEMP_ROOT 'qa-http-upload.json'
+    $demoFile=Join-Path $env:MEDIA_ROOT "demo/$Name"
+    curl.exe --fail-with-body -sS --max-time 15 -c $cookieFile -o $csrfFile "$apiBase/api/recognition/csrf/"
+    if ($LASTEXITCODE -ne 0) { throw 'CSRF request failed' }
+    $csrf=(Get-Content -Raw -Encoding UTF8 $csrfFile | ConvertFrom-Json).csrf_token
+    $code=curl.exe -sS --max-time 30 -b $cookieFile -c $cookieFile -H "Origin: $apiBase" -H "X-CSRFToken: $csrf" -F "file=@$demoFile" -o $uploadFile -w '%{http_code}' "$apiBase/api/recognition/photos/"
+    if ($LASTEXITCODE -ne 0 -or $code -notin '200','202') { throw "Upload failed: HTTP $code" }
+    $upload=Get-Content -Raw -Encoding UTF8 $uploadFile | ConvertFrom-Json
+    $deadline=(Get-Date).AddMinutes(2)
+    do {
+        $job=Invoke-RestMethod -Uri "$apiBase/api/recognition/jobs/$($upload.job.id)/" -TimeoutSec 15
+        if ($job.status -in 'succeeded','partial_succeeded','failed','cancelled') { break }
+        if ((Get-Date) -ge $deadline) { throw 'Job polling timeout' }
+        Start-Sleep -Milliseconds 500
+    } while ($true)
+    Write-Output "upload HTTP=$code reused=$($upload.reused); job $($job.id): $($job.status), review_required=$($job.review_required), imported=$($job.progress.imported) reused=$($job.progress.reused) review=$($job.progress.review)"
+    $images=Invoke-RestMethod -Uri "$apiBase/api/recognition/receipt-images/?job=$($job.id)" -TimeoutSec 15
+    foreach ($image in $images.results) {
+        $detail=Invoke-RestMethod -Uri "$apiBase/api/recognition/receipt-images/$($image.id)/" -TimeoutSec 15
+        Write-Output "image $($image.id): $($image.status), receipt=$($image.receipt_id), issues list/detail=$($image.issues.Count)/$($detail.issues.Count)"
+        $detail.issues | Group-Object { "$($_.code) $($_.reason) $($_.severity) $($_.context.entity) $($_.context.attribute) field=$($_.field -replace '[0-9]+','N')" } |
+            ForEach-Object { Write-Output "  $($_.Count) x $($_.Name)" }
+        if ($image.receipt_id) {
+            $receipt=Invoke-RestMethod -Uri "$apiBase/api/receipts/$($image.receipt_id)/" -TimeoutSec 15
+            $lines=Invoke-RestMethod -Uri "$apiBase$($receipt.lines_url)" -TimeoutSec 15
+            $taxes=Invoke-RestMethod -Uri "$apiBase$($receipt.taxes_url)" -TimeoutSec 15
+            $rates=($lines.results | Group-Object { if ($_.tax_rate) { $_.tax_rate.rate } else { 'null' } } | ForEach-Object { "$($_.Count) x $($_.Name)" }) -join ', '
+            Write-Output "  receipt $($receipt.id): total=$($receipt.total) review_required=$($receipt.review_required) lines=$($lines.count) rates: $rates; taxes=$($taxes.count)"
+        }
+    }
+    $receipts=Invoke-RestMethod -Uri "$apiBase/api/receipts/" -TimeoutSec 15
+    $products=Invoke-RestMethod -Uri "$apiBase/api/products/" -TimeoutSec 15
+    Write-Output "receipts=$($receipts.count) products=$($products.count)"
+}
+Invoke-QaUpload single.png
+```
+
+Затем остановить свой worker, запустить `--fake-scenario tax_evidence_present` и выполнить `Invoke-QaUpload double.png`; остановить, запустить `--fake-scenario inconsistent_total` и выполнить `Invoke-QaUpload single_rotated.png`. На новой пустой QA ожидается ровно вывод из таблицы ниже. Повтор уже обработанного файла даёт HTTP 200/`reused=True` и прежний job независимо от сценария worker. `/api/health/` в этой среде отвечает 503, пока не запущен Celery-контейнер: OCR-очередь от него не зависит.
+
+Проверка клиентского транспорта без браузера — существующий `frontend/scripts/check_recognition_proxy.mjs` (не менялся) в Vite dev и preview по командам [И5](#распознавание-сквозная-проверка-клиента-и5), каждый раз в **новой пустой** QA: тот же блок с `COMPOSE_PROJECT_NAME='checkist_qa_muvq_g_dev'`, затем `…_preview`; проекты запускаются последовательно на тех же портах, после каждого — остановка своего Django и `docker compose -p $env:COMPOSE_PROJECT_NAME down` без `-v`.
+
+```powershell
+node --check frontend/scripts/check_recognition_proxy.mjs
+node frontend/scripts/check_recognition_proxy.mjs dev http://127.0.0.1:15183
+node frontend/scripts/check_recognition_proxy.mjs preview http://127.0.0.1:15183
+```
+
+### Фактические результаты И6, 2026-10-06
+
+Windows/PowerShell, Python 3.13.9, Node 24.18.0. Ветка `orca/task_muvrfazg53` на базе `64d5aa8`. Проекты/БД `checkist_qa_muvq_g` (тесты, `test_checkist_qa_muvq_g`, HTTP-прогоны), `checkist_qa_muvq_g_dev` и `checkist_qa_muvq_g_preview` (proxy-скрипт); Postgres 25483, Redis 16413, Django 18083, Vite 15183; свой venv с pinned requirements, `.env` из публичного образца, MEDIA/scratch в `%TEMP%`. Dev-база, dev-MEDIA и контейнеры `checkist_dev-*` не затронуты. Реальные фото, секреты и настоящий Codex не использовались.
+
+**Проверено и прошло:**
+
+| Команда | Exit | Наблюдение |
+| --- | --- | --- |
+| `docker compose -p checkist_qa_muvq_g config --quiet` / `up -d --wait --wait-timeout 90 postgres redis` | 0 | Healthy; Windows TCP 25483/16413: OK |
+| `./backend/.venv/Scripts/python.exe -X utf8 -m pip check` | 0 | No broken requirements found |
+| `./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py check` | 0 | 0 issues |
+| `./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py makemigrations --check --dry-run` | 0 | No changes detected |
+| `./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py migrate --noinput` | 0 | 23 миграции на пустой БД |
+| `./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test recognition api catalog receipts --exclude-tag=integration --verbosity=2` | 0 | 259 OK, 13.1 с |
+| `./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test recognition api catalog receipts --tag=integration --noinput --verbosity=2` | 0 | 835 OK, 195.0 с |
+| `./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test catalog stores receipts health api recognition --exclude-tag=integration --verbosity=2` | 0 | **299 OK**, 16.8 с |
+| `./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test catalog stores receipts health api recognition --tag=integration --noinput --verbosity=2` | 0 | **921 OK**, 201.1 с |
+| Те же две команды по каждому приложению отдельно, `--verbosity=0` | 0 | Таблица в разделе [«Локальные Windows-команды»](#локальные-windows-команды): 9/80, 14/79, 18/238, 26/7, 118/315, 114/202 |
+| `./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test recognition.tests.test_e2e api.tests.test_recognition_tax_evidence_e2e --tag=integration --noinput --verbosity=0` | 0 | 26 OK (22 + 4 новых), 30.1 с |
+| `docker compose -p checkist_qa_muvq_g up -d --build --wait --wait-timeout 180 worker` / `backend/manage.py check_services` | 0 | Worker healthy; `celery_task.result={"message":"pong"}`; `/api/health/` 200 с тремя `ok` (до запуска worker — 503) |
+| В `frontend/`: `npm.cmd ci` / `npm.cmd run lint` | 0 | 188 packages, 0 vulnerabilities / без ошибок |
+| `npm.cmd run test` | 0 | 1036 tests / 33 files |
+| `npm.cmd run build` | 0 | TypeScript + Vite, 92 modules |
+| `node --check frontend/scripts/check_recognition_proxy.mjs` | 0 | Скрипт не менялся |
+| `node frontend/scripts/check_recognition_proxy.mjs dev http://127.0.0.1:15183` (QA `checkist_qa_muvq_g_dev`) | 0 | passed, 62 HTTP requests, 2 Receipt / 6 lines / 5 Product, HTTP 200/202/400/403/409 |
+| `node frontend/scripts/check_recognition_proxy.mjs preview http://127.0.0.1:15183` (QA `checkist_qa_muvq_g_preview`) | 0 | passed, 62 HTTP requests, те же итоги |
+| `docker compose -p checkist_qa_muvq_g down` (также `_dev`, `_preview`) | 0 | Свои процессы и контейнеры остановлены, тома и MEDIA сохранены |
+
+Настоящий HTTP на сокете `runserver 127.0.0.1:18083` и host `recognition_worker`, одна база `checkist_qa_muvq_g`, вывод `Invoke-QaUpload`:
+
+| Worker / файл | Job | Вырезки и issues (list = detail) | Чек |
+| --- | --- | --- | --- |
+| `tax_evidence_missing` / `single.png` | 202; job 1 `succeeded`, `review_required=False`, imported 1 | image 1 `imported`, 29: 2 × `invalid_value optional_omitted warning receipt receipt_metadata field=/`, 25 × `… line tax_rate field=/lines/N/tax_rate`, 2 × `… tax field=/taxes/N` | receipt 1: 23.95, `review_required=False`, 25 строк, ставки 25 × null, налоговых итогов 0; всего чеков 1, товаров 21 |
+| `tax_evidence_present` / `double.png` | 202; job 2 `succeeded`, `review_required=False`, imported 1 | image 2 `imported`, 2: 2 × `… receipt receipt_metadata field=/` | receipt 2: 23.95, 25 строк, 17 × 7.00 и 8 × 19.00, налоговых итогов 2; всего чеков 2, товаров 21 (новых 0) |
+| `inconsistent_total` / `single_rotated.png` | 202; job 3 `partial_succeeded`, `review_required=True`, review 2 | images 3 и 4 `needs_review`, по 2: `total_mismatch total_mismatch error receipt total field=/total` и `invalid_value optional_omitted warning tax field=/taxes` | чеков по-прежнему 2, товаров 21 |
+| повтор `single.png` | 200, `reused=True`, прежний job 1 | 29, как выше | receipt 1 без изменений: 25 строк без ставок, 1 фото |
+
+Тела `GET /api/recognition/receipt-images/1/` и `GET /api/recognition/jobs/1/` не содержат `receipt_number`, `signature`, `fiscal`, `tse_transaction`, `legal_name`, `raw_text`, `TEST-KASSE-07`, `550001`, `TESTKAUF GmbH`.
+
+Те же ответы живого QA API приняты клиентскими runtime guards (`getReceiptImage`, `getReceiptImages` в Node через Vite SSR, напрямую с Django, без proxy и браузера) и сгруппированы `groupIssues`: image 1 — «Не прочитаны 2 реквизита», «НДС не использован в 25 строках» (перечень «Строки: 1, …, 25»), «Пропущены 2 налоговых итога» («Налоговые итоги №: 1, 2»); image 2 — «Не прочитаны 2 реквизита»; images 3/4 — «Причины проверки»: «Сумма строк не совпадает с итогом · Итого», ниже «Замечания распознавания»: «Необязательное поле не использовано · Налоги». Серверный рендер компонента на этих данных не содержит `message` и значений реквизитов. Это разовая проверка в Node, не браузер.
+
+**Проверено и не прошло:** упавших проверок нет. Расхождений сервера с контрактом не найдено. Замечание к клиентской документации: шаг 1 ручной приёмки в [frontend.md](frontend.md#ручная-приёмка-замечаний-человеком) и клиентская фикстура `taxEvidenceMissingIssues` перечисляют группы в порядке «НДС → итоги → реквизиты», а настоящий сервер отдаёт реквизиты первыми, и клиент показывает «реквизиты → НДС → итоги». Тексты и состав групп совпадают; порядок между группами контракт не задаёт. Серверный порядок не менялся, клиент и frontend.md — зона frontend. Исправлено после этого прогона отдельной frontend-задачей: `groupIssues` выводит «НДС → итоги → реквизиты» при любом порядке ответа, фикстура повторяет порядок сервера; порядок групп в записи Node-прогона выше — состояние до исправления, живой HTTP после него не повторялся.
+
+**Не проверено и почему:** browser UI обоих экранов, раскрытие `<details>` с клавиатуры, фокус, 320/768/1280 px, zoom 200 %, экранный диктор — принимает человек по сценарию ниже; browser automation запрещён. Настоящий Codex с промптом v5 не вызывался: возвращает ли модель налоговые evidence на реальном чеке и не ухудшилось ли остальное чтение — отдельная явно разрешённая QA-приёмка по шагу 10 [И5](#ручная-приёмка-клиента-распознавания-человеком). Налоговые сценарии через Vite proxy не загружались: транспорт proxy проверен существующим скриптом на success2/one_receipt/partial_missing_quantity, а ответы налоговых сценариев получены напрямую с Django. Ответ старого сервера без новых ключей этой веткой не воспроизводится — клиентский fallback подтверждён только Vitest. Нагрузка, backup restore, deployment и ручные сценарии F4/F6 не повторялись: их код не менялся, автотесты F4/F6 входят в 921.
+
+### Ручная приёмка И6 человеком
+
+Просмотр **сохранённой** QA: полный блок выше с `checkist_qa_muvq_g`, Compose up, `migrate` (повторяемый), Django 18083; в другом терминале того же env `Set-Location frontend; npm.cmd run dev -- --port 15183` (или `npm.cmd run build`, затем `npm.cmd run preview -- --port 15183`). Открыть `http://127.0.0.1:15183/recognition/jobs/1`. В базе: job 1 — `tax_evidence_missing`, чек 1; job 2 — `tax_evidence_present`, чек 2; job 3 — `inconsistent_total`, две вырезки `needs_review`. Для загрузки с нуля — новый пустой project/DB/MEDIA/scratch, оба seed и worker с нужным `--fake-scenario`; файл выбирать в `MEDIA/demo`.
+
+1. Job 1 и чек 1 (`tax_evidence_missing`, `single.png`): задание «Завершено», вырезка «Чек сохранён», заголовок «Замечания распознавания» и три свёрнутые группы в этом порядке — «НДС не использован в 25 строках», «Пропущены 2 налоговых итога», «Не прочитаны 2 реквизита». Заголовка «Причины проверки» нет. Раскрыть каждую: у НДС — пояснение и «Строки: 1, 2, …, 25», у итогов — «Налоговые итоги №: 1, 2», у реквизитов — только пояснение, без номера чека, подписи и других значений. С клавиатуры: Tab до каждого summary, Enter и Space раскрывают и сворачивают, фокус виден и остаётся на summary. По ссылке «Открыть чек №1» в блоке фото — те же три группы; в чеке 25 строк без ставки НДС, блок налогов пуст, итог 23,95 EUR.
+2. Job 2 и чек 2 (`tax_evidence_present`, `double.png`): одна группа «Не прочитаны 2 реквизита» в задании и в чеке; у 25 строк ставки (17 × 7 %, 8 × 19 %), два налоговых итога; в каталоге по-прежнему 21 товар TESTARTIKEL/TESTGETRAENK, новых нет; чек 1 не изменился.
+3. Job 3 (`inconsistent_total`, `single_rotated.png`): задание требует проверки, обе вырезки «Требует проверки»; «Причины проверки» с «Сумма строк не совпадает с итогом · Итого» видны сразу, без раскрытия, выше и отдельно от «Замечаний распознавания»; ниже открыт блок «Распознанные данные для проверки»; формы подтверждения нет; новых чеков нет.
+4. Ширина 320, 768 и 1280 px, zoom 200 %: заголовки групп и перечень из 25 строк переносятся, общей горизонтальной прокрутки нет, summary доступен с клавиатуры. Экранный диктор (NVDA/Narrator): «Причины проверки» и «Замечания распознавания» — заголовки 4-го уровня, summary объявляется со «свёрнуто/развёрнуто», текст сервера `message` не звучит.
+5. Ctrl+C **своих** API/Vite/worker, `docker compose -p $env:COMPOSE_PROJECT_NAME down` без `-v`.
+
+Показ [frontend/I6_ACCEPTANCE.md](../frontend/I6_ACCEPTANCE.md) — отчёт, данные и запуск; [frontend/recognition-issues-preview/index.html](../frontend/recognition-issues-preview/index.html) — статический рендер компонента на тестовых данных клиента (порядок групп в нём тот же, что в приложении). Ни то, ни другое не подтверждает визуальную приёмку.
 
 ## Фактические результаты С6
 

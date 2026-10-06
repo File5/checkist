@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "merge_resolved",
+    "message": "Слияние уже завершено."
+  }
+}

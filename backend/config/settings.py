@@ -100,6 +100,7 @@ INSTALLED_APPS = [
     "stores.apps.StoresConfig",
     "receipts.apps.ReceiptsConfig",
     "recognition.apps.RecognitionConfig",
+    "merges.apps.MergesConfig",
     "api.apps.ApiConfig",
 ]
 MIDDLEWARE = [
@@ -225,6 +226,12 @@ recognition_flag = env_text("ALLOW_LOCAL_RECOGNITION_API", "0").lower()
 if recognition_flag not in {"0", "1", "true", "false"}:
     raise ImproperlyConfigured("ALLOW_LOCAL_RECOGNITION_API: expected 0, 1, true or false.")
 ALLOW_LOCAL_RECOGNITION_API = recognition_flag in {"1", "true"}
+# Duplicate search right after a receipt import. Off by default: turning it on
+# lets the next import move links between products of this database.
+merge_detect_flag = env_text("PRODUCT_MERGE_AUTO_DETECT", "0").lower()
+if merge_detect_flag not in {"0", "1", "true", "false"}:
+    raise ImproperlyConfigured("PRODUCT_MERGE_AUTO_DETECT: expected 0, 1, true or false.")
+PRODUCT_MERGE_AUTO_DETECT = merge_detect_flag in {"1", "true"}
 MEDIA_ROOT = env_directory("MEDIA_ROOT", BASE_DIR.parent / "media")
 # Fixed v1 prefix shared with the client URL guards and Vite dev/preview proxy.
 MEDIA_URL = os.environ.get("MEDIA_URL", "/media/")

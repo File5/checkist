@@ -26,6 +26,7 @@ h2 { font-size: 1.35rem; letter-spacing: -0.025em; }
 .main-navigation { display: flex; flex-wrap: wrap; gap: 8px; }
 .main-navigation a { display: inline-flex; align-items: center; min-height: 44px; padding: 8px 12px; border-radius: 8px; text-underline-offset: 4px; }
 .main-navigation a[aria-current] { color: #246044; background: #e5ede2; font-weight: 600; }
+.section-navigation { margin-bottom: 20px; }
 .intro { max-width: 650px; padding: 52px 0 36px; }
 .eyebrow { color: #526657; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; margin-bottom: 12px; }
 .intro-text { font-size: 1.2rem; margin-top: 18px; }
@@ -47,6 +48,20 @@ input, select { min-height: 44px; max-width: 100%; }
 .pagination a, .pagination li > span { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; padding: 8px 12px; border-radius: 8px; }
 .pagination a { border: 1px solid #cbd7c7; background: #fff; color: #246044; text-underline-offset: 3px; }
 .pagination a[aria-current="page"] { background: #246044; color: #fff; border-color: #246044; font-weight: 600; }
+.rec-issues, .rec-issues-block { display: grid; gap: 10px; min-width: 0; overflow-wrap: anywhere; }
+.rec-issues h4, .rec-issues p { margin: 0; }
+.rec-issues h4 { font-size: 1rem; }
+.rec-issues .rec-issues-block > ul.rec-issues-list { display: grid; gap: 8px; padding: 0; margin: 0; list-style: none; }
+.rec-issues-list > li { display: grid; gap: 6px; min-width: 0; padding: 4px 12px; border-left: 3px solid #cbd7c7; }
+.rec-issues-errors .rec-issues-list > li { border-left-color: #a33427; }
+.rec-issues-errors h4, .rec-issues-errors .rec-issues-title { color: #8c2c22; }
+.rec-issues-title { font-weight: 600; padding-block: 6px; }
+.rec-issues-note { color: #526158; font-size: 0.9rem; }
+.rec-issues details { min-width: 0; }
+.rec-issues details[open] { padding-bottom: 6px; }
+.rec-issues details > * + * { margin-top: 6px; }
+.rec-issues summary { cursor: pointer; font-weight: 600; min-height: 44px; padding-block: 10px; border-radius: 4px; }
+.rec-issues summary:focus-visible { outline: 3px solid #236ad0; outline-offset: 2px; }
 main { padding-bottom: 36px; }
 .health-summary { display: flex; align-items: flex-start; gap: 12px; padding: 18px; border-radius: 10px; min-height: 106px; background: #f0f3ee; }
 .summary-ok { background: #edf5ee; }

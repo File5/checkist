@@ -1,6 +1,8 @@
 import { jobStatuses } from '../api/recognition-types'
 import type { JobStatus } from '../api/recognition-types'
 import type { ReceiptOperation } from '../api/receipts-types'
+import { mergeStatuses } from '../api/product-merges-types'
+import type { MergeStatus } from '../api/product-merges-types'
 
 export interface CatalogQuery {
   q?: string
@@ -33,6 +35,12 @@ export interface JobsQuery {
   ordering?: 'created_at' | '-created_at'
 }
 
+/** No status means the default list: groups waiting for confirmation. */
+export interface MergesQuery {
+  status?: Exclude<MergeStatus, 'pending'> | 'all'
+  page: number
+}
+
 export type CatalogRoute =
   | { kind: 'catalog'; query: CatalogQuery }
   | { kind: 'category'; categoryId: number; query: CatalogQuery }
@@ -45,6 +53,8 @@ export type NavigableRoute = CatalogRoute
   | { kind: 'receipt'; receiptId: number }
   | { kind: 'jobs'; query: JobsQuery }
   | { kind: 'job'; jobId: number }
+  | { kind: 'merges'; query: MergesQuery }
+  | { kind: 'merge'; groupId: number }
 
 export type Route = NavigableRoute
   | { kind: 'not-found'; path: string }
@@ -171,6 +181,14 @@ export function parseJobsQuery(search: string | URLSearchParams): ParsedQuery<Jo
     ...(ordering && { ordering }) }, invalidFields: reader.invalidFields }
 }
 
+export function parseMergesQuery(search: string | URLSearchParams): ParsedQuery<MergesQuery> {
+  const reader = queryReader(search)
+  const status = reader.choice('status', [...mergeStatuses, 'all'] as const)
+  const page = reader.integer('page') ?? 1
+  // The explicit default is the same list: keep one canonical address for it.
+  return { query: { ...(status && status !== 'pending' && { status }), page }, invalidFields: reader.invalidFields }
+}
+
 function buildQuery<T>(query: T, keys: (keyof T)[], parse: (search: URLSearchParams) => ParsedQuery<T>): string {
   const params = new URLSearchParams()
   for (const key of keys) {
@@ -205,6 +223,10 @@ export function buildJobsQuery(query: JobsQuery): string {
   return buildQuery(query, ['photo', 'status', 'page', 'page_size', 'ordering'], parseJobsQuery)
 }
 
+export function buildMergesQuery(query: MergesQuery): string {
+  return buildQuery(query, ['status', 'page'], parseMergesQuery)
+}
+
 function buildId(id: number): string {
   if (!Number.isSafeInteger(id) || id <= 0) throw new RangeError('Invalid route ID')
   return String(id)
@@ -221,6 +243,8 @@ export function buildRoute(route: NavigableRoute): string {
     case 'receipt': return `/receipts/${buildId(route.receiptId)}`
     case 'jobs': return `/recognition/jobs${buildJobsQuery(route.query)}`
     case 'job': return `/recognition/jobs/${buildId(route.jobId)}`
+    case 'merges': return `/catalog/merges${buildMergesQuery(route.query)}`
+    case 'merge': return `/catalog/merges/${buildId(route.groupId)}`
   }
 }
 
@@ -241,12 +265,18 @@ export function parseRoute(input: string | URL): Route {
     if (parsed.invalidFields.length) return { kind: 'invalid-query', path, fields: parsed.invalidFields, resetTo: normalizedPath }
     return receipts ? { kind: 'receipts', query: parsed.query as ReceiptsQuery } : { kind: 'jobs', query: parsed.query as JobsQuery }
   }
-  const detail = /^\/(receipts|recognition\/jobs)\/([^/]+)$/.exec(normalizedPath)
+  if (normalizedPath === '/catalog/merges') {
+    const parsed = parseMergesQuery(url.searchParams)
+    if (parsed.invalidFields.length) return { kind: 'invalid-query', path, fields: parsed.invalidFields, resetTo: normalizedPath }
+    return { kind: 'merges', query: parsed.query }
+  }
+  const detail = /^\/(receipts|recognition\/jobs|catalog\/merges)\/([^/]+)$/.exec(normalizedPath)
   if (detail) {
     let id: number | undefined
     try { id = positiveInteger(decodeURIComponent(detail[2])) } catch { /* Invalid path encoding. */ }
     if (id === undefined) return { kind: 'not-found', path }
-    return detail[1] === 'receipts' ? { kind: 'receipt', receiptId: id } : { kind: 'job', jobId: id }
+    return detail[1] === 'receipts' ? { kind: 'receipt', receiptId: id }
+      : detail[1] === 'catalog/merges' ? { kind: 'merge', groupId: id } : { kind: 'job', jobId: id }
   }
 
   let route: NavigableRoute
