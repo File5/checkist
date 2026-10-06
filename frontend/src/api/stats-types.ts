@@ -50,7 +50,7 @@ export type SpendingTotals = {
 export type SpendingCurrency = { currency: CurrencyCode; totals: SpendingTotals; items: SpendingItem[]; other: SpendingOther | null }
 export type Spending = StatsPeriod & {
   group_by: SpendingGroupBy
-  /** Category of the filter when grouping by category, otherwise `null`. */
+  /** Category of the `category` filter under any grouping; `null` without the filter or for an unknown category. */
   parent: CategoryRef | null
   currencies: SpendingCurrency[]
 }

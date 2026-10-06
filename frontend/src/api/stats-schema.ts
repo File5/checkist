@@ -42,7 +42,6 @@ const spendingShape = object<Spending>({
 })
 export const isSpending: Guard<Spending> = (value): value is Spending => spendingShape(value)
   && distinct(value.currencies)
-  && (value.parent === null || value.group_by === 'category')
   // Regular items are of the requested grouping; a store grouping has no special items.
   && value.currencies.every((block) => block.items.every((entry) => entry.kind === value.group_by
     || (value.group_by !== 'store' && special(entry.kind))))
