@@ -1,8 +1,12 @@
 // Mutating QA acceptance of the product-classification client through a running Vite dev/preview proxy.
 // Node 24 strips the real adapters' TypeScript. No browser, no mocked fetch. Run on a fresh
 // seed_product_classification_demo + `product_classifications suggest --fake-scenario mixed` database only:
-// the scenario decides records and queues a run.
+// the scenario decides records, queues a run and executes it with its own fake worker, one batch of one product per pass.
 import assert from 'node:assert/strict'
+import { spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { getCategories, getGenericProduct, getGenericProducts, getProduct } from '../src/api/catalog.ts'
 import { getRecognitionCsrf } from '../src/api/local.ts'
 import {
@@ -12,8 +16,11 @@ import {
 } from '../src/api/product-classifications.ts'
 
 const usage = 'Usage: node frontend/scripts/check_product_classifications_proxy.mjs <vite-origin, e.g. http://127.0.0.1:15173>'
+const root = fileURLToPath(new URL('../../', import.meta.url))
+const python = join(root, 'backend/.venv/Scripts/python.exe')
 const originalFetch = globalThis.fetch
 const requests = []
+const workers = new Set()
 let cookie = ''
 
 function loopback(value, name) {
@@ -29,6 +36,22 @@ function ok(result, status = 200) {
   assert.equal(requests.at(-1).status, status)
   return result.data
 }
+/** One pass of the real host worker with the fake provider: at most one batch of one product, then it exits. */
+function workerPass() {
+  const child = spawn(python, [
+    '-X', 'utf8', join(root, 'backend/manage.py'), 'recognition_worker', '--once', '--classification-fake-scenario', 'mixed',
+  ], { cwd: root, env: { ...process.env, PRODUCT_CLASSIFICATION_BATCH_SIZE: '1' }, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
+  workers.add(child)
+  let output = ''
+  child.stdout.on('data', (data) => { output += data })
+  child.stderr.on('data', (data) => { output += data })
+  let timeout
+  return new Promise((resolve, reject) => {
+    timeout = setTimeout(() => { child.kill(); reject(new Error(`Fake worker timed out; ${output.trim()}`)) }, 60_000)
+    child.once('error', reject)
+    child.once('exit', (code) => { code === 0 ? resolve(output.trim()) : reject(new Error(`Fake worker: exit ${code}; ${output.trim()}`)) })
+  }).finally(() => { clearTimeout(timeout); workers.delete(child) })
+}
 function fails(result, reason, status, fields) {
   assert.deepEqual(result, { kind: 'error', reason, status, ...(fields && { fields }) })
   assert.equal(requests.at(-1).status, status)
@@ -40,6 +63,9 @@ try {
   assert.ok(['127.0.0.1', 'localhost', '::1'].includes(process.env.POSTGRES_HOST), 'QA Postgres must be on loopback')
   assert.ok(process.env.POSTGRES_PORT && !['5432', '15432'].includes(process.env.POSTGRES_PORT), 'Do not use the dev Postgres port')
   assert.equal(process.env.VITE_API_BASE_URL, '/api', 'QA must use the /api prefix')
+  // The script starts recognition_worker itself: with codex_cli a batch would be a real model request.
+  assert.equal(process.env.RECEIPT_OCR_PROVIDER, 'fake', 'Never invoke Codex from this script: set RECEIPT_OCR_PROVIDER=fake')
+  assert.ok(existsSync(python), `No ${python}: prepare backend/.venv as docs/development.md says`)
   const origin = loopback(process.argv[2], 'Vite origin')
   const target = loopback(process.env.DEV_API_PROXY_TARGET, 'DEV_API_PROXY_TARGET')
   assert.notEqual(origin.origin, target.origin, 'API and Vite proxy must be separate origins')
@@ -205,7 +231,7 @@ try {
   assert.deepEqual(ok(await getProductClassification(bread.id, options)), bread)
   console.log(`record ${bread.id}: generic_id missing and «Не разобрано» → 400 invalid_parameter [generic_id]`)
 
-  // Queue a run: no worker here, so it stays queued.
+  // Queue a run: no worker yet, so it stays queued.
   const queued = ok(await requestProductClassificationRun(options), 202)
   assert.equal(requests.at(-1).body, '{}')
   assert.deepEqual([queued.created, queued.run.status, queued.run.trigger, queued.executor.state], [true, 'queued', 'manual', 'absent'])
@@ -216,12 +242,51 @@ try {
   assert.equal(ok(await getProductClassificationRuns({ status: 'queued' }, options)).results[0].id, queued.run.id)
   console.log(`run ${queued.run.id}: POST runs/ → 202 queued (${queued.run.progress.requested} products), repeat 200 created=false; state: queued, worker absent`)
 
+  // Between batches: a real pass of the worker takes one product of three and puts the run back into the queue.
+  const sameRun = (run, processed) => {
+    assert.deepEqual([run.id, run.trigger, run.scope, run.created_at, run.remaining, run.error], [queued.run.id, 'manual', 'all', queued.run.created_at, 0, null])
+    assert.deepEqual([run.progress.requested, run.progress.processed], [3, processed])
+  }
+  assert.deepEqual([queued.run.started_at, queued.run.progress.requested, queued.run.progress.processed], [null, 3, 0], fresh)
+  const firstPass = await workerPass()
+  assert.match(firstPass, new RegExp(`Classification run ${queued.run.id}: queued`), 'No recognition job may wait in this QA database: the pass must take the batch')
+  const between = ok(await getProductClassificationState(options))
+  assert.equal(between.run.status, 'queued', 'A run between its batches is queued')
+  assert.ok(between.run.started_at !== null && between.run.finished_at === null, 'A run between its batches keeps started_at and has no finished_at')
+  sameRun(between.run, 1)
+  assert.ok(between.run.version > queued.run.version, 'Every transition raises the version')
+  assert.equal(between.executor.state, 'absent', 'The worker of the pass has exited')
+  assert.deepEqual(ok(await getProductClassificationRun(queued.run.id, options)), between.run)
+  assert.deepEqual(ok(await getProductClassificationRuns({ status: 'queued' }, options)).results, [between.run])
+  assert.equal(ok(await getProductClassificationRuns({ status: 'running' }, options)).count, 0)
+  const pressed = ok(await requestProductClassificationRun(options))
+  assert.deepEqual(pressed, { created: false, run: between.run, executor: between.executor }, 'The button returns the run between its batches as it is')
+  console.log(`run ${queued.run.id} between batches: worker pass → queued, started_at ${between.run.started_at}, processed 1 of 3, version ${between.run.version}; POST runs/ → 200 created=false, the same run`)
+
+  // The second pass leaves it between batches again, the third one closes it.
+  await workerPass()
+  const nextPass = ok(await getProductClassificationState(options))
+  assert.deepEqual([nextPass.run.status, nextPass.run.started_at, nextPass.run.finished_at], ['queued', between.run.started_at, null])
+  sameRun(nextPass.run, 2)
+  assert.match(await workerPass(), new RegExp(`Classification run ${queued.run.id}: succeeded`))
+  const finished = ok(await getProductClassificationState(options))
+  assert.deepEqual([finished.run.status, finished.run.started_at, finished.executor.state], ['succeeded', between.run.started_at, 'absent'])
+  assert.ok(finished.run.finished_at !== null)
+  sameRun(finished.run, 3)
+  // Both «Колбаса» variants were rejected and the model does not know «Demo Art. 4711»: nothing new is suggested.
+  assert.deepEqual([finished.run.progress.applied, finished.pending_count, finished.unclassified_count], [0, 3, 3])
+  assert.deepEqual(ok(await getProductClassificationRun(queued.run.id, options)), finished.run)
+  assert.equal(ok(await getProductClassificationRuns({ status: 'queued' }, options)).count, 0)
+  assert.deepEqual(ok(await getProductClassificationRuns({}, options)).results.map((run) => [run.id, run.status]), [[queued.run.id, 'succeeded'], [state.run.id, 'succeeded']])
+  console.log(`run ${queued.run.id}: second pass → queued 2 of 3, third pass → succeeded 3 of 3, applied 0 (rejected variants are not offered again)`)
+
   const counts = {}
   for (const status of ['pending', 'confirmed', 'rejected', 'superseded']) counts[status] = ok(await getProductClassifications({ status }, options)).count
   assert.deepEqual(counts, { pending: 3, confirmed: 4, rejected: 2, superseded: 0 })
   const posts = requests.filter((request) => request.method === 'POST')
   console.log(JSON.stringify({ result: 'passed', origin: origin.origin, database: process.env.POSTGRES_DB,
-    records: { pending: counts.pending, confirmed: counts.confirmed, rejected: counts.rejected }, unclassified: after.unclassified_count,
+    records: { pending: counts.pending, confirmed: counts.confirmed, rejected: counts.rejected }, unclassified: finished.unclassified_count,
+    run: { status: finished.run.status, between_batches: [between.run.progress.processed, nextPass.run.progress.processed], progress: finished.run.progress },
     requests: requests.length, posts: posts.length, statuses: [...new Set(requests.map((request) => request.status))].sort(), browser_ui: 'not tested' }))
 } catch (error) {
   console.error(`Product classification check FAILED: ${error.message}`)
@@ -230,4 +295,5 @@ try {
   process.exitCode = 1
 } finally {
   globalThis.fetch = originalFetch
+  for (const child of workers) child.kill()
 }

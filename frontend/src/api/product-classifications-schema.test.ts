@@ -13,9 +13,11 @@ const schemas: Record<string, (value: unknown) => boolean> = {
   'classification-confirmed-other.json': isClassification, 'classification-rejected.json': isClassification,
   'classification-superseded.json': isClassification, 'confirm-many.json': isClassificationConfirmMany,
   'run.json': isClassificationRun, 'run-failed.json': isClassificationRun,
+  'run-requeued.json': isClassificationRun, 'run-failed-after-batches.json': isClassificationRun,
+  'run-cancelled.json': isClassificationRun, 'run-cancelled-started.json': isClassificationRun,
   'run-created.json': isClassificationRunRequest, 'run-existing.json': isClassificationRunRequest, 'run-nothing.json': isClassificationRunRequest,
   'status.json': isClassificationState, 'status-empty.json': isClassificationState, 'status-queued.json': isClassificationState,
-  'status-running.json': isClassificationState,
+  'status-running.json': isClassificationState, 'status-between-batches.json': isClassificationState,
 }
 const record = (name = 'classification-pending.json') => structuredClone(classificationFixture(name)) as Classification
 const run = (name = 'run.json') => structuredClone(classificationFixture(name)) as ClassificationRun
@@ -30,10 +32,10 @@ const requireEvery = (name: string, make: () => unknown, validate: (value: unkno
 }
 
 describe('public product-classification contract fixtures', () => {
-  it('covers all 35 JSON files supplied by backend, including future additions', () => {
+  it('covers all 40 JSON files supplied by backend, including future additions', () => {
     const covered = [...Object.keys(schemas), ...Object.keys(errorFixtures), ...requestFixtures].sort()
     expect(covered).toEqual(classificationFixtureNames())
-    expect(covered).toHaveLength(35)
+    expect(covered).toHaveLength(40)
   })
   it.each(Object.entries(schemas))('validates %s and requires every root field', (name, validate) => {
     requireEvery(name, () => structuredClone(classificationFixture(name)), validate)
@@ -170,13 +172,72 @@ describe('public product-classification contract fixtures', () => {
     ['negative remaining', 'run.json', (body) => { body.remaining = -1 }],
     ['null remaining', 'run.json', (body) => { Object.assign(body, { remaining: null }) }],
     ['string progress', 'run.json', (body) => { Object.assign(body.progress, { applied: '8' }) }],
-    ['queued and started', 'run.json', (body) => { body.status = 'queued' }],
+    ['queued and finished', 'run-requeued.json', (body) => { body.finished_at = body.started_at }],
+    ['running and finished', 'run-requeued.json', (body) => { Object.assign(body, { status: 'running', finished_at: body.started_at }) }],
+    ['succeeded and not finished', 'run.json', (body) => { body.finished_at = null }],
+    ['failed and not finished', 'run-failed-after-batches.json', (body) => { body.finished_at = null }],
+    ['cancelled and not finished', 'run-cancelled.json', (body) => { body.finished_at = null }],
+    ['cancelled with an error', 'run-cancelled-started.json', (body) => { body.error = { code: 'worker_lost', message: 'private' } }],
+    ['running and never started', 'run-requeued.json', (body) => { Object.assign(body, { status: 'running', started_at: null }) }],
+    ['succeeded and never started', 'run.json', (body) => { body.started_at = null }],
+    ['failed and never started', 'run-failed.json', (body) => { body.started_at = null }],
+    ['queued, never started, with processed products', 'run-requeued.json', (body) => { body.started_at = null; body.progress.processed = 1 }],
+    ['cancelled, never started, with processed products', 'run-cancelled.json', (body) => { body.progress.processed = 1 }],
     ['date as a calendar day', 'run.json', (body) => { body.created_at = '2026-10-06' }],
     ['numeric trigger', 'run.json', (body) => { Object.assign(body, { trigger: 1 }) }],
   ])('rejects a run with %s', (_name, fixture, change) => {
     const body = run(fixture)
     change(body)
     expect(isClassificationRun(body)).toBe(false)
+  })
+  it('accepts a queued run that already started: between its batches, stopped in the first one, after the last one', () => {
+    const between = state('status-between-batches.json')
+    expect([between.run!.status, between.run!.started_at, between.run!.finished_at, between.run!.progress.processed, between.run!.progress.requested])
+      .toEqual(['queued', '2026-10-06T10:20:05Z', null, 1, 2])
+    expect(isClassificationState(between)).toBe(true)
+    expect(isClassificationRunRequest({ created: false, run: between.run, executor: between.executor })).toBe(true)
+    expect(page(isClassificationRun)({ count: 1, page: 1, page_size: 50, pages: 1, results: [between.run] })).toBe(true)
+    const requeued = run('run-requeued.json')
+    expect([requeued.status, requeued.started_at !== null, requeued.progress.processed]).toEqual(['queued', true, 0])
+    expect(isClassificationRun(requeued)).toBe(true)
+    // A lost `suggest` command returned to the queue after its last batch (combination 12 of the contract).
+    Object.assign(requeued, { trigger: 'command', progress: { ...requeued.progress, processed: requeued.progress.requested } })
+    expect(isClassificationRun(requeued)).toBe(true)
+  })
+  it('accepts the report of the interface check: the queued example with a real start time and 4 of 10 processed', () => {
+    const body = state('status-queued.json')
+    expect(isClassificationState(body)).toBe(true)
+    body.run!.started_at = '2026-10-06T21:13:45.465650Z'
+    Object.assign(body.run!.progress, { requested: 10, processed: 4 })
+    expect(isClassificationState(body)).toBe(true)
+    expect(isClassificationRunRequest({ created: false, run: body.run, executor: body.executor })).toBe(true)
+  })
+  it.each<[number, string, Partial<ClassificationRun>, [number, number]]>([
+    [1, 'run-existing.json', {}, [0, 2]], [2, 'status-between-batches.json', {}, [1, 2]], [3, 'run-requeued.json', {}, [0, 7]],
+    [4, 'status-running.json', {}, [0, 2]], [4, 'status-running.json', {}, [1, 2]], [5, 'status-running.json', { trigger: 'command' }, [2, 2]],
+    [6, 'run.json', {}, [9, 9]], [7, 'run-failed.json', {}, [0, 2]], [8, 'run-failed-after-batches.json', {}, [2, 7]],
+    [9, 'run-failed-after-batches.json', { trigger: 'command' }, [7, 7]], [10, 'run-cancelled.json', {}, [0, 5]],
+    [11, 'run-cancelled-started.json', {}, [1, 2]], [11, 'run-cancelled-started.json', {}, [0, 2]],
+    [12, 'run-requeued.json', { trigger: 'command' }, [7, 7]], [13, 'run-cancelled-started.json', { trigger: 'command' }, [2, 2]],
+  ])('accepts combination %i of the run fields documented by the server (%s, %o, processed/requested %o)', (_number, name, patch, [processed, requested]) => {
+    const source = classificationFixture(name) as ClassificationRun | { run: ClassificationRun }
+    const body = structuredClone('run' in source ? source.run : source)
+    Object.assign(body, patch)
+    Object.assign(body.progress, { processed, requested })
+    expect(isClassificationRun(body)).toBe(true)
+  })
+  it('does not compare the counters of a run with each other', () => {
+    // After a recovered lease applied products are counted again as skipped; a smaller run limit cuts `requested`.
+    const recovered = run('run-requeued.json')
+    Object.assign(recovered.progress, { requested: 2, processed: 0, applied: 2, unknown: 0, skipped: 3 })
+    expect(isClassificationRun(recovered)).toBe(true)
+    const cut = state('status-between-batches.json').run!
+    Object.assign(cut.progress, { requested: 3, processed: 5 })
+    expect(isClassificationRun(cut)).toBe(true)
+    const early = run('run-requeued.json')
+    early.created_at = '2026-10-06T10:22:09Z'
+    expect(isClassificationRun(early)).toBe(true)
+    expect(isClassificationRun({ ...run('run-cancelled.json'), remaining: 40 })).toBe(true)
   })
   it('rejects a state, a run request and a mass confirmation that contradict themselves', () => {
     expect(isClassificationState({ ...state(), pending_count: -1 })).toBe(false)

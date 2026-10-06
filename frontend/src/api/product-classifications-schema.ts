@@ -54,10 +54,17 @@ const runShape = object<ClassificationRun>({
   created_at: isISODateTime, started_at: nullable(isISODateTime), finished_at: nullable(isISODateTime),
   progress, remaining: nonNegativeInteger, error: nullable(runError),
 })
-/** «Запуск»: only a failed run carries an error; a queued one has not started. */
+const finishedRunStatuses: readonly string[] = ['succeeded', 'failed', 'cancelled']
+/**
+ * «Запуск» as the server guarantees it (docs/api-contract.md, «Допустимые сочетания полей Запуска»): only a failed run
+ * carries an error, only a finished one has `finished_at`, and a run nobody started (`started_at: null`) is queued or
+ * cancelled with nothing processed. A queued run with `started_at` is a run waiting between its batches. Counters are
+ * not compared with each other: after a recovery or a smaller run limit they need not add up.
+ */
 export const isClassificationRun: Guard<ClassificationRun> = (value): value is ClassificationRun => runShape(value)
   && (value.status === 'failed') === (value.error !== null)
-  && (value.status !== 'queued' || (value.started_at === null && value.finished_at === null))
+  && finishedRunStatuses.includes(value.status) === (value.finished_at !== null)
+  && (value.started_at !== null || ((value.status === 'queued' || value.status === 'cancelled') && value.progress.processed === 0))
 
 export const isClassificationState = object<ClassificationState>({
   pending_count: nonNegativeInteger, unclassified_count: nonNegativeInteger, auto_suggest: bool,
