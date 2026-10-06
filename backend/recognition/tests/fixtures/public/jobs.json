@@ -19,6 +19,7 @@
       "stalled": false,
       "executor": {
         "available": false,
+        "state": "absent",
         "last_seen_at": null
       },
       "progress": {

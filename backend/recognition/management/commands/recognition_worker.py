@@ -23,9 +23,6 @@ from recognition.providers.factory import get_provider
 from recognition.providers.fake import SCENARIOS
 from recognition.statuses import EXECUTING_JOB_STATUSES
 
-# Separate namespace from the queue capacity and importer locks.
-WORKER_LOCK = (1128811347, 2)
-
 
 @contextmanager
 def worker_slot():
@@ -36,7 +33,7 @@ def worker_slot():
         if slot.vendor != "postgresql":
             raise CommandError("recognition_worker requires PostgreSQL.")
         with slot.cursor() as cursor:
-            cursor.execute("SELECT pg_try_advisory_lock(%s, %s)", WORKER_LOCK)
+            cursor.execute("SELECT pg_try_advisory_lock(%s, %s)", queue.WORKER_LOCK)
             if not cursor.fetchone()[0]:
                 raise CommandError("Recognition worker is already running: worker slot is occupied.")
         yield slot

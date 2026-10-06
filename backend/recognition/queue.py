@@ -20,6 +20,11 @@ from .statuses import (
 )
 
 
+# Session lock of the single host worker; a separate namespace from the queue
+# capacity and importer locks. The API only reads it from pg_locks.
+WORKER_LOCK = (1128811347, 2)
+
+
 class QueueError(ValueError):
     def __init__(self, code):
         self.code = code

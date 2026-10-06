@@ -2,21 +2,23 @@ import hashlib
 import json
 import tempfile
 import uuid
+from contextlib import contextmanager, nullcontext
 from datetime import datetime, timedelta, timezone as dt_timezone
 from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.db import OperationalError
+from django.db import OperationalError, connection, connections
 from django.test import SimpleTestCase, TestCase, override_settings, tag
 from django.utils import timezone
 from PIL import Image
 from rest_framework.test import APIClient
 
 from api.recognition_serialization import public_issues
+from recognition.management.commands.recognition_worker import worker_slot
 from recognition.models import ProcessingJob, ReceiptImage, SourcePhoto
-from recognition.queue import claim_job, request_cancel
+from recognition.queue import WORKER_LOCK, claim_job, request_cancel
 from recognition.storage import StorageError
 
 
@@ -24,6 +26,8 @@ NOW = datetime(2026, 10, 4, 12, 35, tzinfo=dt_timezone.utc)
 PUBLIC = Path(__file__).resolve().parents[2] / "recognition/tests/fixtures/public"
 BBOX = {"x_min": 0.1, "y_min": 0.1, "x_max": 0.9, "y_max": 0.9}
 QUAD = [{"x": 0.1, "y": 0.1}, {"x": 0.9, "y": 0.1}, {"x": 0.9, "y": 0.9}, {"x": 0.1, "y": 0.9}]
+ABSENT = {"available": False, "state": "absent", "last_seen_at": None}
+IDLE = {"available": True, "state": "idle", "last_seen_at": None}
 
 
 INVALID = "Значение не прошло проверку."
@@ -516,10 +520,27 @@ class RecognitionAPITests(TestCase):
         for _ in range(5):
             make_image(ProcessingJob.objects.create(photo=make_photo()))
         for size in (1, 5):
-            for path, queries in (("photos", 2), ("jobs", 3), ("receipt-images", 2)):
+            # jobs: count + page + executing lease + worker slot; the last two do not depend on the page.
+            for path, queries in (("photos", 2), ("jobs", 4), ("receipt-images", 2)):
                 with self.subTest(path=path, size=size), self.assertNumQueries(queries):
                     response = self.client.get(f"/api/recognition/{path}/?page_size={size}")
                     self.assertEqual(response.status_code, 200)
+                    self.assertEqual(len(response.json()["results"]), size)
+        with worker_slot():
+            for size in (1, 5):
+                with self.subTest(slot=True, size=size), self.assertNumQueries(4):
+                    response = self.client.get(f"/api/recognition/jobs/?page_size={size}")
+                self.assertEqual([job["executor"] for job in response.json()["results"]], [IDLE] * size)
+
+    def test_executor_adds_one_constant_query(self):
+        job = ProcessingJob.objects.create(photo=make_photo())
+        make_image(job)
+        for held in (False, True):
+            with self.subTest(held=held), worker_slot() if held else nullcontext():
+                with self.assertNumQueries(2):  # executing lease + worker slot
+                    self.assertEqual(self.client.get("/api/recognition/csrf/").status_code, 200)
+                with self.assertNumQueries(4):  # job + items + the same two
+                    self.assertEqual(self.client.get(f"/api/recognition/jobs/{job.pk}/").status_code, 200)
 
     def test_safe_projection_and_deleted_receipt(self):
         photo, job, receipt, line = public_data()
@@ -552,12 +573,115 @@ class RecognitionAPITests(TestCase):
         job = claim_job()
         response = self.client.get(f"/api/recognition/jobs/{job.pk}/").json()
         self.assertTrue(response["executor"]["available"])
+        self.assertEqual(response["executor"]["state"], "busy")
         self.assertFalse(response["stalled"])
         ProcessingJob.objects.filter(pk=job.pk).update(lease_expires_at=timezone.now() - timedelta(seconds=1), error_code="auth_required")
         response = self.client.get(f"/api/recognition/jobs/{job.pk}/").json()
+        # No slot and no live lease: absent, though the stale heartbeat stays visible.
         self.assertFalse(response["executor"]["available"])
+        self.assertEqual(response["executor"]["state"], "absent")
+        self.assertEqual(response["executor"]["last_seen_at"], response["heartbeat_at"])
+        self.assertIsNotNone(response["heartbeat_at"])
         self.assertTrue(response["stalled"])
         self.assertEqual(response["error"], {"code": "auth_required", "message": "Требуется вход в сервис распознавания."})
+        # A restarted worker that has not recovered the stalled job yet is idle.
+        with worker_slot():
+            response = self.client.get(f"/api/recognition/jobs/{job.pk}/").json()
+            self.assertEqual((response["executor"]["available"], response["executor"]["state"]), (True, "idle"))
+            self.assertTrue(response["stalled"])
+
+    def executors(self, job_id):
+        """executor of every GET that carries one."""
+        rows = self.client.get("/api/recognition/jobs/").json()["results"]
+        self.assertTrue(rows)
+        return [self.client.get("/api/recognition/csrf/").json()["executor"],
+                *[row["executor"] for row in rows],
+                self.client.get(f"/api/recognition/jobs/{job_id}/").json()["executor"]]
+
+    @contextmanager
+    def session_lock(self, cursor_factory, key):
+        # A lock of another session; the API under test only reads pg_locks.
+        with cursor_factory() as cursor:
+            cursor.execute("SELECT pg_try_advisory_lock(%s, %s)", key)
+            self.assertTrue(cursor.fetchone()[0], "The advisory key is occupied by a foreign session")
+            yield
+
+    def other_connection(self):
+        other = connections["default"].copy(alias="executor_test_lock")
+        self.addCleanup(other.close)
+        return other
+
+    def test_executor_absent_idle_and_absent_after_slot_release(self):
+        self.assertEqual(self.client.get("/api/recognition/csrf/").json()["executor"], ABSENT)
+        self.assertEqual(self.client.get("/api/recognition/jobs/").json()["results"], [])
+        job = ProcessingJob.objects.create(photo=make_photo())
+        ProcessingJob.objects.create(photo=make_photo())
+        self.assertEqual(self.executors(job.pk), [ABSENT] * 4)
+        with worker_slot():
+            self.assertEqual(self.executors(job.pk), [IDLE] * 4)
+            self.assertEqual(self.client.get(f"/api/recognition/jobs/{job.pk}/").json()["status"], "queued")
+        self.assertEqual(self.executors(job.pk), [ABSENT] * 4)
+        # The API read must not have taken the lock itself: a worker still starts.
+        with worker_slot():
+            self.assertEqual(self.executors(job.pk), [IDLE] * 4)
+        self.assertEqual(self.executors(job.pk), [ABSENT] * 4)
+
+    def test_executor_busy_with_and_without_worker_slot(self):
+        for _ in range(2):
+            ProcessingJob.objects.create(photo=make_photo())
+        running = claim_job()
+        waiting = ProcessingJob.objects.exclude(pk=running.pk).get()
+        heartbeat = self.client.get(f"/api/recognition/jobs/{running.pk}/").json()["heartbeat_at"]
+        self.assertIsNotNone(heartbeat)
+        busy = {"available": True, "state": "busy", "last_seen_at": heartbeat}
+        # The lease is alive although no session holds the slot (worker just died).
+        self.assertEqual(self.executors(running.pk), [busy] * 4)
+        with worker_slot():
+            self.assertEqual(self.executors(running.pk), [busy] * 4)
+            # A queued neighbour reports the same shared executor.
+            neighbour = self.client.get(f"/api/recognition/jobs/{waiting.pk}/").json()
+            self.assertEqual((neighbour["status"], neighbour["executor"]), ("queued", busy))
+            requested = self.client.post(f"/api/recognition/jobs/{running.pk}/cancel/", {}, format="json")
+            self.assertEqual(requested.status_code, 202, requested.content)
+            self.assertEqual((requested.json()["status"], requested.json()["executor"]), ("cancel_requested", busy))
+        self.assertEqual(self.executors(running.pk), [busy] * 4)
+
+    def test_executor_ignores_other_lock_key_and_other_database(self):
+        job = ProcessingJob.objects.create(photo=make_photo())
+        # Queue capacity key of the same namespace, as a session lock elsewhere.
+        with self.session_lock(self.other_connection().cursor, (WORKER_LOCK[0], 1)):
+            self.assertEqual(self.executors(job.pk), [ABSENT] * 2 + [ABSENT])
+        # The worker key itself, held in the maintenance database of the same cluster.
+        with self.session_lock(connection._nodb_cursor, WORKER_LOCK):
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND granted"
+                               " AND classid = %s AND objid = %s AND objsubid = 2 AND database <>"
+                               " (SELECT oid FROM pg_database WHERE datname = current_database())", WORKER_LOCK)
+                # At least ours: a real worker of a neighbouring database may hold its own.
+                self.assertGreaterEqual(cursor.fetchone()[0], 1)
+            self.assertEqual(self.executors(job.pk), [ABSENT] * 3)
+            with worker_slot():
+                self.assertEqual(self.executors(job.pk), [IDLE] * 3)
+            self.assertEqual(self.executors(job.pk), [ABSENT] * 3)
+
+    def test_upload_and_retry_report_idle_while_slot_is_held(self):
+        absent = self.post_photo(image_bytes(size=(11, 20)))
+        self.assertEqual(absent.status_code, 202, absent.content)
+        self.assertEqual(absent.json()["job"]["executor"], ABSENT)
+        with worker_slot():
+            created = self.post_photo()
+            self.assertEqual(created.status_code, 202, created.content)
+            job = created.json()["job"]
+            self.assertEqual((job["status"], job["executor"]), ("queued", IDLE))
+            replay = self.post_photo()
+            self.assertEqual((replay.status_code, replay.json()["job"]["executor"]), (200, IDLE))
+            path = "/api/recognition/jobs/%d/" % job["id"]
+            cancelled = self.client.post(path + "cancel/", {}, format="json")
+            self.assertEqual((cancelled.status_code, cancelled.json()["executor"]), (200, IDLE))
+            retry = self.client.post(path + "retry/", {}, format="json")
+            self.assertEqual(retry.status_code, 202, retry.content)
+            self.assertEqual((retry.json()["status"], retry.json()["executor"]), ("queued", IDLE))
+        self.assertEqual(self.client.get(path).json()["executor"], ABSENT)
 
     def test_media_debug_only(self):
         import importlib
