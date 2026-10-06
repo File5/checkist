@@ -9,12 +9,15 @@ import RequestState from './components/RequestState'
 import { UploadPage, JobsPage, JobPage } from './features/recognition'
 import { ReceiptsPage, ReceiptPage } from './features/receipts'
 import { MergesPage, MergePage } from './features/merges'
+import { SpendingPage, ReceiptsStatsPage } from './features/stats'
 
 function pageTitle(route: Route) {
   switch (route.kind) {
     case 'catalog': return 'Каталог продуктов'
     case 'category': return 'Категория продуктов'
     case 'product': return 'Товар и история цен'
+    case 'spending': return 'Траты за период'
+    case 'receipts-stats': return 'Средний чек'
     case 'health': return 'Состояние сервисов'
     case 'receipts': return 'Чеки'
     case 'upload': return 'Загрузка фото чеков'
@@ -33,6 +36,8 @@ function pageContent({ route, returnTo }: NavigationSnapshot) {
     case 'catalog': return <CatalogPage query={route.query} />
     case 'category': return <CategoryPage categoryId={route.categoryId} query={route.query} />
     case 'product': return <ProductPage productId={route.productId} query={route.query} returnTo={returnTo} />
+    case 'spending': return <SpendingPage query={route.query} />
+    case 'receipts-stats': return <ReceiptsStatsPage query={route.query} />
     case 'health': return <HealthPage />
     case 'receipts': return <ReceiptsPage query={route.query} />
     case 'upload': return <UploadPage />
@@ -93,6 +98,7 @@ export default function App() {
 
   const mergesActive = route.kind === 'merges' || route.kind === 'merge'
   const catalogActive = route.kind === 'catalog' || route.kind === 'category' || route.kind === 'product' || mergesActive
+  const statsActive = route.kind === 'spending' || route.kind === 'receipts-stats'
   return (
     <div className="page">
       <a className="skip-link" href="#page-heading">К содержимому</a>
@@ -107,6 +113,7 @@ export default function App() {
         <nav className="main-navigation" aria-label="Основная навигация">
           <Link to="/catalog" aria-current={catalogActive ? 'page' : undefined}>Каталог</Link>
           <Link to="/receipts" aria-current={['receipts', 'upload', 'receipt'].includes(route.kind) ? 'page' : undefined}>Чеки</Link>
+          <Link to="/stats" aria-current={statsActive ? 'page' : undefined}>Статистика</Link>
           <Link to="/recognition/jobs" aria-current={['jobs', 'job'].includes(route.kind) ? 'page' : undefined}>Обработка</Link>
           <Link to="/health" aria-current={route.kind === 'health' ? 'page' : undefined}>Состояние сервисов</Link>
         </nav>
@@ -121,6 +128,10 @@ export default function App() {
         {catalogActive && <nav className="main-navigation section-navigation" aria-label="Раздел каталога">
           <Link to="/catalog" aria-current={mergesActive ? undefined : 'page'}>Товары</Link>
           <Link to="/catalog/merges" aria-current={mergesActive ? 'page' : undefined}>Дубли</Link>
+        </nav>}
+        {statsActive && <nav className="main-navigation section-navigation" aria-label="Раздел статистики">
+          <Link to="/stats" aria-current={route.kind === 'spending' ? 'page' : undefined}>Траты</Link>
+          <Link to="/stats/receipts" aria-current={route.kind === 'receipts-stats' ? 'page' : undefined}>Средний чек</Link>
         </nav>}
         {pageContent(navigation)}
       </main>
