@@ -1,6 +1,8 @@
 from django.test import TestCase, tag
 
 from api.tests import factories
+from api.tests.merge_factories import demo_groups, pending_group
+from merges import services
 from catalog.models import Brand
 from receipts.tests import samples
 from stores.models import Country, Merchant, Store
@@ -158,3 +160,34 @@ class BrandsTests(TestCase):
         self.assertEqual((body["count"], body["pages"], [row["name"] for row in body["results"]]), (2, 2, ["Samsung"]))
         response = self.client.get("/api/brands/?page_size=1&page=3")
         self.assertEqual((response.status_code, response.json()["error"]["code"]), (404, "page_out_of_range"))
+
+
+# --- ожидающее слияние дублей: поглощённые товары скрыты, формы ответов прежние ---
+@tag("integration")
+class PendingMergeReferenceTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        demo_groups()
+
+    def brand_counts(self):
+        body = self.client.get("/api/brands/").json()
+        self.assertEqual(set(body["results"][0]), {"id", "name", "manufacturer", "products_count"})
+        return {brand["name"]: brand["products_count"] for brand in body["results"]}
+
+    def test_brand_counter_skips_absorbed_products(self):
+        with self.assertNumQueries(2):
+            counts = self.brand_counts()
+        self.assertEqual(counts, {"Demo Rösterei Nord": 1, "Demo Rösterei Süd": 1, "Zimbo": 1})
+        services.cancel(pending_group("Zimbo Mettw.fettred.").pk)
+        self.assertEqual(self.brand_counts()["Zimbo"], 2)
+
+    def test_country_counter_follows_the_moved_lines(self):
+        with self.assertNumQueries(4):
+            body = self.client.get("/api/countries/").json()
+        germany = next(country for country in body["results"] if country["code"] == "DE")
+        self.assertEqual((germany["products_count"], germany["stores_count"], germany["currencies"]), (23, 2, ["EUR"]))
+
+    def test_stores_are_unchanged(self):
+        body = self.client.get("/api/stores/").json()
+        self.assertEqual({store["name"]: store["receipts_count"] for store in body["results"]},
+                         {"Demomarkt": 8, "Probekauf": 1})

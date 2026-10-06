@@ -12,6 +12,7 @@
 | `catalog` | Каталог товаров двух уровней | `catalog_category`, `catalog_genericproduct`, `catalog_brand`, `catalog_product` |
 | `receipts` | Чеки и сопоставление названий | `receipts_receipt`, `receipts_receiptline`, `receipts_receiptdiscount`, `receipts_receipttax`, `receipts_productalias` |
 | `recognition` | Фото, очередь, вырезки и попытки | `recognition_sourcephoto`, `recognition_processingjob`, `recognition_receiptimage`, `recognition_recognitionattempt` |
+| `merges` | Предварительное слияние дублей товаров | `merges_productmerge`, `merges_productmergemember`, `merges_productmergeline`, `merges_productmergealias`, `merges_productmergerejection` |
 
 `stores` и `catalog` друг от друга не зависят; `receipts` ссылается на оба. `catalog/units.py` принадлежит `catalog`, `receipts` его импортирует.
 
@@ -262,6 +263,38 @@ MEDIA: original сохраняется без изменений; upright previe
 ```
 
 Первый шаг удаляет четыре recognition-таблицы и всю историю фото/jobs/images/attempts; Receipt/lines/catalog/stores и MEDIA остаются. Повторное применение создаёт пустые recognition-таблицы, связи и очередь не восстанавливаются автоматически. Восстановление требует согласованного DB dump + MEDIA backup и совместимой версии кода. Проверка с представительными товарами/строками есть в `RecognitionMigrationTests`, полный прогон С6 её выполняет; восстановление dump/MEDIA человеком не испытано. Полный откат предметной модели ниже теперь также снимает зависимую recognition-миграцию: заранее остановить uploads/worker и сохранить MEDIA.
+
+## `merges`: слияние дублей товаров
+
+Приложение `backend/merges/` (миграция `merges.0001_initial`, зависит от `catalog.0001_initial` и `receipts.0001_initial`; существующие таблицы не меняются). Отдельное приложение сохраняет правило «`catalog` не зависит от `receipts`». HTTP — [api-contract.md](api-contract.md#реализовано-локальный-api-слияния-дублей-товаров-с2), памятка сервиса — `backend/merges/README.md`.
+
+| Модель | Поля | Ограничения |
+| --- | --- | --- |
+| `ProductMerge` | `status` (`pending` / `confirmed` / `cancelled`), `version` (с 1, растёт при изменении состава), `target_ref` — id оставляемого товара без FK, `detector_version`, `created_at`, `resolved_at` | check: `pending` ⇔ `resolved_at IS NULL`; индекс `(status, id)` |
+| `ProductMergeMember` | `group` CASCADE; `product_ref` — id товара, хранится всегда; `active_product` OneToOne → `catalog.Product`, null, **PROTECT** — заполнено, только пока группа ожидает и запись в ней; `role` (`target` / `source`); `state` (`active` / `excluded`); `name`, `facts` — снимок названия и фактов | unique `(group, product_ref)`; unique `active_product`; unique `group` при `role='target' AND state='active'` |
+| `ProductMergeLine` | `member` CASCADE, `line` → `ReceiptLine` CASCADE | unique `(member, line)` |
+| `ProductMergeAlias` | `member` CASCADE, `alias` → `ProductAlias` CASCADE | unique `(member, alias)` |
+| `ProductMergeRejection` | `product_low`, `product_high` → `Product` CASCADE, `group` SET_NULL, `created_at` | unique `(product_low, product_high)`; check `low < high` |
+
+Состояния: `pending → confirmed` (подтверждение), `pending → cancelled` (отмена либо исключение, после которого осталось меньше двух записей), `pending → pending` (добавлена или исключена запись, `version + 1`). `confirmed` и `cancelled` конечны; отмены подтверждённого слияния нет.
+
+- **Поиск** (`merges/detection.py`, версия детектора 1): пара — кандидат, если у товаров есть написание одного продавца, равны числовые подписи названий, расстояние Левенштейна между «сжатыми» названиями (NFKD, casefold, только буквы и цифры) не больше допуска (длина короткого ≥ 12 → 2; 6–11 → 1; < 6 → 0), нет противоречия GTIN / бренда / фасовки / модели и пара не отклонена. Товар без написаний кандидатом не бывает. Гарантии тождества нет — поэтому слияние предварительное.
+- **Предварительное слияние** — одна транзакция: блокировка товаров по возрастанию id, запись в журнал строк и написаний каждой записи (включая оставляемую), затем `UPDATE product_id` строк и написаний поглощаемых товаров на оставляемый. У строки чека меняется только `product_id`. Тот же шаг подбирает «отбившиеся» ссылки, указавшие на поглощённый товар позже.
+- **Видимость**: поглощённый товар — запись с `role='source'` и непустым `active_product`. `merges.visibility.visible(queryset)` / `visible_q(prefix)` убирают его из 13 GET каталога и цен одним `NOT EXISTS`, без нового запроса.
+- **Отмена** возвращает журнальные ссылки, которые всё ещё указывают на оставляемый товар (правку человека в админке не перезаписывает); нежурнальную строку оставляемого отдаёт записи — единственному владельцу написания с тем же продавцом и ключом названия (и кодом, если он есть у строки); удаляет журнал группы и пишет все пары в `ProductMergeRejection`.
+- **Подтверждение** переносит ссылки на выбранную оставляемую запись, проверяет, что на поглощённые товары ссылок не осталось, удаляет их, дополняет пустые факты оставляемого товара и сохраняет снимки записей. Журнал остаётся для ручного восстановления вместе с `pg_dump`.
+- **Блокировки**: каждая изменяющая операция первой берёт ту же неблокирующую advisory-блокировку, что импорт чека (`recognition.importer.IMPORT_LOCK`); занятая блокировка либо ожидание строк дольше `statement_timeout` — `MergeBusy` с полным откатом.
+- **Импорт**: написание уже перенесено на оставляемый товар, поэтому новая строка с известным написанием привязывается к нему сразу; новое написание при `PRODUCT_MERGE_AUTO_DETECT=1` попадает в группу шагом после импорта, иначе — следующим `detect`. `recognition/resolution.py` не менялся: resolver по-прежнему точный.
+- **Админка**: новые модели — только чтение. Товар ожидающей группы удалить нельзя (`PROTECT`). F4/F6 не затронуты. Форма чека, открытая до операции слияния и сохранённая после, вернёт строке старый товар — защиты устаревших форм в v1 нет; до подтверждения это подберёт следующая операция.
+
+### Откат merges
+
+```powershell
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py product_merges cancel-pending
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py migrate merges zero --noinput
+```
+
+`migrate merges zero` удаляет журнал. Без первой команды ожидающие группы останутся слитыми без возможности восстановления. Подтверждённые слияния откатом не разъединяются — только восстановлением из `pg_dump`. HTTP-слой, видимость в 13 GET и шаг после импорта откатываются revert кода; до него выполните `cancel-pending`, иначе поглощённые товары снова появятся в каталоге без своих строк.
 
 ## JSON-поля
 

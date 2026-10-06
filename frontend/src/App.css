@@ -26,6 +26,7 @@ h2 { font-size: 1.35rem; letter-spacing: -0.025em; }
 .main-navigation { display: flex; flex-wrap: wrap; gap: 8px; }
 .main-navigation a { display: inline-flex; align-items: center; min-height: 44px; padding: 8px 12px; border-radius: 8px; text-underline-offset: 4px; }
 .main-navigation a[aria-current] { color: #246044; background: #e5ede2; font-weight: 600; }
+.section-navigation { margin-bottom: 20px; }
 .intro { max-width: 650px; padding: 52px 0 36px; }
 .eyebrow { color: #526657; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; margin-bottom: 12px; }
 .intro-text { font-size: 1.2rem; margin-top: 18px; }

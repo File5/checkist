@@ -6,10 +6,12 @@ control signal: defer this crop and keep its fence alive; no result is written.
 FenceLost is propagated: cancelled/expired/stale work must not write anything.
 Do not wrap this service in a caller transaction or run OCR while importing.
 """
+import logging
 from dataclasses import dataclass, replace
 from datetime import date
 from decimal import Decimal
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, connection, transaction
 
@@ -35,6 +37,9 @@ RECEIPT_UNIQUES = {
     "receipts_receipt_fiscal_key_uniq", "receipts_receipt_store_number_uniq",
     "receipts_receipt_store_time_total_uniq",
 }
+
+
+logger = logging.getLogger(__name__)
 
 
 class ImportBusy(RuntimeError):
@@ -81,6 +86,26 @@ def _domain_observation(observation):
         values["discount_total"] = sum((d.amount for d in observation.discounts), Decimal(0))
         derived.append("/discount_total")
     return replace(observation, taxes=tuple(taxes), lines=tuple(lines), **values), derived
+
+
+def _detect_product_merges(receipt):
+    """Duplicate search over the products of this receipt, in its own savepoint.
+
+    Runs inside the import transaction under ``IMPORT_LOCK``. A failure rolls
+    back the savepoint only and never the receipt; the next ``detect`` catches
+    up. The log names the error class, never receipt data.
+    """
+    from merges import services  # lazy: merges.services imports IMPORT_LOCK from this module
+
+    try:
+        with transaction.atomic():
+            product_ids = set(
+                ReceiptLine.objects.filter(receipt=receipt, product__isnull=False).values_list("product_id", flat=True)
+            )
+            if product_ids:
+                services.detect(product_ids=product_ids)
+    except Exception as error:
+        logger.error("Product merge detection after import failed: %s", type(error).__name__)
 
 
 def _preflight(observation, derived=()):
@@ -436,6 +461,8 @@ def import_receipt(image, observation, *, run_token, version, on_saved=None):
                     issues = [issue("invalid_value", "/", "Значения не соответствуют модели чека.")]
                 except Exception:
                     status, issues = ImageStatus.FAILED, [issue("import_failed", "/", "Не удалось сохранить чек.")]
+                if receipt is not None and settings.PRODUCT_MERGE_AUTO_DETECT:
+                    _detect_product_merges(receipt)
                 if status is None:
                     status = ImageStatus.NEEDS_REVIEW if receipt is None else {
                         ImportEffect.CREATED: ImageStatus.IMPORTED, ImportEffect.LINKED: ImageStatus.REUSED,

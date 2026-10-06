@@ -6,6 +6,7 @@ from rest_framework.response import Response
 
 from catalog.models import Product
 from config.exceptions import ObjectNotFound, RangeTooLarge
+from merges.visibility import visible
 from receipts.decimal_math import change_percent, decimal_average, price_context
 from receipts.prices import price_history
 from stores.models import Store
@@ -43,10 +44,10 @@ _DEFERRED = (
 
 
 def _product(pk):
-    """Товар с обобщённым продуктом либо ``404 not_found``."""
+    """Товар с обобщённым продуктом либо ``404 not_found``; поглощённый слиянием — тоже ``404``."""
     if pk > MAX_ID:
         raise ObjectNotFound()
-    return common.get_or_404(Product.objects.select_related("generic"), pk)
+    return common.get_or_404(visible(Product.objects.select_related("generic")), pk)
 
 
 def _product_brief(product):

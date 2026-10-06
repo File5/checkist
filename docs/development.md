@@ -205,6 +205,42 @@ Seed разрешён для `test_*` или `checkist_qa` с необязате
 
 Клиент: существующие npm-команды, QA `npm.cmd run dev -- --port 15173`. Все новые действия требуют CSRF cookie/token (`credentials: same-origin`), в отличие от health. API возвращает относительные URL с фиксированным `MEDIA_URL=/media/`; Vite dev/preview передают `/api` и `/media` на один Django. Сквозная HTTP-проверка и ручная UI-приёмка — в [verification.md](verification.md#распознавание-сквозная-проверка-клиента-и5).
 
+### QA: слияние дублей для клиента
+
+Сервер с демо-каталогом дублей — для клиента и ручной приёмки. В терминале из корня сначала **весь** QA environment из [verification.md](verification.md#изолированная-qa-среда), затем:
+
+```powershell
+$env:DJANGO_DEBUG='1'
+$env:ALLOW_LOCAL_RECOGNITION_API='1'
+$env:PRODUCT_MERGE_AUTO_DETECT='1'
+$env:DJANGO_CSRF_TRUSTED_ORIGINS='http://127.0.0.1:15173,http://localhost:15173'
+$env:MEDIA_ROOT=Join-Path $env:TEMP 'checkist-qa-recognition-media'
+$env:RECEIPT_OCR_TEMP_ROOT=Join-Path $env:TEMP 'checkist-qa-recognition-scratch'
+docker compose -p checkist_qa up -d --wait --wait-timeout 90 postgres redis
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py migrate --noinput
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py seed_product_merge_demo
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py product_merges detect --dry-run
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py product_merges detect
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py runserver 127.0.0.1:18000 --noreload
+```
+
+- `seed_product_merge_demo` разрешён только для `test_*` и `checkist_qa` с необязательным `_суффиксом`; создаёт двух вымышленных продавцов, 9 чеков, 42 строки и 35 товаров; повтор ничего не меняет. Демо-названия не должны совпадать с уже существующими товарами — используйте чистую QA-базу (новый том либо другой `-p`).
+- `detect --dry-run` печатает найденные группы и ничего не пишет; `detect` создаёт 7 ожидающих групп, повтор — `created: 0, extended: 0`. На чистой базе id товаров: пицца 2 / 9 / 15 (оставляемый 2), молоко 1 / 6 / 13 / 18 / 21 (оставляемый 1, конфликт `generic` у 1 и 13), «Pizza Hot Dog» — 3.
+- Эталонные ответы для схем клиента — `backend/merges/tests/fixtures/public/*.json`; контракт — [api-contract.md](api-contract.md#реализовано-локальный-api-слияния-дублей-товаров-с2).
+- На dev `PRODUCT_MERGE_AUTO_DETECT` остаётся `0`, пока владелец не решит применить слияния к dev-данным; `detect` на dev без такого решения не запускайте.
+- Сценарий HTTP без браузера и ручная приёмка — [verification.md](verification.md#слияние-дублей-http-без-браузера).
+
+Клиент — во втором терминале с тем же environment, **в PowerShell** (Git Bash переписывает `VITE_API_BASE_URL=/api` в путь Windows):
+
+```powershell
+Set-Location frontend
+npm.cmd ci
+npm.cmd run dev -- --port 15173
+# либо сборка: npm.cmd run build; npm.cmd run preview -- --port 15173
+```
+
+Экраны — `http://127.0.0.1:15173/catalog/merges`; сценарий для человека и тестовые данные — [frontend/src/features/merges/ACCEPTANCE.md](../frontend/src/features/merges/ACCEPTANCE.md). Проверка адаптеров настоящим HTTP без браузера, из корня в третьем терминале с тем же environment: `node frontend/scripts/check_product_merges_proxy.mjs http://127.0.0.1:15173`. Скрипт подтверждает, отменяет и исключает записи, поэтому запускается один раз на свежей базе после `seed_product_merge_demo` и `detect`; имя базы должно быть `checkist_qa` либо `checkist_qa_<суффикс>`, порты — не dev. Без QA Celery worker `/api/health/` отвечает 503 — слияние от него не зависит.
+
 ### Настоящий Codex в QA
 
 Остановить fake-worker. В том же QA DB/MEDIA/scratch, в терминале worker:
