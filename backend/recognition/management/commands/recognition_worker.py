@@ -1,4 +1,9 @@
-"""Host worker; PostgreSQL owns both the queue and the singleton lock."""
+"""Host worker; PostgreSQL owns both the queue and the singleton lock.
+
+Two kinds of work: a recognition job always comes first; when none waits, one
+batch of a product classification run is executed (classification/QUEUE.md).
+"""
+import logging
 import os
 import re
 import shutil
@@ -11,8 +16,11 @@ from threading import Event, Thread
 import psycopg
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
-from django.db import DatabaseError, connections, transaction
+from django.db import DatabaseError, InterfaceError, OperationalError, connections, transaction
 
+from classification import queue as classification_queue
+from classification.classifier import FAKE_SCENARIOS, get_classifier
+from classification.worker import process_batch
 from recognition import queue
 from recognition.models import ProcessingJob
 from recognition.pipeline import process_job
@@ -22,6 +30,8 @@ from recognition.providers.codex_cli import child_environment
 from recognition.providers.factory import get_provider
 from recognition.providers.fake import SCENARIOS
 from recognition.statuses import EXECUTING_JOB_STATUSES
+
+logger = logging.getLogger(__name__)
 
 
 @contextmanager
@@ -167,6 +177,54 @@ class LeaseHeartbeat:
             connections["default"].close()
 
 
+def build_classifier(*, fake_scenario=None):
+    """The classifier of the same provider; a failure never selects the fake."""
+    if fake_scenario and settings.RECEIPT_OCR_PROVIDER != "fake":
+        raise CommandError("--classification-fake-scenario requires RECEIPT_OCR_PROVIDER=fake.")
+    try:
+        return get_classifier(scenario=fake_scenario)
+    except ProviderError:
+        raise CommandError("Product classification provider configuration is invalid.") from None
+
+
+class SlotWatch:
+    """is_stopped of a classification batch: the worker lost its singleton session.
+
+    The batch has no heartbeat thread; the model request polls this instead, at
+    most once a second. A lost slot stays lost.
+    """
+    def __init__(self, slot, interval=1.0):
+        self.slot, self.interval = slot, interval
+        self.lost, self.checked = False, time.monotonic()
+
+    def __call__(self):
+        if not self.lost and time.monotonic() - self.checked >= self.interval:
+            self.checked = time.monotonic()
+            try:
+                check_slot(self.slot)
+            except queue.FenceLost:
+                self.lost = True
+        return self.lost
+
+
+def classify_batch(run, *, classifier, slot):
+    """One batch; an unexpected error fails the run, never the worker.
+
+    An unavailable database and Ctrl+C propagate, as for a recognition job.
+    """
+    try:
+        return process_batch(run, classifier=classifier, is_stopped=SlotWatch(slot))
+    except (OperationalError, InterfaceError):
+        raise
+    except Exception as error:
+        logger.error("Product classification batch failed: %s", type(error).__name__)  # never its text
+        try:
+            return classification_queue.fail_run(run, "internal_error")
+        except classification_queue.RunLost:
+            run.refresh_from_db()
+            return run
+
+
 def release_active(job):
     current = ProcessingJob.objects.get(pk=job.pk)
     if current.run_token == job.run_token and current.status in EXECUTING_JOB_STATUSES:
@@ -180,25 +238,41 @@ class Command(BaseCommand):
     help = "Process receipt recognition jobs on the host beside Codex (one worker)."
 
     def add_arguments(self, parser):
-        parser.add_argument("--once", action="store_true", help="Recover leases and process at most one available job, then exit.")
+        parser.add_argument(
+            "--once", action="store_true",
+            help="Recover leases and process at most one unit of work (a job, else one classification batch), then exit.",
+        )
         parser.add_argument("--fake-scenario", choices=SCENARIOS, help="Server-only demo scenario; requires the fake provider.")
+        parser.add_argument(
+            "--classification-fake-scenario", choices=FAKE_SCENARIOS,
+            help="Server-only demo scenario of product classification; requires the fake provider.",
+        )
 
     def handle(self, *args, **options):
-        active = None
+        active = active_run = None
         try:
             with worker_slot() as slot:
                 provider = validate_startup(fake_scenario=options["fake_scenario"])
+                classifier = build_classifier(fake_scenario=options.get("classification_fake_scenario"))
                 self.stdout.write("Recognition worker ready.")
                 try:
                     while True:
                         check_slot(slot)
                         queue.recover_expired_jobs()
+                        classification_queue.recover_expired_runs()
                         active = queue.claim_job()
                         if active is not None:
                             with LeaseHeartbeat(active, slot) as heartbeat:
                                 result = process_job(active, provider=provider, is_stopped=heartbeat.has_lost)
                             self.stdout.write(f"Job {result.pk}: {result.status}")
                             active = None
+                        else:
+                            # Lower priority: only when no recognition job waits, and one batch a pass.
+                            active_run = classification_queue.claim_run()
+                            if active_run is not None:
+                                result = classify_batch(active_run, classifier=classifier, slot=slot)
+                                self.stdout.write(f"Classification run {result.pk}: {result.status}")
+                                active_run = None
                         if options["once"]:
                             return
                         # Signals interrupt this idle wait too; no further claim.
@@ -206,6 +280,11 @@ class Command(BaseCommand):
                 except KeyboardInterrupt:
                     if active is not None:
                         release_active(active)
+                    if active_run is not None:
+                        try:
+                            classification_queue.release_run(active_run)
+                        except classification_queue.RunLost:
+                            pass  # closed by somebody else; nothing to give back
                     self.stdout.write("Recognition worker stopped; active work released.")
         except queue.FenceLost:
             raise CommandError("Recognition worker lost its lease or heartbeat; stopped without accepting late output.") from None

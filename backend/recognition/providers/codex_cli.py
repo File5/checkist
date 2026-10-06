@@ -115,13 +115,14 @@ def validate_prepared_image(image):
         raise ProviderError("invalid_input") from None
 
 
-def build_argv(executable, model, work, schema, output, image):
+def build_argv(executable, model, work, schema, output, image=None):
+    # A text-only call (image is None) has the same flags without the -i pair.
     return [str(executable), "-a", "never", "exec", "--ignore-user-config", "--ignore-rules", "--ephemeral",
             "--skip-git-repo-check", "-C", str(work), "-m", model, "-s", "read-only",
             "--disable", "shell_tool", "--disable", "unified_exec", "--disable", "multi_agent",
             "-c", 'web_search="disabled"', "-c", "project_doc_max_bytes=0",
             "-c", 'model_reasoning_effort="low"', "--color", "never", "--json",
-            "--output-schema", str(schema), "-o", str(output), "-i", str(image), "-"]
+            "--output-schema", str(schema), "-o", str(output), *(() if image is None else ("-i", str(image))), "-"]
 
 
 def _error_code(text):
@@ -263,6 +264,63 @@ class CodexCLIProvider:
                     raise
         except SchemaValidationError:
             raise ProviderError("invalid_output") from None
+        except (OSError, ValueError):
+            raise ProviderError("configuration_error") from None
+
+    def run_text(self, *, prompt, schema, timeout_seconds, run, stage="classify"):
+        """One text-only structured call: the parsed JSON of the output file, or ProviderError.
+
+        Repeats _call without an image: the same private attempt directory,
+        flags, event and output file checks. The caller owns the prompt, the
+        schema file and the check of the parsed value against that schema.
+        """
+        run = run.limited(_positive(timeout_seconds))
+        run.stage(stage)
+        if not isinstance(prompt, str) or not prompt:
+            raise ProviderError("invalid_input")
+        executable = shutil.which(str(self.config.executable))
+        if executable is None or (os.name == "nt" and Path(executable).suffix.lower() != ".exe"):
+            raise ProviderError("configuration_error")
+        if not self.config.model or any(ord(c) < 32 for c in self.config.model):
+            raise ProviderError("configuration_error")
+        root = self.config.temp_root.resolve()
+        media = getattr(settings, "MEDIA_ROOT", "")
+        if media and root.is_relative_to(Path(media).resolve()):
+            raise ProviderError("configuration_error")
+        try:
+            root.mkdir(parents=True, exist_ok=True, mode=0o700)
+            with tempfile.TemporaryDirectory(prefix="attempt-", dir=root) as folder:
+                work = Path(folder).resolve()
+                copy = work / "output.schema.json"
+                shutil.copyfile(schema, copy)
+                output = work / "result.json"  # must not exist before launch
+                if output.exists():
+                    raise ProviderError("invalid_output")
+                started_ns = copy.stat().st_mtime_ns  # the same filesystem clock fence as _call
+                try:
+                    result = self.supervisor.run(
+                        build_argv(executable, self.config.model, work, copy, output),
+                        cwd=work, env=child_environment(self.config.codex_home), stdin=prompt.encode("utf-8"),
+                        run=run, output_path=output,
+                    )
+                    run.check()
+                    validate_events(result)
+                    if not output.is_file() or output.is_symlink():
+                        raise ProviderError("invalid_output")
+                    stat = output.stat()
+                    if not 0 < stat.st_size <= MAX_OUTPUT_BYTES or stat.st_mtime_ns < started_ns:
+                        raise ProviderError("invalid_output")
+                    data = load_json(output.read_bytes())
+                    run.check()
+                    return data
+                except SchemaValidationError:
+                    error = ProviderError("invalid_output")
+                    error.private_output = _private_fragment(output)
+                    raise error from None
+                except ProviderError as error:
+                    if error.code == "invalid_output":
+                        error.private_output = _private_fragment(output)
+                    raise
         except (OSError, ValueError):
             raise ProviderError("configuration_error") from None
 

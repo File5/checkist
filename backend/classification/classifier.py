@@ -133,5 +133,8 @@ def get_classifier(*, scenario=None):
     name = getattr(settings, "RECEIPT_OCR_PROVIDER", "codex_cli")
     if name == "fake":
         return FakeClassifier(scenario=scenario or os.environ.get(FAKE_SCENARIO_ENV) or "mixed")
-    # The codex_cli branch (classification.codex.CodexClassifier) arrives with the worker step.
+    if name == "codex_cli":
+        from classification.codex import CodexClassifier
+
+        return CodexClassifier()  # the model is RECEIPT_OCR_MODEL, as for recognition
     raise ProviderError("configuration_error")

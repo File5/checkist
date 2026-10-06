@@ -197,9 +197,20 @@ class FactoryTests(SimpleTestCase):
                 get_classifier()
             self.assertEqual(caught.exception.code, "configuration_error")
 
-    @override_settings(RECEIPT_OCR_PROVIDER="codex_cli")
-    def test_another_provider_never_falls_back_to_the_fake(self):
+    @override_settings(RECEIPT_OCR_PROVIDER="codex_cli", RECEIPT_OCR_MODEL="demo-model")
+    def test_codex_provider_never_falls_back_to_the_fake(self):
+        from classification.codex import CodexClassifier
+
         for scenario in (None, "mixed"):
-            with self.subTest(scenario=scenario), self.assertRaises(ProviderError) as caught:
-                get_classifier(scenario=scenario)
+            with self.subTest(scenario=scenario):
+                classifier = get_classifier(scenario=scenario)
+                self.assertIsInstance(classifier, CodexClassifier)
+                self.assertEqual((classifier.name, classifier.model), ("codex_cli", "demo-model"))
+                self.assertTrue(callable(classifier.classify))
+
+    def test_unknown_provider_and_broken_codex_settings_are_configuration_errors(self):
+        for settings in ({"RECEIPT_OCR_PROVIDER": "other"}, {"RECEIPT_OCR_PROVIDER": "codex_cli", "RECEIPT_OCR_MODEL": ""}):
+            with self.subTest(settings=settings), override_settings(**settings), \
+                    self.assertRaises(ProviderError) as caught:
+                get_classifier(scenario="mixed")
             self.assertEqual(caught.exception.code, "configuration_error")

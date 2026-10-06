@@ -906,7 +906,9 @@ def request_run(*, trigger, product_ids=None):
             if queued is None:
                 return _new_run(trigger=trigger, scope=Scope.PRODUCTS, ids=ids, limit=limit), True
             if queued.scope == Scope.PRODUCTS:
-                merged = sorted(set(queued.product_ids) | set(ids))
+                # A run waiting between batches keeps the ids its cursor already passed.
+                done = queued.product_ids[:queued.cursor]
+                merged = done + sorted((set(queued.product_ids[queued.cursor:]) | set(ids)) - set(done))
                 if merged[:limit] != queued.product_ids:
                     queued.product_ids = merged[:limit]
                     queued.requested_count = len(queued.product_ids)
@@ -926,6 +928,9 @@ def request_run(*, trigger, product_ids=None):
         }
         queued = active.get(RunStatus.QUEUED)
         if queued is not None and queued.scope == Scope.PRODUCTS and product_ids is None:
+            # A run waiting between batches keeps the ids its cursor already passed.
+            done = queued.product_ids[:queued.cursor]
+            ids = done + [pk for pk in ids if pk not in set(done)]
             queued.scope, queued.product_ids = Scope.ALL, ids[:limit]
             queued.requested_count = len(queued.product_ids)
             queued.remaining_count = max(0, len(ids) - limit)
