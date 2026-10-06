@@ -3,6 +3,8 @@ import type { JobStatus } from '../api/recognition-types'
 import type { ReceiptOperation } from '../api/receipts-types'
 import { mergeStatuses } from '../api/product-merges-types'
 import type { MergeStatus } from '../api/product-merges-types'
+import { classificationStatuses } from '../api/product-classifications-types'
+import type { ClassificationStatus } from '../api/product-classifications-types'
 
 export interface CatalogQuery {
   q?: string
@@ -41,6 +43,13 @@ export interface MergesQuery {
   page: number
 }
 
+/** No status means the default list: records waiting for confirmation. `product` narrows the screen to one product. */
+export interface ClassificationQuery {
+  status?: Exclude<ClassificationStatus, 'pending'> | 'all'
+  product?: number
+  page: number
+}
+
 export type CatalogRoute =
   | { kind: 'catalog'; query: CatalogQuery }
   | { kind: 'category'; categoryId: number; query: CatalogQuery }
@@ -55,6 +64,7 @@ export type NavigableRoute = CatalogRoute
   | { kind: 'job'; jobId: number }
   | { kind: 'merges'; query: MergesQuery }
   | { kind: 'merge'; groupId: number }
+  | { kind: 'classification'; query: ClassificationQuery }
 
 export type Route = NavigableRoute
   | { kind: 'not-found'; path: string }
@@ -189,6 +199,15 @@ export function parseMergesQuery(search: string | URLSearchParams): ParsedQuery<
   return { query: { ...(status && status !== 'pending' && { status }), page }, invalidFields: reader.invalidFields }
 }
 
+export function parseClassificationQuery(search: string | URLSearchParams): ParsedQuery<ClassificationQuery> {
+  const reader = queryReader(search)
+  const status = reader.choice('status', [...classificationStatuses, 'all'] as const)
+  const product = reader.integer('product')
+  const page = reader.integer('page') ?? 1
+  // The explicit default is the same list: keep one canonical address for it.
+  return { query: { ...(status && status !== 'pending' && { status }), ...(product && { product }), page }, invalidFields: reader.invalidFields }
+}
+
 function buildQuery<T>(query: T, keys: (keyof T)[], parse: (search: URLSearchParams) => ParsedQuery<T>): string {
   const params = new URLSearchParams()
   for (const key of keys) {
@@ -227,6 +246,10 @@ export function buildMergesQuery(query: MergesQuery): string {
   return buildQuery(query, ['status', 'page'], parseMergesQuery)
 }
 
+export function buildClassificationQuery(query: ClassificationQuery): string {
+  return buildQuery(query, ['status', 'product', 'page'], parseClassificationQuery)
+}
+
 function buildId(id: number): string {
   if (!Number.isSafeInteger(id) || id <= 0) throw new RangeError('Invalid route ID')
   return String(id)
@@ -245,6 +268,7 @@ export function buildRoute(route: NavigableRoute): string {
     case 'job': return `/recognition/jobs/${buildId(route.jobId)}`
     case 'merges': return `/catalog/merges${buildMergesQuery(route.query)}`
     case 'merge': return `/catalog/merges/${buildId(route.groupId)}`
+    case 'classification': return `/catalog/classification${buildClassificationQuery(route.query)}`
   }
 }
 
@@ -269,6 +293,11 @@ export function parseRoute(input: string | URL): Route {
     const parsed = parseMergesQuery(url.searchParams)
     if (parsed.invalidFields.length) return { kind: 'invalid-query', path, fields: parsed.invalidFields, resetTo: normalizedPath }
     return { kind: 'merges', query: parsed.query }
+  }
+  if (normalizedPath === '/catalog/classification') {
+    const parsed = parseClassificationQuery(url.searchParams)
+    if (parsed.invalidFields.length) return { kind: 'invalid-query', path, fields: parsed.invalidFields, resetTo: normalizedPath }
+    return { kind: 'classification', query: parsed.query }
   }
   const detail = /^\/(receipts|recognition\/jobs|catalog\/merges)\/([^/]+)$/.exec(normalizedPath)
   if (detail) {

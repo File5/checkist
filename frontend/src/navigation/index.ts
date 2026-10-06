@@ -8,3 +8,5 @@ export { buildReceiptsQuery, parseReceiptsQuery, buildJobsQuery, parseJobsQuery 
 export type { ReceiptsQuery, JobsQuery } from './routes'
 export { buildMergesQuery, parseMergesQuery } from './routes'
 export type { MergesQuery } from './routes'
+export { buildClassificationQuery, parseClassificationQuery } from './routes'
+export type { ClassificationQuery } from './routes'
