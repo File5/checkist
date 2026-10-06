@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import { getGenericProduct } from '../../api/catalog'
 import { getCountries } from '../../api/countries'
+import { getSpending } from '../../api/stats'
 import { getStores } from '../../api/stores'
 import type { ApiResult, GenericProduct } from '../../api/types'
 import { buildSpendingQuery, parseSpendingQuery } from '../../navigation'
@@ -10,7 +11,6 @@ import { useProductRequest } from '../product/useProductRequest'
 import { useReceiptRequest } from '../receipts/useReceiptRequest'
 import SpendingFilters from './spending-filters'
 import type { SpendingReference } from './spending-filters'
-import { loadSpending } from './spending-request'
 import SpendingResults from './spending-results'
 import { localToday, spendingParams } from './spending-state'
 import type { Shown, SpendingRequestState } from './spending-state'
@@ -44,7 +44,7 @@ export default function SpendingPage({ query }: SpendingPageProps) {
   const search = buildSpendingQuery(query)
   // The same filters are one request, whatever object the shell passes on a re-render.
   const applied = useMemo(() => parseSpendingQuery(search).query, [search])
-  const load = useCallback((signal: AbortSignal) => loadSpending(spendingParams(applied), { signal }), [applied])
+  const load = useCallback((signal: AbortSignal) => getSpending(spendingParams(applied), { signal }), [applied])
   const request = useReceiptRequest(load)
   const [last, setLast] = useState<Shown>()
   if (request.state.kind === 'ok' && last?.data !== request.state.data) setLast({ query: applied, data: request.state.data })

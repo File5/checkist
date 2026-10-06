@@ -98,7 +98,6 @@ describe('spending schema', () => {
     ['a store without city', (body) => drop(block(body).items[0], 'city')],
     ['a store with a three-letter country', (body) => set(block(body).items[0], 'country', 'DEU')],
     ['a special item among stores', (body) => Object.assign(block(body).items[0], { kind: 'service', id: null, name: null })],
-    ['a parent outside the category grouping', (body) => set(body, 'parent', { id: 1, name: 'Продукты', path: [] })],
   ])
   rejects<Spending>('spending-product.json', isSpending, [
     ['a quantity with two places', (body) => set(block(body).items[0], 'quantity', '18.00')],
@@ -111,6 +110,41 @@ describe('spending schema', () => {
     ['a quantity of a generic product', (body) => Object.assign(block(body).items[0], { quantity: '1.000', unit: 'l' })],
     ['a direct generic product', (body) => set(block(body).items[0], 'direct', true)],
   ])
+  describe('category filter under another grouping', () => {
+    // The server names the category of the filter in `parent` under every grouping, not only `group_by=category`.
+    const parent = (statsFixture('spending-category-drilldown.json') as Spending).parent
+    const filtered = (name: string) => ({ ...(statsFixture(name) as Spending), parent: structuredClone(parent) })
+    const answers: [string, string][] = [
+      ['generic', 'spending-generic.json'], ['product', 'spending-product.json'], ['product', 'spending-generic-filter.json'],
+      ['store', 'spending-store.json'],
+    ]
+    it.each(answers)('accepts `parent` with group_by=%s (%s)', (grouping, name) => {
+      const body = filtered(name)
+      expect(body.group_by).toBe(grouping)
+      expect(body.parent).not.toBeNull()
+      expect(isSpending(body)).toBe(true)
+    })
+    it.each(answers)('still checks `parent` and the rest of the answer with group_by=%s (%s)', (_, name) => {
+      expect(isSpending({ ...filtered(name), parent: { id: 1, name: 'Продукты' } })).toBe(false)
+      expect(isSpending({ ...filtered(name), parent: { ...parent, id: 0 } })).toBe(false)
+      expect(isSpending({ ...filtered(name), parent: { ...parent, path: [{ id: 1 }] } })).toBe(false)
+      expect(isSpending({ ...filtered(name), parent: 'Продукты' })).toBe(false)
+      const missing: Record<string, unknown> = filtered(name)
+      drop(missing, 'parent')
+      expect(isSpending(missing)).toBe(false)
+      const broken = filtered(name)
+      set(broken.currencies[0].items[0], 'amount', '12,5')
+      expect(isSpending(broken)).toBe(false)
+      const foreign = filtered(name)
+      set(foreign.currencies[0].items[0], 'kind', 'category')
+      expect(isSpending(foreign)).toBe(false)
+    })
+    it('accepts an unknown category of the filter: no parent and no blocks under any grouping', () => {
+      for (const group_by of ['category', 'generic', 'product', 'store']) {
+        expect(isSpending({ ...(statsFixture('spending-empty.json') as Spending), group_by })).toBe(true)
+      }
+    })
+  })
   it('keeps the nullable answers of the contract', () => {
     const drilldown = statsFixture('spending-category-drilldown.json') as Spending
     expect(drilldown.parent).toEqual({ id: 1, name: 'Продукты питания', path: [{ id: 1, name: 'Продукты питания' }] })
