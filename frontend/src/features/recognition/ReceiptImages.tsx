@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import type { RefObject } from 'react'
 import type { ReceiptImage } from '../../api/recognition'
+import { focusOwnerAttribute } from '../../components/local-request-focus'
 import RecognitionIssues from '../../components/RecognitionIssues'
 import RequestState from '../../components/RequestState'
 import { formatObservedAt } from '../../lib/format'
@@ -21,6 +22,8 @@ function ImageCard({ item, finished, busy, review, remember, result }: {
   // The answer of the confirmation is shown at once; the list read that follows brings the same crop.
   const shown = addressed && action.kind === 'done' && item.status === 'needs_review' ? action.image : item
   const linked = shown.confirmed_at !== null && (shown.status === 'reused' || shown.status === 'updated')
+  // While the form is shown, a refusal is printed in the form, next to the pressed button; the card states everything else.
+  const message = addressed && (action.kind === 'done' || action.kind === 'failed') && shown.status !== 'needs_review' ? action.message : ''
   const card = useRef<HTMLLIElement>(null)
   const lastStatus = useRef(shown.status)
   // A reread after a refusal may replace the form by the saved state: focus that was inside the form goes to the message of the card.
@@ -29,12 +32,11 @@ function ImageCard({ item, finished, busy, review, remember, result }: {
     lastStatus.current = shown.status
     if (left && addressed && (!document.activeElement || document.activeElement === document.body)) card.current?.querySelector<HTMLElement>('.ck-rec-result')?.focus()
   }, [shown.status, addressed])
-  return <li className="ck-rec-card" ref={card}>
+  return <li className="ck-rec-card" ref={card} {...{ [focusOwnerAttribute]: '' }}>
     <h3>Чек {shown.position} · {imageLabels[shown.status]}</h3>
     <MediaImage url={shown.image_url} alt={`Вырезка чека ${shown.position}`} />
     {shown.clipped && <p className="ck-rec-warning">Часть чека обрезана.</p>}
-    <p ref={addressed ? result : undefined} tabIndex={-1} role="status" className={`ck-rec-result${addressed && action.kind === 'failed' ? ' ck-rec-result-failed' : ''}`}>
-      {addressed && (action.kind === 'done' || action.kind === 'failed') ? action.message : ''}</p>
+    <p ref={addressed ? result : undefined} tabIndex={-1} role="status" className={`ck-rec-result${message && action.kind === 'failed' ? ' ck-rec-result-failed' : ''}`}>{message}</p>
     {shown.confirmed_at !== null && <p className="ck-rec-confirmed">Подтверждено вручную: <time dateTime={shown.confirmed_at}>{formatObservedAt(shown.confirmed_at)}</time></p>}
     {linked && <p className="ck-rec-warning">Чек уже был сохранён раньше: вырезка привязана к нему. Заполненные значения этого чека не изменены — исправления к ним не применены. Расхождения перечислены в замечаниях.</p>}
     {shown.status === 'needs_review'

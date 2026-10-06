@@ -8,6 +8,7 @@ import { issue, publicFixture } from '../../api/recognition-test-support'
 import ActionButtons from './ActionButtons'
 import JobSummary from './JobSummary'
 import ReceiptImages from './ReceiptImages'
+import { reviewErrorText } from './labels'
 import ReviewForm from './ReviewForm'
 import type { ReviewFormProps } from './ReviewForm'
 import { buildInput, createReview, reviewReducer } from './review-state'
@@ -65,6 +66,25 @@ describe('review form SSR markup (interaction in a browser stays manual)', () =>
     expect(all.filter((control) => control.invalid).map((control) => control.id)).toEqual(['review-42-lines-1-quantity'])
     expect(html).toContain('<p id="review-42-lines-1-quantity-error" class="ck-review-error">Не удалось прочитать обязательное поле</p>')
     expect(html).toContain('<p tabindex="-1" role="status" class="ck-review-notice"></p>')
+    // The live line of a refusal exists before any refusal, right before the button.
+    expect(html).toMatch(/<p role="status" class="ck-review-refusal"><\/p><div class="ck-rec-action-block"><div class="ck-rec-actions"><button type="button" data-review-confirm/)
+  })
+  it('labels every field of one record differently: the kind of a tax and its amount are not both «Налог»', () => {
+    const state = apply(start(), { type: 'add', list: 'lines' }, { type: 'add', list: 'discounts' }, { type: 'add', list: 'taxes' }, { type: 'add', list: 'taxes' })
+    const deposit = apply(state, { type: 'line', key: state.lines[1].key, patch: { kind: 'deposit' } })
+    const html = form(deposit)
+    const groups = [...html.matchAll(/<fieldset class="ck-review-group"><legend>([^<]+)<\/legend>(.*?)<\/fieldset>/g)].map(([, legend, body]) => ({
+      legend, labels: [...body.matchAll(/<label for="[^"]+">([^<]*)<\/label>/g)].map(([, text]) => text) }))
+    expect(groups.map((group) => group.legend)).toEqual(['Магазин', 'Чек', 'Строка 1', 'Строка 2 · добавлена вручную', 'Скидка 1', 'Налоговый итог 1', 'Налоговый итог 2'])
+    for (const group of groups) expect(new Set(group.labels).size, `${group.legend}: ${group.labels.join(' | ')}`).toBe(group.labels.length)
+    expect(groups[5].labels).toEqual(['Вид налога', 'Ставка НДС, %', 'Код налога', 'Сумма без налога', 'Сумма налога', 'Сумма с налогом'])
+    expect(groups[3].labels).toEqual(['Название', 'Тип строки', 'Залог к строке', 'Количество', 'Единица', 'Цена за единицу', 'Сумма', 'Вид налога', 'Ставка НДС, %', 'Код налога'])
+    expect(groups[4].labels).toEqual(['Название скидки', 'Сумма скидки', 'К чему относится'])
+    expect(html).not.toMatch(/<label for="[^"]+">Налог<\/label>/)
+  })
+  it('asks for a text keyboard at the local time: a numeric one may lack the colon', () => {
+    const time = controls(form(start())).find((control) => control.id === 'review-42-receipt-local_time')!
+    expect(time.attrs).toContain('type="text"'); expect(time.attrs).not.toContain('inputMode')
   })
   it('marks the fields of a refused confirmation and never prints server phrases', () => {
     const before = apply(start(), { type: 'add', list: 'lines' }, { type: 'add', list: 'discounts' }, { type: 'add', list: 'taxes' }, { type: 'add', list: 'taxes' })
@@ -99,10 +119,12 @@ describe('review form SSR markup (interaction in a browser stays manual)', () =>
     const foreign = form(apply(start(), { type: 'header', patch: { country: 'FR' } }))
     expect(foreign).toContain('<option value="FR" selected="">FR · нет в справочнике</option>')
   })
-  it('disables every control while the request is in flight and explains an unavailable confirmation', () => {
+  it('locks the fields while the request is in flight, keeps the pressed button focusable and explains an unavailable confirmation', () => {
     const pending = form(start(), { pending: true })
     expect(pending).toContain('<fieldset class="ck-review-body" disabled="">')
-    expect(pending).toMatch(/<button type="button" data-review-confirm="true" disabled="" aria-describedby="review-42-confirm-note">Сохраняем чек…<\/button>/)
+    // Not the `disabled` attribute: a disabled pressed button would lose focus. A second press is ignored by its state.
+    expect(pending).toContain('<button type="button" data-review-confirm="true" aria-disabled="true" aria-describedby="review-42-confirm-note">Сохраняем чек…</button>')
+    expect(pending.slice(pending.indexOf('</fieldset><p tabindex="-1" role="status" class="ck-review-notice">'))).not.toContain('disabled=""')
     const waiting = form(start(), { unavailable: 'Задание ещё не завершено: подтверждение станет доступно после окончания обработки.' })
     expect(waiting).toMatch(/data-review-confirm="true" disabled=""[^>]*>Подтвердить и сохранить чек/)
     expect(waiting).toContain('<p id="review-42-confirm-note" class="ck-rec-note">Задание ещё не завершено'); expect(waiting).toContain('<fieldset class="ck-review-body">')
@@ -155,14 +177,50 @@ describe('crop card around the confirmation', () => {
     expect(html).not.toContain('Исправление и подтверждение'); expect(html).not.toContain('Причины проверки')
     expect(html).toContain('Тип операции определён автоматически · Операция')
   })
-  it('keeps the person in the form with the refusal announced in the card', () => {
+  it('keeps the person in the form with the refusal announced next to the pressed button, once', () => {
     const error = readError(409, { error: { code: 'review_busy', message: 'Данные сейчас изменяются. Повторите позже.' } }, true)
     const html = cards(image(), { kind: 'failed', imageId: 42, error, message: 'Данные сейчас изменяются другой операцией, чек не сохранён.' })
-    expect(html).toContain('<p tabindex="-1" role="status" class="ck-rec-result ck-rec-result-failed">Данные сейчас изменяются другой операцией, чек не сохранён.</p>')
+    expect(html).toContain('<p role="status" class="ck-review-refusal">Данные сейчас изменяются другой операцией, чек не сохранён.</p><div class="ck-rec-action-block"><div class="ck-rec-actions"><button type="button" data-review-confirm="true" aria-describedby="review-42-confirm-note">Подтвердить и сохранить чек</button>')
+    // One live region speaks: the message of the card above the form stays empty while the form is shown.
+    expect(html.match(/Данные сейчас изменяются другой операцией/g)).toHaveLength(1)
+    expect(html).toContain('<p tabindex="-1" role="status" class="ck-rec-result"></p>')
     expect(html).toContain('Исправление и подтверждение'); expect(html).toContain('value="МОЛОКО"'); expect(html).not.toContain('Повторите позже')
-    expect(html).not.toMatch(/data-review-confirm="true" disabled=""/)
+    expect(html).not.toMatch(/data-review-confirm="true" disabled=""/); expect(html).not.toContain('aria-disabled')
     // The message of another crop is not repeated in this card.
     expect(cards(image(), { kind: 'failed', imageId: 41, error, message: 'Чужое сообщение' })).not.toContain('Чужое сообщение')
+  })
+  it.each([
+    [409, 'review_invalid'], [400, 'invalid_parameter'], [400, 'invalid_request'], [409, 'review_busy'], [409, 'review_resolved'], [409, 'review_unavailable'],
+    [409, 'job_active'], [404, 'not_found'], [403, 'csrf_failed'], [403, 'permission_denied'],
+  ])('shows every refusal at the button without the server phrase: HTTP %i %s', (status, code) => {
+    const fixtures: Record<string, string> = { review_invalid: 'review-invalid.json', invalid_parameter: 'review-invalid-parameter.json' }
+    const body = code in fixtures ? publicFixture(fixtures[code]) as { error: object } : { error: { code } }
+    const error = readError(status, { ...body, error: { ...body.error, message: 'Фраза сервера' } }, true)
+    expect(error.reason).toBe(code)
+    const message = reviewErrorText(error)
+    const html = cards(image(), { kind: 'failed', imageId: 42, error, message })
+    expect(html).toContain(`<p role="status" class="ck-review-refusal">${message}</p><div class="ck-rec-action-block">`)
+    expect(html.split(message)).toHaveLength(2); expect(html).not.toContain('Фраза сервера')
+  })
+  it.each([
+    ['network', 'Ответ сервера не получен. Действие могло выполниться: проверьте задание перед повтором.'],
+    ['timeout', 'Ответ сервера не получен. Действие могло выполниться: проверьте задание перед повтором.'],
+    ['server', 'Сервис ответил ошибкой. Действие могло выполниться: проверьте задание перед повтором.'],
+    ['invalid_response', 'Сервис ответил ошибкой. Действие могло выполниться: проверьте задание перед повтором.'],
+  ] as const)('shows an answer that was lost or unreadable at the button: %s', (reason, text) => {
+    const error = { kind: 'error' as const, reason }
+    const html = cards(image(), { kind: 'failed', imageId: 42, error, message: reviewErrorText(error) })
+    expect(html).toContain(`<p role="status" class="ck-review-refusal">${text}</p><div class="ck-rec-action-block">`)
+  })
+  it('moves the refusal to the message of the card when a reread replaced the form by the saved state', () => {
+    const error = readError(409, { error: { code: 'review_resolved', message: 'Фраза сервера' } }, true)
+    const html = cards(confirmed().image, { kind: 'failed', imageId: 42, error, message: reviewErrorText(error) })
+    expect(html).toContain(`<p tabindex="-1" role="status" class="ck-rec-result ck-rec-result-failed">${reviewErrorText(error)}</p>`)
+    expect(html).not.toContain('ck-review-refusal'); expect(html).not.toContain('Исправление и подтверждение')
+  })
+  it('marks every card as the owner of its focus, so that the block heading never takes it', () => {
+    expect(cards(image(), { kind: 'idle' })).toContain('<li class="ck-rec-card" data-request-focus-own="">')
+    expect(cards(confirmed().image, { kind: 'idle' })).toContain('<li class="ck-rec-card" data-request-focus-own="">')
   })
   it.each(['reused', 'updated'] as const)('states that corrections were not applied to an existing receipt (%s), also after a reload', (status) => {
     const linked: ReceiptImageDetail = { ...confirmed().image, status, receipt_id: 71, issues: [

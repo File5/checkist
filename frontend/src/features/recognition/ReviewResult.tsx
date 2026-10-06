@@ -20,6 +20,7 @@ export default function ReviewResult({ image, finished, busy, review, remember }
   const saving = review.state.kind === 'pending'
   const pending = review.state.kind === 'pending' && review.state.imageId === image.id
   const confirm = () => {
+    if (saving) return
     const missing = missingRequired(state)
     if (Object.keys(missing).length > 0) { dispatch({ type: 'missing', problems: missing }); return }
     const { input, sent } = buildInput(state)
@@ -34,6 +35,7 @@ export default function ReviewResult({ image, finished, busy, review, remember }
     <RecognitionIssues issues={state.issues} status="needs_review" />
     {image.normalized_result === null && <p className="ck-rec-warning">Распознанные данные недоступны. Заполните чек вручную по изображению.</p>}
     <ReviewForm imageId={image.id} state={state} dispatch={dispatch} pending={pending} unavailable={unavailable} onConfirm={confirm}
+      refusal={review.state.kind === 'failed' && review.state.imageId === image.id ? review.state.message : undefined}
       countries={countries.state.kind === 'ok' ? countries.state.data.results : null} countriesFailed={countries.state.kind === 'error'} onCountriesRetry={countries.request.refresh} />
   </>
 }

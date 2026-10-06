@@ -8,6 +8,15 @@ export type ReviewActionState = { kind: 'idle' } | { kind: 'pending'; imageId: n
 /** What the caller of `run` learns: the refusal to show at the fields, or nothing after a success, an abort or a busy store. */
 export type ReviewOutcome = LocalApiFailure | undefined
 
+/** Focus after the answer of a confirmation. The pressed button stays focusable during its request (aria-disabled)
+ * and disappears with the form after a success: focus stays on it, or goes to the message of the card when it is gone.
+ * Focus that the person moved elsewhere while waiting is never taken.
+ */
+export function reviewFocusTarget(active: 'pressed' | 'body' | 'elsewhere', pressedAvailable: boolean): 'pressed' | 'result' | undefined {
+  if (active === 'elsewhere') return undefined
+  return pressedAvailable ? 'pressed' : 'result'
+}
+
 function doneText(image: ReceiptImageDetail): string {
   const receipt = image.receipt_id === null ? '' : ` №${image.receipt_id}`
   if (image.status === 'reused') return `Подтверждено. Вырезка привязана к уже сохранённому чеку${receipt}: его значения не изменены, исправления к нему не применены.`
