@@ -11,6 +11,15 @@ export function chooseLocalFocusTarget({ generation, currentGeneration, phase, r
   return phase === 'error' && retry && retryAvailable ? 'retry' : 'result'
 }
 
+/** A subtree with this attribute returns focus itself (a pressed action and its own result message). */
+export const focusOwnerAttribute = 'data-request-focus-own'
+/** Elements of a focus owner inside the block are another place for the block: it never rescues or moves their focus. */
+export function insideLocalBlock<T extends { closest(selector: string): T | null }>(scope: { contains(node: T | null): boolean }, element: T): boolean {
+  if (!scope.contains(element)) return false
+  const owner = element.closest(`[${focusOwnerAttribute}]`)
+  return owner === null || !scope.contains(owner)
+}
+
 export interface LocalFocusEnvironment<T> {
   active: () => T
   inside: (element: T) => boolean

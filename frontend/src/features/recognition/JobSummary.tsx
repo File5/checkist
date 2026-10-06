@@ -14,7 +14,7 @@ export default function JobSummary({ job, announce = false }: { job: Job; announ
       <div><dt>Ошибок</dt><dd>{job.progress.failed}</dd></div>
       <div><dt>Отменено</dt><dd>{job.progress.cancelled}</dd></div>
     </dl>
-    <p className="ck-rec-note">Счётчики исходов могут пересекаться: сохранённый чек тоже может требовать проверки.</p>
+    <p className="ck-rec-note">Счётчики исходов могут пересекаться: сохранённый чек тоже может требовать проверки. После подтверждения вырезки человеком счётчики и статус задания пересчитываются.</p>
     <p>Создано: <time dateTime={job.created_at}>{formatObservedAt(job.created_at)}</time></p>
     {job.started_at && <p>Начато: <time dateTime={job.started_at}>{formatObservedAt(job.started_at)}</time></p>}
     {job.finished_at && <p>Завершено: <time dateTime={job.finished_at}>{formatObservedAt(job.finished_at)}</time></p>}

@@ -1,11 +1,12 @@
-import { amount, array, bool, choice, isId, isISODateTime, nonNegativeInteger, nullable, object, price, quantity, text, unit } from './schema.ts'
+import { amount, array, bool, choice, isId, isISODate, isISODateTime, nonNegativeInteger, nullable, object, price, quantity, text, unit } from './schema.ts'
 import type { Check, Guard } from './schema.ts'
 import { lineKind, mediaPath, receiptOperation, taxKind } from './receipts-schema.ts'
 import { executorStates, issueSeverities, jobStatuses } from './recognition-types.ts'
 import type {
   Bbox, Executor, IssueContext, Job, JobActions, JobDetail, JobItem, JobProgress, NormalizedDiscount, NormalizedLine,
   NormalizedResult, NormalizedTax, NormalizedTaxRate, Photo, PhotoUpload, ProposedReceipt, QuadPoint,
-  ReceiptImage, ReceiptImageDetail, RecognitionCsrf, RecognitionError, RecognitionIssue, RecognitionLimits,
+  ReceiptImage, ReceiptImageDetail, RecognitionCsrf, RecognitionError, RecognitionIssue, RecognitionLimits, ReviewConfirmInput, ReviewConfirmResult,
+  ReviewDiscountInput, ReviewLineInput, ReviewReceiptInput, ReviewTaxInput,
 } from './recognition-types.ts'
 
 export const jobStages = ['waiting', 'prepare', 'detect', 'crop', 'recognize', 'validate', 'import', 'finished'] as const
@@ -79,7 +80,9 @@ const quadPoint = object<QuadPoint>({ x: finiteRange(0, 1), y: finiteRange(0, 1)
 const quad: Check = (value) => Array.isArray(value) && value.length === 4 && value.every(quadPoint)
 export const isNormalizedTaxRate = object<NormalizedTaxRate>({ kind: nullable(taxKind), rate: nullable(amount) })
 export const isProposedReceipt = object<ProposedReceipt>({
-  store: (value) => value === null, store_display_name: nullable(text), address_display: nullable(text), currency: nullable(text),
+  store: (value) => value === null, store_display_name: nullable(text), address_display: nullable(text),
+  // The recognized code is not checked against the reference by the server either.
+  country: nullable(text), currency: nullable(text),
   operation: nullable(receiptOperation),
   // Invalid printed dates/times can be precisely why this observation needs review.
   purchased_on: nullable(text), local_time: nullable(text), total: nullable(amount), discount_total: nullable(amount), prices_include_tax: nullable(bool),
@@ -98,8 +101,41 @@ const imageShape = object<ReceiptImage>({
   id: isId, photo_id: isId, job_id: isId, position, created_at: isISODateTime, status: choice(...imageStatuses),
   receipt_id: nullable(isId), receipt_deleted: bool, image_url: nullable(mediaPath), width: isId, height: isId,
   bbox: nullable(isBbox), clipped: bool, issues: boundedArray(isRecognitionIssue, 1000), normalized_result: nullable(isNormalizedResult),
+  confirmed_at: nullable(isISODateTime),
 })
 export const isReceiptImage: Guard<ReceiptImage> = (value): value is ReceiptImage => imageShape(value)
   && (value.status === 'needs_review' || value.normalized_result === null)
 export const isReceiptImageDetail: Guard<ReceiptImageDetail> = (value): value is ReceiptImageDetail => isReceiptImage(value)
   && object<{ quad: QuadPoint[] | null; rotation_degrees: number | null }>({ quad: nullable(quad), rotation_degrees: nullable(finiteRange(-180, 180)) })(value)
+export const isReviewConfirmResult = object<ReviewConfirmResult>({ image: isReceiptImageDetail, job: isJobDetail })
+
+// Request body of the confirmation: the client's executable copy of the contract table. Unknown keys are forbidden there.
+const exact = <T>(shape: { [K in keyof T]-?: Check }, optional: readonly string[] = []): Guard<T> => {
+  const known = object<T>(shape)
+  return (value): value is T => known(value) && Object.keys(value as object).every((key) => Object.hasOwn(shape, key) || optional.includes(key))
+}
+const pattern = (expression: RegExp): Check => (value) => typeof value === 'string' && expression.test(value)
+const bodyText = (max: number): Check => (value) => typeof value === 'string' && value.trim().length > 0 && Array.from(value).length <= max
+const bodyPosition = integerRange(1, 32767)
+const bodyAmount = pattern(/^-?\d{1,12}\.\d{2}$/)
+const bodyRate = exact<NormalizedTaxRate>({ kind: nullable(taxKind), rate: nullable(pattern(/^\d{1,3}\.\d{2}$/)) })
+const receiptShape = exact<Omit<ReviewReceiptInput, 'utc_offset'>>({
+  store_id: nullable(isId), store_name: nullable(bodyText(100)), address: nullable(bodyText(4096)),
+  country: nullable(pattern(/^[A-Za-z]{2}$/)), currency: nullable(pattern(/^[A-Za-z]{3}$/)), operation: nullable(receiptOperation),
+  purchased_on: isISODate, local_time: pattern(/^\d{2}:\d{2}(?::\d{2})?$/), total: bodyAmount, prices_include_tax: nullable(bool),
+}, ['utc_offset'])
+// The only optional key: absent keeps the recognized offset, null clears it.
+const bodyReceipt: Check = (value) => receiptShape(value)
+  && (!Object.hasOwn(value, 'utc_offset') || nullable(pattern(/^[+-]\d{2}:\d{2}$/))((value as ReviewReceiptInput).utc_offset))
+const bodyLine = exact<ReviewLineInput>({
+  position: bodyPosition, source_position: nullable(bodyPosition), kind: lineKind, parent_position: nullable(bodyPosition), name: bodyText(4096),
+  quantity: nullable(pattern(/^-?\d{1,9}\.\d{3}$/)), unit: nullable(unit), unit_price: nullable(pattern(/^\d{1,10}\.\d{4}$/)), amount: nullable(bodyAmount),
+  tax_rate: bodyRate, tax_code: nullable(bodyText(8)),
+})
+const bodyDiscount = exact<ReviewDiscountInput>({ position: bodyPosition, line_position: nullable(bodyPosition), name: bodyText(255), amount: bodyAmount })
+const bodyTax = exact<ReviewTaxInput>({ tax_rate: bodyRate, tax_code: nullable(bodyText(8)), net: nullable(bodyAmount), tax: nullable(bodyAmount), gross: nullable(bodyAmount) })
+const bodyShape = exact<ReviewConfirmInput>({
+  receipt: bodyReceipt, lines: boundedArray(bodyLine, 1000), discounts: boundedArray(bodyDiscount, 1000), taxes: boundedArray(bodyTax, 100),
+})
+/** Formats and the closed key set only; uniqueness, references and import rules belong to the server. */
+export const isReviewConfirmInput: Guard<ReviewConfirmInput> = (value): value is ReviewConfirmInput => bodyShape(value) && value.lines.length > 0

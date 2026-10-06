@@ -55,3 +55,24 @@ export function errorText(error: LocalApiFailure, mutation = false): string {
     default: return 'Запрос не выполнен. Проверьте данные и повторите действие.'
   }
 }
+/** Refusals of a crop confirmation. The server message is never shown; nothing is replayed automatically. */
+export function reviewErrorText(error: LocalApiFailure): string {
+  switch (error.reason) {
+    case 'review_invalid': return 'Исправленные данные не прошли проверку, чек не сохранён. Причины обновлены, поля отмечены: исправьте их и подтвердите снова.'
+    case 'invalid_parameter': return 'Сервер не принял часть значений, чек не сохранён. Проверьте отмеченные поля и подтвердите снова.'
+    case 'invalid_request': return 'Сервер не принял запрос, чек не сохранён. Обновите страницу: несохранённые правки при этом будут потеряны.'
+    case 'review_resolved': return 'Этот результат уже подтверждён с другими данными. Ваши правки не сохранены; показываем актуальное состояние.'
+    case 'review_unavailable': return 'Подтверждение для этой вырезки недоступно: она уже обработана иначе либо её чек удалён. Показываем актуальное состояние.'
+    case 'review_busy': return 'Данные сейчас изменяются другой операцией, чек не сохранён. Проверьте задание и повторите подтверждение позже.'
+    case 'job_active': return 'Задание ещё не завершено, чек не сохранён. Подтверждение станет доступно после окончания обработки.'
+    case 'not_found': return 'Вырезка не найдена: возможно, она была удалена. Показываем актуальное состояние.'
+    case 'network': case 'timeout': return 'Ответ сервера не получен. Действие могло выполниться: проверьте задание перед повтором.'
+    case 'storage_unavailable': case 'database_unavailable': case 'server': case 'invalid_response':
+      return 'Сервис ответил ошибкой. Действие могло выполниться: проверьте задание перед повтором.'
+    default: return errorText(error, true)
+  }
+}
+/** Refusals that say nothing new about the saved state: the form stays as it is, without another read. */
+export function reviewKeepsState(error: LocalApiFailure): boolean {
+  return ['review_invalid', 'invalid_parameter', 'invalid_request', 'csrf_failed', 'permission_denied'].includes(error.reason)
+}

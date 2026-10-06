@@ -1,0 +1,78 @@
+{
+  "receipt": {
+    "store_id": null,
+    "store_name": "Тестовый магазин",
+    "address": "Teststrasse 12",
+    "country": "DE",
+    "currency": "EUR",
+    "operation": null,
+    "purchased_on": "2026-10-04",
+    "local_time": "14:35",
+    "total": "2.63",
+    "prices_include_tax": true
+  },
+  "lines": [
+    {
+      "position": 1,
+      "source_position": 1,
+      "kind": "product",
+      "parent_position": null,
+      "name": "МОЛОКО",
+      "quantity": "2.000",
+      "unit": "pcs",
+      "unit_price": "1.2900",
+      "amount": "2.58",
+      "tax_rate": {
+        "kind": "vat",
+        "rate": "7.00"
+      },
+      "tax_code": "A"
+    },
+    {
+      "position": 2,
+      "source_position": null,
+      "kind": "deposit",
+      "parent_position": 1,
+      "name": "PFAND",
+      "quantity": "1.000",
+      "unit": "pcs",
+      "unit_price": "0.2500",
+      "amount": "0.25",
+      "tax_rate": {
+        "kind": "vat",
+        "rate": "19.00"
+      },
+      "tax_code": "B"
+    }
+  ],
+  "discounts": [
+    {
+      "position": 1,
+      "line_position": 1,
+      "name": "Rabatt МОЛОКО",
+      "amount": "0.20"
+    }
+  ],
+  "taxes": [
+    {
+      "tax_rate": {
+        "kind": "vat",
+        "rate": "7.00"
+      },
+      "tax_code": "A",
+      "net": "2.22",
+      "tax": "0.16",
+      "gross": null
+    },
+    {
+      "tax_rate": {
+        "kind": "vat",
+        "rate": "19.00"
+      },
+      "tax_code": "B",
+      "net": "0.21",
+      "tax": "0.04",
+      "gross": "0.25"
+    }
+  ]
+}

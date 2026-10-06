@@ -80,6 +80,29 @@ class EmptyObjectParser(BaseParser):
         return value
 
 
+class JsonObjectParser(BaseParser):
+    """A JSON object of at most ``limit`` bytes without repeated keys at any level.
+
+    Keys and values are checked by the view. Subclass to set another ``limit``.
+    """
+
+    media_type = "application/json"
+    limit = 4096
+
+    def parse(self, stream, media_type=None, parser_context=None):
+        try:
+            data = stream.read(self.limit + 1)
+            if len(data) > self.limit:
+                raise InvalidRequest()
+            value = json.loads(data.decode("utf-8"), object_pairs_hook=unique_object,
+                               parse_constant=invalid_constant)
+        except (UnicodeError, ValueError, RecursionError):
+            raise InvalidRequest() from None
+        if not isinstance(value, dict):
+            raise InvalidRequest()
+        return value
+
+
 class LocalAPIView(APIView):
     authentication_classes = []
     permission_classes = [LocalRecognitionPermission]

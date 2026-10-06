@@ -506,6 +506,7 @@ Query разбирается существующим `Params`: неизвест
 | POST `/recognition/jobs/{id}/retry/` | JSON `{}`, без Idempotency-Key | 202 новый Job; 409 job_active / retry_not_allowed |
 | GET `/recognition/receipt-images/` | photo/job/receipt ID (AND), page/page_size, ordering ±created_at | Page ReceiptImage без quad/rotation_degrees |
 | GET `/recognition/receipt-images/{id}/` | нет | ReceiptImage detail |
+| POST `/recognition/receipt-images/{id}/confirm/` | JSON `{receipt,lines,discounts,taxes}` до 1 MiB, без Idempotency-Key | 200 `{image,job}`; 409 job_active / review_unavailable / review_resolved / review_busy / review_invalid |
 | GET `/receipts/` | store/product ID, country/currency, operation, date_from/date_to, q, page/page_size, ordering ±purchased_at | Page Receipt, default -purchased_at |
 | GET `/receipts/{id}/` | нет | Receipt header, дочерние массивы отдельными страницами |
 | GET `/receipts/{id}/lines/` | page/page_size, kind, matching=matched/unmatched | Page Line, position/id |
@@ -538,7 +539,7 @@ Photo имеет поля `id,created_at,content_type,bytes,raw_width,raw_height
 {"id":31,"photo_id":11,"retry_of":null,"status":"partial_succeeded","stage":"finished","version":1,"created_at":"2026-10-04T12:35:00Z","started_at":null,"finished_at":"2026-10-04T12:35:00Z","cancel_requested_at":null,"heartbeat_at":null,"stalled":false,"executor":{"available":false,"state":"absent","last_seen_at":null},"progress":{"detected":2,"current_position":null,"completed":2,"imported":1,"reused":0,"review":1,"failed":0,"cancelled":0},"review_required":true,"error":null,"actions":{"can_cancel":false,"can_retry":true},"items_count":2,"items":[{"image_id":41,"position":1,"status":"imported","receipt_id":71},{"image_id":42,"position":2,"status":"needs_review","receipt_id":null}]}
 ```
 
-`detected` до детекции null. Счётчики — сохранённые исходы; imported/reused считаются после commit. `version` изменяет сервис очереди; heartbeat может обновиться с той же version. `items_count` есть и в списке, `items` — только в detail. Items содержат ровно image_id,position,status,receipt_id; поля черновиков отсутствуют. `review_required` — наличие вырезки needs_review, issues у неуспешной вырезки либо геометрическая ошибка задания (`geometry_requires_review`, `clipped`, `overlap`); отдельного процесса разрешения review нет. Начиная с И4, issues у imported/reused/updated являются замечаниями, не увеличивают progress.review и не мешают Job.succeeded. Terminal progress не пересчитывается API; старые outcomes меняются только новым retry-job.
+`detected` до детекции null. Счётчики — сохранённые исходы; imported/reused считаются после commit. `version` изменяет сервис очереди; heartbeat может обновиться с той же version. `items_count` есть и в списке, `items` — только в detail. Items содержат ровно image_id,position,status,receipt_id; поля черновиков отсутствуют. `review_required` — наличие вырезки needs_review, issues у неуспешной вырезки либо геометрическая ошибка задания (`geometry_requires_review`, `clipped`, `overlap`); отдельного процесса разрешения review нет. Начиная с И4, issues у imported/reused/updated являются замечаниями, не увеличивают progress.review и не мешают Job.succeeded. Terminal progress не пересчитывается API, старые outcomes меняются только новым retry-job — с одним исключением: [подтверждение вырезки человеком](#подтверждение-вырезки-needs_review-человеком) пересчитывает счётчики завершённого задания, увеличивает `version` и переводит `partial_succeeded` в `succeeded`, когда успешны все вырезки.
 
 Объект `executor` один на ответ и приходит в `GET /recognition/csrf/`, `POST /recognition/photos/` (`job.executor`), `GET /recognition/jobs/` (`results[].executor`, общий на страницу), `GET /recognition/jobs/{id}/`, `POST …/cancel/` и `POST …/retry/`:
 
@@ -564,7 +565,7 @@ Retry разрешён failed/partial_succeeded/cancelled, создаёт нов
 
 ### ReceiptImage и безопасный результат needs_review
 
-Общие поля списка/detail: `id,photo_id,job_id,position,created_at,status,receipt_id,receipt_deleted,image_url,width,height,bbox,clipped,issues,normalized_result`. Detail дополнительно содержит `quad,rotation_degrees`. Bbox/quad на upright-фото; геометрия проверяется перед сериализацией, повреждённая геометрия — null. Transform остаётся внутренним, как в примере §5.2 К2. `receipt_deleted=true` при SET_NULL и историческом receipt ID в snapshot; сам исторический ID наружу не возвращается.
+Общие поля списка/detail: `id,photo_id,job_id,position,created_at,status,receipt_id,receipt_deleted,image_url,width,height,bbox,clipped,issues,normalized_result,confirmed_at`. Detail дополнительно содержит `quad,rotation_degrees`. `confirmed_at` — момент [подтверждения человеком](#подтверждение-вырезки-needs_review-человеком), UTC с `Z` (как `created_at`), иначе `null`; поле аддитивное, берётся из уже загруженной вырезки. Bbox/quad на upright-фото; геометрия проверяется перед сериализацией, повреждённая геометрия — null. Transform остаётся внутренним, как в примере §5.2 К2. `receipt_deleted=true` при SET_NULL и историческом receipt ID в snapshot; сам исторический ID наружу не возвращается.
 
 Р3 уточняет семантику прежних полей, без несовместимых изменений формы: bbox/quad —
 нормализованные координаты 0..1 полного фото после EXIF-transpose, x вправо, y вниз.
@@ -631,7 +632,7 @@ List и detail `/api/recognition/receipt-images/` отдают у **каждог
 `index` и `position`:
 
 - `index` — целое из второго сегмента пути как есть (`/lines/0007/amount` → 7); для `receipt`, `geometry`, `unknown` и для пути без индекса — `null`.
-- `position` — `normalized_result[коллекция][index]["position"]` сохранённого DTO вырезки, если DTO — объект, коллекция — список, индекс в границах, элемент — объект, значение — целое (не boolean) в 1..32767. Иначе `null`. Берётся из сохранённого DTO при любом статусе вырезки, хотя публичное поле `normalized_result` остаётся только у `needs_review`.
+- `position` — `normalized_result[коллекция][index]["position"]` сохранённого DTO вырезки (у подтверждённой человеком вырезки — исправленных данных подтверждения, к индексам которых относятся её замечания), если DTO — объект, коллекция — список, индекс в границах, элемент — объект, значение — целое (не boolean) в 1..32767. Иначе `null`. Берётся из сохранённого DTO при любом статусе вырезки, хотя публичное поле `normalized_result` остаётся только у `needs_review`.
 - Для `tax` `position` всегда `null`.
 - Повреждённый DTO, индекс вне границ, нестроковые `code`/`field` исключений не дают: HTTP 200, `position: null` либо `unknown`. Элементы `issues`, не являющиеся объектами, пропускаются, как и раньше.
 
@@ -664,15 +665,137 @@ List и detail `/api/recognition/receipt-images/` отдают у **каждог
 
 Ф2+Ф3 сохраняет JSON-формы, доступ, список кодов и схему БД. Печатные LF/CR/tab в адресе и текстовых названиях observation нормализуются до проверки (адрес — через `, `, остальные разрешённые поля — через пробел), `Z`/`z` в смещениях времени — в `+00:00`. Иные управляющие символы/неверные offsets отклоняются. Успешный импорт строки product/deposit с observed amount и отсутствующими quantity/unit_price использует quantity=1, unit=pcs, unit_price=amount; отрицательный deposit_return — quantity=−1, unit_price=abs(amount). Для целого напечатанного количества без unit используется pcs независимо от весовой строки другого товара. Нечитаемые/неоднозначные поля и признаки веса в самой строке не получают это умолчание. При отсутствии суммы и операндов сохраняется needs_review; напечатанные числа/скидки не заменяются. Derived pointers остаются внутренними в extra, публичный Receipt/Line выдаёт обычные Decimal-строки. Нормализованный DTO сохраняет null вместо выведенных количества/цены, но канонический адрес/offset; raw_text и timestamps по-прежнему закрыты. Повторы не создают дублей. Старый terminal needs_review требует штатного retry; откат кода не удаляет уже импортированные данные. Точные условия — [модель данных](data-model.md#recognition-фотографии-и-очередь). Несовместимых изменений HTTP нет.
 
-`normalized_result` присутствует в обеих формах, null вне needs_review; при needs_review это безопасная проекция сохранённого нормализованного DTO, **не** сырой ответ провайдера и **не** черновик для редактирования:
+`normalized_result` присутствует в обеих формах, null вне needs_review; при needs_review это безопасная проекция сохранённого нормализованного DTO, **не** сырой ответ провайдера и **не** серверный черновик: из неё клиент заполняет форму [подтверждения](#подтверждение-вырезки-needs_review-человеком), сама проекция не редактируется:
 
 ```json
-{"proposed_receipt":{"store":null,"store_display_name":"Тестовый магазин","address_display":"Teststrasse 12","currency":"EUR","operation":"sale","purchased_on":"2026-10-04","local_time":"14:35","total":"4.52","discount_total":null,"prices_include_tax":true},"lines":[{"position":1,"parent_position":null,"kind":"product","name":"МОЛОКО","unit":"pcs","quantity":null,"unit_price":"1.2900","amount":null,"discount_amount":null,"tax_amount":null,"store_item_code":null,"barcode":null,"tax_code":null,"is_excise":null,"is_marked":null,"tax_rate":{"kind":null,"rate":null}}],"discounts":[],"taxes":[]}
+{"proposed_receipt":{"store":null,"store_display_name":"Тестовый магазин","address_display":"Teststrasse 12","country":"DE","currency":"EUR","operation":"sale","purchased_on":"2026-10-04","local_time":"14:35","total":"4.52","discount_total":null,"prices_include_tax":true},"lines":[{"position":1,"parent_position":null,"kind":"product","name":"МОЛОКО","unit":"pcs","quantity":null,"unit_price":"1.2900","amount":null,"discount_amount":null,"tax_amount":null,"store_item_code":null,"barcode":null,"tax_code":null,"is_excise":null,"is_marked":null,"tax_rate":{"kind":null,"rate":null}}],"discounts":[],"taxes":[]}
 ```
 
-`proposed_receipt.store` всегда null: кандидатов и разрешения справочников HTTP не придумывает; вывеска берётся только из brand_name/name, без legal_name fallback. Непрочитанное число/строка/boolean остаётся null. Числа — decimal strings с тем же количеством знаков, что у канонического чека. Нормализованные строки используют position/parent_position (не ID ещё не созданных строк), без product/product_hint, matching_status, paid_amount, id/name_i18n. Tax rate — `{kind,rate}`, без ID/страны ещё не разрешённого справочника. Нормализованные скидки `{position,line_position,name,amount}`, налоги `{tax_rate,tax_code,net,tax,gross}`. Максимумы массивов: 1000 строк, 1000 скидок, 100 налогов; issues — до 1000. Поля confidence, fields/warnings, fiscal, номера, timestamps, произвольные extra не публикуются.
+`proposed_receipt.store` всегда null: кандидатов и разрешения справочников HTTP не придумывает; вывеска берётся только из brand_name/name, без legal_name fallback. `proposed_receipt.country` (аддитивное поле) — распознанный код страны магазина, иначе страны продавца, две заглавные латинские буквы либо null; по справочнику он не проверяется. Непрочитанное число/строка/boolean остаётся null. Числа — decimal strings с тем же количеством знаков, что у канонического чека. Нормализованные строки используют position/parent_position (не ID ещё не созданных строк), без product/product_hint, matching_status, paid_amount, id/name_i18n. Tax rate — `{kind,rate}`, без ID/страны ещё не разрешённого справочника. Нормализованные скидки `{position,line_position,name,amount}`, налоги `{tax_rate,tax_code,net,tax,gross}`. Максимумы массивов: 1000 строк, 1000 скидок, 100 налогов; issues — до 1000. Поля confidence, fields/warnings, fiscal, номера, timestamps, произвольные extra не публикуются.
 
 Полные эталоны: [ReceiptImage detail needs_review](../backend/recognition/tests/fixtures/public/receipt-image.json), [страница вырезок](../backend/recognition/tests/fixtures/public/receipt-images.json).
+
+### Подтверждение вырезки needs_review человеком
+
+`POST /api/recognition/receipt-images/{id}/confirm/` — один синхронный запрос «правки + подтверждение». Человек отправляет исправленные данные вырезки `needs_review`; сервер в одной транзакции прогоняет их через тот же импорт, что и результат OCR. Серверного черновика нет: до успеха правки живут только в памяти клиента, перезагрузка страницы их теряет. Миграций схемы нет.
+
+**Доступ и тело.** Как у остальных локальных действий: DEBUG + `ALLOW_LOCAL_RECOGNITION_API=1` + loopback, иначе `403 permission_denied`; CSRF обязателен и анониму (`403 csrf_failed`); `Cache-Control: no-store`; только JSON; методы POST и OPTIONS; завершающий `/` обязателен. Тело — JSON-объект в UTF-8 **до 1 048 576 байт включительно** (предел 4096 у cancel/retry сюда не относится). Заголовок `Idempotency-Key` игнорируется.
+
+```json
+{
+  "receipt": {"store_id": null, "store_name": "Тестовый магазин", "address": "Teststrasse 12", "country": "DE",
+              "currency": "EUR", "operation": null, "purchased_on": "2026-10-04", "local_time": "14:35",
+              "total": "2.63", "prices_include_tax": true},
+  "lines": [
+    {"position": 1, "source_position": 1, "kind": "product", "parent_position": null, "name": "МОЛОКО",
+     "quantity": "2.000", "unit": "pcs", "unit_price": "1.2900", "amount": "2.58",
+     "tax_rate": {"kind": "vat", "rate": "7.00"}, "tax_code": "A"},
+    {"position": 2, "source_position": null, "kind": "deposit", "parent_position": 1, "name": "PFAND",
+     "quantity": "1.000", "unit": "pcs", "unit_price": "0.2500", "amount": "0.25",
+     "tax_rate": {"kind": "vat", "rate": "19.00"}, "tax_code": "B"}],
+  "discounts": [{"position": 1, "line_position": 1, "name": "Rabatt МОЛОКО", "amount": "0.20"}],
+  "taxes": [{"tax_rate": {"kind": "vat", "rate": "7.00"}, "tax_code": "A", "net": "2.22", "tax": "0.16", "gross": null},
+            {"tax_rate": {"kind": "vat", "rate": "19.00"}, "tax_code": "B", "net": "0.21", "tax": "0.04", "gross": "0.25"}]
+}
+```
+
+Обязательны четыре ключа верхнего уровня и все ключи вложенных объектов, кроме необязательного `receipt.utc_offset`. Неизвестный ключ на любом уровне — `400 invalid_request`. Деньги и количества — **только строки** в том виде, в каком их отдаёт `normalized_result`; JSON-число отклоняется (`invalid_parameter`), а не округляется. `discount_total` чека и `discount_amount` строк в теле отсутствуют: сервер считает их из `discounts`.
+
+| Поле | Тип и правила |
+| --- | --- |
+| `receipt.store_id` | целое 1..2^63−1 \| `null`. Не `null` — использовать этот существующий магазин (id из `GET /api/stores/`): `store_name`, `address`, `country` тогда в выборе магазина не участвуют и могут быть `null`; страна чека — страна магазина. Несуществующий id — `invalid_parameter` |
+| `receipt.store_name` | строка 1..100 \| `null` — вывеска (то, что показано в `store_display_name`) |
+| `receipt.address` | строка 1..4096 \| `null`; переводы строк и табуляции заменяются на `, ` |
+| `receipt.country` | код из справочника стран (2 буквы, регистр не важен) \| `null` — оставить распознанное, иначе импорт выведет страну по валюте |
+| `receipt.currency` | код из справочника валют (3 буквы, регистр не важен) \| `null` — допустимо только при известном магазине (`RU→RUB`, `KZ→KZT`, `DE→EUR`), иначе `review_invalid` |
+| `receipt.operation` | `"sale"` \| `"refund"` \| `null` (`null` — вывод импорта и замечание `operation_defaulted`) |
+| `receipt.purchased_on` | `ГГГГ-ММ-ДД`, существующая дата, обязательна |
+| `receipt.local_time` | `ЧЧ:ММ` либо `ЧЧ:ММ:СС`, обязательно |
+| `receipt.utc_offset` | необязательный ключ: `±ЧЧ:ММ` (до `±14:00`) \| `null`. Ключа нет — сохраняется распознанное смещение, если дата и время не менялись, иначе `null`. Нужен только для неоднозначного часа перехода времени |
+| `receipt.total` | строка `-?цифры{1,12}.цифры{2}`, обязательна |
+| `receipt.prices_include_tax` | `true` \| `false` \| `null` (`null` → `true` с замечанием `optional_omitted`) |
+| `lines` | 1..1000 объектов |
+| `lines[].position` | целое 1..32767, уникально в теле |
+| `lines[].source_position` | `position` распознанной строки из `normalized_result.lines`, от которой наследуются непоказанные свойства (код товара магазина, штрихкод, налог строки, признаки акциза и маркировки, подсказка товара); `null` — новая строка. Одна исходная строка — не более одного раза |
+| `lines[].kind` | `product` \| `service` \| `deposit` \| `deposit_return` |
+| `lines[].parent_position` | `position` строки этого же тела с `kind: "product"` \| `null`; не `null` допустим только у `deposit` и не может указывать на саму строку |
+| `lines[].name` | строка 1..4096; переводы строк заменяются пробелом |
+| `lines[].quantity` | строка с 3 знаками (`-?цифры{1,9}.цифры{3}`), не ноль \| `null` |
+| `lines[].unit` | `pcs` \| `g` \| `kg` \| `ml` \| `l` \| `m` \| `null` |
+| `lines[].unit_price` | строка с 4 знаками, без знака (`цифры{1,10}.цифры{4}`) \| `null` |
+| `lines[].amount` | строка с 2 знаками, со знаком \| `null` |
+| `lines[].tax_rate` | `{"kind": "vat", "rate": "7.00"}` \| `{"kind": "exempt", "rate": null}` \| `{"kind": null, "rate": null}`; `rate` — `цифры{1,3}.цифры{2}` |
+| `lines[].tax_code` | строка 1..8 \| `null` |
+| `discounts` | 0..1000 объектов: `position` (целое 1..32767, уникально), `line_position` (`position` строки тела \| `null` — скидка на весь чек), `name` (строка 1..255), `amount` (строка с 2 знаками, больше нуля) |
+| `taxes` | 0..100 объектов: `tax_rate` (как у строки, но `kind` обязателен), `tax_code`, `net` / `tax` / `gross` — строки с 2 знаками, `null` допустим не более чем у одного из трёх (сервер выведет) |
+
+`null` у `quantity`, `unit`, `unit_price`, `amount` допустим только там, где импорт умеет вывести значение: одно из трёх чисел из двух других; `quantity` и `unit_price` вместе при заданной `amount` у `product` / `deposit` / `deposit_return` (одна штука); `unit` при целом количестве. Иначе — `review_invalid` с `missing_required`. У текстовых значений обрезаются пробелы по краям; пустая после этого строка и управляющие символы отклоняются.
+
+**Что значит «подтвердить».** Человек ручается за отправленные значения: непустые поля тела сервер считает прочитанными, пустые — отсутствующими на чеке. Поэтому ставки и налоговые итоги, оставленные в теле, импортируются и без evidence провайдера, в отличие от автоматического импорта. Сомневается — очищает поле. Арифметические правила импорта при этом те же: несходящийся налоговый итог (`net + tax ≠ gross`, сумма `gross` не равна итогу чека, повтор ставки) в чек не попадает и возвращается замечанием `optional_omitted`, чек сохраняется без него.
+
+**Чего в теле нет.** Закрытые реквизиты — номер чека, смена, касса, фискальные поля, ИНН и его тип, юридическое название, код филиала, `raw_text` — не раскрываются и не принимаются. Сервер переносит их из сохранённого результата распознавания вместе с исходной отметкой прочтения; прежняя политика сильных ключей действует без изменений. Выбор товара каталога для строки (`product_id`) не поддерживается: строка без однозначного товара сохраняется с `product = null`, как при импорте.
+
+**Как сервер строит данные для импорта.** Основа — сохранённый результат распознавания вырезки; если он не проходит полную проверку схемы (повреждён либо записан частично), основа пустая и закрытых реквизитов нет. Поверх кладутся значения тела. При изменении:
+
+- вывески — распознанное юридическое название не переносится;
+- адреса — сбрасываются распознанные индекс, регион, город, улица, дом;
+- страны на другую — сбрасывается распознанная страна продавца;
+- названия строки — сбрасывается подсказка названия товара (товар подбирается по новому названию).
+
+Сохранённый `normalized_result` в БД не меняется.
+
+**Ответ `200`** — `{"image": …, "job": …}`: `image` — ровно форма `GET /api/recognition/receipt-images/{id}/`, `job` — ровно форма `GET /api/recognition/jobs/{id}/` (с `items`). У вырезки `status` — `imported` (создан новый чек), `reused` (привязана к существующему без изменений) либо `updated` (у существующего дополнены пустые поля); `receipt_id`; `confirmed_at`; `normalized_result: null`; в `issues` — только замечания этого подтверждения (`severity` `warning` / `info`), прежние причины проверки наружу больше не отдаются. Индексы `field` и `context.index` в этих замечаниях — индексы массивов **тела**, `context.position` — `position` из тела. Чек клиент читает прежним `GET /api/receipts/{id}/`.
+
+Задание пересчитывается: `progress` считается заново по вырезкам, `version` растёт на 1; если задание было `partial_succeeded` и успешны все его вырезки, оно становится `succeeded` (`review_required: false`, `actions.can_retry: false`). `finished_at`, `error`, `stage` не меняются; задания `failed` и `cancelled` сохраняют статус.
+
+Если нашёлся существующий чек (сильный ключ либо точные магазин, время, итог), вырезка привязывается к нему. Заполненные значения этого чека **не перезаписываются**: расхождения возвращаются замечаниями с `reason` `receipt_conflict` (шапка), `receipt_line_conflict` (строка), `receipt_structure_conflict` (набор строк, скидки, налоги). Клиент обязан показать это явно: чек уже был сохранён, исправления к нему не применены. Дублей строк, товаров, скидок и налогов не возникает.
+
+**Отказы.** Envelope прежний. Порядок проверок: доступ и CSRF → структура тела → существование вырезки → значения полей → состояние (под блокировками) → правила импорта. При любом отказе не сохраняется ничего: вырезка остаётся `needs_review` с прежними причинами, задание не меняется, новых чеков, магазинов и товаров нет.
+
+| HTTP | `code` | Условие |
+| --- | --- | --- |
+| 400 | `invalid_request` | пустое тело, не объект, неизвестный или повторный ключ на любом уровне, `NaN`/`Infinity`, неверная кодировка, больше 1 MiB, запрос без завершающего `/` |
+| 400 | `invalid_parameter` | отсутствующий обязательный ключ, неверный тип или формат, значение вне перечня или диапазона, неизвестные код страны или валюты, несуществующий `store_id`, повтор `position` или `source_position`, ссылка на отсутствующую либо неподходящую позицию. В `fields` — все ошибки сразу, по одной фиксированной фразе на путь: `{"receipt.total": ["…"], "lines.0.quantity": ["…"], "taxes.1.tax_rate.rate": ["…"]}`; пути через точку, индексы массивов тела с нуля |
+| 403 | `permission_denied` / `csrf_failed` | локальный режим либо CSRF |
+| 404 | `not_found` | вырезки нет, id вне диапазона |
+| 405 / 406 / 415 | `method_not_allowed` / `not_acceptable` / `unsupported_media_type` | как у остальных действий |
+| 409 | `job_active` | задание этой вырезки ещё не завершено (`queued`, `running`, `cancel_requested`) |
+| 409 | `review_unavailable` | вырезка не `needs_review` и не подтверждалась этим API (`pending`, `running`, сохранённая автоматически, `failed`, `cancelled`), либо подтверждённый чек был удалён. «Подтверждение для этой вырезки недоступно.» |
+| 409 | `review_resolved` | вырезка уже подтверждена другим содержимым. «Результат уже подтверждён.» |
+| 409 | `review_busy` | идёт импорт чека воркером, другое подтверждение либо операция слияния товаров; ожидание блокировки строк дольше `statement_timeout` 2000 мс; гонка известных unique-ограничений чека с внешней записью. Без скрытого повтора. «Данные сейчас изменяются. Повторите позже.» |
+| 409 | `review_invalid` | данные формально корректны, но не проходят правила импорта. «Исправленные данные не прошли проверку.» |
+| 503 | `database_unavailable` | прочий отказ БД |
+| 500 | `internal_error` | неизвестный дефект, без текста исключения |
+
+Тело `review_invalid` дополнительно несёт причины в шестиключевой форме issue вырезки, рядом с `error`:
+
+```json
+{"error": {"code": "review_invalid", "message": "Исправленные данные не прошли проверку."},
+ "issues": [{"code": "total_mismatch", "field": "/total", "message": "Сумма чека не совпадает с суммой позиций.",
+             "reason": "total_mismatch", "severity": "error",
+             "context": {"entity": "receipt", "index": null, "position": null, "attribute": "total"}}]}
+```
+
+`issues` построены по **отправленным** данным: `/lines/N/…` и `context.index` — индексы массивов тела, `context.position` — `position` из тела. В списке есть и сопутствующие замечания (`info` / `warning`); отказ вызван причинами с `severity: "error"`. Закрытые пути по-прежнему заменяются на `/` с `context.attribute: "receipt_metadata"`. Ожидаемые причины: `missing_required`, `total_mismatch` (итог против строк; `quantity × unit_price` против суммы строки больше 0,01), `invalid_value`, `store_ambiguous` / `store_conflict` (лечится выбором `store_id`), `country_unknown`, `currency_unknown`, `timestamp_ambiguous` / `timestamp_conflict` (лечится `utc_offset`), `identity_conflict` (закрытые сильные ключи противоречат существующему чеку — формой не лечится; флага сброса идентификаторов нет).
+
+**Повтор и одновременные запросы.** Идемпотентность — по содержимому. Тот же запрос к уже подтверждённой вырезке — `200` с текущим состоянием и без записей; «тот же» означает совпадение SHA-256 тела после нормализации (порядок ключей, пробелы JSON, регистр кодов страны и валюты, пробелы по краям текста не важны; отсутствующий ключ `utc_offset` и `utc_offset: null` различаются). Другое содержимое — `409 review_resolved`. Два одновременных подтверждения выполняются по очереди: запрос, заставший чужую транзакцию импорта, сразу получает `409 review_busy`, пришедший после её завершения — `200` либо `review_resolved`. Клиент изменяющий запрос автоматически не повторяет: после `review_busy`, обрыва сети или таймаута перечитывает задание и вырезку. Две вырезки одного чека (например, старое задание и его retry) подтверждаются независимо: вторая привяжется к уже созданному чеку как `reused`.
+
+Правка сохранённого чека через этот API невозможна. Подтверждение `failed` / `cancelled` вырезок не поддерживается — для них retry. Если человек исправил время или итог, а подтверждённого сильного ключа у чека нет, более позднее автоматическое распознавание того же чека с прежней ошибкой не найдёт совпадения и создаст второй чек: это существующее свойство слабого ключа v1.
+
+Эталоны — настоящие ответы `APIClient` на вымышленных данных, сравниваются целиком в `api.tests.test_recognition_review_api`: [тело запроса](../backend/recognition/tests/fixtures/public/review-confirm-request.json), [успех](../backend/recognition/tests/fixtures/public/review-confirmed.json), [отказ правил импорта](../backend/recognition/tests/fixtures/public/review-invalid.json), [отказ значений](../backend/recognition/tests/fixtures/public/review-invalid-parameter.json). Запрос относится к вырезке из эталона [ReceiptImage detail](../backend/recognition/tests/fixtures/public/receipt-image.json); в эталоне успеха подставлен только сгенерированный id нового чека (`72`). `review-invalid.json` получен тем же запросом с `receipt.total: "4.52"`; `review-invalid-parameter.json` — с `receipt.total: 2.63` (число), `lines[0].quantity: "2"`, `lines[1].source_position: 5`, `discounts[0].line_position: 9`, `taxes[1].tax_rate.rate: null`.
+
+```powershell
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test recognition.tests.test_review api.tests.test_recognition_review_api api.tests.test_recognition_review_concurrency api.tests.test_recognition_public --tag=integration --noinput --verbosity=2
+```
+
+Отступления и уточнения относительно согласованного контракта:
+
+- Одновременное второе подтверждение той же вырезки может получить `409 review_busy` (а не только `200` / `review_resolved`): мьютекс импорта берётся без ожидания раньше блокировки строки.
+- Отметка `Receipt.extra.recognition.confirmed` ставится только на чек, **созданный** подтверждением; существующий чек не меняется, след привязки — в приватном `outcome_snapshot` вырезки.
+- Повторный запрос к вырезке, чей подтверждённый чек удалён, получает `review_unavailable` при любом теле.
+- `source_position` сверяется с позициями строк, показанными в `normalized_result` (в том числе при повреждённом сохранённом результате); непоказанные свойства наследуются только из результата, прошедшего полную проверку.
+- Смена страны в теле сбрасывает распознанную страну продавца (иначе новый продавец был бы заведён в прежней стране).
+- В `fields` ошибка ссылки (`parent_position`, `line_position`) не дублируется, пока неверны сами позиции строк: сначала исправляется причина.
 
 ### Receipt, Line, Discount, Tax
 
@@ -710,6 +833,7 @@ Line.product=null → matching_status=unmatched; ambiguous здесь отсут
 | 405 | method_not_allowed | неподдерживаемый метод; Allow по маршруту |
 | 406 | not_acceptable | неподходящий Accept |
 | 409 | job_active / job_terminal / retry_not_allowed | конфликт состояния |
+| 409 | review_unavailable / review_resolved / review_busy / review_invalid | [подтверждение вырезки](#подтверждение-вырезки-needs_review-человеком); у `review_invalid` рядом с `error` есть `issues` |
 | 413 | upload_too_large | файл >20 MiB или multipart >21 MiB |
 | 415 | unsupported_media_type | неверный Content-Type тела |
 | 503 | storage_unavailable / database_unavailable | известный отказ хранения; OperationalError/InterfaceError БД только в новых views |
@@ -731,9 +855,9 @@ Line.product=null → matching_status=unmatched; ambiguous здесь отсут
 
 ### Все отличия от К2 §5 и откат С5
 
-- Решение облегчённой v1: нет `/recognition/drafts/`, ReceiptDraft/MutationRequest, review/revision/proposal/кандидатов, ручного подтверждения/редактирования результата через API. Нет draft_id, review_state, identity_strength ни в Job.items, ни в ReceiptImage/Receipt.
+- Решение облегчённой v1: нет `/recognition/drafts/`, ReceiptDraft/MutationRequest, review/revision/proposal/кандидатов. Позже добавлено одно действие — [подтверждение вырезки needs_review](#подтверждение-вырезки-needs_review-человеком) одним запросом, без черновика; правки сохранённого чека через API по-прежнему нет. Нет draft_id, review_state, identity_strength ни в Job.items, ни в ReceiptImage/Receipt.
 - Нет Idempotency-Key/idempotency_conflict. Upload повторяется по SHA-256 и возвращает последний Job; retry создаёт новое задание либо 409, replay с 200 по ключу отсутствует.
-- ReceiptImage получает **новое** nullable `normalized_result` для needs_review вместо Draft. Его форма — описанная безопасная проекция DTO с position-связями; без candidate IDs, time_precision/timestamps, полей канонического Line, не применимых к ещё не импортированному результату. В списке и detail проекция одинакова.
+- ReceiptImage получает **новое** nullable `normalized_result` для needs_review вместо Draft (позже — аддитивные `confirmed_at` и `proposed_receipt.country`). Его форма — описанная безопасная проекция DTO с position-связями; без candidate IDs, time_precision/timestamps, полей канонического Line, не применимых к ещё не импортированному результату. В списке и detail проекция одинакова.
 - Line.matching_status/filter: только matched/unmatched, без ambiguous. Неоднозначности представлены issues вырезки. review_required означает needs_review/проблему неуспешной вырезки/несопоставленный товар; с И4 замечания успешного импорта сами по себе его не включают. Состояний разрешения Draft нет.
 - Origin вычисляется по живой связи ReceiptImage: recognized либо буквальное `legacy/manual`. Отдельного provenance состояния и защиты ручных правок нет.
 - Executor: `busy` по executing Job heartbeat/lease С1, `idle` по удерживаемой сессионной advisory-блокировке воркера в `pg_locks` текущей БД, иначе `absent`; terminal last_seen_at=null. Модель слота воркера и его постоянный heartbeat не добавлялись, поэтому зависший в простое процесс неотличим от `idle`.
