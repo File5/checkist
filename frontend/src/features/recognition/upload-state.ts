@@ -1,6 +1,6 @@
 import type { PhotoUpload, RecognitionCsrf, RecognitionLimits } from '../../api/recognition'
 import type { LocalApiFailure, LocalApiResult } from '../../api/types'
-import { errorText, executorWarning } from './labels'
+import { errorText } from './labels'
 
 const extensions: Record<string, string> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' }
 export function fileFormat(file: Pick<File, 'name'>) { return extensions[file.name.split('.').pop()?.toLowerCase() ?? ''] ?? null }
@@ -11,12 +11,14 @@ export function validateFile(file: Pick<File, 'name' | 'size'>, limits?: Recogni
   if (limits && file.size > limits.max_bytes) return 'Файл слишком большой. Уменьшите его размер до лимита сервера.'
 }
 export function formatBytes(bytes: number) { return `${(bytes / 1048576).toLocaleString('ru-RU', { maximumFractionDigits: 2 })} МиБ (${bytes.toLocaleString('ru-RU')} байт)` }
+/** Says only what happened to the photo. The worker line comes from the current job snapshot. */
 export function uploadMessage(result: PhotoUpload) {
-  return `${result.reused ? 'Это фото уже было загружено. Открыто последнее задание этого фото.' : 'Фото загружено. Задание принято.'}${!result.job.executor.available && result.job.status === 'queued' ? ` ${executorWarning}` : ''}`
+  return result.reused ? 'Это фото уже было загружено. Открыто последнее задание этого фото.' : 'Фото загружено. Задание принято.'
 }
 
 let notice: { id: number; message: string } | undefined
 export function setJobNotice(id: number, message: string) { notice = { id, message } }
+export const retryNotice = 'Создано новое задание обработки.'
 export function getJobNotice(id: number) { return notice?.id === id ? notice.message : undefined }
 
 export type UploadState =

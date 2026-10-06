@@ -1,4 +1,4 @@
-import type { Job, JobStage, JobStatus } from '../../api/recognition'
+import type { ExecutorState, Job, JobStage, JobStatus } from '../../api/recognition'
 import type { LocalApiFailure } from '../../api/types'
 
 export const jobLabels: Record<JobStatus, string> = {
@@ -16,7 +16,22 @@ export function stageText(job: Job) {
   const { current_position: position, detected } = job.progress
   return `${stageLabels[job.stage]}${position === null ? '' : ` · чек ${position.toLocaleString('ru-RU')}${detected === null ? '' : ` из ${detected.toLocaleString('ru-RU')}`}`}`
 }
-export const executorWarning = 'Активный воркер не обнаружен. Задание будет ждать в очереди до запуска обработки; доступность простаивающего воркера неизвестна.'
+export type ExecutorNote = { text: string; warning: boolean }
+const executorAbsent: ExecutorNote = { text: 'Воркер распознавания не запущен. Задание будет ждать в очереди, пока воркер не запустят.', warning: true }
+const uploadExecutorNotes: Partial<Record<ExecutorState, ExecutorNote>> = {
+  idle: { text: 'Воркер распознавания запущен и ждёт заданий.', warning: false },
+  busy: { text: 'Воркер распознавания сейчас обрабатывает задание. Новое фото встанет в очередь.', warning: false },
+  absent: executorAbsent,
+}
+const queuedExecutorNotes: Partial<Record<ExecutorState, ExecutorNote>> = {
+  busy: { text: 'Воркер занят другим заданием. Это задание начнётся после него.', warning: false },
+  absent: executorAbsent,
+}
+/** Upload page line. Unknown (older server or a future state) claims nothing. */
+export function uploadExecutorNote(state: ExecutorState) { return uploadExecutorNotes[state] }
+/** Job page line: only the current snapshot of a queued job; a stalled job has its own text. */
+export function jobExecutorNote(job: Pick<Job, 'status' | 'executor'>) { return job.status === 'queued' ? queuedExecutorNotes[job.executor.state] : undefined }
+export function isExecutorAbsent(data: { executor: { state: ExecutorState } }) { return data.executor.state === 'absent' }
 export function errorText(error: LocalApiFailure, mutation = false): string {
   switch (error.reason) {
     case 'unsupported_format': case 'unsupported_media_type': return 'Формат не поддерживается. HEIC и другие форматы сохраните в JPEG или PNG и выберите файл заново.'
