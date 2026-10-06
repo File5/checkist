@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { isJobDetail, isPhoto, isReceiptImage, isRecognitionCsrf } from '../../api/recognition-schema'
 import { publicFixture } from '../../api/recognition-test-support'
 import { JobPage, JobsPage, UploadPage } from './index'
+import { StoreResults } from './ReviewForm'
 import type { RequestState } from './polling'
 
 const mocked = vi.hoisted(() => ({ states: [] as RequestState<unknown>[] }))
@@ -63,6 +64,14 @@ describe('page block states with public API data (SSR)', () => {
     expect(html).toContain('Исправление и подтверждение'); expect(html).toContain('value="МОЛОКО"')
     // job.json is finished: the confirmation is offered, with no draft promised.
     expect(html).toMatch(/<button type="button" data-review-confirm="true" aria-describedby="[^"]+">Подтвердить и сохранить чек<\/button>/)
+  })
+  it('names the search field as the place of focus of «Повторить поиск», which disappears with its press', () => {
+    mocked.states = [{ kind: 'error', error: { kind: 'error', reason: 'network' } }]
+    const html = renderToStaticMarkup(<StoreResults query="test" disabled={false} focus="review-42-receipt-store" onChoose={vi.fn()} />)
+    expect(html).toContain('Не удалось найти магазины.')
+    expect(html).toContain('<button type="button" data-review-focus="review-42-receipt-store">Повторить поиск</button>')
+    // No other state of the search has a button that its own press removes without a place for focus.
+    expect(renderToStaticMarkup(<StoreResults query="test" disabled={false} focus="review-42-receipt-store" onChoose={vi.fn()} />)).toBe('<p role="status">Ищем магазины…</p>')
   })
   it('shows cancel_requested separately from cancelled with disabled cancel and keeps processing updates visible', () => {
     mocked.states = [success(fixture('job-cancel-requested.json', isJobDetail)), { kind: 'loading' }, { kind: 'loading' }]

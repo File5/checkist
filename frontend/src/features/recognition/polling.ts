@@ -40,6 +40,8 @@ export function createPollingRequest<T>(
   let running = false
   let paused = false
   let queuedRefresh = false
+  /** pause() cancelled a read in flight or dropped a queued one: resume() makes it even when asked not to read. */
+  let owed = false
   const listeners = new Set<() => void>()
   const publish = (next: RequestState<T>) => { state = next; listeners.forEach((listener) => listener()) }
   const clearTimer = () => { if (timer !== undefined) env.clear(timer); timer = undefined }
@@ -53,6 +55,7 @@ export function createPollingRequest<T>(
   }
   const refresh = () => {
     if (!running || paused || controller) return
+    owed = false
     clearTimer()
     const current = new AbortController()
     controller = current
@@ -79,6 +82,7 @@ export function createPollingRequest<T>(
   }
   const pause = () => {
     paused = true
+    owed = owed || controller !== undefined || queuedRefresh
     queuedRefresh = false
     clearTimer()
     generation++
@@ -101,14 +105,16 @@ export function createPollingRequest<T>(
       refresh()
     },
     refresh, pause,
-    resume: (immediate = true) => { paused = false; if (immediate) refresh(); else schedule() },
+    resume: (immediate = true) => { paused = false; if (immediate || owed) refresh(); else schedule() },
     queueRefresh: () => { if (controller) queuedRefresh = true; else refresh() },
     setData: (data: T) => {
       if (!running || (snapshot !== undefined && !accept(snapshot, data))) return
       snapshot = data
       failures = 0
+      // The given data is newer than the read that a pause cancelled.
+      owed = false
       publish({ kind: 'ok', data, refreshing: false })
     },
-    dispose: () => { running = false; pause(); unlisten?.(); unlisten = undefined },
+    dispose: () => { running = false; pause(); owed = false; unlisten?.(); unlisten = undefined },
   }
 }

@@ -67,6 +67,7 @@ export default function JobPage({ jobId, returnTo }: JobPageProps) {
   const imagesControl = useRef<ImagesControl | null>(null)
   const registerImages = useCallback((control: ImagesControl | null) => { imagesControl.current = control }, [])
   // A confirmation pauses both reads; its answer replaces the job, a refusal that may hide a saved receipt reads both again.
+  // After any other refusal resume(false) still makes a read that the pause cancelled: the list read of an earlier success.
   const reviewLifecycle = useMemo(() => ({
     pause: () => { request.pause(); imagesControl.current?.pause() },
     success: (result: ReviewConfirmResult) => { request.setData(result.job); request.resume(false); imagesControl.current?.confirmed(result.job) },

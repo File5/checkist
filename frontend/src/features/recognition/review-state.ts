@@ -35,7 +35,7 @@ export type ReviewState = {
   problems: Record<string, string[]>
   /** Fields that recognition did not read; marked while they stay empty. */
   unread: string[]
-  /** Announcement of the last local action; `focus` names the field that takes focus, null — the announcement itself. */
+  /** Announcement of the last local action; `focus` names the field or button that takes focus (null only before any action). */
   notice: { id: number; text: string; focus: string | null }
 }
 export type ReviewEdit =
@@ -60,6 +60,15 @@ const fieldNames: Record<string, string> = {
 /** Field ids repeat the paths of the contract, with a row key in place of an array index: `lines.7.unit_price`. */
 export const headerField = (prop: keyof ReviewHeader) => `receipt.${fieldNames[prop] ?? prop}`
 export const rowField = (list: ReviewList, key: number, prop?: string) => `${list}.${key}${prop === undefined ? '' : `.${fieldNames[prop] ?? prop}`}`
+/** The «Добавить …» button of a list: it takes focus when the list becomes empty. */
+export const addField = (list: ReviewList) => `${list}.add`
+const firstField = (list: ReviewList, key: number) => rowField(list, key, list === 'taxes' ? 'taxKind' : 'name')
+/** Focus after a removal stays at the place of the edit: the row that took the place, else the previous one, else the button that adds a row.
+ * Not the next «Удалить» button: a held Enter would remove row after row.
+ */
+function afterRemoval(list: ReviewList, rows: { key: number }[], index: number): string {
+  return rows.length === 0 ? addField(list) : firstField(list, rows[Math.min(index, rows.length - 1)].key)
+}
 
 const rowFields: Record<ReviewList, readonly string[]> = {
   lines: ['kind', 'name', 'quantity', 'unit', 'unit_price', 'amount', 'tax_rate', 'tax_rate.kind', 'tax_rate.rate', 'tax_code', 'parent_position'],
@@ -311,14 +320,14 @@ export function reviewReducer(state: ReviewState, edit: ReviewEdit): ReviewState
     case 'add': {
       const key = state.nextKey
       const added = { ...state, nextKey: key + 1, problems: without(state.problems, edit.list) }
-      if (edit.list === 'lines') return { ...added, lines: [...state.lines, emptyLine(key)], notice: notice(`Добавлена строка ${state.lines.length + 1}.`, rowField('lines', key, 'name')) }
+      if (edit.list === 'lines') return { ...added, lines: [...state.lines, emptyLine(key)], notice: notice(`Добавлена строка ${state.lines.length + 1}.`, firstField('lines', key)) }
       if (edit.list === 'discounts') return {
         ...added, discounts: [...state.discounts, { key, line: null, name: '', amount: '' }],
-        notice: notice(`Добавлена скидка ${state.discounts.length + 1}.`, rowField('discounts', key, 'name')),
+        notice: notice(`Добавлена скидка ${state.discounts.length + 1}.`, firstField('discounts', key)),
       }
       return {
         ...added, taxes: [...state.taxes, { key, taxKind: 'vat', taxRate: '', taxCode: '', net: '', tax: '', gross: '' }],
-        notice: notice(`Добавлен налоговый итог ${state.taxes.length + 1}.`, rowField('taxes', key, 'taxKind')),
+        notice: notice(`Добавлен налоговый итог ${state.taxes.length + 1}.`, firstField('taxes', key)),
       }
     }
     case 'remove': {
@@ -326,8 +335,14 @@ export function reviewReducer(state: ReviewState, edit: ReviewEdit): ReviewState
       if (index < 0) return state
       const problems = without(state.problems, rowField(edit.list, edit.key))
       const removed = `${rowNames[edit.list]} ${index + 1} удален${edit.list === 'taxes' ? '' : 'а'}.`
-      if (edit.list === 'discounts') return { ...state, discounts: state.discounts.filter((row) => row.key !== edit.key), problems, notice: notice(removed, null) }
-      if (edit.list === 'taxes') return { ...state, taxes: state.taxes.filter((row) => row.key !== edit.key), problems, notice: notice(removed, null) }
+      if (edit.list === 'discounts') {
+        const discounts = state.discounts.filter((row) => row.key !== edit.key)
+        return { ...state, discounts, problems, notice: notice(removed, afterRemoval('discounts', discounts, index)) }
+      }
+      if (edit.list === 'taxes') {
+        const taxes = state.taxes.filter((row) => row.key !== edit.key)
+        return { ...state, taxes, problems, notice: notice(removed, afterRemoval('taxes', taxes, index)) }
+      }
       // References never point at a missing row: a deposit loses its link, a line discount becomes a receipt discount.
       const lines = state.lines.filter((line) => line.key !== edit.key).map((line) => line.parent === edit.key ? { ...line, parent: null } : line)
       const deposits = lines.flatMap((line, at) => state.lines.find((old) => old.key === line.key)?.parent === edit.key ? [at + 1] : [])
@@ -336,7 +351,7 @@ export function reviewReducer(state: ReviewState, edit: ReviewEdit): ReviewState
         ...state, lines, discounts: state.discounts.map((discount) => discount.line === edit.key ? { ...discount, line: null } : discount), problems,
         notice: notice([removed, lines.length > index ? 'Следующие строки перенумерованы.' : '',
           deposits.length ? `Снята связь залога: строки ${numbers(deposits)}.` : '',
-          loose.length ? `Скидки ${numbers(loose)} теперь относятся ко всему чеку.` : ''].filter(Boolean).join(' '), null),
+          loose.length ? `Скидки ${numbers(loose)} теперь относятся ко всему чеку.` : ''].filter(Boolean).join(' '), afterRemoval('lines', lines, index)),
       }
     }
     case 'missing': {

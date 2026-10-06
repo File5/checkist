@@ -108,6 +108,33 @@ describe('polling lifetime with the public job fixture (Node, no browser)', () =
     request.refresh(); await flush(); expect(request.getSnapshot()).toMatchObject({ data: cancelled })
     request.dispose()
   })
+  it('makes the read that a pause cancelled even when resume is asked not to read', async () => {
+    const signals: AbortSignal[] = []
+    const load = vi.fn((signal: AbortSignal) => { signals.push(signal); return signals.length === 2 ? new Promise<LocalApiResult<number>>(() => {}) : Promise.resolve({ kind: 'ok' as const, data: signals.length }) })
+    const request = createPollingRequest<number>(load)
+    request.start(); await flush()
+    // Nothing was in flight: a pause owes nothing, the finished list is not polled.
+    request.pause(); request.resume(false); await vi.advanceTimersByTimeAsync(60000); expect(load).toHaveBeenCalledTimes(1)
+    request.refresh(); request.pause(); expect(signals[1].aborted).toBe(true)
+    request.pause(); expect(load).toHaveBeenCalledTimes(2)
+    request.resume(false); expect(load).toHaveBeenCalledTimes(3); await flush()
+    expect(request.getSnapshot()).toEqual({ kind: 'ok', data: 3, refreshing: false })
+    // The debt is paid once.
+    request.pause(); request.resume(false); await vi.advanceTimersByTimeAsync(60000); expect(load).toHaveBeenCalledTimes(3)
+    request.dispose()
+  })
+  it('owes a queued read that a pause dropped, and nothing after newer data was given', async () => {
+    const first = deferred<LocalApiResult<number>>()
+    const load = vi.fn().mockReturnValueOnce(first.promise).mockResolvedValue({ kind: 'ok', data: 2 })
+    const request = createPollingRequest<number>(load)
+    request.start(); first.resolve({ kind: 'ok', data: 1 }); await flush()
+    const second = deferred<LocalApiResult<number>>()
+    load.mockReturnValueOnce(second.promise)
+    request.refresh(); request.queueRefresh(); request.pause()
+    request.setData(5); request.resume(false); await vi.advanceTimersByTimeAsync(60000)
+    expect(load).toHaveBeenCalledTimes(2); expect(request.getSnapshot()).toMatchObject({ data: 5 })
+    request.dispose()
+  })
   it('coalesces related updates during a read into one final read', async () => {
     const first = deferred<LocalApiResult<number>>()
     const load = vi.fn().mockReturnValueOnce(first.promise).mockResolvedValue({ kind: 'ok', data: 2 })

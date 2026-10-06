@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createLocalRequestFocus, focusOwnerAttribute, insideLocalBlock } from '../../components/local-request-focus'
-import { reviewFocusTarget } from './review-actions'
+import { focusAfterAttribute, focusAfterPress, replacedFieldKeepsFocus, reviewFocusTarget } from './review-actions'
 
 // The crop list block (RequestBlock) and the confirmation of one crop, modelled without a DOM or browser runner.
 type Node = { name: string; parent: Node | null; owner: boolean; connected: boolean; disabled: boolean; contains: (node: Node | null) => boolean; closest: (selector: string) => Node | null }
@@ -142,6 +142,36 @@ describe('insideLocalBlock', () => {
     expect(insideLocalBlock(block, card)).toBe(false)
     expect(insideLocalBlock(block, inner)).toBe(false)
     expect(insideLocalBlock(block, outside)).toBe(false)
+  })
+})
+
+describe('buttons of the form that disappear with their own press', () => {
+  const element = (parent: ReturnType<typeof make> | null, target?: string) => make(parent, target)
+  function make(parent: { closest(selector: string): unknown } | null, target?: string) {
+    const self = {
+      getAttribute: (name: string) => name === focusAfterAttribute ? target ?? null : null,
+      closest: (selector: string): { getAttribute(name: string): string | null } | null => {
+        if (selector !== '[data-review-focus]') throw new Error(selector)
+        return target !== undefined ? self : parent ? parent.closest(selector) as { getAttribute(name: string): string | null } | null : null
+      },
+    }
+    return self
+  }
+  it('hands focus to the field the button names, also for a press on its inner node', () => {
+    const section = element(null)
+    const retry = element(section, 'review-42-receipt-store')
+    expect(focusAfterPress(retry)).toBe('review-42-receipt-store')
+    expect(focusAfterPress(element(retry))).toBe('review-42-receipt-store')
+  })
+  it('leaves focus alone for every other press inside the form', () => {
+    const section = element(null)
+    expect(focusAfterPress(element(section))).toBeNull(); expect(focusAfterPress(section)).toBeNull()
+  })
+  it.each([
+    ['review-42-receipt-country', 'body', true], ['review-42-receipt-country', 'elsewhere', false],
+    ['review-42-receipt-total', 'body', false], [null, 'body', false],
+  ] as const)('a replaced country field: last focused %s, focus now %s → returns focus: %s', (last, active, expected) => {
+    expect(replacedFieldKeepsFocus(last, 'review-42-receipt-country', active)).toBe(expected)
   })
 })
 

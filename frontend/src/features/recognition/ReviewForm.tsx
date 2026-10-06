@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import type { FocusEvent, MouseEvent, ReactNode } from 'react'
 import type { CountryEntry } from '../../api/countries'
 import { getStores } from '../../api/stores'
 import type { StoreEntry, Unit } from '../../api/types'
 import { formatUnit } from '../../lib/format'
 import { errorText } from './labels'
-import { headerField, problemsAt, rowField, storeLabel } from './review-state'
+import { focusAfterAttribute, focusAfterPress, replacedFieldKeepsFocus } from './review-actions'
+import { addField, headerField, problemsAt, rowField, storeLabel } from './review-state'
 import type { ReviewEdit, ReviewHeader, ReviewLine, ReviewList, ReviewState, ReviewStore } from './review-state'
 import { useRequest } from './useRequest'
 
@@ -28,13 +29,14 @@ function Field({ id, label, problems, unread = false, hint, children }: FieldBox
   </div>
 }
 
-function StoreResults({ query, disabled, onChoose }: { query: string; disabled: boolean; onChoose: (store: StoreEntry) => void }) {
+/** `focus` is the DOM id of the search field: «Повторить поиск» disappears with its press and hands focus to it. */
+export function StoreResults({ query, disabled, focus, onChoose }: { query: string; disabled: boolean; focus: string; onChoose: (store: StoreEntry) => void }) {
   const load = useCallback((signal: AbortSignal) => getStores({ q: query }, { signal }), [query])
   const { state, request } = useRequest(load)
   if (state.kind === 'loading') return <p role="status">Ищем магазины…</p>
   if (state.kind === 'error') return <div className="ck-rec-warning" role="status">
     <p>Не удалось найти магазины. {errorText(state.error)}</p>
-    <button type="button" disabled={disabled} onClick={request.refresh}>Повторить поиск</button>
+    <button type="button" disabled={disabled} {...{ [focusAfterAttribute]: focus }} onClick={request.refresh}>Повторить поиск</button>
   </div>
   const { results, count } = state.data
   if (results.length === 0) return <p role="status">Магазины не найдены. Измените запрос или укажите вывеску и адрес ниже.</p>
@@ -76,7 +78,7 @@ function StoreChooser({ id, store, problems, disabled, onStore }: {
         <button type="button" className="ck-review-secondary" disabled={disabled} onClick={search}>Найти</button>
       </div>}
     </Field>
-    {query && <StoreResults query={query} disabled={disabled} onChoose={(found) => choose({ id: found.id, label: storeLabel(found) })} />}
+    {query && <StoreResults query={query} disabled={disabled} focus={id} onChoose={(found) => choose({ id: found.id, label: storeLabel(found) })} />}
   </div>
 }
 
@@ -100,9 +102,24 @@ export default function ReviewForm({ imageId, state, dispatch, countries, countr
   useEffect(() => {
     if (seen.current === state.notice.id) return
     seen.current = state.notice.id
+    // The announcement itself is a live region and needs no focus; it takes it only if the named field is not in the document.
     const target = state.notice.focus === null ? null : document.getElementById(dom(state.notice.focus))
     ;(target ?? notice.current)?.focus()
   }, [state.notice, dom])
+  const lastFocused = useRef<string | null>(null)
+  const focused = (event: FocusEvent<HTMLElement>) => { lastFocused.current = event.target.id || null }
+  // Runs after the button's own handler, before its press removes it from the page.
+  const pressed = (event: MouseEvent<HTMLElement>) => {
+    const id = focusAfterPress(event.target as Element)
+    if (id !== null) document.getElementById(id)?.focus()
+  }
+  const countryId = dom(headerField('country'))
+  const listed = countries !== null
+  // The loaded reference replaces the typed country code by a select: a new element under the same id.
+  useEffect(() => {
+    const active = document.activeElement
+    if (replacedFieldKeepsFocus(lastFocused.current, countryId, !active || active === document.body ? 'body' : 'elsewhere')) document.getElementById(countryId)?.focus()
+  }, [listed, countryId])
 
   const box = (field: string, label: string, value: string, hint?: string, ...also: string[]): FieldBox => ({
     id: dom(field), label, hint, problems: problemsAt(state, field, ...also), unread: value === '' && state.unread.includes(field),
@@ -136,7 +153,7 @@ export default function ReviewForm({ imageId, state, dispatch, countries, countr
     </>
   }
 
-  return <section className="ck-review" aria-label="Исправление и подтверждение распознанных данных">
+  return <section className="ck-review" aria-label="Исправление и подтверждение распознанных данных" onFocus={focused} onClick={pressed}>
     <h4>Исправление и подтверждение</h4>
     <p className="ck-rec-warning">Проверьте данные по изображению чека, исправьте их и подтвердите. Несохранённые правки хранятся только на этой открытой странице: перезагрузка или закрытие вкладки их стирает, черновика на сервере нет.</p>
     <p className="ck-rec-note">Заполненное поле считается прочитанным с чека, пустое — отсутствующим. Если сомневаетесь в значении, очистите поле. Суммы и количества: {decimalHint.toLowerCase()}</p>
@@ -154,7 +171,7 @@ export default function ReviewForm({ imageId, state, dispatch, countries, countr
         </div>
         {countriesFailed && <div className="ck-rec-warning" role="status">
           <p>Справочник стран не загружен: код страны и валюты введите вручную.</p>
-          <button type="button" className="ck-review-secondary" onClick={onCountriesRetry}>Загрузить справочник</button>
+          <button type="button" className="ck-review-secondary" {...{ [focusAfterAttribute]: countryId }} onClick={onCountriesRetry}>Загрузить справочник</button>
         </div>}
       </fieldset>
       <fieldset className="ck-review-group">
@@ -196,7 +213,7 @@ export default function ReviewForm({ imageId, state, dispatch, countries, countr
           <button type="button" className="ck-review-secondary" onClick={() => dispatch({ type: 'remove', list: 'lines', key: line.key })}>Удалить строку {index + 1}</button>
         </fieldset></li>
       })}</ol>
-      <button type="button" className="ck-review-secondary" onClick={() => dispatch({ type: 'add', list: 'lines' })}>Добавить строку</button>
+      <button type="button" id={dom(addField('lines'))} className="ck-review-secondary" onClick={() => dispatch({ type: 'add', list: 'lines' })}>Добавить строку</button>
 
       <h4>Скидки ({state.discounts.length})</h4>
       {sectionProblems('discounts')}
@@ -215,7 +232,7 @@ export default function ReviewForm({ imageId, state, dispatch, countries, countr
           <button type="button" className="ck-review-secondary" onClick={() => dispatch({ type: 'remove', list: 'discounts', key: discount.key })}>Удалить скидку {index + 1}</button>
         </fieldset></li>
       })}</ol>
-      <button type="button" className="ck-review-secondary" onClick={() => dispatch({ type: 'add', list: 'discounts' })}>Добавить скидку</button>
+      <button type="button" id={dom(addField('discounts'))} className="ck-review-secondary" onClick={() => dispatch({ type: 'add', list: 'discounts' })}>Добавить скидку</button>
 
       <h4>Налоговые итоги ({state.taxes.length})</h4>
       {sectionProblems('taxes')}
@@ -236,7 +253,7 @@ export default function ReviewForm({ imageId, state, dispatch, countries, countr
           <button type="button" className="ck-review-secondary" onClick={() => dispatch({ type: 'remove', list: 'taxes', key: tax.key })}>Удалить налоговый итог {index + 1}</button>
         </fieldset></li>
       })}</ol>
-      <button type="button" className="ck-review-secondary" onClick={() => dispatch({ type: 'add', list: 'taxes' })}>Добавить налоговый итог</button>
+      <button type="button" id={dom(addField('taxes'))} className="ck-review-secondary" onClick={() => dispatch({ type: 'add', list: 'taxes' })}>Добавить налоговый итог</button>
     </fieldset>
     <p ref={notice} tabIndex={-1} role="status" className="ck-review-notice">{state.notice.text}</p>
     <p role="status" className="ck-review-refusal">{refusal ?? ''}</p>

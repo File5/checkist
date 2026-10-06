@@ -156,6 +156,23 @@ describe('review form SSR markup (interaction in a browser stays manual)', () =>
     expect(html).toContain('<p tabindex="-1" role="status" class="ck-review-notice">Строка 1 удалена.</p>')
     expect(html).toContain('Строк нет. Чек без строк сохранить нельзя.')
   })
+  it('has in the document every element that a removal names as the place of focus', () => {
+    const filled = apply(start(), { type: 'add', list: 'lines' }, { type: 'add', list: 'discounts' }, { type: 'add', list: 'discounts' }, { type: 'add', list: 'taxes' }, { type: 'add', list: 'taxes' })
+    const id = (field: string) => `id="review-42-${field.replaceAll('.', '-')}"`
+    for (const list of ['lines', 'discounts', 'taxes'] as const) {
+      const next = apply(filled, { type: 'remove', list, key: filled[list][0].key })
+      expect(next.notice.focus).toMatch(new RegExp(`^${list}\\.${filled[list][1].key}\\.`)); expect(form(next), list).toContain(id(next.notice.focus!))
+      const empty = apply(next, { type: 'remove', list, key: filled[list][1].key })
+      expect(empty.notice.focus).toBe(`${list}.add`); expect(form(empty), list).toMatch(new RegExp(`<button type="button" ${id(empty.notice.focus!)}[^>]*>Добавить `))
+    }
+  })
+  it('names the country field as the place of focus of «Загрузить справочник», which disappears with its press', () => {
+    const html = form(start(), { countries: null, countriesFailed: true })
+    expect(html).toContain('<button type="button" class="ck-review-secondary" data-review-focus="review-42-receipt-country">Загрузить справочник</button>')
+    expect(html).toContain('<input id="review-42-receipt-country"')
+    // The same id belongs to the select that replaces the input once the reference is read.
+    expect(form(start())).toContain('<select id="review-42-receipt-country"'); expect(form(start())).not.toContain('data-review-focus')
+  })
 })
 
 describe('crop card around the confirmation', () => {
