@@ -1,25 +1,119 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { isJobDetail, isPhoto, isReceiptImage, isRecognitionCsrf } from '../../api/recognition-schema'
+import { isJobDetail, isPhoto, isPhotoUpload, isReceiptImage, isRecognitionCsrf } from '../../api/recognition-schema'
 import { publicFixture } from '../../api/recognition-test-support'
+import type { ExecutorState, JobDetail, RecognitionCsrf } from '../../api/recognition'
+import { jobStatuses } from '../../api/recognition-types'
 import { JobPage, JobsPage, UploadPage } from './index'
 import type { RequestState } from './polling'
+import { getJobNotice, setJobNotice, uploadMessage } from './upload-state'
 
-const mocked = vi.hoisted(() => ({ states: [] as RequestState<unknown>[] }))
-vi.mock('./useRequest', () => ({ useRequest: () => ({ state: mocked.states.shift() ?? { kind: 'loading' }, request: { pause: vi.fn(), resume: vi.fn(), setData: vi.fn(), refresh: vi.fn(), queueRefresh: vi.fn() } }) }))
+type Lifecycle = { success: (job: JobDetail, action: 'cancel' | 'retry') => void }
+const mocked = vi.hoisted(() => ({
+  states: [] as RequestState<unknown>[], active: [] as (((data: unknown) => boolean) | undefined)[],
+  lifecycle: undefined as unknown, navigate: vi.fn(),
+}))
+vi.mock('./useRequest', () => ({ useRequest: (_load: unknown, active?: (data: unknown) => boolean) => {
+  mocked.active.push(active)
+  return { state: mocked.states.shift() ?? { kind: 'loading' }, request: { pause: vi.fn(), resume: vi.fn(), setData: vi.fn(), refresh: vi.fn(), queueRefresh: vi.fn(), subscribe: vi.fn(), getSnapshot: vi.fn() } }
+} }))
+vi.mock('./useJobActions', () => ({ useJobActions: (lifecycle: unknown) => { mocked.lifecycle = lifecycle; return { state: { kind: 'idle' }, run: vi.fn() } } }))
+vi.mock('../../navigation', async (original) => ({ ...await original<typeof import('../../navigation')>(), navigate: mocked.navigate }))
 const fixture = <T,>(name: string, guard: (value: unknown) => value is T) => {
   const value = publicFixture(name); if (!guard(value)) throw new Error('Invalid fixture'); return value
 }
 const success = <T,>(data: T): RequestState<T> => ({ kind: 'ok', data, refreshing: false })
-beforeEach(() => { mocked.states = [] })
+beforeEach(() => { mocked.states = []; mocked.active = []; mocked.lifecycle = undefined; mocked.navigate.mockClear() })
+
+const executor = (state: ExecutorState) => ({ available: state !== 'absent' && state !== 'unknown', state, last_seen_at: null })
+const states = ['idle', 'busy', 'absent', 'unknown'] as const
+const absentText = 'Воркер распознавания не запущен. Задание будет ждать в очереди, пока воркер не запустят.'
+const uploadTexts: Record<ExecutorState, string | undefined> = {
+  idle: 'Воркер распознавания запущен и ждёт заданий.',
+  busy: 'Воркер распознавания сейчас обрабатывает задание. Новое фото встанет в очередь.',
+  absent: absentText, unknown: undefined,
+}
+const queuedTexts: Record<ExecutorState, string | undefined> = {
+  idle: undefined, busy: 'Воркер занят другим заданием. Это задание начнётся после него.', absent: absentText, unknown: undefined,
+}
+const workerNotes = [...new Set([...Object.values(uploadTexts), ...Object.values(queuedTexts)])].filter((text) => text !== undefined)
+/** Lines about the executor only: stage «Ожидание воркера» and the stalled text are other messages. */
+const noteCount = (html: string) => workerNotes.filter((text) => html.includes(text)).length
+const queuedJob = (state: ExecutorState, patch: Partial<JobDetail> = {}): JobDetail => ({
+  ...fixture('job-running.json', isJobDetail), status: 'queued', stage: 'waiting', started_at: null, heartbeat_at: null, executor: executor(state), ...patch,
+})
+
+describe('executor line by the current state (SSR)', () => {
+  it.each(states)('upload page with the worker %s', (state) => {
+    const csrf: RecognitionCsrf = { ...fixture('csrf.json', isRecognitionCsrf), executor: executor(state) }
+    mocked.states = [success(csrf)]
+    const html = renderToStaticMarkup(<UploadPage />)
+    const text = uploadTexts[state]
+    expect(noteCount(html)).toBe(text ? 1 : 0)
+    if (text) expect(html).toContain(state === 'absent' ? `<p class="ck-rec-warning">${text}</p>` : `<p>${text}</p>`)
+    expect(html).not.toMatch(/не обнаружен|неизвестна/)
+    // Upload stays available in every state.
+    expect(html).toContain('Обновить условия загрузки'); expect(html).not.toMatch(/id="recognition-file"[^>]*disabled/)
+    expect(mocked.active[0]?.(csrf)).toBe(state === 'absent')
+  })
+  it('says nothing about the worker when the conditions are loading, failed or stale', () => {
+    const csrf = fixture('csrf.json', isRecognitionCsrf)
+    for (const state of [{ kind: 'loading' }, { kind: 'error', error: { kind: 'error', reason: 'network' } },
+      { kind: 'ok', data: csrf, refreshing: false, refreshError: { kind: 'error', reason: 'network' } }] as RequestState<unknown>[]) {
+      mocked.states = [state]
+      const html = renderToStaticMarkup(<UploadPage />)
+      expect(noteCount(html)).toBe(0)
+      if (state.kind === 'error') { expect(html).toContain('Нет ответа сервера'); expect(html).toContain('Повторить') }
+      if (state.kind === 'ok') { expect(html).toContain('Не удалось обновить условия'); expect(html).toContain('Обновить условия загрузки') }
+    }
+  })
+  it.each(states)('queued job with the worker %s', (state) => {
+    mocked.states = [success(queuedJob(state))]
+    const html = renderToStaticMarkup(<JobPage jobId={31} />)
+    const text = queuedTexts[state]
+    expect(html).toContain('В очереди'); expect(noteCount(html)).toBe(text ? 1 : 0)
+    if (text) expect(html).toContain(state === 'absent' ? `<p class="ck-rec-warning">${text}</p>` : `<p>${text}</p>`)
+    expect(html).not.toMatch(/не обнаружен|неизвестна/)
+  })
+  it.each(jobStatuses.filter((status) => status !== 'queued').flatMap((status) => states.map((state) => [status, state] as const)))('job %s says nothing about the worker %s', (status, state) => {
+    mocked.states = [success(queuedJob(state, { status, stage: status === 'running' ? 'recognize' : 'finished' }))]
+    expect(noteCount(renderToStaticMarkup(<JobPage jobId={31} />))).toBe(0)
+  })
+  it('keeps the existing stalled text for a job whose worker disappeared, without the absent warning', () => {
+    mocked.states = [success({ ...fixture('job-running.json', isJobDetail), stalled: true, executor: { available: false, state: 'absent' as const, last_seen_at: '2026-10-04T12:35:00Z' } })]
+    const html = renderToStaticMarkup(<JobPage jobId={31} />)
+    expect(html).toContain('Воркер давно не обновлял состояние'); expect(noteCount(html)).toBe(0)
+  })
+  it('hides the worker line of a stale queued snapshot and keeps the refresh error with retry', () => {
+    mocked.states = [{ kind: 'ok', data: queuedJob('absent'), refreshing: false, refreshError: { kind: 'error', reason: 'network' } }]
+    const html = renderToStaticMarkup(<JobPage jobId={31} />)
+    expect(html).toContain('Не удалось обновить'); expect(html).toContain('Повторить обновление'); expect(noteCount(html)).toBe(0)
+  })
+  it.each(states)('upload and retry notices carry no worker text when it is %s; the line follows the fresh snapshot', (state) => {
+    const upload = fixture('upload-new.json', isPhotoUpload)
+    setJobNotice(31, uploadMessage({ ...upload, job: { ...upload.job, executor: executor(state) } }))
+    mocked.states = [success(fixture('job-running.json', isJobDetail))]
+    const running = renderToStaticMarkup(<JobPage jobId={31} />)
+    expect(running).toContain('<p role="status" class="ck-rec-warning">Фото загружено. Задание принято.</p>')
+    expect(running).toContain('Обрабатывается'); expect(noteCount(running)).toBe(0)
+
+    const retried = queuedJob(state, { id: 32, retry_of: 31 });
+    (mocked.lifecycle as Lifecycle).success(retried, 'retry')
+    expect(getJobNotice(32)).toBe('Создано новое задание обработки.')
+    expect(mocked.navigate).toHaveBeenCalledExactlyOnceWith({ kind: 'job', jobId: 32 })
+    mocked.states = [success({ ...retried, status: 'running', stage: 'detect' })]
+    const html = renderToStaticMarkup(<JobPage jobId={32} />)
+    expect(html).toContain('<p role="status" class="ck-rec-warning">Создано новое задание обработки.</p>'); expect(noteCount(html)).toBe(0)
+  })
+})
 
 describe('page block states with public API data (SSR)', () => {
-  it('shows real limits and the queue warning, never the CSRF token', () => {
+  it('shows real limits and the absent worker warning, never the CSRF token', () => {
     const csrf = fixture('csrf.json', isRecognitionCsrf)
     mocked.states = [success(csrf)]
     const html = renderToStaticMarkup(<UploadPage />)
     expect(html).toContain('20 МиБ'); expect(html).toContain('40 000 000'); expect(html).toContain('JPEG, PNG, WEBP')
-    expect(html).toContain('ждать в очереди'); expect(html).not.toContain(csrf.csrf_token)
+    expect(html).toContain('Воркер распознавания не запущен.'); expect(html).not.toContain(csrf.csrf_token)
     expect(html).toContain('Фото передаётся облачной модели')
   })
   it('shows a recoverable limits error without allowing upload', () => {

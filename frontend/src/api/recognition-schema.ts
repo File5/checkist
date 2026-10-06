@@ -1,7 +1,7 @@
 import { amount, array, bool, choice, isId, isISODateTime, nonNegativeInteger, nullable, object, price, quantity, text, unit } from './schema.ts'
 import type { Check, Guard } from './schema.ts'
 import { lineKind, mediaPath, receiptOperation, taxKind } from './receipts-schema.ts'
-import { issueSeverities, jobStatuses } from './recognition-types.ts'
+import { executorStates, issueSeverities, jobStatuses } from './recognition-types.ts'
 import type {
   Bbox, Executor, IssueContext, Job, JobActions, JobDetail, JobItem, JobProgress, NormalizedDiscount, NormalizedLine,
   NormalizedResult, NormalizedTax, NormalizedTaxRate, Photo, PhotoUpload, ProposedReceipt, QuadPoint,
@@ -15,7 +15,18 @@ const count = (max: number): Check => (value) => nonNegativeInteger(value) && (v
 const position: Check = (value) => isId(value) && value <= 10
 const finiteRange = (min: number, max: number): Check => (value) => typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max
 const boundedArray = (check: Check, max: number): Check => (value) => array(check)(value) && (value as unknown[]).length <= max
-export const isExecutor = object<Executor>({ available: bool, last_seen_at: nullable(isISODateTime) })
+const executorShape = object<Omit<Executor, 'state'>>({ available: bool, last_seen_at: nullable(isISODateTime) })
+const executorState = choice(...executorStates)
+/** `state` is optional on the wire (older server). A missing or unlisted string is normalized in place
+ * to 'unknown' so that screens say nothing about the worker; a non-string state rejects the answer.
+ */
+export const isExecutor: Guard<Executor> = (value): value is Executor => {
+  if (!executorShape(value)) return false
+  const body = value as Record<string, unknown>
+  if (Object.hasOwn(body, 'state') && typeof body.state !== 'string') return false
+  if (!executorState(body.state)) body.state = 'unknown'
+  return true
+}
 export const isRecognitionLimits = object<RecognitionLimits>({
   formats: (value) => Array.isArray(value) && value.length > 0 && value.length <= 3 && value.every(format),
   max_bytes: isId, max_pixels: isId, max_receipts: position,

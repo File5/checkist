@@ -4,7 +4,7 @@ import { getRecognitionCsrf, uploadPhoto } from '../../api/recognition'
 import RequestState from '../../components/RequestState'
 import { useLocalRequestFocus } from '../../components/useLocalRequestFocus'
 import { Link, navigate } from '../../navigation'
-import { errorText, executorWarning } from './labels'
+import { errorText, isExecutorAbsent, uploadExecutorNote } from './labels'
 import { createUpload, fileFormat, formatBytes, setJobNotice, uploadMessage, validateFile } from './upload-state'
 import { useRequest } from './useRequest'
 import { createPreview } from './preview'
@@ -24,7 +24,8 @@ function PreviewImage({ url, name }: { url: string; name: string }) {
 
 export default function UploadPage() {
   const load = useCallback((signal: AbortSignal) => getRecognitionCsrf({ signal }), [])
-  const { state: config, request } = useRequest(load)
+  // Absent is polled so the warning disappears once the worker starts; any other state stops the polling.
+  const { state: config, request } = useRequest(load, isExecutorAbsent)
   const [file, setFile] = useState<File>()
   const upload = useMemo(() => createUpload(
     (selected, signal) => uploadPhoto(selected, { signal }),
@@ -34,11 +35,27 @@ export default function UploadPage() {
   ), [request])
   const state = useSyncExternalStore(upload.subscribe, upload.getSnapshot, upload.getServerSnapshot)
   useEffect(() => upload.dispose, [upload])
+  // Only an explicit refresh disables the buttons; background polling must not make them flicker.
+  const [manualRefresh, setManualRefresh] = useState(false)
+  const refreshConfig = useCallback(() => {
+    setManualRefresh(true)
+    const unsubscribe = request.subscribe(() => {
+      const next = request.getSnapshot()
+      if (next.kind === 'ok' && next.refreshing) return
+      unsubscribe(); setManualRefresh(false)
+    })
+    request.refresh()
+  }, [request])
   const configBlock = useLocalRequestFocus(config)
   const formBlock = useLocalRequestFocus<HTMLFormElement>({ kind: state.kind === 'sending' ? 'loading' : state.kind === 'error' ? 'error' : 'ok' })
   const limits = config.kind === 'ok' ? config.data.limits : undefined
+  // A failed refresh leaves a stale snapshot: say nothing about the worker until the next answer.
+  const executorNote = config.kind === 'ok' && !config.refreshError ? uploadExecutorNote(config.data.executor.state) : undefined
   const invalid = file ? validateFile(file, limits) : undefined
   const sending = state.kind === 'sending'
+  const refreshing = manualRefresh && config.kind === 'ok' && config.refreshing
+  // Like job actions, the upload pauses background reads before touching the server.
+  useEffect(() => { if (!sending) return; request.pause(); return () => request.resume(false) }, [sending, request])
   const submit = (event: FormEvent) => {
     event.preventDefault()
     if (file && limits) void upload.submit(file, limits)
@@ -51,8 +68,8 @@ export default function UploadPage() {
       {config.kind === 'error' && <RequestState kind="error" message={errorText(config.error)} onRetry={request.refresh} />}
       {config.kind === 'ok' && <>
         <p>Форматы: {config.data.limits.formats.map((format) => format.replace('image/', '').toUpperCase()).join(', ')}. Максимальный размер: {formatBytes(config.data.limits.max_bytes)}. До {config.data.limits.max_pixels.toLocaleString('ru-RU')} пикселей и {config.data.limits.max_receipts.toLocaleString('ru-RU')} чеков на фото.</p>
-        {!config.data.executor.available && <p className="ck-rec-warning">{executorWarning}</p>}
-        <button type="button" disabled={sending || config.refreshing} onClick={request.refresh}>Обновить условия загрузки</button>
+        {executorNote && <p className={executorNote.warning ? 'ck-rec-warning' : undefined}>{executorNote.text}</p>}
+        <button type="button" disabled={sending || refreshing} onClick={refreshConfig}>Обновить условия загрузки</button>
         {config.refreshError && <p role="status" className="ck-rec-error">Не удалось обновить условия. {errorText(config.refreshError)}</p>}
       </>}
     </section>
@@ -63,7 +80,7 @@ export default function UploadPage() {
       {file && <><p>{file.name} · {fileFormat(file)?.replace('image/', '').toUpperCase() ?? 'Неподдерживаемый формат'} · {formatBytes(file.size)}</p>{!invalid && <FilePreview key={`${file.name}:${file.lastModified}:${file.size}`} file={file} />}</>}
       {invalid && <p id="recognition-file-error" role="status" className="ck-rec-error">{invalid}</p>}
       <p id="recognition-cloud-warning" className="ck-rec-warning">Фото передаётся облачной модели распознавания. Отправляйте только фото, которое вы готовы передать сервису.</p>
-      <button type="submit" data-request-retry={state.kind === 'error' ? '' : undefined} disabled={!file || !limits || Boolean(invalid) || sending || (config.kind === 'ok' && config.refreshing)}>{sending ? 'Отправляем фото…' : state.kind === 'error' ? 'Повторить загрузку' : 'Загрузить фото'}</button>
+      <button type="submit" data-request-retry={state.kind === 'error' ? '' : undefined} disabled={!file || !limits || Boolean(invalid) || sending || refreshing}>{sending ? 'Отправляем фото…' : state.kind === 'error' ? 'Повторить загрузку' : 'Загрузить фото'}</button>
       <div role="status" aria-live="polite">{sending && <p>Отправляем файл. Дождитесь ответа сервера; распознавание начнётся отдельно.</p>}{state.kind === 'error' && <p className="ck-rec-error">{state.message}</p>}{state.kind === 'success' && <p>{state.message}</p>}</div>
       {state.kind === 'error' && <Link to="/recognition/jobs">Проверить список обработки</Link>}
     </form>

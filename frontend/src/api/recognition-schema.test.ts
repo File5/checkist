@@ -4,7 +4,7 @@ import { isJob, isJobDetail, isPhoto, isPhotoUpload, isReceiptImage, isReceiptIm
 import { isDiscount, isLine, isReceipt, isTax } from './receipts-schema'
 import { page } from './schema'
 import { issue, publicFixture, taxEvidenceMissingIssues } from './recognition-test-support'
-import type { JobDetail, ReceiptImageDetail } from './recognition-types'
+import type { Job, JobDetail, PhotoUpload, ReceiptImageDetail, RecognitionCsrf } from './recognition-types'
 import type { Line, Receipt } from './receipts-types'
 import type { Page } from './types'
 
@@ -69,6 +69,55 @@ describe('public recognition/receipts contract fixtures', () => {
     ['csrf.json', { csrf_token: 'token\r\nInjected: 1' }], ['csrf.json', { executor: { available: 'false', last_seen_at: null } }],
   ])('rejects malformed nested fields in %s %#', (name, patch) => {
     expect(schemas[name]({ ...(publicFixture(name) as object), ...patch })).toBe(false)
+  })
+  describe('executor.state', () => {
+    const csrf = () => publicFixture('csrf.json') as RecognitionCsrf
+    const withExecutor = (executor: object) => ({ ...csrf(), executor })
+    it('reads the state of every backend fixture', () => {
+      const states: Record<string, string> = {}
+      const body = csrf(); expect(isRecognitionCsrf(body)).toBe(true); states.csrf = body.executor.state
+      for (const name of ['job.json', 'job-running.json', 'job-cancel-requested.json']) {
+        const job = publicFixture(name) as JobDetail; expect(isJobDetail(job)).toBe(true); states[name] = job.executor.state
+      }
+      const jobs = publicFixture('jobs.json') as Page<Job>; expect(page(isJob)(jobs)).toBe(true); states.jobs = jobs.results[0].executor.state
+      for (const name of ['upload-new.json', 'upload-reused.json']) {
+        const upload = publicFixture(name) as PhotoUpload; expect(isPhotoUpload(upload)).toBe(true); states[name] = upload.job.executor.state
+      }
+      expect(states).toEqual({
+        csrf: 'absent', 'job.json': 'absent', 'job-running.json': 'busy', 'job-cancel-requested.json': 'busy',
+        jobs: 'absent', 'upload-new.json': 'absent', 'upload-reused.json': 'absent',
+      })
+    })
+    it.each([
+      [{ available: true, state: 'idle', last_seen_at: null }, 'idle'],
+      [{ available: true, state: 'busy', last_seen_at: '2026-10-04T12:35:00Z' }, 'busy'],
+      [{ available: false, state: 'absent', last_seen_at: '2026-10-04T12:35:00Z' }, 'absent'],
+    ])('keeps the listed state %#', (executor, state) => {
+      const body = withExecutor({ ...executor })
+      expect(isRecognitionCsrf(body)).toBe(true); expect(body.executor).toEqual({ ...executor, state })
+    })
+    it.each([
+      [{ available: false, last_seen_at: null }], [{ available: true, last_seen_at: null }],
+      [{ available: true, state: 'draining', last_seen_at: null }], [{ available: false, state: '', last_seen_at: null }],
+      [{ available: true, state: 'Idle', last_seen_at: null }], [{ available: true, state: 'unknown', last_seen_at: null }],
+    ])('accepts an answer without state or with an unlisted one as unknown %#', (executor) => {
+      const body = withExecutor({ ...executor })
+      expect(isRecognitionCsrf(body)).toBe(true); expect(body.executor).toEqual({ ...executor, state: 'unknown' })
+      const job = { ...(publicFixture('job.json') as JobDetail), executor: { ...executor } as object as JobDetail['executor'] }
+      expect(isJobDetail(job)).toBe(true); expect(job.executor.state).toBe('unknown')
+      const upload = publicFixture('upload-new.json') as PhotoUpload
+      const patched = { ...upload, job: { ...upload.job, executor: { ...executor } as object as JobDetail['executor'] } }
+      expect(isPhotoUpload(patched)).toBe(true); expect(patched.job.executor.state).toBe('unknown')
+    })
+    it.each([[null], [1], [true], [['idle']], [{ value: 'idle' }]])('rejects a non-string state %#', (state) => {
+      expect(isRecognitionCsrf(withExecutor({ available: true, state, last_seen_at: null }))).toBe(false)
+      expect(isJobDetail({ ...(publicFixture('job.json') as JobDetail), executor: { available: true, state, last_seen_at: null } })).toBe(false)
+    })
+    it('still requires available and last_seen_at', () => {
+      expect(isRecognitionCsrf(withExecutor({ state: 'idle', last_seen_at: null }))).toBe(false)
+      expect(isRecognitionCsrf(withExecutor({ available: true, state: 'idle' }))).toBe(false)
+      expect(isRecognitionCsrf(withExecutor({ available: true, state: 'idle', last_seen_at: 'now' }))).toBe(false)
+    })
   })
   it('keeps money precise, allows refunds and legacy zero positions, checks matching/i18n', () => {
     const receipt = publicFixture('receipt.json') as Receipt

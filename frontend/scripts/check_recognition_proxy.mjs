@@ -37,9 +37,9 @@ async function until(read, condition) {
   }
   throw new Error('Timed out waiting for the expected QA job state')
 }
-function worker(scenario) {
+function spawnWorker(scenario, once) {
   const child = spawn(join(root, 'backend/.venv/Scripts/python.exe'), [
-    '-X', 'utf8', join(root, 'backend/manage.py'), 'recognition_worker', '--once', '--fake-scenario', scenario,
+    '-X', 'utf8', join(root, 'backend/manage.py'), 'recognition_worker', ...(once ? ['--once'] : []), '--fake-scenario', scenario,
   ], { cwd: root, env: process.env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
   let output = ''
   child.stdout.on('data', (data) => { output += data })
@@ -55,7 +55,13 @@ function worker(scenario) {
   const handle = { child, completion }
   workers.add(handle)
   completion.catch(() => {}) // A failing assertion may trigger cleanup before awaiting the worker.
-  return completion
+  return handle
+}
+function worker(scenario) { return spawnWorker(scenario, true).completion }
+/** A worker that stays idle between jobs, like the one a person starts; it is killed, never awaited. */
+function idleWorker(scenario) {
+  const { child, completion } = spawnWorker(scenario, false)
+  return { stop: async () => { child.kill(); await completion.catch(() => {}) } }
 }
 
 try {
@@ -110,7 +116,10 @@ try {
   const receipts = await loader.ssrLoadModule('/src/api/receipts.ts')
   const catalog = await loader.ssrLoadModule('/src/api/catalog.ts')
   const { createPollingRequest } = await loader.ssrLoadModule('/src/features/recognition/polling.ts')
-  const { isActive, acceptJob } = await loader.ssrLoadModule('/src/features/recognition/labels.ts')
+  const { isActive, acceptJob, isExecutorAbsent, uploadExecutorNote, jobExecutorNote } = await loader.ssrLoadModule('/src/features/recognition/labels.ts')
+  const { uploadMessage, retryNotice } = await loader.ssrLoadModule('/src/features/recognition/upload-state.ts')
+  const absentNote = { text: 'Воркер распознавания не запущен. Задание будет ждать в очереди, пока воркер не запустят.', warning: true }
+  const noWorkerText = (text) => assert.doesNotMatch(text, /воркер|очеред/i)
   const options = { baseUrl: `${origin.origin}/api` }
   for (const list of [await api.getJobs({}, options), await api.getPhotos({}, options), await receipts.getReceipts({}, options)]) {
     assert.equal(ok(list).count, 0, 'Start with a fresh QA database, no existing photos/jobs/receipts; no external worker')
@@ -118,6 +127,39 @@ try {
   const csrf = ok(await api.getRecognitionCsrf(options))
   assert.match(cookie, /^csrftoken=/)
   assert.equal(csrf.executor.available, false)
+  assert.equal(csrf.executor.state, 'absent')
+
+  // The upload page reads the conditions with this predicate: absent is polled, any other state is not.
+  const csrfPath = '/api/recognition/csrf/'
+  const csrfReads = () => requests.filter((request) => request.path === csrfPath).length
+  const conditions = createPollingRequest((signal) => api.getRecognitionCsrf({ ...options, signal }), isExecutorAbsent)
+  lifetimes.add(conditions)
+  conditions.start()
+  const executorIs = (state) => (snapshot) => snapshot.kind === 'ok' && !snapshot.refreshing && snapshot.data.executor.state === state
+  const absent = await until(() => conditions.getSnapshot(), executorIs('absent'))
+  assert.deepEqual(absent.data.executor, { available: false, state: 'absent', last_seen_at: null })
+  assert.deepEqual(uploadExecutorNote('absent'), absentNote)
+  let reads = csrfReads()
+  await delay(2300)
+  assert.ok(csrfReads() > reads, 'Conditions must be polled while the worker is absent')
+  const standby = idleWorker('success2')
+  const idle = await until(() => conditions.getSnapshot(), executorIs('idle')) // No manual refresh: polling finds the worker.
+  assert.deepEqual(idle.data.executor, { available: true, state: 'idle', last_seen_at: null })
+  assert.deepEqual(uploadExecutorNote('idle'), { text: 'Воркер распознавания запущен и ждёт заданий.', warning: false })
+  reads = csrfReads()
+  await delay(2300)
+  assert.equal(csrfReads(), reads, 'Conditions polling must stop once the worker is seen')
+  await standby.stop()
+  conditions.refresh()
+  await until(() => conditions.getSnapshot(), executorIs('absent'))
+  reads = csrfReads()
+  await delay(2300)
+  assert.ok(csrfReads() > reads, 'Polling must resume when the worker is absent again')
+  conditions.dispose()
+  reads = csrfReads()
+  await delay(2300)
+  assert.equal(csrfReads(), reads, 'A disposed page must not read the conditions')
+  console.log('conditions polling: absent (polled) → idle after a worker start (stopped) → absent after its kill (polled) → disposed passed')
   const doubleBytes = await readFile(join(media, 'demo/double.png'))
   const singleBytes = await readFile(join(media, 'demo/single.png'))
   const double = new File([doubleBytes], 'double.png', { type: 'image/png' })
@@ -126,12 +168,19 @@ try {
   assert.equal(uploaded.reused, false)
   assert.equal(uploaded.job.status, 'queued')
   assert.equal(requests.at(-1).status, 202)
+  assert.equal(uploadMessage(uploaded), 'Фото загружено. Задание принято.')
+  assert.equal(uploaded.job.executor.state, 'absent')
+  assert.deepEqual(jobExecutorNote(uploaded.job), absentNote) // Absent never blocks the upload.
   const poll = createPollingRequest((signal) => api.getJob(uploaded.job.id, { ...options, signal }), isActive, acceptJob)
   lifetimes.add(poll)
   poll.start()
   await until(() => poll.getSnapshot(), (state) => state.kind === 'ok' && state.data.status === 'queued')
   const firstWorker = worker('success2')
-  const terminal = await until(() => poll.getSnapshot(), (state) => state.kind === 'ok' && !isActive(state.data))
+  const terminal = await until(() => poll.getSnapshot(), (state) => {
+    // No snapshot of a running or finished job may carry a line about the worker.
+    if (state.kind === 'ok' && state.data.status !== 'queued') assert.equal(jobExecutorNote(state.data), undefined)
+    return state.kind === 'ok' && !isActive(state.data)
+  })
   console.log(await firstWorker)
   assert.equal(terminal.data.status, 'succeeded')
   assert.equal(terminal.data.progress.imported, 2)
@@ -185,6 +234,7 @@ try {
   assert.equal(requests.at(-1).status, 200)
   assert.equal(replay.reused, true)
   assert.equal(replay.photo.id, uploaded.photo.id); assert.equal(replay.job.id, uploaded.job.id)
+  noWorkerText(uploadMessage(replay)); assert.equal(jobExecutorNote(replay.job), undefined)
   assert.equal((await api.cancelJob(replay.job.id, options)).reason, 'job_terminal')
   assert.equal((await api.retryJob(replay.job.id, options)).reason, 'retry_not_allowed')
   console.log('double upload → client polling → 2 crops/receipts, 6 lines, 5 products; PNG MEDIA; replay 200 passed')
@@ -196,9 +246,20 @@ try {
   const retry = ok(await api.retryJob(queued.job.id, options))
   assert.equal(retry.retry_of, queued.job.id); assert.equal(retry.status, 'queued')
   assert.equal(requests.at(-1).status, 202)
+  noWorkerText(retryNotice); assert.deepEqual(jobExecutorNote(retry), absentNote)
   assert.equal((await api.retryJob(queued.job.id, options)).reason, 'job_active')
   const pausedWorker = worker('pause_recognize')
-  await until(async () => ok(await api.getJob(retry.id, options)), (job) => job.status === 'running' && job.stage === 'recognize')
+  const busyJob = await until(async () => ok(await api.getJob(retry.id, options)), (job) => job.status === 'running' && job.stage === 'recognize')
+  assert.equal(busyJob.executor.state, 'busy'); assert.ok(busyJob.executor.last_seen_at)
+  assert.equal(jobExecutorNote(busyJob), undefined)
+  assert.equal(ok(await api.getRecognitionCsrf(options)).executor.state, 'busy')
+  assert.deepEqual(uploadExecutorNote('busy'), { text: 'Воркер распознавания сейчас обрабатывает задание. Новое фото встанет в очередь.', warning: false })
+  // Another photo waits behind the running job; it is cancelled so that no later worker claims it.
+  const waiting = ok(await api.uploadPhoto(new File([singleBytes, '\nexecutor busy synthetic'], 'waiting.png', { type: 'image/png' }), options))
+  assert.equal(waiting.job.status, 'queued'); assert.equal(waiting.job.executor.state, 'busy')
+  noWorkerText(uploadMessage(waiting))
+  assert.deepEqual(jobExecutorNote(waiting.job), { text: 'Воркер занят другим заданием. Это задание начнётся после него.', warning: false })
+  assert.equal(ok(await api.cancelJob(waiting.job.id, options)).status, 'cancelled')
   assert.equal(ok(await api.cancelJob(retry.id, options)).status, 'cancel_requested')
   assert.equal(requests.at(-1).status, 202)
   console.log(await pausedWorker)
@@ -231,6 +292,7 @@ try {
     await image(cut.image_url)
   }
   console.log('queued cancel 200; retry 202/409; running cancel 202 → cancelled; different photo reused Receipt; needs_review passed')
+  console.log('executor line: queued+absent warning, queued+busy note, running/terminal none; upload/retry notices without worker text passed')
 
   const missingCsrf = await fetch(`${jobPath}cancel/`, { method: 'POST', credentials: 'omit', headers: { 'Content-Type': 'application/json' }, body: '{}' })
   assert.equal(missingCsrf.status, 403); assert.equal((await missingCsrf.json()).error.code, 'csrf_failed')

@@ -64,6 +64,7 @@ try {
   assert.equal(ok(await api.getJobs()).count, 0, 'Use an empty isolated QA database; no existing jobs will be changed')
   const config = ok(await api.getRecognitionCsrf())
   assert.equal(config.executor.available, false)
+  assert.equal(config.executor.state, 'absent')
   const doubleBytes = await readFile(join(process.env.MEDIA_ROOT, 'demo/double.png'))
   const double = new File([doubleBytes], 'double.png', { type: 'image/png' })
   let uploaded
@@ -73,7 +74,8 @@ try {
   assert.equal(upload.getSnapshot().kind, 'success')
   assert.equal(uploaded.reused, false)
   assert.equal(uploaded.job.status, 'queued')
-  assert.match(uploadMessage(uploaded), /ждать в очереди/)
+  assert.equal(uploaded.job.executor.state, 'absent')
+  assert.equal(uploadMessage(uploaded), 'Фото загружено. Задание принято.')
   const poll = createPollingRequest((signal) => api.getJob(uploaded.job.id, { signal }), isActive, acceptJob)
   lifetimes.add(poll)
   poll.start()

@@ -8,8 +8,8 @@ import JobSummary from './JobSummary'
 import MediaImage from './MediaImage'
 import ReceiptImages from './ReceiptImages'
 import RequestBlock from './RequestBlock'
-import { acceptJob, executorWarning, isActive } from './labels'
-import { getJobNotice, setJobNotice } from './upload-state'
+import { acceptJob, isActive, jobExecutorNote } from './labels'
+import { getJobNotice, retryNotice, setJobNotice } from './upload-state'
 import { useJobActions } from './useJobActions'
 import { useRequest } from './useRequest'
 
@@ -46,7 +46,7 @@ export default function JobPage({ jobId, returnTo }: JobPageProps) {
   const { state, request } = useRequest(load, isActive, acceptJob)
   const lifecycle = useMemo(() => ({ pause: request.pause, resume: request.resume, success: (job: JobDetail, action: string) => {
     if (action === 'cancel') request.setData(job)
-    else { setJobNotice(job.id, `Создано новое задание обработки.${!job.executor.available ? ` ${executorWarning}` : ''}`); navigate({ kind: 'job', jobId: job.id }) }
+    else { setJobNotice(job.id, retryNotice); navigate({ kind: 'job', jobId: job.id }) }
   } }), [request])
   const actions = useJobActions(lifecycle)
   const notice = getJobNotice(jobId)
@@ -54,14 +54,14 @@ export default function JobPage({ jobId, returnTo }: JobPageProps) {
     <div className="ck-rec-actions"><Link className="action-link" to={returnTo ?? '/recognition/jobs'}>{returnTo?.startsWith('/receipts/') ? 'К чеку' : 'К обработке'}</Link><Link className="action-link" to="/receipts/upload">Загрузить другое фото</Link></div>
     {notice && <p role="status" className="ck-rec-warning">{notice}</p>}
     <RequestBlock title={`Задание №${jobId}`} id="recognition-job-title" state={state} retry={request.refresh}>
-      {(job) => <>
+      {(job) => { const executorNote = state.kind === 'ok' && !state.refreshError ? jobExecutorNote(job) : undefined; return <>
         <JobSummary job={job} announce />
         {job.retry_of !== null && <p>Повтор <Link to={{ kind: 'job', jobId: job.retry_of }}>задания №{job.retry_of}</Link>.</p>}
-        {!job.executor.available && job.status === 'queued' && <p className="ck-rec-warning">{executorWarning}</p>}
+        {executorNote && <p className={executorNote.warning ? 'ck-rec-warning' : undefined}>{executorNote.text}</p>}
         {job.status === 'cancel_requested' && <p>Ждём подтверждения отмены от воркера. Уже сохранённые чеки не удаляются.</p>}
         <ActionButtons job={job} state={actions.state} run={actions.run} />
         <Link to={{ kind: 'jobs', query: { page: 1, photo: job.photo_id } }}>Все задания этого фото</Link>
-      </>}
+      </> }}
     </RequestBlock>
     {state.kind === 'ok' && <JobImages key={jobId} job={state.data} />}
   </div>

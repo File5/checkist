@@ -86,7 +86,7 @@ getReceiptTaxes(id: number, params?: PageParams, options?: O): R<Page<Tax>>
 
 Использовать `safeMediaUrl(value: unknown): string | null` из `lib/media.ts` для `src` и ссылок изображений. При null показать отсутствие изображения. Допускается только путь `/media/...`; схемы/host, `//host`, traversal, encoded separators/dots, backslash, query/hash, controls, неоднозначное percent-кодирование отвергаются. Media URL дополнительно проверяются схемами. Изображения не привязаны к `VITE_API_BASE_URL`.
 
-`executor.available=false` не доказывает отсутствие idle-worker и не запрещает upload/retry. `actions` — подсказки текущего снимка; сервер может вернуть 409 при гонке. `ReceiptImage.normalized_result` — безопасное наблюдение, не черновик и не editable API. Needs_review может уже иметь `receipt_id`. Серверные normalized/provider сообщения не подставлять в UI без принятого безопасного словаря.
+`executor.state` — `idle`/`busy`/`absent`, а в типе клиента ещё `unknown` (поле отсутствует или значение незнакомо); `available = state != "absent"`. `absent` не запрещает upload/retry; строку о воркере экраны строят только по свежему снимку (`uploadExecutorNote`/`jobExecutorNote`), уведомления загрузки/повтора её не содержат. `actions` — подсказки текущего снимка; сервер может вернуть 409 при гонке. `ReceiptImage.normalized_result` — безопасное наблюдение, не черновик и не editable API. Needs_review может уже иметь `receipt_id`. Серверные normalized/provider сообщения не подставлять в UI без принятого безопасного словаря.
 
 ## Запуск и данные для человека
 
