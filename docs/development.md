@@ -370,6 +370,8 @@ Measure-Command { ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py r
 
 `Measure-Command` включает запуск интерпретатора и стартовую проверку Codex воркером (`--version`, `exec --help`, `login status`); время самого запроса — `finished_at - started_at` строки `ClassificationAttempt` (у успешной попытки в него входит и применение ответа). В отчёт: число товаров пакета, время, число предложенных, «не знаю» и отброшенных по причинам (`ClassificationRun.stats`), ошибка — если нет `codex.exe`, входа или сети. Демо-каталог — 10 кандидатов, один пакет; несколько пакетов даёт меньший `PRODUCT_CLASSIFICATION_BATCH_SIZE`. Срок запроса — `PRODUCT_CLASSIFICATION_TIMEOUT_SECONDS`.
 
+Фактическое измерение И1 (2026-10-07, Codex CLI 0.160.0, модель `gpt-6.1-sol`, демо-каталог, текстовый вызов без `-i`): `suggest --dry-run` — 12.3 с всей команды; пакет из 10 товаров через очередь и `recognition_worker --once` — 11.1 с всей команды, попытка — 9.71 с; 9 предложено, 1 «не знаю», отброшенных нет. Предложенные названия и пути — [verification.md](verification.md#фактические-результаты-и1-окончательная-ветка-2026-10-07).
+
 ### Настоящий Codex в QA
 
 Остановить fake-worker. В том же QA DB/MEDIA/scratch, в терминале worker:

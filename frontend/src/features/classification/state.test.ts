@@ -168,6 +168,16 @@ describe('labels', () => {
   it('says nothing about the worker when its state is unknown', () => {
     expect(withRun({}, 'unknown')).toEqual({ text: 'Запуск в очереди.', warning: false })
   })
+  it('shows the progress of a started run that waits in the queue between its batches', () => {
+    const between = { started_at: '2026-10-06T21:13:45.465650Z', progress: { requested: 10, processed: 4, applied: 3, unknown: 1, skipped: 0 } }
+    expect(withRun(between, 'idle')).toEqual({ text: 'Модель предлагает категории: обработано 4 из 10.', warning: false })
+    expect(withRun(between, 'unknown')).toEqual({ text: 'Модель предлагает категории: обработано 4 из 10.', warning: false })
+    expect(withRun(between, 'busy')).toEqual({ text: 'Модель предлагает категории: обработано 4 из 10. Воркер занят другим заданием.', warning: false })
+    expect(withRun(between)).toEqual({
+      text: 'Запуск приостановлен: обработано 4 из 10. Воркер распознавания не запущен: запуск продолжится, когда воркер запустят.', warning: true,
+    })
+    for (const state of ['absent', 'busy', 'idle', 'unknown']) expect(withRun(between, state)?.text).not.toContain('начнётся')
+  })
   it('describes a running, finished, failed and cancelled run', () => {
     expect(runText(stateOf('status-running.json'))?.text).toBe('Модель предлагает категории: обработано 0 из 2.')
     expect(withRun({ status: 'running', progress: { requested: 1200, processed: 25, applied: 20, unknown: 3, skipped: 2 } })?.text)

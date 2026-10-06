@@ -4,7 +4,7 @@
 
 Реализованы backend scaffold (health API, Postgres/Redis probes, Celery task/CLI, Compose), React/TypeScript/Vite SPA с настоящим health API через proxy и предметная модель данных чеков — приложения `catalog`, `stores`, `receipts` с миграциями и тестами ([data-model.md](data-model.md)) — и HTTP API чтения этой модели, приложение `api` с 13 GET-эндпоинтами ([api-contract.md](api-contract.md#реализовано-api-чтения-каталога-и-цен)). Контрактные тесты health используют mocks; integration-tag tests работают с реальными Postgres и Redis; выполнение очереди и result backend проверяет отдельный `check_services`. Ограничения БД, каскады, сиды, дедупликацию, проверку чека и историю цен проверяют integration tests трёх приложений на реальном Postgres. API чтения проверяют тесты `api`: без БД — разбор параметров, пагинация, сериализация, курсы и формат ошибок; с тегом `integration` — эндпоинты через тестовый клиент Django на реальном Postgres; настоящий HTTP — сценарии `curl.exe` [ниже](#http-api-чтения). Django admin (`/admin/`, 12 моделей и inline чека) проверяют `test_admin.py` трёх приложений и `health/tests/test_admin_site.py` через `django.test.Client`: это HTTP-запросы к настоящим страницам админки без браузера. Vitest проверяет клиентский API-адаптер с mocked fetch; CLI `backend/scripts/check_health_proxy.mjs` — настоящий HTTP и тот же адаптер через proxy в Node 24.
 
-Реализован `recognition`: фото/вырезки MEDIA, очередь PostgreSQL, host-worker, FakeProvider/Codex CLI, автоматический импорт, локальный HTTP upload/cancel/retry и чтение всех строк чеков. Новый сквозной набор — [ниже](#распознавание-сквозная-серверная-проверка). Человек исправляет и подтверждает вырезку `needs_review` одним POST — [проверка и приёмка](#подтверждение-вырезки-needs_review-итог-интеграции). Пользовательского входа, HTTP правки сохранённого чека и дашборда пока нет. Каталог и цены SPA уже подключены к API ([frontend.md](frontend.md)); И4 не меняет клиентские экраны распознавания и не подтверждает их React/proxy/UI интеграцию. Админку проверяют отдельно [без браузера](#админка-проверки-без-браузера) и [человеком](#ручная-приёмка-админки-человеком).
+Реализован `recognition`: фото/вырезки MEDIA, очередь PostgreSQL, host-worker, FakeProvider/Codex CLI, автоматический импорт, локальный HTTP upload/cancel/retry и чтение всех строк чеков. Новый сквозной набор — [ниже](#распознавание-сквозная-серверная-проверка). Предположения категорий новых товаров (`classification`, `/api/product-classifications/`, экран `/catalog/classification`) — [проверка и результаты](#предположения-категорий-http-без-браузера). Человек исправляет и подтверждает вырезку `needs_review` одним POST — [проверка и приёмка](#подтверждение-вырезки-needs_review-итог-интеграции). Пользовательского входа, HTTP правки сохранённого чека и дашборда пока нет. Каталог и цены SPA уже подключены к API ([frontend.md](frontend.md)); И4 не меняет клиентские экраны распознавания и не подтверждает их React/proxy/UI интеграцию. Админку проверяют отдельно [без браузера](#админка-проверки-без-браузера) и [человеком](#ручная-приёмка-админки-человеком).
 
 Ни сборка образа, ни `check`, ни mocked API tests не доказывают реальную HTTP/клиентскую интеграцию. Визуальную и интерактивную приёмку выполняет человек; автоматический обход browser UI запрещён. HTTP, CLI и unit tests можно автоматизировать.
 
@@ -45,12 +45,14 @@ docker compose -p checkist_qa up -d --wait --wait-timeout 90 postgres redis
 ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py migrate --noinput
 docker compose -p checkist_qa up -d --build --wait --wait-timeout 120 worker
 ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py makemigrations --check --dry-run
-./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test catalog stores receipts health api recognition merges --exclude-tag=integration --verbosity=2
-./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test catalog stores receipts health api recognition merges --tag=integration --verbosity=2
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test catalog stores receipts health api recognition merges classification --exclude-tag=integration --verbosity=2
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test catalog stores receipts health api recognition merges classification --tag=integration --verbosity=2
 ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py check_services
 ```
 
-Ожидается exit 0, отсутствие новых миграций, 335 тестов без БД и 1135 integration, затем JSON с `celery_task.result={"message":"pong"}`. На пустой БД `migrate` применяет 24 миграции: 18 стандартных и 6 собственных, включая recognition.0001_initial и merges.0001_initial. Числа соответствуют текущему коду и могут измениться вместе с тестами. Команда без тега БД не использует; integration нельзя заменять skip/eager. Runner создаёт и удаляет **`test_checkist_qa`**; Redis tests используют QA Redis DB 2 и уникальные ключи. Recognition tests используют временный MEDIA и fake/mock, настоящий Codex не вызывают. Не запускайте два DB-runner одновременно с одним именем test DB: --noinput может пересоздать БД другого своего прогона.
+Перед тестами задайте `$env:RECEIPT_OCR_PROVIDER='fake'`, `$env:PRODUCT_MERGE_AUTO_DETECT='0'` и `$env:PRODUCT_CLASSIFICATION_AUTO_SUGGEST='0'`: корневой `.env` может включать автопоиск дублей и `codex_cli`. **Осторожно:** если `codex.exe` есть в PATH и вход выполнен, любой запуск с `RECEIPT_OCR_PROVIDER=codex_cli`, дошедший до провайдера, делает настоящий модельный запрос; тесты с `codex_cli` обязаны задавать `RECEIPT_OCR_CODEX_EXECUTABLE="nonexistent-checkist-codex"` и подменять запуск процесса. Два набора запускайте по очереди: одновременные прогоны на одном Postgres дают `statement timeout` при удалении тестовой базы.
+
+Ожидается exit 0, отсутствие новых миграций, 421 тест без БД и 1435 integration, затем JSON с `celery_task.result={"message":"pong"}`. На пустой БД `migrate` применяет 25 миграций: 18 стандартных и 7 собственных, включая recognition.0001_initial, merges.0001_initial и classification.0001_initial. Числа соответствуют текущему коду и могут измениться вместе с тестами. Команда без тега БД не использует; integration нельзя заменять skip/eager. Runner создаёт и удаляет **`test_checkist_qa`**; Redis tests используют QA Redis DB 2 и уникальные ключи. Recognition tests используют временный MEDIA и fake/mock, настоящий Codex не вызывают. Не запускайте два DB-runner одновременно с одним именем test DB: --noinput может пересоздать БД другого своего прогона.
 
 | Приложение | Без БД (`--exclude-tag=integration`) | С БД (`--tag=integration`) |
 | --- | --- | --- |
@@ -58,12 +60,13 @@ docker compose -p checkist_qa up -d --build --wait --wait-timeout 120 worker
 | `stores` | 14 | 79 |
 | `receipts` | 18 | 238 |
 | `health` | 26 | 7 |
-| `api` | 118 | 404 |
-| `recognition` | 127 | 233 |
+| `api` | 118 | 450 |
+| `recognition` | 138 | 261 |
 | `merges` | 23 | 94 |
-| Всего | 335 | 1135 |
+| `classification` | 75 | 226 |
+| Всего | 421 | 1435 |
 
-Текущие числа — прогон слитого main 2026-10-06 (подтверждение вырезки и [executor.state](#состояние-воркера-executorstate) вместе): 335 / 1135, exit 0, отдельный QA-проект, `PRODUCT_MERGE_AUTO_DETECT=0`; к 335 / 1130 ветки подтверждения добавились 5 integration-тестов `api` из executor.state. Итог подтверждён прогоном, разбивка по приложениям получена сложением. Числа ветки подтверждения 335 / 1130 подтверждены [третьим заходом после проверки интерфейса](#фактические-результаты-третий-заход-после-проверки-интерфейса-2026-10-06) 2026-10-06 (сервер не менялся, 335 / 1130), до него — [повторным заходом](#фактические-результаты-повторный-заход-после-проверки-интерфейса-2026-10-06), и впервые получены в [итоговом прогоне подтверждения вырезки](#фактические-результаты-итог-интеграции-подтверждения-2026-10-06) 2026-10-06: к прежним 322 / 1074 добавились 13 тестов без БД (`recognition.tests.test_review`) и 56 integration (`recognition.tests.test_review` — 25, `api.tests.test_recognition_review_api` — 19, `test_recognition_review_concurrency` — 8, `test_recognition_review_e2e` — 4). До этого, после объединения И6 и слияния дублей: 322 / 1074 (api 118 / 368, recognition 114 / 208) — прогон [И6](#и6-налоговые-evidence-и-сгруппированные-замечания) 2026-10-06 (промпт v5, fake-сценарии налоговых evidence, `reason`/`severity`/`context` у issues, сквозной тест fake → HTTP). Исторический Р3: 268/892 (api 112/305, recognition 89/183). Числа включают три регрессии настроек MEDIA_URL в Р1, 24 integration-регрессии Р2 и 8 без БД / 2 integration в Р3; команды и фактические результаты — [Р1](#media_url-р1-фиксированный-префикс-и-регрессии), [Р2](#р2-полнота-инн-и-идентичность-магазина). И4 после согласованного уточнения: 257/866, итоговый прогон [ниже](#повторный-прогон-после-согласованного-уточнения-и4), Windows, DB `checkist_qa_i4_final` / `test_checkist_qa_i4_final`, Postgres 25475, Redis 16405. Исторический С6: 247/846; merge-прогон без recognition: 179/671; F3–F6 до merge, без api: 67/404. Эти исторические результаты ниже сохраняются со своими датами и scope. Subtests отдельно не считаются. Гонки — TransactionTestCase и отдельные Postgres-соединения. Журналы ожидаемых безопасных HTTP 400/403/409/500 в негативных тестах не означают failure теста; окончательный exit code и сводка runner обязательны.
+Текущие числа — [итоговый прогон предположений категорий](#фактические-результаты-и1-окончательная-ветка-2026-10-07) 2026-10-07: 421 / 1435, exit 0, отдельный QA-проект, fake, `PRODUCT_MERGE_AUTO_DETECT=0`, `PRODUCT_CLASSIFICATION_AUTO_SUGGEST=0`; разбивка по приложениям — подсчёт тем же обнаружением тестов, что у runner. К прежним 335 / 1135 добавились `classification` 75 / 226, `api` 0 / 46 (`test_product_classifications_api`, `_public`, `_queue`, случай `busy` в `test_recognition_api`), `recognition` 11 / 28 (текстовый вызов Codex без `-i` в `test_provider`, `test_worker_classification`, `test_import_classification`); прежние тесты не менялись, в двух прежних файлах только добавления. Предыдущие числа 335 / 1135 — прогон слитого main 2026-10-06 (подтверждение вырезки и [executor.state](#состояние-воркера-executorstate) вместе): 335 / 1135, exit 0, отдельный QA-проект, `PRODUCT_MERGE_AUTO_DETECT=0`; к 335 / 1130 ветки подтверждения добавились 5 integration-тестов `api` из executor.state. Итог подтверждён прогоном, разбивка по приложениям получена сложением. Числа ветки подтверждения 335 / 1130 подтверждены [третьим заходом после проверки интерфейса](#фактические-результаты-третий-заход-после-проверки-интерфейса-2026-10-06) 2026-10-06 (сервер не менялся, 335 / 1130), до него — [повторным заходом](#фактические-результаты-повторный-заход-после-проверки-интерфейса-2026-10-06), и впервые получены в [итоговом прогоне подтверждения вырезки](#фактические-результаты-итог-интеграции-подтверждения-2026-10-06) 2026-10-06: к прежним 322 / 1074 добавились 13 тестов без БД (`recognition.tests.test_review`) и 56 integration (`recognition.tests.test_review` — 25, `api.tests.test_recognition_review_api` — 19, `test_recognition_review_concurrency` — 8, `test_recognition_review_e2e` — 4). До этого, после объединения И6 и слияния дублей: 322 / 1074 (api 118 / 368, recognition 114 / 208) — прогон [И6](#и6-налоговые-evidence-и-сгруппированные-замечания) 2026-10-06 (промпт v5, fake-сценарии налоговых evidence, `reason`/`severity`/`context` у issues, сквозной тест fake → HTTP). Исторический Р3: 268/892 (api 112/305, recognition 89/183). Числа включают три регрессии настроек MEDIA_URL в Р1, 24 integration-регрессии Р2 и 8 без БД / 2 integration в Р3; команды и фактические результаты — [Р1](#media_url-р1-фиксированный-префикс-и-регрессии), [Р2](#р2-полнота-инн-и-идентичность-магазина). И4 после согласованного уточнения: 257/866, итоговый прогон [ниже](#повторный-прогон-после-согласованного-уточнения-и4), Windows, DB `checkist_qa_i4_final` / `test_checkist_qa_i4_final`, Postgres 25475, Redis 16405. Исторический С6: 247/846; merge-прогон без recognition: 179/671; F3–F6 до merge, без api: 67/404. Эти исторические результаты ниже сохраняются со своими датами и scope. Subtests отдельно не считаются. Гонки — TransactionTestCase и отдельные Postgres-соединения. Журналы ожидаемых безопасных HTTP 400/403/409/500 в негативных тестах не означают failure теста; окончательный exit code и сводка runner обязательны.
 
 Unit/contract tests health покрывают точный 200, комбинации 503, сохранение независимых checks, анонимность, игнорирование query/Authorization, 405, 406, безопасный 500 при DEBUG, отсутствие публикации task из health, параллельность probes, cleanup кеша, bounded publication retries и негативную env-валидацию. Это не сетевой замер времени отказа.
 
@@ -218,6 +221,154 @@ Windows 11, Python 3.13 из venv, изолированный Compose-проек
 - Dev-база: не мигрировалась и не менялась; `merges.0001_initial` на dev применит владелец.
 - Время поиска на каталоге больше демо (35 товаров) не измерялось: поиск квадратичен в пределах товаров одного продавца.
 - `check_services` и Celery worker в этом прогоне не запускались — слияние их не затрагивает.
+
+## Предположения категорий: HTTP без браузера
+
+Товар, созданный распознаванием, попадает в служебный обобщённый продукт «Не разобрано». Приложение `classification` спрашивает модель, сразу приписывает товар к предложенному обобщённому продукту и категории с пометкой «требует подтверждения»; человек подтверждает, выбирает другой либо отклоняет. Контракт — [api-contract.md](api-contract.md#реализовано-локальный-api-предположений-категорий-товаров), модель данных и откат — [data-model.md](data-model.md#classification-предположение-обобщённого-продукта), запуск сервера, воркера и настройки — [development.md](development.md#qa-предположения-категорий-для-клиента), очередь и измерение модели — [backend/classification/QUEUE.md](../backend/classification/QUEUE.md), экран — [frontend.md](frontend.md#категории-товаров-предположение-с-подтверждением-ф1ф2).
+
+Нужна **чистая** QA-база (демо-названия не должны совпадать с существующими товарами). После полного QA environment:
+
+```powershell
+$env:DJANGO_DEBUG='1'
+$env:ALLOW_LOCAL_RECOGNITION_API='1'
+$env:RECEIPT_OCR_PROVIDER='fake'
+$env:PRODUCT_MERGE_AUTO_DETECT='0'
+$env:PRODUCT_CLASSIFICATION_AUTO_SUGGEST='0'
+$env:DJANGO_CSRF_TRUSTED_ORIGINS='http://127.0.0.1:15173,http://localhost:15173'
+$env:MEDIA_ROOT=Join-Path $env:TEMP 'checkist-qa-recognition-media'
+$env:RECEIPT_OCR_TEMP_ROOT=Join-Path $env:TEMP 'checkist-qa-recognition-scratch'
+docker compose -p checkist_qa up -d --wait --wait-timeout 90 postgres redis
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py migrate --noinput
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py seed_product_classification_demo
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py product_classifications suggest --fake-scenario mixed
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py runserver 127.0.0.1:18000 --noreload
+```
+
+Ожидается: seed — `{"created": true, "merchants": 1, "products": 12, "receipts": 3, "lines": 14}`; `suggest` — `requested: 10, applied: 9, unknown: 1`, 9 ожидающих записей в 7 группах, один товар без категории. Прямые запросы к Django через `Invoke-RestMethod` — в [development.md](development.md#qa-предположения-категорий-для-клиента).
+
+### Клиент предположений через Vite proxy без браузера
+
+Тот же сервер на **свежей** базе после `seed_product_classification_demo` и `suggest --fake-scenario mixed`. В терминалах сервера, Vite и скрипта — полный QA environment и блок выше; `npm.cmd` и `node` запускайте из PowerShell.
+
+```powershell
+Set-Location frontend
+npm.cmd run dev -- --port 15173        # либо npm.cmd run build; npm.cmd run preview -- --port 15173
+# третий терминал, из корня:
+node frontend/scripts/check_product_classifications_proxy.mjs http://127.0.0.1:15173
+```
+
+Ожидается exit 0 и последняя строка `{"result":"passed", …, "records":{"pending":3,"confirmed":4,"rejected":2},"unclassified":3,"requests":62,"posts":21,"statuses":[200,202,400,404,409],"browser_ui":"not tested"}`. Скрипт вызывает настоящие адаптеры клиента: состояние и список с группами, подтверждение «Молоко» и его повтор, тот же `confirm` с другим `generic_id` (`409 classification_resolved`), устаревшая `version` (`409 classification_changed`), массовое подтверждение «Кефир» и повтор, «выбрать другой» для «Сыр» (созданный «Сыр» исчезает из `GET /api/generic-products/`), отклонение двух записей «Колбаса» (после второй исчезают «Колбаса» и «Мясные продукты») и повтор, несуществующий и служебный `generic_id` (`400`), `POST runs/` (`202`, повтор — `200`, `created: false`), состояние «в очереди, воркера нет», `Cache-Control: no-store`. Он отказывается работать с dev-портами и с базой не `checkist_qa[_суффикс]`, меняет данные и на той же базе второй раз не пройдёт: для preview — другая свежая база (например, `CREATE DATABASE checkist_qa_<суффикс>`, затем `migrate`, seed и `suggest` с тем же `POSTGRES_DB` в трёх терминалах).
+
+Очередь и воркер после скрипта (тот же environment; `PRODUCT_CLASSIFICATION_BATCH_SIZE=1` показывает запуск между пакетами):
+
+```powershell
+$env:PRODUCT_CLASSIFICATION_BATCH_SIZE='1'
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py recognition_worker --once --classification-fake-scenario mixed
+curl.exe -s http://127.0.0.1:18000/api/product-classifications/status/
+```
+
+После первого прохода `run.status` остаётся `queued` при заполненном `started_at` и `progress.processed: 1` из 3 — клиент показывает для него текст о прогрессе, а не «начнётся в ближайшие секунды»; третий проход даёт `succeeded` с `applied: 0`: два отклонённых варианта «Колбаса» повторно не предлагаются, «Demo Art. 4711» модель не знает.
+
+### Сквозной сценарий: импорт, автозапуск, выключенный API, откат
+
+На пустой QA-базе с `seed_recognition_demo` и тем же блоком, но `$env:PRODUCT_CLASSIFICATION_AUTO_SUGGEST='1'` у сервера и воркера: загрузить `MEDIA/demo/double.png` по [HTTP-сценарию распознавания](#httpcli-без-браузера), затем дважды `recognition_worker --once --fake-scenario success2 --classification-fake-scenario new_category`. Первый проход — `Job 1: succeeded`, `GET /api/product-classifications/status/` показывает `run.status: "queued"`, `trigger: "import"`, `requested: 5`, все пять товаров в «Не разобрано»; второй — `Classification run 1: succeeded`, `pending_count: 5`, `unclassified_count: 0`, `GET /api/products/` отдаёт у каждого товара `generic.name: "Тестовый продукт"`, задание распознавания остаётся `succeeded`. Повторная загрузка того же файла — `200`, `reused`, третий проход воркера ничего не делает. Сервер с `ALLOW_LOCAL_RECOGNITION_API=0`: `GET /api/products/`, `/api/products/1/`, `/api/generic-products/`, `/api/categories/` — `200` в прежнем формате, `/api/product-classifications/…` — `403 permission_denied`. Откат: `product_classifications cancel-pending` (`cancelled: [1..5]`, `removed_generics: 1`, `removed_categories: 2`; повтор — пустой результат), затем `migrate classification zero` — в каталоге остаются только «Не разобрано», 5 товаров, 2 чека и 6 строк; `migrate` применяет `classification.0001_initial` заново.
+
+### Реальная модель
+
+Только в QA на демо-каталоге `seed_product_classification_demo` (вымышленные названия), с нативным `codex.exe` и действующим входом; команды и способ замера — [QUEUE.md](../backend/classification/QUEUE.md#как-измерить-время-одного-запроса-к-модели-qa-настоящий-codex). В автотестах и proxy-скриптах — только fake. Нет исполняемого файла, входа или сети — сохранить фактическую ошибку и отметить «не проверено»; fake за результат модели не выдавать.
+
+### Ручная приёмка предположений человеком
+
+Экран `/catalog/classification`, пометки в каталоге и карточке, выключенный локальный API, клавиатура, адаптив, Back/Forward и screen reader: запуск, тестовые данные и шаги — [frontend/src/features/classification/ACCEPTANCE.md](../frontend/src/features/classification/ACCEPTANCE.md); там же статические превью. Автоматический обход UI запрещён. Админка на `http://127.0.0.1:18000/admin/` (нужен `createsuperuser` в QA): модели `classification` открываются только на чтение, удаление товара с ожидающей записью проходит, ручная приёмка F4/F6 — без изменений.
+
+### Фактические результаты И1 (окончательная ветка), 2026-10-07
+
+Повтор всех проверок на окончательном состоянии ветки глобальной задачи после С1–С3, Б1, Ф1, Ф2: ветка `orca/task_mux7219ojs` от `5792e7d` плюс правки этой задачи (клиент: текст запуска между пакетами; документы). Сервер в этой задаче не менялся. Windows 11, Python 3.13.9 (новый venv из `backend/requirements.txt`), Node 24.18.0, npm 11, Codex CLI 0.160.0. Изолированный Compose-проект `checkist_qa_mux7i1` с чистыми томами: Postgres 25511, Redis 16441, Django 18111, Vite 15211; базы `checkist_qa_mux7i1` (тестовая — `test_checkist_qa_mux7i1`) и по одной свежей базе `checkist_qa_mux7i1_<суффикс>` на каждый изменяющий сценарий; скрипты распознавания — на четырёх отдельных Compose-проектах `checkist_qa_mux7i1rd` / `rp` / `cd` / `cp` (Postgres 25512, Redis 16442, Django 18112, Vite 15212), как требует их инструкция. `MEDIA_ROOT` и scratch — отдельные временные каталоги на каждую базу. Везде `RECEIPT_OCR_PROVIDER=fake`, кроме раздела «Реальная модель». `P` — `./backend/.venv/Scripts/python.exe -X utf8`; backend-команды и `npm.cmd` / `node` — из PowerShell.
+
+#### Проверено и прошло
+
+| Команда | Exit | Результат |
+| --- | --- | --- |
+| `docker compose -p checkist_qa_mux7i1 config --quiet`; `up -d --wait --wait-timeout 90 postgres redis`; TCP-пробы 25511 и 16441 | 0 | оба контейнера healthy, TCP OK |
+| `P -m pip check` | 0 | No broken requirements found |
+| `P backend/manage.py check` | 0 | no issues |
+| `P backend/manage.py makemigrations --check --dry-run` | 0 | No changes detected |
+| `P backend/manage.py migrate --noinput` на пустой базе | 0 | 25 миграций, включая `merges.0001_initial` и `classification.0001_initial` |
+| `P backend/manage.py test catalog stores receipts health api recognition merges classification --exclude-tag=integration --verbosity=2` | 0 | 421 тест, OK, 27.2 с; по приложениям 9 / 14 / 18 / 26 / 118 / 138 / 23 / 75 |
+| `P backend/manage.py test catalog stores receipts health api recognition merges classification --tag=integration --noinput --verbosity=2` | 0 | 1435 тестов, OK, 360.9 с; по приложениям 80 / 79 / 238 / 7 / 450 / 261 / 94 / 226 |
+| `docker compose -p checkist_qa_mux7i1 up -d --build --wait --wait-timeout 180 worker`; `P backend/manage.py check_services` | 0 / 0 | worker healthy; `{"database": "ok", "redis": "ok", "celery_task": {"status": "ok", "result": {"message": "pong"}}}` |
+| `npm.cmd ci` | 0 | 188 пакетов, 0 vulnerabilities |
+| `npm.cmd run lint` | 0 | без предупреждений |
+| `npm.cmd run test` | 0 | 51 файл, 1934 теста (до правки этой задачи — 1933) |
+| `npm.cmd run build` | 0 | 130 модулей |
+| `node frontend/scripts/check_review_proxy.mjs dev http://127.0.0.1:15212`, проект и база `checkist_qa_mux7i1rd` | 0 | `passed`: 64 запроса, 15 POST confirm, статусы 200 / 202 / 400 / 403 / 404 / 409, 2 чека |
+| `node frontend/scripts/check_review_proxy.mjs preview http://127.0.0.1:15212`, `checkist_qa_mux7i1rp` | 0 | тот же результат |
+| `node frontend/scripts/check_recognition_proxy.mjs dev http://127.0.0.1:15212`, `checkist_qa_mux7i1cd` | 0 | `passed`: 71 запрос, статусы 200 / 202 / 400 / 403 / 409, 2 чека / 6 строк / 5 товаров |
+| `node frontend/scripts/check_recognition_proxy.mjs preview http://127.0.0.1:15212`, `checkist_qa_mux7i1cp` | 0 | тот же результат |
+| `seed_product_merge_demo`, `product_merges detect --dry-run`, `detect`; `node frontend/scripts/check_product_merges_proxy.mjs http://127.0.0.1:15211` через `npm.cmd run dev -- --port 15211`, база `checkist_qa_mux7i1_md`, `PRODUCT_MERGE_AUTO_DETECT=1` | 0 | `passed`: 59 запросов, 19 POST, статусы 200 / 400 / 404 / 409, группы 4 ожидают / 2 подтверждены / 1 отменена |
+| То же через `npm.cmd run preview -- --port 15211`, база `checkist_qa_mux7i1_mp` | 0 | тот же результат |
+| `seed_product_classification_demo`, `product_classifications suggest --fake-scenario mixed`; `node frontend/scripts/check_product_classifications_proxy.mjs http://127.0.0.1:15211` через `npm.cmd run dev -- --port 15211`, база `checkist_qa_mux7i1_kd` | 0 | `passed`: 62 запроса, 21 POST, статусы 200 / 202 / 400 / 404 / 409, записи 3 ожидают / 4 подтверждены / 2 отклонены, без категории 3 |
+| То же через `npm.cmd run preview -- --port 15211`, база `checkist_qa_mux7i1_kp` | 0 | тот же результат |
+| Три прохода `recognition_worker --once --classification-fake-scenario mixed` с `PRODUCT_CLASSIFICATION_BATCH_SIZE=1` на базе `checkist_qa_mux7i1_kd` после скрипта; `GET status/` между ними | 0 / 0 / 0 | `queued` + `started_at` + `processed` 1/3 → `queued` 2/3 → `succeeded` 3/3, `applied: 0`: отклонённые варианты повторно не предложены |
+| Сквозной сценарий раздела выше на базе `checkist_qa_mux7i1_e2e` (`PRODUCT_CLASSIFICATION_AUTO_SUGGEST=1`, `seed_recognition_demo`, `double.png`) | 0 на каждом шаге | upload `202`; `Job 1: succeeded`; запуск `queued` / `import` / 5 товаров; `Classification run 1: succeeded`, 5 ожидающих, у всех товаров «Тестовый продукт»; повторное фото `200` без изменений; с `ALLOW_LOCAL_RECOGNITION_API=0` каталог `200`, новый API `403 permission_denied`; `cancel-pending` — 5 отменено, 1 обобщённый продукт и 2 категории убраны, повтор пустой; `migrate classification zero` — 0 таблиц `classification_*`, каталог как до предположений; `migrate` — миграция применена заново |
+| Журналы всех своих `runserver` | — | ни одного traceback |
+
+Все проверки backend, frontend и proxy-скрипты выполнены после последней правки кода этой задачи (сборка для preview — после неё же).
+
+**Критерии готовности глобальной задачи и подтверждающие проверки.**
+
+| Критерий | Чем подтверждён |
+| --- | --- |
+| После импорта чека с новыми товарами (fake) и запуска товары лежат в предложенных обобщённых продуктах и категориях и помечены как ожидающие | Сквозной сценарий на `checkist_qa_mux7i1_e2e`; `api.tests.test_product_classifications_queue.AutoSuggestHttpTests.test_import_queues_a_run_and_the_next_pass_suggests`; `recognition.tests.test_import_classification.FlagOnTests` |
+| Старые 13 GET и health отдают прежний формат | Все прежние тесты `api` и `health` в полном прогоне без правок (в прежних файлах тестов ветки только добавления); `api.tests.test_product_classifications_api`, тест `test_only_the_composition_changes_after_apply_and_returns_after_reject`; `check_services`; `check_recognition_proxy.mjs` и `check_product_merges_proxy.mjs` читают каталог прежними схемами клиента |
+| Подтверждение, выбор другого, отклонение и массовое подтверждение работают через HTTP клиента; повтор безопасен; устаревшая версия даёт отказ без изменений | `check_product_classifications_proxy.mjs` через dev и preview; `classification.tests.test_services.RepeatTests`, `ConfirmManyTests`, `ConfirmTests.test_stale_version_saves_nothing` |
+| Занятый каталог даёт отказ без изменений | `api.tests.test_product_classifications_api.BusyTests` (отдельные соединения), `classification.tests.test_concurrency.ImportLockTests`, `TreeLockTests`, `RowLockTests`; на живом сервере не воспроизводился |
+| Отклонение возвращает товар в «Не разобрано» и убирает созданные пустые записи каталога | Тот же proxy-скрипт (шаги «Колбаса»); `classification.tests.test_services.RejectTests`, `CleanupTests` |
+| Отклонённый вариант повторно не предлагается | Три прохода воркера на `checkist_qa_mux7i1_kd` (`applied: 0`); `classification.tests.test_apply.RepeatTests.test_rejected_suggestion_is_not_offered_again`, `test_worker.ScenarioTests.test_rejected_variant_is_not_applied_again` |
+| Товар с содержательным или подтверждённым обобщённым продуктом не меняется ни запуском, ни импортом, ни повторным фото | `classification.tests.test_apply.RepeatTests.test_meaningful_and_confirmed_products_are_never_changed_again`, `test_worker.ScenarioTests.test_confirmed_and_meaningful_products_are_not_touched_by_another_run`, `recognition.tests.test_import_classification.FlagOnTests.test_suggested_and_confirmed_products_survive_a_repeated_photo_and_a_new_import`; повторное фото в сквозном сценарии |
+| Недоступная модель, её ошибка или неверный ответ не ломают импорт и не меняют каталог | `recognition.tests.test_import_classification.FlagOnTests.test_job_and_receipt_do_not_depend_on_the_outcome_of_the_run`, `test_failed_queueing_does_not_cancel_the_import`; `classification.tests.test_worker.ScenarioTests` (сбой с повтором, без повтора, неверный ответ); `api.tests.test_product_classifications_queue.ButtonThroughWorkerTests.test_failed_run_shows_the_public_error_and_the_button_queues_a_new_one` |
+| Выключенный локальный API: каталог и карточки работают без пометок и без сообщений об ошибке | Сквозной сценарий (каталог `200`, новый API `403`); Vitest `features/classification/marks-markup.test.tsx` («renders the same list without marks…», «turns the answer of a switched-off local API into a plain failure the marks ignore»); `api.tests.test_product_classifications_api.AccessAndBodyTests.test_access_requires_debug_flag_and_loopback`; в браузере — человек, шаг 9 ACCEPTANCE.md |
+| `product_classifications cancel-pending` и `migrate classification zero` возвращают каталог к виду до предположений (кроме подтверждённых) | Сквозной сценарий, шаг отката; `classification.tests.test_models.ClassificationMigrationTests`, `test_services.CancelPendingTests`, `test_commands.SuggestCommandTests.test_mixed_scenario_gives_the_demo_numbers_and_cancel_pending_returns_the_catalog` |
+| Слияние дублей, распознавание и гарантии F4/F6 админки не изменились | Прежние тесты `merges` (23 / 94), `recognition`, `receipts` / `catalog` / `stores` (включая `test_admin.py`) в полном прогоне без правок ожиданий; три прежних proxy-скрипта через dev и preview; `git diff 701d44f..HEAD` не затрагивает `resolution.py`, промпт, схемы и DTO распознавания, миграции и админки прежних приложений, в `merges/services.py` — один вызов шага после подтверждения слияния |
+
+**Реальная модель (QA, демо-каталог, 2 модельных запроса из разрешённых 3).** База `checkist_qa_mux7i1_model`, `seed_product_classification_demo`, `RECEIPT_OCR_PROVIDER=codex_cli`, модель `gpt-6.1-sol`, Codex CLI 0.160.0, `codex login status` — `Logged in using ChatGPT`. Текстовый вызов без `-i` выполнен оба раза с первой попытки; промпт и схема версии 1.
+
+| Шаг | Exit | Время | Результат |
+| --- | --- | --- | --- |
+| `P backend/manage.py product_classifications suggest --dry-run` (`RECEIPT_OCR_MAX_ATTEMPTS=1`) | 0 | 12.3 с всей команды | один пакет, 10 товаров: 9 предложено, 1 «не знаю», отброшенных нет; в базу ничего не записано |
+| `services.request_run(trigger='manual')`, затем `P backend/manage.py recognition_worker --once` | 0 | 11.1 с всей команды; попытка `ClassificationAttempt` — 9.71 с (запрос к модели и применение) | `Classification run 1: succeeded`: `requested` 10, предложено 9, «не знаю» 1, отброшено 0 (`stats: {"unknown": 1}`); 9 ожидающих записей в 7 группах, создано 6 обобщённых продуктов и 1 категория |
+
+Предложения модели (второй шаг — применённые; человек оценивает приемлемость сам):
+
+| Товар | Обобщённый продукт (единица) | Категория | В dry-run иначе |
+| --- | --- | --- | --- |
+| Demo Frischmilch 1,5% | Молоко (`l`), существующий | Продукты питания → Молочные продукты | — |
+| Demo Kefir mild 500g | Кефир (`l`), новый | Продукты питания → Молочные продукты | — |
+| Demo Kefir 1,5% 1L | Кефир (`l`) | Продукты питания → Молочные продукты | — |
+| Demo Butterkäse Sch. | Сыр (`kg`), новый | Продукты питания → Молочные продукты | — |
+| Demo Mettwurst fein | Колбаса (`kg`), новый | Продукты питания | — |
+| Demo Salami Sticks | Колбаса (`kg`) | Продукты питания | — |
+| Demo Toast Weizen | Хлеб (`kg`), новый | Продукты питания | «Тостовый хлеб» |
+| Demo Apfelsaft klar 1L | Сок (`l`), новый | Продукты питания | — |
+| Demo Spülmittel Zitr. | Средство для мытья посуды (`l`), новый | Бытовая химия (новая) | — |
+| Demo Art. 4711 | «не знаю» | — | примечание модели: «По артикулу без описания определить товар нельзя.» |
+
+Наблюдения: уверенность модели 0.98–1.00 у всех пунктов; подкатегории («Мясные продукты», «Напитки», «Хлеб и выпечка» в fake-сценарии) модель сама не создаёт — кладёт в существующую «Продукты питания»; название одного и того же товара между двумя запросами различалось («Тостовый хлеб» / «Хлеб»), то есть ответ не детерминирован. Время и качество измерены на 10 вымышленных товарах одного пакета; на настоящем каталоге и на пакете в 25 товаров не измерялись.
+
+#### Проверено и не прошло
+
+Продукт на окончательном состоянии — нет. Найденный и исправленный в этой задаче дефект клиента: запуск, ждущий в очереди между пакетами (`queued` с заполненным `started_at`, ненулевой `progress.processed`), при простаивающем воркере описывался как «Запуск в очереди и начнётся в ближайшие секунды.», хотя уже выполнялся. Теперь `frontend/src/features/classification/labels.ts` показывает прогресс: «Модель предлагает категории: обработано X из Y.» (`idle` и неизвестное состояние воркера), то же с «Воркер занят другим заданием.» (`busy`), предупреждение «Запуск приостановлен: обработано X из Y. Воркер распознавания не запущен: запуск продолжится, когда воркер запустят.» (`absent`); тест — `features/classification/state.test.ts`, «shows the progress of a started run that waits in the queue between its batches». Второй случай из Б1 — запуск, поглощённый выполняющимся и удалённый (`GET runs/{id}/` → `404`), — дефектом не оказался: экран читает только `GET status/` и запуск по id не запрашивает.
+
+#### Не проверено и почему
+
+- Экраны React и админка в браузере: клики, фокус, клавиатура, screen reader, узкий экран, Back/Forward, cookie-политика браузера для CSRF, опрос запуска по времени — принимает человек, автоматический обход UI запрещён. Шаги — [ACCEPTANCE.md](../frontend/src/features/classification/ACCEPTANCE.md).
+- `classification_busy` на живом сервере: нужен импорт чека или слияние в тот же момент. Покрыт тестами сервера на отдельных соединениях и тестом клиента на эталонном ответе.
+- Реальная модель: каталог больше демо, пакет в 25 товаров, несколько пакетов подряд, сбой сети, лимит и истёкший вход на живом Codex; доля предположений, приемлемых человеку, — оценивает человек по таблице выше. Сквозной автозапуск после импорта настоящего фото с `codex_cli` не выполнялся (лимит трёх модельных запросов); он проверен на fake.
+- Постоянно работающий воркер (без `--once`) вместе с открытым экраном и `executor.state: "busy"` / `"idle"` на живом сервере: проверены тестами `api.tests.test_product_classifications_queue` и тестами клиента; через HTTP наблюдалось только `absent`.
+- Dev-база не мигрировалась и не менялась: `classification.0001_initial`, `suggest` и включение `PRODUCT_CLASSIFICATION_AUTO_SUGGEST` на dev — отдельное решение владельца.
+- Linux-путь, нагрузка и восстановление из резервной копии не проверялись.
+
+После прогона свои `runserver`, Vite и воркеры остановлены, `docker compose -p checkist_qa_mux7i1 down` и `down` четырёх проектов распознавания — exit 0; тома сохранены. В томе `checkist_qa_mux7i1_postgres_data` оставлены: `checkist_qa_mux7i1_manual` — нетронутая свежая база с демо и девятью ожидающими записями (fake `mixed`) для ручной приёмки; `checkist_qa_mux7i1_model` — девять ожидающих записей с предложениями настоящей модели.
 
 ## Распознавание: сквозная серверная проверка
 

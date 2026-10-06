@@ -56,14 +56,20 @@ const number = (value: number) => value.toLocaleString('ru-RU')
 export function runText({ run, executor }: Pick<ClassificationState, 'run' | 'executor'>): { text: string; warning: boolean } | undefined {
   if (!run) return undefined
   const { progress } = run
+  const processed = `обработано ${number(progress.processed)} из ${number(progress.requested)}`
   switch (run.status) {
-    case 'queued': switch (executor.state) {
+    // A started run waits in the queue between its batches: it is under way, not about to begin.
+    case 'queued': if (run.started_at !== null) switch (executor.state) {
+      case 'absent': return { text: `Запуск приостановлен: ${processed}. Воркер распознавания не запущен: запуск продолжится, когда воркер запустят.`, warning: true }
+      case 'busy': return { text: `Модель предлагает категории: ${processed}. Воркер занят другим заданием.`, warning: false }
+      default: return { text: `Модель предлагает категории: ${processed}.`, warning: false }
+    } else switch (executor.state) {
       case 'absent': return { text: 'Запуск в очереди. Воркер распознавания не запущен: запуск начнётся, когда воркер запустят.', warning: true }
       case 'busy': return { text: 'Запуск в очереди. Воркер занят другим заданием.', warning: false }
       case 'idle': return { text: 'Запуск в очереди и начнётся в ближайшие секунды.', warning: false }
       default: return { text: 'Запуск в очереди.', warning: false }
     }
-    case 'running': return { text: `Модель предлагает категории: обработано ${number(progress.processed)} из ${number(progress.requested)}.`, warning: false }
+    case 'running': return { text: `Модель предлагает категории: ${processed}.`, warning: false }
     case 'succeeded': return {
       text: `Запуск завершён: предложено ${number(progress.applied)}, не распознано ${number(progress.unknown)}, пропущено ${number(progress.skipped)}.`
         + (run.remaining > 0 ? ` Без предложения осталось ${number(run.remaining)}: запустите ещё раз.` : ''),
