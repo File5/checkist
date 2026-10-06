@@ -63,7 +63,7 @@ docker compose -p checkist_qa up -d --build --wait --wait-timeout 120 worker
 | `merges` | 23 | 94 |
 | Всего | 335 | 1130 |
 
-Текущие числа — [итоговый прогон подтверждения вырезки](#фактические-результаты-итог-интеграции-подтверждения-2026-10-06) 2026-10-06: к прежним 322 / 1074 добавились 13 тестов без БД (`recognition.tests.test_review`) и 56 integration (`recognition.tests.test_review` — 25, `api.tests.test_recognition_review_api` — 19, `test_recognition_review_concurrency` — 8, `test_recognition_review_e2e` — 4). До этого, после объединения И6 и слияния дублей: 322 / 1074 (api 118 / 368, recognition 114 / 208) — прогон [И6](#и6-налоговые-evidence-и-сгруппированные-замечания) 2026-10-06 (промпт v5, fake-сценарии налоговых evidence, `reason`/`severity`/`context` у issues, сквозной тест fake → HTTP). Исторический Р3: 268/892 (api 112/305, recognition 89/183). Числа включают три регрессии настроек MEDIA_URL в Р1, 24 integration-регрессии Р2 и 8 без БД / 2 integration в Р3; команды и фактические результаты — [Р1](#media_url-р1-фиксированный-префикс-и-регрессии), [Р2](#р2-полнота-инн-и-идентичность-магазина). И4 после согласованного уточнения: 257/866, итоговый прогон [ниже](#повторный-прогон-после-согласованного-уточнения-и4), Windows, DB `checkist_qa_i4_final` / `test_checkist_qa_i4_final`, Postgres 25475, Redis 16405. Исторический С6: 247/846; merge-прогон без recognition: 179/671; F3–F6 до merge, без api: 67/404. Эти исторические результаты ниже сохраняются со своими датами и scope. Subtests отдельно не считаются. Гонки — TransactionTestCase и отдельные Postgres-соединения. Журналы ожидаемых безопасных HTTP 400/403/409/500 в негативных тестах не означают failure теста; окончательный exit code и сводка runner обязательны.
+Текущие числа подтверждены [повторным заходом после проверки интерфейса](#фактические-результаты-повторный-заход-после-проверки-интерфейса-2026-10-06) 2026-10-06 (сервер не менялся, 335 / 1130) и впервые получены в [итоговом прогоне подтверждения вырезки](#фактические-результаты-итог-интеграции-подтверждения-2026-10-06) 2026-10-06: к прежним 322 / 1074 добавились 13 тестов без БД (`recognition.tests.test_review`) и 56 integration (`recognition.tests.test_review` — 25, `api.tests.test_recognition_review_api` — 19, `test_recognition_review_concurrency` — 8, `test_recognition_review_e2e` — 4). До этого, после объединения И6 и слияния дублей: 322 / 1074 (api 118 / 368, recognition 114 / 208) — прогон [И6](#и6-налоговые-evidence-и-сгруппированные-замечания) 2026-10-06 (промпт v5, fake-сценарии налоговых evidence, `reason`/`severity`/`context` у issues, сквозной тест fake → HTTP). Исторический Р3: 268/892 (api 112/305, recognition 89/183). Числа включают три регрессии настроек MEDIA_URL в Р1, 24 integration-регрессии Р2 и 8 без БД / 2 integration в Р3; команды и фактические результаты — [Р1](#media_url-р1-фиксированный-префикс-и-регрессии), [Р2](#р2-полнота-инн-и-идентичность-магазина). И4 после согласованного уточнения: 257/866, итоговый прогон [ниже](#повторный-прогон-после-согласованного-уточнения-и4), Windows, DB `checkist_qa_i4_final` / `test_checkist_qa_i4_final`, Postgres 25475, Redis 16405. Исторический С6: 247/846; merge-прогон без recognition: 179/671; F3–F6 до merge, без api: 67/404. Эти исторические результаты ниже сохраняются со своими датами и scope. Subtests отдельно не считаются. Гонки — TransactionTestCase и отдельные Postgres-соединения. Журналы ожидаемых безопасных HTTP 400/403/409/500 в негативных тестах не означают failure теста; окончательный exit code и сводка runner обязательны.
 
 Unit/contract tests health покрывают точный 200, комбинации 503, сохранение независимых checks, анонимность, игнорирование query/Authorization, 405, 406, безопасный 500 при DEBUG, отсутствие публикации task из health, параллельность probes, cleanup кеша, bounded publication retries и негативную env-валидацию. Это не сетевой замер времени отказа.
 
@@ -938,21 +938,76 @@ node frontend/scripts/check_recognition_proxy.mjs preview http://127.0.0.1:15284
 - Откат миграций не повторялся: задача миграций не добавляет (`makemigrations --check` — без изменений).
 - Dev-база не затрагивалась.
 
+### Фактические результаты: повторный заход после проверки интерфейса, 2026-10-06
+
+Проверка интерфейса вернула клиентскую форму с тремя замечаниями: фокус после «Подтвердить и сохранить чек» уходил на заголовок блока вырезок; отказ сервера не был виден рядом с кнопкой; у вида и суммы налога в налоговом итоге была одна подпись «Налог». Исправления — только `frontend/` (коммит `d41eeda`, [описание](../frontend/src/features/recognition/ACCEPTANCE.md#исправления-после-проверки-интерфейса-2026-10-06)); `backend/`, контракт и миграции не менялись (`git diff --stat dceb9ea HEAD` затрагивает только `frontend/` и `docs/frontend.md`). Ниже — свежий повтор всех проверок на окончательном состоянии: коммит `57847b7`, ветка `orca/task_muww7qhgco`. Код продукта и тесты в этой задаче не менялись.
+
+Windows 11, Python 3.13.9 (новый venv из `backend/requirements.txt`), Node 24.18.0, npm 11.16.0, Docker 29.8.1, Compose 5.5.1. Свои изолированные Compose-проекты с чистыми томами, по одному на прогон, последовательно на Postgres 25611, Redis 16611, Django 18211, Vite 15311: `checkist_qa_muww7qhgco` (тесты; тестовая база `test_checkist_qa_muww7qhgco`) и `checkist_qa_muww7qhgco_<rdev|rprev|cdev|cprev|mdev|mprev|manual>`; имя базы равно имени проекта, MEDIA и scratch — отдельные каталоги в `%TEMP%` на каждый проект; `RECEIPT_OCR_PROVIDER=fake`, настоящий Codex не вызывался. Dev-база, чужие контейнеры и worktree не затрагивались. `P` — `./backend/.venv/Scripts/python.exe -X utf8`.
+
+#### Проверено и прошло
+
+| Команда | Exit | Результат |
+| --- | --- | --- |
+| `npm.cmd ci` (PowerShell, `frontend/`) | 0 | 188 пакетов, 0 vulnerabilities |
+| `npm.cmd run lint` | 0 | без предупреждений |
+| `npm.cmd run test` | 0 | 44 файла, 1480 тестов (было 43 / 1446: добавлены `review-focus.test.ts` и тесты разметки отказа и подписей) |
+| `npm.cmd run build` | 0 | 114 модулей |
+| `docker compose -p checkist_qa_muww7qhgco config --quiet`; `up -d --wait --wait-timeout 90 postgres redis`; TCP-пробы 25611 и 16611 | 0 | оба контейнера healthy, TCP доступен |
+| `P -m pip check` | 0 | No broken requirements found |
+| `P backend/manage.py check` | 0 | no issues |
+| `P backend/manage.py makemigrations --check --dry-run` | 0 | No changes detected |
+| `P backend/manage.py migrate --noinput` на пустой базе | 0 | 24 миграции |
+| `P backend/manage.py test catalog stores receipts health api recognition merges --exclude-tag=integration --verbosity=2` | 0 | 335 тестов, OK, 18.3 с; по приложениям 9 / 14 / 18 / 26 / 118 / 127 / 23 |
+| `P backend/manage.py test catalog stores receipts health api recognition merges --tag=integration --noinput --verbosity=2` | 0 | 1130 тестов, OK, 278.4 с; по приложениям 80 / 79 / 238 / 7 / 399 / 233 / 94; пропущенных нет |
+| `node frontend/scripts/check_review_proxy.mjs dev http://127.0.0.1:15311`, база `…_rdev` | 0 | `passed`: 64 запроса, 15 POST confirm, HTTP 200 / 202 / 400 / 403 / 404 / 409; 2 чека; вторые фото — `reused` к чекам 1 и 2, у второго `receipt_line_conflict` |
+| `node frontend/scripts/check_review_proxy.mjs preview http://127.0.0.1:15311`, база `…_rprev` | 0 | `passed`: те же итоги, 64 запроса |
+| `node frontend/scripts/check_recognition_proxy.mjs dev http://127.0.0.1:15311`, база `…_cdev` | 0 | `passed`: 62 запроса, 2 чека / 6 строк / 5 товаров, HTTP 200 / 202 / 400 / 403 / 409 |
+| `node frontend/scripts/check_recognition_proxy.mjs preview http://127.0.0.1:15311`, база `…_cprev` | 0 | `passed`: 62 запроса, те же итоги |
+| `seed_product_merge_demo` дважды, `product_merges detect --dry-run`, `detect`; `node frontend/scripts/check_product_merges_proxy.mjs http://127.0.0.1:15311` через `npm.cmd run dev -- --port 15311 --strictPort`, база `…_mdev` | 0 | seed `created: true`, 35 товаров / 9 чеков / 42 строки, повтор `created: false`; `passed`: 59 запросов, 19 POST, HTTP 200 / 400 / 404 / 409, группы 4 / 2 / 1 |
+| То же через `npm.cmd run preview -- --port 15311 --strictPort`, база `…_mprev` | 0 | тот же результат |
+| `curl.exe` `/recognition/jobs/1` через Vite dev и preview | 0 | HTTP 200 (маршрут SPA отдаётся; экран не проверялся) |
+| Подготовка базы ручной приёмки `…_manual`: `seed_recognition_demo`, `seed_recognition_demo --rotated`, три `curl.exe -F file=@…` на `/api/recognition/photos/` напрямую на Django с CSRF и три `recognition_worker --once --fake-scenario …` | 0 | три загрузки HTTP 202; задания 1–3 `partial_succeeded`; вырезка 1 `imported` (чек 1), вырезки 2–6 `needs_review`; чеков — 1 |
+| `docker compose -p <проект> down` для каждого проекта | 0 | контейнеры остановлены, тома сохранены; порты 25611 / 16611 / 18211 / 15311 свободны; в журналах всех `runserver` нет traceback |
+
+Числа запросов и POST `check_review_proxy.mjs` совпали с [итогом интеграции](#фактические-результаты-итог-интеграции-подтверждения-2026-10-06): запросы клиента к серверу исправления не изменили. Proxy-прогоны по-прежнему подтверждают сценарии, перечисленные там (отказы без записей, `200 imported` одним POST, повтор по содержимому тела, `review_resolved`, привязка второго фото, `job_active`). Дефектов сервера и расхождений клиента и сервера не найдено.
+
+#### Проверено и не прошло
+
+Нет: все команды завершились с exit 0 с первого запуска, код, тесты и ожидания не менялись.
+
+#### Не проверено и почему
+
+- **Экран в браузере, включая сами три исправления** (фокус на кнопке во время запроса и после отказа, сообщение над кнопкой без прокрутки, подписи налогового итога, объявления экранного диктора): принимает человек, автоматический обход UI запрещён. Тесты клиента проверяют правила выбора цели фокуса на модели без DOM и серверную разметку, но не поведение браузера.
+- Прямой HTTP-сценарий на Django со сверкой ответов с эталонами (49 запросов [итога интеграции](#фактические-результаты-итог-интеграции-подтверждения-2026-10-06)) не повторялся: `backend/` и эталоны не менялись, а integration-тесты, которые читают те же эталоны, прошли заново.
+- `409 review_busy`, `store_ambiguous`, `timestamp_ambiguous`, `identity_conflict`, статус `updated`, не-loopback клиент на живом сервере — как в итоге интеграции: fake-сценарии таких данных не дают, покрыто integration-тестами.
+- Настоящий Codex, реальные фото, `check_services`, QA Celery worker, сборка образа worker, откат миграций — не запускались по тем же причинам, что в итоге интеграции.
+- Сохранённые базы прежних задач `checkist_qa_muwthlonb4_manual` и `checkist_qa_muwthm2wb8_manual` не запускались: их состояние после проверки интерфейса неизвестно.
+
 ### Ручная приёмка человеком
 
-Шаги — [frontend/src/features/recognition/ACCEPTANCE.md](../frontend/src/features/recognition/ACCEPTANCE.md#ручная-приёмка) (13 шагов: показ формы, отказ правил и формата, успех с правками строк, уже сохранённый чек, две вкладки, обрыв, потеря правок при перезагрузке, магазин и справочники, клавиатура и адаптив). Для них подготовлена и сохранена база этой задачи с теми же заданиями и номерами вырезок, что в таблице ACCEPTANCE.md (задание 1 — `double.png` / `partial_success`: вырезка 1 сохранена, 2 требует проверки; задание 2 — `single.png` / `inconsistent_total`: вырезки 3 и 4; задание 3 — `double_rotated.png` / `partial_missing_quantity`: вырезки 5 и 6; чеков — 1; свободный файл `single_rotated.png` в `MEDIA\demo`). Данные только синтетические.
+Шаги — [frontend/src/features/recognition/ACCEPTANCE.md](../frontend/src/features/recognition/ACCEPTANCE.md#ручная-приёмка) (13 шагов: показ формы, отказ правил и формата, успех с правками строк, уже сохранённый чек, две вкладки, обрыв, потеря правок при перезагрузке, магазин и справочники, клавиатура и адаптив).
+
+Что изменилось в шагах после исправлений клиента (проверять в первую очередь):
+
+- **Шаг 3** (отказ правил): во время запроса кнопка — «Сохраняем чек…», фокус остаётся на ней, страница не прокручивается, второе нажатие не даёт второго POST; красное сообщение об отказе — **прямо над кнопкой**, видно без прокрутки, в начале карточки его нет; фокус не уходит на заголовок «Вырезки чеков (2)».
+- **Шаг 4** (отказ формата): сообщение над кнопкой заменяет прежнее, фокус на кнопке; при незаполненном обязательном поле запрос не уходит, у кнопки «Запрос не отправлен…», фокус в поле «Итого».
+- **Шаг 5** (успех): фокус на зелёном сообщении своей карточки, а не на заголовке блока; страница к началу списка не прокручена.
+- **Шаги 8 и 9** (две вкладки, обрыв): отказ сначала над кнопкой; когда карточка перечитана и формы уже нет — в начале карточки, фокус на сообщении; при обрыве фокус остаётся на кнопке.
+- **Шаг 12**: в налоговом итоге подписи «Вид налога», «Ставка НДС, %», «Код налога», «Сумма без налога», «Сумма налога», «Сумма с налогом» — одинаковых нет; экранный диктор объявляет результат один раз; «Местное время» открывает обычную клавиатуру; отказ при 320 px и масштабе 200 % виден над кнопкой без прокрутки.
+
+Для приёмки подготовлена и сохранена **новая** база этой задачи с теми же заданиями и номерами вырезок, что в таблице ACCEPTANCE.md (задание 1 — `double.png` / `partial_success`: вырезка 1 сохранена, 2 требует проверки; задание 2 — `single.png` / `inconsistent_total`: вырезки 3 и 4; задание 3 — `double_rotated.png` / `partial_missing_quantity`: вырезки 5 и 6; чеков — 1; свободный файл `single_rotated.png` в `MEDIA\demo`). Данные только синтетические, ни одно подтверждение на ней не выполнялось.
 
 В **каждом** терминале PowerShell из корня репозитория — блок environment из ACCEPTANCE.md с заменой имени проекта и портов:
 
 ```powershell
-$env:COMPOSE_PROJECT_NAME='checkist_qa_muwthm2wb8_manual'
-$env:POSTGRES_PORT='25583'
-$env:REDIS_PORT='16583'            # и три Redis URL на порт 16583
-$env:DEV_API_PROXY_TARGET='http://127.0.0.1:18183'
-$env:DJANGO_CSRF_TRUSTED_ORIGINS='http://127.0.0.1:15283'
+$env:COMPOSE_PROJECT_NAME='checkist_qa_muww7qhgco_manual'
+$env:POSTGRES_PORT='25611'
+$env:REDIS_PORT='16611'            # и три Redis URL на порт 16611
+$env:DEV_API_PROXY_TARGET='http://127.0.0.1:18211'
+$env:DJANGO_CSRF_TRUSTED_ORIGINS='http://127.0.0.1:15311'
 ```
 
-Сервер: `docker compose -p $env:COMPOSE_PROJECT_NAME up -d --wait --wait-timeout 90 postgres redis`, `migrate --noinput`, `runserver 127.0.0.1:18183 --noreload`. Клиент: в `frontend/` — `npm.cmd ci`, `npm.cmd run dev -- --port 15283`. Открыть `http://127.0.0.1:15283/recognition/jobs/1`; вход не нужен, воркер нужен только для необязательной новой загрузки в шаге 10. Подтверждение сохраняет чеки, поэтому каждый шаг проходится один раз на базу; MEDIA лежит в `%TEMP%\checkist_qa_muwthm2wb8_manual-media` и на другую машину не переносится — там повторить подготовку по абзацу «Чтобы начать с нуля» из ACCEPTANCE.md. База `checkist_qa_muwthlonb4_manual`, названная в ACCEPTANCE.md, создана задачей клиента; в этой задаче она не запускалась и не проверялась. После приёмки — Ctrl+C своих Django и Vite, `docker compose -p $env:COMPOSE_PROJECT_NAME down` без `-v`.
+Сервер: `docker compose -p $env:COMPOSE_PROJECT_NAME up -d --wait --wait-timeout 90 postgres redis`, `migrate --noinput`, `runserver 127.0.0.1:18211 --noreload`. Клиент: в `frontend/` — `npm.cmd ci`, `npm.cmd run dev -- --port 15311`. Открыть `http://127.0.0.1:15311/recognition/jobs/1`; вход не нужен, воркер нужен только для необязательной новой загрузки в шаге 10. Подтверждение сохраняет чеки, поэтому каждый шаг проходится один раз на базу; MEDIA лежит в `%TEMP%\checkist_qa_muww7qhgco_manual-media` и на другую машину не переносится — там повторить подготовку по абзацу «Чтобы начать с нуля» из ACCEPTANCE.md. Базы прежних задач `checkist_qa_muwthlonb4_manual` (названа в ACCEPTANCE.md) и `checkist_qa_muwthm2wb8_manual` в этой задаче не запускались. После приёмки — Ctrl+C своих Django и Vite, `docker compose -p $env:COMPOSE_PROJECT_NAME down` без `-v`.
 
 ## Фактические результаты С6
 
