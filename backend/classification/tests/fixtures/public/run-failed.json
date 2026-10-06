@@ -1,0 +1,22 @@
+{
+  "id": 3,
+  "status": "failed",
+  "trigger": "import",
+  "scope": "products",
+  "version": 3,
+  "created_at": "2026-10-06T10:30:00Z",
+  "started_at": "2026-10-06T10:30:02Z",
+  "finished_at": "2026-10-06T10:30:09Z",
+  "progress": {
+    "requested": 3,
+    "processed": 0,
+    "applied": 0,
+    "unknown": 0,
+    "skipped": 0
+  },
+  "remaining": 0,
+  "error": {
+    "code": "invalid_output",
+    "message": "Ответ модели не прошёл проверку."
+  }
+}

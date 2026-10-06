@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "page_out_of_range",
+    "message": "Страница за пределами диапазона."
+  }
+}

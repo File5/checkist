@@ -1,0 +1,11 @@
+{
+  "pending_count": 0,
+  "unclassified_count": 0,
+  "auto_suggest": false,
+  "run": null,
+  "executor": {
+    "available": false,
+    "state": "absent",
+    "last_seen_at": null
+  }
+}

@@ -272,6 +272,63 @@ npm.cmd run dev -- --port 15173
 
 Экраны — `http://127.0.0.1:15173/catalog/merges`; сценарий для человека и тестовые данные — [frontend/src/features/merges/ACCEPTANCE.md](../frontend/src/features/merges/ACCEPTANCE.md). Проверка адаптеров настоящим HTTP без браузера, из корня в третьем терминале с тем же environment: `node frontend/scripts/check_product_merges_proxy.mjs http://127.0.0.1:15173`. Скрипт подтверждает, отменяет и исключает записи, поэтому запускается один раз на свежей базе после `seed_product_merge_demo` и `detect`; имя базы должно быть `checkist_qa` либо `checkist_qa_<суффикс>`, порты — не dev. Без QA Celery worker `/api/health/` отвечает 503 — слияние от него не зависит.
 
+### QA: предположения категорий для клиента
+
+Сервер с демо-каталогом и применёнными предположениями — для клиента и ручной приёмки. Настройки (корневой `.env`, process overrides выше):
+
+| Переменная | Default / граница |
+| --- | --- |
+| `ALLOW_LOCAL_RECOGNITION_API` | Тот же флаг, что у распознавания и слияний: `1` вместе с `DJANGO_DEBUG=1` и loopback открывает `/api/product-classifications/`; отдельного флага нет |
+| `PRODUCT_CLASSIFICATION_AUTO_SUGGEST` | `0`; `1` — ставить запуск в очередь после импорта чека (сам вызов из импорта добавляет шаг С2). Держите `0`, пока владелец не решит применять предположения к базе |
+| `PRODUCT_CLASSIFICATION_TIMEOUT_SECONDS` | 180, допустимо 1..2400 — срок одного запроса к модели; lease запуска — этот срок + 60 с |
+| `PRODUCT_CLASSIFICATION_BATCH_SIZE` | 25, 1..50 — товаров в одном запросе к модели |
+| `PRODUCT_CLASSIFICATION_RUN_LIMIT` | 200, 1..1000 — товаров в одном запуске; остальные кандидаты попадут в следующий (`remaining`) |
+| `RECEIPT_OCR_PROVIDER`, `RECEIPT_OCR_MODEL` | Провайдер и модель общие с распознаванием. `fake` — явный `FakeClassifier`; ветку `codex_cli` добавляет шаг С2, до него `suggest` с `codex_cli` завершается `configuration_error`. Сбой никогда не включает fake |
+| `PRODUCT_CLASSIFICATION_FAKE_SCENARIO` | Только для `fake`: сценарий по умолчанию (`mixed`); `--fake-scenario` выше по приоритету. Не задан в `.env.example` |
+
+В терминале из корня сначала **весь** QA environment из [verification.md](verification.md#изолированная-qa-среда), затем:
+
+```powershell
+$env:DJANGO_DEBUG='1'
+$env:ALLOW_LOCAL_RECOGNITION_API='1'
+$env:RECEIPT_OCR_PROVIDER='fake'
+$env:PRODUCT_MERGE_AUTO_DETECT='0'
+$env:PRODUCT_CLASSIFICATION_AUTO_SUGGEST='0'
+$env:DJANGO_CSRF_TRUSTED_ORIGINS='http://127.0.0.1:15173,http://localhost:15173'
+$env:MEDIA_ROOT=Join-Path $env:TEMP 'checkist-qa-recognition-media'
+$env:RECEIPT_OCR_TEMP_ROOT=Join-Path $env:TEMP 'checkist-qa-recognition-scratch'
+docker compose -p checkist_qa up -d --wait --wait-timeout 90 postgres redis
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py migrate --noinput
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py seed_product_classification_demo
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py product_classifications suggest --dry-run --fake-scenario mixed
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py product_classifications suggest --fake-scenario mixed
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py runserver 127.0.0.1:18000 --noreload
+```
+
+- `seed_product_classification_demo` разрешён только для `test_*` и `checkist_qa` с необязательным `_суффиксом`; создаёт вымышленного продавца «Kategoriemarkt», 3 чека, 14 строк, 12 товаров; в каталоге заранее есть «Продукты питания» → «Молочные продукты» и «Молоко» (`l`). Ответ — `{"created": true, "merchants": 1, "products": 12, "receipts": 3, "lines": 14}`, повтор — `{"created": false}`. Нужна чистая QA-база (новый том либо отдельный `-p`, например `checkist_qa_class`): демо-названия не должны совпадать с существующими.
+- `suggest --dry-run` вызывает классификатор и печатает проверенные предположения, ничего не пишет. `suggest` выполняет запуск прямо в процессе команды (`trigger: "command"`): `requested: 10, applied: 9, unknown: 1` — 9 ожидающих записей в 7 группах («Кефир» и «Колбаса» по две записи, «Молоко», «Сок», «Средство для мытья посуды», «Сыр», «Хлеб»), создано 6 обобщённых продуктов и 4 категории; «Demo Art. 4711» остаётся без категории. Повтор — `requested: 1, applied: 0, unknown: 1`.
+- Id не фиксируются: на чистой базе записи 1–9, но клиент и скрипты ищут их по названиям.
+- `product_classifications reconcile` сверяет все ожидающие записи с каталогом; `product_classifications cancel-pending` возвращает каталог к исходному виду (`removed_generics: 6, removed_categories: 4`) — обязателен перед `migrate classification zero`, [откат](data-model.md#откат-classification).
+- Кнопка «Предложить категории» (`POST /api/product-classifications/runs/`) только ставит запуск в очередь. Исполняет очередь `recognition_worker` — шаг С2; пока он не слит, запуск остаётся `queued`, а `executor.state` без воркера — `absent`.
+- Эталонные ответы для схем клиента — `backend/classification/tests/fixtures/public/*.json`; контракт — [api-contract.md](api-contract.md#реализовано-локальный-api-предположений-категорий-товаров).
+- На dev `PRODUCT_CLASSIFICATION_AUTO_SUGGEST` остаётся `0`, а `suggest` без решения владельца не запускается: предположения сразу меняют `Product.generic`.
+
+Проверка без клиента, во втором терминале (cookie и токен CSRF обязательны для POST):
+
+```powershell
+$base = 'http://127.0.0.1:18000/api'
+$session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+$token = (Invoke-RestMethod "$base/recognition/csrf/" -WebSession $session).csrf_token
+Invoke-RestMethod "$base/product-classifications/status/" -WebSession $session
+$page = Invoke-RestMethod "$base/product-classifications/?status=pending" -WebSession $session
+$record = $page.results[0]
+$body = @{ version = $record.version; generic_id = $record.suggested.generic.id } | ConvertTo-Json
+Invoke-RestMethod "$base/product-classifications/$($record.id)/confirm/" -Method Post -WebSession $session `
+  -ContentType 'application/json' -Headers @{ 'X-CSRFToken' = $token; Origin = 'http://127.0.0.1:18000' } -Body $body
+```
+
+Ожидается: состояние — `pending_count: 9`, `unclassified_count: 1`, `run.status: "succeeded"`, `executor.state: "absent"`; подтверждение — запись `confirmed`, повтор того же запроса — снова `200`. Клиент (Vite 15173) запускается так же, как для [слияния дублей](#qa-слияние-дублей-для-клиента); его proxy-скрипт `frontend/scripts/check_product_classifications_proxy.mjs` появляется на шаге клиента.
+
 ### Настоящий Codex в QA
 
 Остановить fake-worker. В том же QA DB/MEDIA/scratch, в терминале worker:

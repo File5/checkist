@@ -1,0 +1,11 @@
+{
+  "error": {
+    "code": "classification_changed",
+    "message": "Предположение изменилось.",
+    "fields": {
+      "items.0": [
+        "Предположение изменилось."
+      ]
+    }
+  }
+}

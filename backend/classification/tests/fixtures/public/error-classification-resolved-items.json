@@ -1,0 +1,11 @@
+{
+  "error": {
+    "code": "classification_resolved",
+    "message": "Предположение уже решено.",
+    "fields": {
+      "items.1": [
+        "Предположение уже решено."
+      ]
+    }
+  }
+}

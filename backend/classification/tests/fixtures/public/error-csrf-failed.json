@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "csrf_failed",
+    "message": "Проверка CSRF не пройдена."
+  }
+}
