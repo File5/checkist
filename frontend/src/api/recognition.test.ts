@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cancelJob, clearRecognitionCsrf, getJob, getJobs, getPhoto, getPhotos, getReceiptImage, getReceiptImages, getRecognitionCsrf, retryJob, uploadPhoto } from './recognition'
+import { cancelJob, clearRecognitionCsrf, confirmReceiptImage, getJob, getJobs, getPhoto, getPhotos, getReceiptImage, getReceiptImages, getRecognitionCsrf, retryJob, uploadPhoto } from './recognition'
+import type { ReviewConfirmInput } from './recognition'
+import { getCountries } from './countries'
 import { getReceipt, getReceiptDiscounts, getReceiptLines, getReceipts, getReceiptTaxes } from './receipts'
 import { publicFixture } from './recognition-test-support'
 import type { LocalApiResult, RequestOptions } from './types'
@@ -171,4 +173,77 @@ it('encodes AND filters, sort/page parameters and Unicode search exactly once', 
   fetchMock.mockResolvedValue(response('lines.json'))
   await getReceiptLines(71, { matching: 'unmatched', kind: 'product', page: 2, page_size: 1 })
   expect(fetchMock.mock.calls[2][0]).toBe('/api/receipts/71/lines/?matching=unmatched&kind=product&page=2&page_size=1')
+})
+
+describe('crop confirmation', () => {
+  const input = () => publicFixture('review-confirm-request.json') as ReviewConfirmInput
+  const refusal = (code: string, status: number, extra: object = {}) => new Response(JSON.stringify({ error: { code, message: 'Текст сервера.' }, ...extra }), { status })
+  it('posts the whole body once as JSON with decimals untouched and parses the answer of the server', async () => {
+    fetchMock.mockResolvedValueOnce(response('csrf.json')).mockResolvedValueOnce(response('review-confirmed.json'))
+    expect(await confirmReceiptImage(42, input())).toEqual({ kind: 'ok', data: publicFixture('review-confirmed.json') })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    const [url, init] = fetchMock.mock.calls[1]
+    expect(url).toBe('/api/recognition/receipt-images/42/confirm/')
+    expect(init).toMatchObject({ method: 'POST', credentials: 'same-origin', cache: 'no-store', headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRFToken': 'MASKED_CSRF_TOKEN' } })
+    expect(init?.headers).not.toHaveProperty('Idempotency-Key')
+    expect(JSON.parse(init!.body as string)).toEqual(publicFixture('review-confirm-request.json'))
+    expect(init!.body).toContain('"quantity":"2.000"'); expect(init!.body).toContain('"unit_price":"1.2900"'); expect(init!.body).toContain('"total":"2.63"')
+  })
+  it('returns the causes of review_invalid and the paths of invalid_parameter without server phrases', async () => {
+    fetchMock.mockResolvedValueOnce(response('csrf.json')).mockResolvedValueOnce(response('review-invalid.json', 409)).mockResolvedValueOnce(response('review-invalid-parameter.json', 400))
+    const invalid = await confirmReceiptImage(42, input())
+    expect(invalid).toEqual({ kind: 'error', reason: 'review_invalid', status: 409, issues: (publicFixture('review-invalid.json') as { issues: unknown[] }).issues })
+    const fields = await confirmReceiptImage(42, input())
+    expect(fields).toEqual({ kind: 'error', reason: 'invalid_parameter', status: 400,
+      fields: ['receipt.total', 'lines.0.quantity', 'lines.1.source_position', 'discounts.0.line_position', 'taxes.1.tax_rate.rate'] })
+    expect(JSON.stringify([invalid, fields])).not.toContain('Некорректные параметры'); expect(JSON.stringify(fields)).not.toContain('Неверный')
+  })
+  it.each([
+    ['job_active', 409], ['review_unavailable', 409], ['review_resolved', 409], ['review_busy', 409], ['invalid_request', 400],
+    ['permission_denied', 403], ['not_found', 404], ['database_unavailable', 503],
+  ] as const)('maps %s (HTTP %s) and never repeats the POST', async (code, status) => {
+    fetchMock.mockResolvedValueOnce(response('csrf.json')).mockResolvedValueOnce(refusal(code, status))
+    expect(await confirmReceiptImage(42, input())).toEqual({ kind: 'error', reason: code, status })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+  it('drops the token after csrf_failed and leaves the retry to an explicit action', async () => {
+    fetchMock.mockResolvedValueOnce(response('csrf.json')).mockResolvedValueOnce(refusal('csrf_failed', 403))
+      .mockResolvedValueOnce(response('csrf.json')).mockResolvedValueOnce(response('review-confirmed.json'))
+    expect(await confirmReceiptImage(42, input())).toEqual({ kind: 'error', reason: 'csrf_failed', status: 403 })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect((await confirmReceiptImage(42, input())).kind).toBe('ok')
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/api/recognition/csrf/', '/api/recognition/receipt-images/42/confirm/', '/api/recognition/csrf/', '/api/recognition/receipt-images/42/confirm/'])
+  })
+  it('treats review_invalid without causes, a list job and a lost answer as what they are', async () => {
+    const confirmed = publicFixture('review-confirmed.json') as { image: object; job: Record<string, unknown> }
+    const listJob = { ...confirmed.job }
+    delete listJob.items
+    fetchMock.mockResolvedValueOnce(response('csrf.json')).mockResolvedValueOnce(refusal('review_invalid', 409))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ...confirmed, job: listJob }), { status: 200 })).mockRejectedValueOnce(new TypeError('offline'))
+    expect(await confirmReceiptImage(42, input())).toEqual({ kind: 'error', reason: 'invalid_response', status: 409 })
+    expect(await confirmReceiptImage(42, input())).toEqual({ kind: 'error', reason: 'invalid_response', status: 200 })
+    expect(await confirmReceiptImage(42, input())).toEqual({ kind: 'error', reason: 'network' })
+  })
+  it('rejects an unsafe id before any request and times out at 15 seconds', async () => {
+    expect(await confirmReceiptImage(0, input())).toEqual({ kind: 'error', reason: 'invalid_parameter', fields: ['id'] })
+    expect(fetchMock).not.toHaveBeenCalled()
+    vi.useFakeTimers(); fetchMock.mockResolvedValueOnce(response('csrf.json')).mockImplementation(() => new Promise(() => {}))
+    const pending = confirmReceiptImage(42, input())
+    await vi.advanceTimersByTimeAsync(15_000)
+    expect(await pending).toEqual({ kind: 'error', reason: 'timeout' })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('reference countries for the review form', () => {
+  const body = { results: [{ code: 'DE', name: 'Германия', currencies: ['EUR'], stores_count: 1, products_count: 1 }, { code: 'KZ', name: 'Казахстан', currencies: [], stores_count: 0, products_count: 0 }] }
+  it('asks for every reference country anonymously', async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify(body)))
+    expect(await getCountries({ all: true })).toEqual({ kind: 'ok', data: body })
+    expect(fetchMock).toHaveBeenCalledWith('/api/countries/?all=1', { headers: { Accept: 'application/json' }, credentials: 'omit', cache: 'no-store', signal: expect.any(AbortSignal) })
+  })
+  it.each([{ results: [{ ...body.results[0], currencies: 'EUR' }] }, { results: [{ code: 'DE' }] }, { results: null }, []])('rejects a malformed reference %#', async (invalid) => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify(invalid)))
+    expect(await getCountries()).toEqual({ kind: 'error', reason: 'invalid_response', status: 200 })
+  })
 })

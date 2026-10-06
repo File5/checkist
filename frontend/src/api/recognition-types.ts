@@ -46,9 +46,9 @@ export type PhotoUpload = { reused: boolean; photo: Photo; job: JobDetail }
 export type Bbox = { x_min: number; x_max: number; y_min: number; y_max: number }
 export type QuadPoint = { x: number; y: number }
 export type NormalizedTaxRate = { kind: TaxKind | null; rate: Decimal | null }
-/** Safe, incomplete observation for needs_review; no draft or editing API. */
+/** Safe, incomplete observation for needs_review: the source of the confirmation form, not a server draft. */
 export type ProposedReceipt = {
-  store: null; store_display_name: string | null; address_display: string | null
+  store: null; store_display_name: string | null; address_display: string | null; country: string | null
   currency: string | null; operation: ReceiptOperation | null; purchased_on: ISODate | null; local_time: string | null
   total: Decimal | null; discount_total: Decimal | null; prices_include_tax: boolean | null
 }
@@ -65,8 +65,27 @@ export type ReceiptImage = {
   id: number; photo_id: number; job_id: number; position: number; created_at: ISODateTime; status: ReceiptImageStatus
   receipt_id: number | null; receipt_deleted: boolean; image_url: string | null; width: number; height: number
   bbox: Bbox | null; clipped: boolean; issues: RecognitionIssue[]; normalized_result: NormalizedResult | null
+  /** Moment of the confirmation by a person; null for crops saved automatically. */
+  confirmed_at: ISODateTime | null
 }
 export type ReceiptImageDetail = ReceiptImage & { quad: QuadPoint[] | null; rotation_degrees: number | null }
+/** Body of POST receipt-images/{id}/confirm/. Decimals are strings in the exact form of normalized_result. */
+export type ReviewReceiptInput = {
+  store_id: number | null; store_name: string | null; address: string | null; country: string | null; currency: string | null
+  operation: ReceiptOperation | null; purchased_on: string; local_time: string
+  /** An absent key keeps the recognized offset; null clears it. */
+  utc_offset?: string | null
+  total: Decimal; prices_include_tax: boolean | null
+}
+export type ReviewLineInput = {
+  position: number; source_position: number | null; kind: LineKind; parent_position: number | null; name: string
+  quantity: Decimal | null; unit: Unit | null; unit_price: Decimal | null; amount: Decimal | null
+  tax_rate: NormalizedTaxRate; tax_code: string | null
+}
+export type ReviewDiscountInput = { position: number; line_position: number | null; name: string; amount: Decimal }
+export type ReviewTaxInput = { tax_rate: NormalizedTaxRate; tax_code: string | null; net: Decimal | null; tax: Decimal | null; gross: Decimal | null }
+export type ReviewConfirmInput = { receipt: ReviewReceiptInput; lines: ReviewLineInput[]; discounts: ReviewDiscountInput[]; taxes: ReviewTaxInput[] }
+export type ReviewConfirmResult = { image: ReceiptImageDetail; job: JobDetail }
 export type PhotoParams = PageParams & { ordering?: 'created_at' | '-created_at' }
 export type JobParams = PhotoParams & { photo?: number; status?: JobStatus }
 export type ReceiptImageParams = PhotoParams & { photo?: number; job?: number; receipt?: number }

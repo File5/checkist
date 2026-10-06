@@ -1,0 +1,71 @@
+import type { ReceiptImageDetail, RecognitionCsrf, ReviewConfirmInput, ReviewConfirmResult } from '../../api/recognition'
+import type { LocalApiFailure, LocalApiResult } from '../../api/types'
+import { reviewErrorText, reviewKeepsState } from './labels'
+
+export type ReviewActionState = { kind: 'idle' } | { kind: 'pending'; imageId: number }
+  | { kind: 'done'; imageId: number; image: ReceiptImageDetail; message: string }
+  | { kind: 'failed'; imageId: number; message: string; error: LocalApiFailure }
+/** What the caller of `run` learns: the refusal to show at the fields, or nothing after a success, an abort or a busy store. */
+export type ReviewOutcome = LocalApiFailure | undefined
+
+function doneText(image: ReceiptImageDetail): string {
+  const receipt = image.receipt_id === null ? '' : ` №${image.receipt_id}`
+  if (image.status === 'reused') return `Подтверждено. Вырезка привязана к уже сохранённому чеку${receipt}: его значения не изменены, исправления к нему не применены.`
+  if (image.status === 'updated') return `Подтверждено. Вырезка привязана к уже сохранённому чеку${receipt}: дополнены только его пустые поля, заполненные значения не изменены.`
+  return `Подтверждено. Чек${receipt} сохранён.`
+}
+
+/** One confirmation at a time for the whole job screen. Nothing is replayed: a refusal only tells the owner
+ * whether the saved state has to be read again.
+ */
+export function createReviewActions(
+  confirm: (imageId: number, input: ReviewConfirmInput, signal: AbortSignal) => Promise<LocalApiResult<ReviewConfirmResult>>,
+  refreshCsrf: (signal: AbortSignal) => Promise<LocalApiResult<RecognitionCsrf>>,
+  lifecycle: { pause: () => void; success: (result: ReviewConfirmResult) => void; failure: (error: LocalApiFailure, reread: boolean) => void },
+) {
+  const initial: ReviewActionState = { kind: 'idle' }
+  let state: ReviewActionState = initial
+  let controller: AbortController | undefined
+  let generation = 0
+  const listeners = new Set<() => void>()
+  const publish = (next: ReviewActionState) => { state = next; listeners.forEach((listener) => listener()) }
+  return {
+    getSnapshot: () => state,
+    getServerSnapshot: () => initial,
+    subscribe: (callback: () => void) => { listeners.add(callback); return () => { listeners.delete(callback) } },
+    dispose: () => { generation++; controller?.abort(); controller = undefined },
+    run: async (imageId: number, input: ReviewConfirmInput): Promise<ReviewOutcome> => {
+      if (controller) return undefined
+      const stamp = ++generation
+      const current = new AbortController()
+      controller = current
+      lifecycle.pause()
+      publish({ kind: 'pending', imageId })
+      let result: LocalApiResult<ReviewConfirmResult>
+      try { result = await confirm(imageId, input, current.signal) }
+      catch { result = { kind: 'error', reason: 'network' } }
+      if (stamp !== generation || current.signal.aborted) return undefined
+      if (result.kind === 'ok') {
+        controller = undefined
+        lifecycle.success(result.data)
+        publish({ kind: 'done', imageId, image: result.data.image, message: doneText(result.data.image) })
+        return undefined
+      }
+      // An adapter reports "aborted" only for this signal, which was checked above; treat anything else as a lost answer.
+      const error: LocalApiFailure = result.kind === 'error' ? result : { kind: 'error', reason: 'network' }
+      let message = reviewErrorText(error)
+      if (error.reason === 'csrf_failed') {
+        let csrf: LocalApiResult<RecognitionCsrf>
+        try { csrf = await refreshCsrf(current.signal) }
+        catch { csrf = { kind: 'error', reason: 'network' } }
+        if (stamp !== generation || current.signal.aborted) return undefined
+        message = csrf.kind === 'ok' ? 'Токен безопасности обновлён. Чек не сохранён, действие не повторялось: подтвердите снова.'
+          : 'Не удалось обновить токен безопасности. Чек не сохранён; попробуйте подтвердить позже.'
+      }
+      controller = undefined
+      lifecycle.failure(error, !reviewKeepsState(error))
+      publish({ kind: 'failed', imageId, error, message })
+      return error
+    },
+  }
+}

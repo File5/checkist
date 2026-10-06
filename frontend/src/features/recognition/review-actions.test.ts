@@ -1,0 +1,141 @@
+import { describe, expect, it, vi } from 'vitest'
+import { readError } from '../../api/http'
+import type { JobDetail, ReviewConfirmInput, ReviewConfirmResult } from '../../api/recognition'
+import { isJobDetail, isRecognitionCsrf, isReviewConfirmResult } from '../../api/recognition-schema'
+import { publicFixture } from '../../api/recognition-test-support'
+import type { LocalApiFailure, LocalApiResult } from '../../api/types'
+import { acceptJob, isActive, reviewErrorText, reviewKeepsState } from './labels'
+import { createPollingRequest } from './polling'
+import { createReviewActions } from './review-actions'
+
+function confirmed(): ReviewConfirmResult { const data = publicFixture('review-confirmed.json'); if (!isReviewConfirmResult(data)) throw new Error('Invalid fixture'); return data }
+function job(): JobDetail { const data = publicFixture('job.json'); if (!isJobDetail(data)) throw new Error('Invalid fixture'); return data }
+function csrf() { const data = publicFixture('csrf.json'); if (!isRecognitionCsrf(data)) throw new Error('Invalid fixture'); return data }
+const input = publicFixture('review-confirm-request.json') as ReviewConfirmInput
+const lifecycle = () => ({ pause: vi.fn(), success: vi.fn(), failure: vi.fn() })
+const failing = (error: LocalApiFailure) => async (): Promise<LocalApiResult<ReviewConfirmResult>> => error
+const flush = async () => { await Promise.resolve(); await Promise.resolve() }
+
+describe('crop confirmation state machine', () => {
+  it('sends one POST, ignores presses while waiting and reports the saved receipt', async () => {
+    let resolve!: (value: LocalApiResult<ReviewConfirmResult>) => void
+    const confirm = vi.fn(() => new Promise<LocalApiResult<ReviewConfirmResult>>((yes) => { resolve = yes }))
+    const life = lifecycle()
+    const actions = createReviewActions(confirm, vi.fn(), life)
+    const pending = actions.run(42, input)
+    expect(await actions.run(42, input)).toBeUndefined(); expect(await actions.run(41, input)).toBeUndefined()
+    expect(confirm).toHaveBeenCalledExactlyOnceWith(42, input, expect.any(AbortSignal))
+    expect(actions.getSnapshot()).toEqual({ kind: 'pending', imageId: 42 }); expect(life.pause).toHaveBeenCalledTimes(1)
+    expect(life.success).not.toHaveBeenCalled()
+    resolve({ kind: 'ok', data: confirmed() })
+    expect(await pending).toBeUndefined()
+    expect(life.success).toHaveBeenCalledExactlyOnceWith(confirmed()); expect(life.failure).not.toHaveBeenCalled()
+    expect(actions.getSnapshot()).toEqual({ kind: 'done', imageId: 42, image: confirmed().image, message: 'Подтверждено. Чек №72 сохранён.' })
+    expect(actions.getServerSnapshot()).toEqual({ kind: 'idle' })
+  })
+  it.each([
+    ['reused', 'привязана к уже сохранённому чеку №72: его значения не изменены, исправления к нему не применены'],
+    ['updated', 'дополнены только его пустые поля, заполненные значения не изменены'],
+  ] as const)('says plainly that corrections were not applied to an existing receipt (%s)', async (status, text) => {
+    const data = { ...confirmed(), image: { ...confirmed().image, status } }
+    const actions = createReviewActions(async () => ({ kind: 'ok', data }), vi.fn(), lifecycle())
+    await actions.run(42, input)
+    expect(actions.getSnapshot()).toMatchObject({ kind: 'done', message: expect.stringContaining(text) })
+  })
+  it('keeps the form after review_invalid: no reread, the causes go back to the caller', async () => {
+    const error = readError(409, publicFixture('review-invalid.json'), true)
+    const life = lifecycle()
+    const actions = createReviewActions(failing(error), vi.fn(), life)
+    expect(await actions.run(42, input)).toBe(error)
+    expect(error.issues).toHaveLength(3)
+    expect(life.failure).toHaveBeenCalledExactlyOnceWith(error, false); expect(life.success).not.toHaveBeenCalled()
+    expect(actions.getSnapshot()).toMatchObject({ kind: 'failed', imageId: 42, error, message: expect.stringContaining('не прошли проверку, чек не сохранён') })
+    expect(JSON.stringify(actions.getSnapshot())).toContain('Исправленные данные не прошли проверку, чек не сохранён')
+  })
+  it('keeps the form after invalid_parameter and names the marked fields', async () => {
+    const error = readError(400, publicFixture('review-invalid-parameter.json'), true)
+    const life = lifecycle()
+    const actions = createReviewActions(failing(error), vi.fn(), life)
+    expect(await actions.run(42, input)).toBe(error)
+    expect(life.failure).toHaveBeenCalledExactlyOnceWith(error, false)
+    expect(actions.getSnapshot()).toMatchObject({ kind: 'failed', message: expect.stringContaining('Проверьте отмеченные поля') })
+  })
+  it.each([
+    ['review_resolved', 'уже подтверждён с другими данными'], ['review_unavailable', 'Подтверждение для этой вырезки недоступно'],
+    ['review_busy', 'изменяются другой операцией'], ['job_active', 'Задание ещё не завершено'], ['not_found', 'Вырезка не найдена'],
+  ] as const)('%s explains the refusal and asks for one reread of the saved state', async (reason, text) => {
+    const error: LocalApiFailure = { kind: 'error', reason, status: reason === 'not_found' ? 404 : 409 }
+    const life = lifecycle()
+    const confirm = vi.fn(failing(error))
+    const actions = createReviewActions(confirm, vi.fn(), life)
+    expect(await actions.run(42, input)).toBe(error)
+    expect(confirm).toHaveBeenCalledTimes(1); expect(life.failure).toHaveBeenCalledExactlyOnceWith(error, true)
+    expect(actions.getSnapshot()).toMatchObject({ kind: 'failed', message: expect.stringContaining(text) })
+  })
+  it.each(['network', 'timeout', 'server', 'database_unavailable', 'invalid_response'] as const)('%s warns that the action may have happened and rereads without repeating', async (reason) => {
+    const life = lifecycle()
+    const confirm = vi.fn(failing({ kind: 'error', reason }))
+    const actions = createReviewActions(confirm, vi.fn(), life)
+    await actions.run(42, input)
+    expect(confirm).toHaveBeenCalledTimes(1); expect(life.failure).toHaveBeenCalledExactlyOnceWith({ kind: 'error', reason }, true)
+    expect(actions.getSnapshot()).toMatchObject({ kind: 'failed', message: expect.stringContaining('Действие могло выполниться: проверьте задание перед повтором.') })
+  })
+  it('treats a thrown transport error as a lost answer', async () => {
+    const life = lifecycle()
+    const actions = createReviewActions(async () => { throw new Error('socket') }, vi.fn(), life)
+    expect(await actions.run(42, input)).toEqual({ kind: 'error', reason: 'network' })
+    expect(life.failure).toHaveBeenCalledExactlyOnceWith({ kind: 'error', reason: 'network' }, true)
+  })
+  it.each([[true, 'Токен безопасности обновлён. Чек не сохранён, действие не повторялось'], [false, 'Не удалось обновить токен безопасности']] as const)(
+    'refreshes CSRF (ok=%s) but never repeats the confirmation', async (ok, text) => {
+      const confirm = vi.fn(failing({ kind: 'error', reason: 'csrf_failed', status: 403 }))
+      const refresh = vi.fn().mockResolvedValue(ok ? { kind: 'ok', data: csrf() } : { kind: 'error', reason: 'network' })
+      const life = lifecycle()
+      const actions = createReviewActions(confirm, refresh, life)
+      await actions.run(42, input)
+      expect(confirm).toHaveBeenCalledTimes(1); expect(refresh).toHaveBeenCalledTimes(1)
+      expect(life.failure).toHaveBeenCalledExactlyOnceWith({ kind: 'error', reason: 'csrf_failed', status: 403 }, false)
+      expect(actions.getSnapshot()).toMatchObject({ kind: 'failed', message: expect.stringContaining(text) })
+      // The next press is a new explicit attempt.
+      await actions.run(42, input); expect(confirm).toHaveBeenCalledTimes(2)
+    })
+  it('allows a new attempt after a refusal and replaces the old message', async () => {
+    const confirm = vi.fn<(id: number) => Promise<LocalApiResult<ReviewConfirmResult>>>()
+      .mockResolvedValueOnce({ kind: 'error', reason: 'review_busy', status: 409 }).mockResolvedValueOnce({ kind: 'ok', data: confirmed() })
+    const actions = createReviewActions(confirm, vi.fn(), lifecycle())
+    await actions.run(42, input); expect(actions.getSnapshot().kind).toBe('failed')
+    await actions.run(42, input); expect(actions.getSnapshot().kind).toBe('done')
+  })
+  it('aborts the request on leaving the page and ignores its late answer', async () => {
+    let resolve!: (value: LocalApiResult<ReviewConfirmResult>) => void
+    let signal!: AbortSignal
+    const life = lifecycle()
+    const actions = createReviewActions((_id, _input, current) => { signal = current; return new Promise((yes) => { resolve = yes }) }, vi.fn(), life)
+    const pending = actions.run(42, input); actions.dispose(); expect(signal.aborted).toBe(true)
+    resolve({ kind: 'ok', data: confirmed() })
+    expect(await pending).toBeUndefined()
+    expect(life.success).not.toHaveBeenCalled(); expect(life.failure).not.toHaveBeenCalled()
+    expect(actions.getSnapshot()).toEqual({ kind: 'pending', imageId: 42 })
+  })
+  it('pauses the job read before the POST so that an older answer cannot hide the confirmed job', async () => {
+    let resolve!: (value: LocalApiResult<JobDetail>) => void
+    const request = createPollingRequest<JobDetail>(() => new Promise((yes) => { resolve = yes }), isActive, acceptJob)
+    request.start()
+    const actions = createReviewActions(async () => ({ kind: 'ok', data: confirmed() }), vi.fn(), {
+      pause: request.pause, success: (result) => { request.setData(result.job); request.resume(false) }, failure: vi.fn(),
+    })
+    await actions.run(42, input); resolve({ kind: 'ok', data: job() }); await flush()
+    expect(request.getSnapshot()).toMatchObject({ kind: 'ok', data: { status: 'succeeded', version: 2, progress: { review: 0, imported: 2 } } })
+    // An older job version read later is not accepted over the answer of the confirmation.
+    expect(acceptJob(confirmed().job, job())).toBe(false)
+    actions.dispose(); request.dispose()
+  })
+  it('has a client text for every refusal of the contract and never rereads for a refusal that saved nothing', () => {
+    const reasons = ['invalid_request', 'invalid_parameter', 'csrf_failed', 'permission_denied', 'not_found', 'job_active', 'review_unavailable', 'review_resolved',
+      'review_busy', 'review_invalid', 'database_unavailable', 'server', 'method_not_allowed', 'not_acceptable', 'unsupported_media_type', 'network', 'timeout', 'invalid_response'] as const
+    const texts = reasons.map((reason) => reviewErrorText({ kind: 'error', reason }))
+    for (const text of texts) { expect(text.length).toBeGreaterThan(20); expect(text).not.toContain('undefined') }
+    expect(new Set(texts.slice(0, 10)).size).toBe(10)
+    expect(reasons.filter((reason) => reviewKeepsState({ kind: 'error', reason }))).toEqual(['invalid_request', 'invalid_parameter', 'csrf_failed', 'permission_denied', 'review_invalid'])
+  })
+})

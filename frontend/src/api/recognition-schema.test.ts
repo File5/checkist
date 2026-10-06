@@ -1,10 +1,14 @@
 import { readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { isJob, isJobDetail, isPhoto, isPhotoUpload, isReceiptImage, isReceiptImageDetail, isRecognitionCsrf, isRecognitionIssue } from './recognition-schema'
+import { readError } from './http'
+import {
+  isJob, isJobDetail, isPhoto, isPhotoUpload, isReceiptImage, isReceiptImageDetail, isRecognitionCsrf, isRecognitionIssue,
+  isReviewConfirmInput, isReviewConfirmResult,
+} from './recognition-schema'
 import { isDiscount, isLine, isReceipt, isTax } from './receipts-schema'
 import { page } from './schema'
 import { issue, publicFixture, taxEvidenceMissingIssues } from './recognition-test-support'
-import type { JobDetail, ReceiptImageDetail } from './recognition-types'
+import type { JobDetail, ReceiptImageDetail, ReviewConfirmInput, ReviewConfirmResult } from './recognition-types'
 import type { Line, Receipt } from './receipts-types'
 import type { Page } from './types'
 
@@ -13,6 +17,10 @@ const schemas: Record<string, (value: unknown) => boolean> = {
   'job.json': isJobDetail, 'jobs.json': page(isJob), 'job-running.json': isJobDetail, 'job-cancel-requested.json': isJobDetail,
   'receipt-image.json': isReceiptImageDetail, 'receipt-images.json': page(isReceiptImage),
   'upload-new.json': isPhotoUpload, 'upload-reused.json': isPhotoUpload,
+  'review-confirm-request.json': isReviewConfirmInput, 'review-confirmed.json': isReviewConfirmResult,
+  // Error bodies are read by the transport: the fixture is valid when it becomes exactly its refusal.
+  'review-invalid.json': (value) => readError(409, value, true).reason === 'review_invalid',
+  'review-invalid-parameter.json': (value) => readError(400, value, true).reason === 'invalid_parameter',
   'receipt.json': isReceipt, 'receipts.json': page(isReceipt), 'lines.json': page(isLine), 'discounts.json': page(isDiscount), 'taxes.json': page(isTax),
 }
 
@@ -95,6 +103,72 @@ describe('public recognition/receipts contract fixtures', () => {
     expect(isReceiptImage({ ...image, normalized_result: { ...result, lines: Array(1001).fill(result.lines[0]) } })).toBe(false)
     expect(isReceiptImage({ ...image, normalized_result: { ...result, discounts: [{ position: 1, line_position: null, name: null, amount: '1.00' }], taxes: [{ tax_rate: { kind: 'exempt', rate: null }, tax_code: null, net: null, tax: '0.00', gross: null }] } })).toBe(true)
     expect(isReceiptImage({ ...image, normalized_result: { ...result, proposed_receipt: { ...result.proposed_receipt, store: { id: 1 } } } })).toBe(false)
+  })
+  it('requires the additive confirmed_at and proposed country and checks their types', () => {
+    const image = publicFixture('receipt-image.json') as ReceiptImageDetail
+    expect(image.confirmed_at).toBeNull(); expect(image.normalized_result?.proposed_receipt.country).toBe('DE')
+    expect(isReceiptImageDetail({ ...image, confirmed_at: '2026-10-04T12:35:00Z' })).toBe(true)
+    for (const confirmed_at of ['2026-10-04', '2026-10-04T12:35:00+02:00', 1, true]) expect(isReceiptImageDetail({ ...image, confirmed_at })).toBe(false)
+    const result = image.normalized_result!
+    const proposed = (patch: object) => ({ ...image, normalized_result: { ...result, proposed_receipt: { ...result.proposed_receipt, ...patch } } })
+    expect(isReceiptImageDetail(proposed({ country: null }))).toBe(true)
+    expect(isReceiptImageDetail(proposed({ country: 7 }))).toBe(false)
+    const old: Record<string, unknown> = { ...result.proposed_receipt }
+    delete old.country
+    expect(isReceiptImageDetail({ ...image, normalized_result: { ...result, proposed_receipt: old } })).toBe(false)
+    const list = publicFixture('receipt-images.json') as Page<ReceiptImageDetail>
+    expect(list.results.every((item) => Object.hasOwn(item, 'confirmed_at'))).toBe(true)
+  })
+  it('accepts the confirmation answer only with a saved crop and a full job', () => {
+    const body = publicFixture('review-confirmed.json') as ReviewConfirmResult
+    expect(body.image).toMatchObject({ status: 'imported', receipt_id: 72, normalized_result: null, confirmed_at: '2026-10-04T12:35:00Z' })
+    expect(body.job).toMatchObject({ status: 'succeeded', version: 2, review_required: false, actions: { can_retry: false } })
+    const listJob: Record<string, unknown> = { ...body.job }
+    delete listJob.items
+    expect(isReviewConfirmResult({ ...body, job: listJob })).toBe(false)
+    const listImage: Record<string, unknown> = { ...body.image }
+    delete listImage.quad
+    expect(isReviewConfirmResult({ ...body, image: listImage })).toBe(false)
+    expect(isReviewConfirmResult({ ...body, image: { ...body.image, confirmed_at: 'now' } })).toBe(false)
+  })
+  describe('confirmation request body', () => {
+    const body = () => structuredClone(publicFixture('review-confirm-request.json')) as ReviewConfirmInput
+    const change = (edit: (value: ReviewConfirmInput) => void) => { const value = body(); edit(value); return value }
+    it('keeps decimals as strings and allows the optional offset only', () => {
+      expect(isReviewConfirmInput(change((value) => { value.receipt.utc_offset = '+02:00' }))).toBe(true)
+      expect(isReviewConfirmInput(change((value) => { value.receipt.utc_offset = null }))).toBe(true)
+      expect(isReviewConfirmInput(change((value) => { value.receipt.utc_offset = '2' }))).toBe(false)
+      expect(isReviewConfirmInput({ ...body(), draft: true })).toBe(false)
+      expect(isReviewConfirmInput(change((value) => { Object.assign(value.receipt, { discount_total: '0.20' }) }))).toBe(false)
+      expect(isReviewConfirmInput(change((value) => { Object.assign(value.lines[0], { product_id: 61 }) }))).toBe(false)
+      expect(isReviewConfirmInput(change((value) => { Object.assign(value.lines[0].tax_rate, { country: 'DE' }) }))).toBe(false)
+    })
+    it.each([
+      (value: ReviewConfirmInput) => { Object.assign(value.receipt, { total: 2.63 }) }, (value: ReviewConfirmInput) => { value.receipt.total = '2.6' },
+      (value: ReviewConfirmInput) => { value.receipt.purchased_on = '2026-02-30' }, (value: ReviewConfirmInput) => { value.receipt.local_time = '14.35' },
+      (value: ReviewConfirmInput) => { value.receipt.country = 'DEU' }, (value: ReviewConfirmInput) => { value.receipt.store_name = '   ' },
+      (value: ReviewConfirmInput) => { value.lines[0].quantity = '2' }, (value: ReviewConfirmInput) => { value.lines[0].unit_price = '-1.2900' },
+      (value: ReviewConfirmInput) => { value.lines[0].position = 0 }, (value: ReviewConfirmInput) => { value.lines[0].name = '' },
+      (value: ReviewConfirmInput) => { value.lines = [] }, (value: ReviewConfirmInput) => { value.discounts[0].amount = '0.2' },
+      (value: ReviewConfirmInput) => { value.taxes[0].tax_rate.rate = '7' }, (value: ReviewConfirmInput) => { Object.assign(value.taxes[0], { net: 2.22 }) },
+    ])('rejects a malformed value %#', (edit) => { expect(isReviewConfirmInput(change(edit))).toBe(false) })
+  })
+  it('reads review_invalid only together with well-formed causes and keeps other bodies generic', () => {
+    const body = publicFixture('review-invalid.json') as { error: object; issues: object[] }
+    expect(readError(409, body, true)).toEqual({ kind: 'error', reason: 'review_invalid', status: 409, issues: body.issues })
+    expect(readError(409, { ...body, issues: [{ ...body.issues[0], severity: 'fatal' }] }, true).reason).toBe('invalid_response')
+    expect(readError(409, { ...body, issues: 'none' }, true).reason).toBe('invalid_response')
+    expect(readError(409, { ...body, issues: Array(1001).fill(body.issues[0]) }, true).reason).toBe('invalid_response')
+    // The catalog transport and other statuses never learn the local codes.
+    expect(readError(409, body, false).reason).toBe('invalid_response')
+    expect(readError(400, body, true).reason).toBe('invalid_response')
+    const fields = publicFixture('review-invalid-parameter.json')
+    expect(readError(400, fields, true)).toEqual({ kind: 'error', reason: 'invalid_parameter', status: 400,
+      fields: ['receipt.total', 'lines.0.quantity', 'lines.1.source_position', 'discounts.0.line_position', 'taxes.1.tax_rate.rate'] })
+    for (const code of ['review_unavailable', 'review_resolved', 'review_busy', 'job_active']) {
+      expect(readError(409, { error: { code, message: 'Текст сервера.' } }, true)).toEqual({ kind: 'error', reason: code, status: 409 })
+      expect(readError(409, { error: { code, message: 'Текст сервера.' } }, false).reason).toBe('invalid_response')
+    }
   })
   describe('issue reason/severity/context', () => {
     const image = publicFixture('receipt-image.json') as ReceiptImageDetail
