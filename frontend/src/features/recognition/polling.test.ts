@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { JobDetail } from '../../api/recognition'
-import { isJobDetail } from '../../api/recognition-schema'
+import type { ExecutorState, JobDetail, RecognitionCsrf } from '../../api/recognition'
+import { isJobDetail, isRecognitionCsrf } from '../../api/recognition-schema'
 import { publicFixture } from '../../api/recognition-test-support'
 import type { LocalApiResult } from '../../api/types'
-import { acceptJob, isActive } from './labels'
+import { acceptJob, isActive, isExecutorAbsent } from './labels'
 import { createPollingRequest } from './polling'
 import type { PollEnvironment } from './polling'
 
@@ -125,6 +125,59 @@ describe('polling lifetime with the public job fixture (Node, no browser)', () =
     late.resolve({ kind: 'error', reason: 'server' }); await flush()
     expect(request.getSnapshot()).toMatchObject({ kind: 'ok' })
     request.dispose(); expect(vi.getTimerCount()).toBe(0)
+  })
+  describe('upload conditions (csrf) follow the worker state', () => {
+    const csrf = (state: ExecutorState): RecognitionCsrf => {
+      const data = publicFixture('csrf.json')
+      if (!isRecognitionCsrf(data)) throw new Error('Invalid fixture')
+      return { ...data, executor: { available: state !== 'absent', state, last_seen_at: null } }
+    }
+    const answer = (state: ExecutorState) => ({ kind: 'ok' as const, data: csrf(state) })
+    it.each(['idle', 'busy', 'unknown'] as const)('does not poll while the worker is %s', async (state) => {
+      const load = vi.fn().mockResolvedValue(answer(state))
+      const request = createPollingRequest<RecognitionCsrf>(load, isExecutorAbsent)
+      request.start(); await flush(); await vi.advanceTimersByTimeAsync(60000)
+      expect(load).toHaveBeenCalledTimes(1); expect(vi.getTimerCount()).toBe(0)
+      request.dispose()
+    })
+    it.each(['idle', 'busy', 'unknown'] as const)('polls every 2 seconds while absent and stops once the worker is %s', async (state) => {
+      const load = vi.fn().mockResolvedValueOnce(answer('absent')).mockResolvedValueOnce(answer('absent')).mockResolvedValue(answer(state))
+      const request = createPollingRequest<RecognitionCsrf>(load, isExecutorAbsent)
+      request.start(); await flush()
+      await vi.advanceTimersByTimeAsync(1999); expect(load).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(1); expect(load).toHaveBeenCalledTimes(2)
+      expect(request.getSnapshot()).toMatchObject({ kind: 'ok', data: { executor: { state: 'absent' } } })
+      await vi.advanceTimersByTimeAsync(2000); expect(load).toHaveBeenCalledTimes(3)
+      expect(request.getSnapshot()).toMatchObject({ kind: 'ok', data: { executor: { state } }, refreshing: false })
+      await vi.advanceTimersByTimeAsync(60000); expect(load).toHaveBeenCalledTimes(3); expect(vi.getTimerCount()).toBe(0)
+      request.dispose()
+    })
+    it('resumes after a manual refresh finds the worker absent again', async () => {
+      const load = vi.fn().mockResolvedValueOnce(answer('idle')).mockResolvedValue(answer('absent'))
+      const request = createPollingRequest<RecognitionCsrf>(load, isExecutorAbsent)
+      request.start(); await flush(); await vi.advanceTimersByTimeAsync(10000); expect(load).toHaveBeenCalledTimes(1)
+      request.refresh(); await flush(); expect(load).toHaveBeenCalledTimes(2)
+      await vi.advanceTimersByTimeAsync(2000); expect(load).toHaveBeenCalledTimes(3)
+      request.dispose()
+    })
+    it('stops on unmount and while an upload is being sent', async () => {
+      const load = vi.fn().mockResolvedValue(answer('absent'))
+      const request = createPollingRequest<RecognitionCsrf>(load, isExecutorAbsent)
+      request.start(); await flush(); await vi.advanceTimersByTimeAsync(2000); expect(load).toHaveBeenCalledTimes(2)
+      request.pause(); await vi.advanceTimersByTimeAsync(60000); expect(load).toHaveBeenCalledTimes(2)
+      request.resume(false); await vi.advanceTimersByTimeAsync(2000); expect(load).toHaveBeenCalledTimes(3)
+      request.dispose(); await vi.advanceTimersByTimeAsync(60000)
+      expect(load).toHaveBeenCalledTimes(3); expect(vi.getTimerCount()).toBe(0)
+    })
+    it('keeps the last conditions and backs off when the API stops answering', async () => {
+      const load = vi.fn().mockResolvedValueOnce(answer('absent')).mockResolvedValue({ kind: 'error', reason: 'network' })
+      const request = createPollingRequest<RecognitionCsrf>(load, isExecutorAbsent)
+      request.start(); await flush(); await vi.advanceTimersByTimeAsync(2000)
+      expect(request.getSnapshot()).toMatchObject({ kind: 'ok', refreshError: { reason: 'network' } })
+      await vi.advanceTimersByTimeAsync(2000); expect(load).toHaveBeenCalledTimes(3)
+      await vi.advanceTimersByTimeAsync(3999); expect(load).toHaveBeenCalledTimes(3)
+      request.dispose()
+    })
   })
   it('refreshes a page of active jobs once per tick, without detail reads', async () => {
     const load = vi.fn().mockResolvedValue({ kind: 'ok', data: [job(), { ...job(), id: 32 }] })

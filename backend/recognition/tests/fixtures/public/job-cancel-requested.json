@@ -13,6 +13,7 @@
   "stalled": false,
   "executor": {
     "available": true,
+    "state": "busy",
     "last_seen_at": "2026-10-04T12:35:00Z"
   },
   "progress": {

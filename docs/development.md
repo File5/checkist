@@ -107,7 +107,7 @@ npm.cmd run dev
 
 ## Распознавание: запуск для клиента
 
-API и OCR-worker должны использовать **одни и те же** DB и абсолютный MEDIA_ROOT. Private scratch — другой каталог, вне MEDIA; оба каталога доступны текущему host-пользователю. Задания выполняет `recognition_worker`, Celery нужен только прежним health-проверкам. Health 200 не означает, что OCR-worker запущен. `executor.available=false` также бывает у живого idle-worker: публичный executor основан только на executing lease.
+API и OCR-worker должны использовать **одни и те же** DB и абсолютный MEDIA_ROOT. Private scratch — другой каталог, вне MEDIA; оба каталога доступны текущему host-пользователю. Задания выполняет `recognition_worker`, Celery нужен только прежним health-проверкам. Health 200 не означает, что OCR-worker запущен. Состояние воркера отдаёт `executor.state` в ответах recognition API: `absent` — воркер этой БД не запущен и ничего не выполняется, `idle` — запущен и ждёт заданий, `busy` — есть задание с действующей lease; `executor.available` = `state != "absent"`. Признак `idle` — сессионная advisory-блокировка, которую `recognition_worker` держит в своей БД: API с другой БД (dev вместо QA) этот воркер не увидит. Проверка: `curl.exe -sS --max-time 15 http://127.0.0.1:18000/api/recognition/csrf/` до и после запуска `recognition_worker --fake-scenario success2`; сценарий — [verification.md](verification.md#состояние-воркера-executorstate).
 
 ### Настройки recognition
 

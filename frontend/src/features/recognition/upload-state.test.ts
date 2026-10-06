@@ -5,7 +5,7 @@ import { publicFixture } from '../../api/recognition-test-support'
 import type { LocalApiResult } from '../../api/types'
 import { errorText } from './labels'
 import { createPreview } from './preview'
-import { createUpload, getJobNotice, setJobNotice, uploadMessage, validateFile } from './upload-state'
+import { createUpload, getJobNotice, retryNotice, setJobNotice, uploadMessage, validateFile } from './upload-state'
 
 const fixture = <T,>(name: string, guard: (value: unknown) => value is T) => {
   const value = publicFixture(name); if (!guard(value)) throw new Error('Invalid fixture'); return value
@@ -77,10 +77,22 @@ describe('upload and object URL lifecycle', () => {
     await upload.submit(file(), csrf().limits)
     expect(upload.getSnapshot()).toMatchObject({ kind: 'error', message: errorText({ kind: 'error', reason }, true) })
   })
-  it('warns about uncertain upload result and executor availability without blocking', () => {
+  it.each(['idle', 'busy', 'absent', 'unknown'] as const)('says nothing about the worker in the upload and retry notices when it is %s', async (state) => {
+    for (const reused of [false, true]) {
+      const response = photo(reused); response.job.executor = { available: state !== 'absent', state, last_seen_at: null }
+      response.job.status = 'queued'
+      const message = uploadMessage(response)
+      expect(message).toBe(reused ? 'Это фото уже было загружено. Открыто последнее задание этого фото.' : 'Фото загружено. Задание принято.')
+      expect(message).not.toMatch(/воркер|очеред/i)
+      const upload = createUpload(async () => ({ kind: 'ok', data: response }), vi.fn(), vi.fn(), vi.fn())
+      await upload.submit(file(), csrf().limits)
+      expect(upload.getSnapshot()).toMatchObject({ kind: 'success', message })
+    }
+    expect(retryNotice).toBe('Создано новое задание обработки.')
+  })
+  it('warns about an uncertain upload result and keeps the notice of one job only', () => {
     expect(errorText({ kind: 'error', reason: 'timeout' }, true)).toContain('могло выполниться')
-    const response = photo(); response.job.executor.available = false
-    expect(uploadMessage(response)).toContain('ждать в очереди')
+    const response = photo()
     setJobNotice(response.job.id, uploadMessage(response))
     expect(getJobNotice(response.job.id)).toBe(uploadMessage(response))
     expect(getJobNotice(response.job.id + 1)).toBeUndefined()

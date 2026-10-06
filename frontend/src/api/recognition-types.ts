@@ -12,8 +12,11 @@ export type RecognitionCode =
   | 'geometry_requires_review' | 'clipped' | 'overlap' | 'timeout' | 'worker_lost' | 'storage_unavailable'
   | 'provider_error' | 'invalid_output' | 'auth_required' | 'rate_limited' | 'provider_unavailable'
   | 'network_unavailable' | 'configuration_error' | 'invalid_input' | 'cancelled' | 'no_receipts' | 'too_many_receipts'
-/** An idle worker has no public heartbeat. False does not prohibit upload/retry. */
-export type Executor = { available: boolean; last_seen_at: ISODateTime | null }
+export const executorStates = ['idle', 'busy', 'absent'] as const
+/** 'unknown' never comes from the wire: the guard substitutes it for a missing or unlisted state. */
+export type ExecutorState = typeof executorStates[number] | 'unknown'
+/** Absent does not prohibit upload/retry. last_seen_at is the heartbeat of a running job, null for an idle worker. */
+export type Executor = { available: boolean; state: ExecutorState; last_seen_at: ISODateTime | null }
 export type RecognitionLimits = { formats: ImageFormat[]; max_bytes: number; max_pixels: number; max_receipts: number }
 export type RecognitionCsrf = { csrf_token: string; limits: RecognitionLimits; executor: Executor }
 export type Photo = {
