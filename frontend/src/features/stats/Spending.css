@@ -22,7 +22,7 @@
 .spending-store-list span { min-width: 0; }
 .spending-reference-error { display: grid; gap: 10px; justify-items: start; color: var(--ck-warning-text); }
 .spending-actions { display: flex; flex-wrap: wrap; gap: 12px; }
-.spending-secondary { justify-self: start; background: var(--ck-surface); color: var(--ck-link); }
+.spending-secondary { justify-self: start; background: var(--ck-surface); border-color: var(--ck-border-field); color: var(--ck-link); }
 .spending-secondary:hover:not(:disabled) { background: var(--ck-surface-raised); }
 .spending-path { display: grid; gap: 12px; justify-items: start; min-width: 0; }
 .spending-crumbs { align-items: center; gap: 4px 8px; }

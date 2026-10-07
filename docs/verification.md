@@ -215,6 +215,51 @@ node frontend/scripts/check_stats_proxy.mjs preview http://127.0.0.1:15173
 
 `403` настоящим HTTP — отдельным сервером с тем же environment и `$env:ALLOW_LOCAL_RECOGNITION_API='0'` на свободном порту: `curl.exe -s -o NUL -w "%{http_code}" "http://127.0.0.1:18001/api/stats/spending/"` — `403`, а `…/api/products/1/prices/series/?date_from=2025-01-01` — `200`.
 
+### Фактические результаты: редизайн клиента, итог (И), 2026-10-07
+
+Ветка `orca/task_muymx5pv2d` от состояния, куда слиты все подзадачи редизайна: токены и тема (Т1), логотип (Л), оболочка и маршрут `/login` (О), экран входа (В), CSS экранов и графиков на токенах (Ф1–Ф4). Windows 11, Node v24.18.0, npm 11.16.0, PowerShell, каталог `frontend/`. Изменён только клиент и документы; сервер, контракт, адаптеры, имена классов и разметка экранов не менялись.
+
+Найдены и исправлены два стыковочных дефекта.
+
+1. Токен `--ck-logo-bg` был `#111111`, а фон файлов логотипа, измеренный в `frontend/src/assets/brand/README.md`, — `#0f0f0e`. Токен приведён к `#0f0f0e` в `frontend/src/theme/tokens.css`; ожидание значения в `frontend/src/theme/theme.test.ts` заменено на то же значение (проверка не снята и не ослаблена); автономное превью входа пересобрано.
+2. Контурные кнопки экранов и общие правила кнопки из оболочки не сошлись. Оболочка добавила `button:active:not(:disabled)` с заливкой бренда; по специфичности оно перекрывало класс контурной кнопки (`.ck-class-secondary`, `.ck-merge-secondary`, `.stats-secondary`, `.spending-secondary`, `.product-secondary`, `.receipt-secondary`, `.ck-review-secondary`, `.ck-catalog-reset`, кнопки пагинации чеков и дублей), и при нажатии без наведения (клавиша Space, касание) под текстом цвета ссылки появлялась тёмно-красная заливка — в светлой теме тёмно-красный текст на тёмно-красном. То же правило для наведения перекрашивало рамку контурной кнопки в цвет бренда. Кроме того, у четырёх классов (`.ck-class-secondary`, `.ck-merge-secondary`, `.stats-secondary`, `.spending-secondary`) рамка не была задана и наследовала `--ck-brand` — 2,41:1 к панели в тёмной теме при норме 3:1 для контурной кнопки. Исправлено в месте причины: в `frontend/src/App.css` состояния наведения и нажатия записаны через `:where()` (`button:where(:hover:not(:disabled))`, `button:where(:active:not(:disabled))`) и весят как `button`, поэтому класс экрана сохраняет свой фон и рамку; четырём классам добавлено `border-color: var(--ck-border-field)`. Имена классов, селекторы экранов и геометрия не менялись. Это исправление проверено только чтением правил и расчётом специфичности — вид при наведении и нажатии принимает человек (сценарий 4, шаг 6).
+
+Других зашитых цветов, несогласованных токенов и забытых импортов поиск не нашёл.
+
+Проверено и прошло (на окончательном состоянии ветки, после исправления):
+
+| Команда | Результат |
+| --- | --- |
+| `npm.cmd ci` | exit 0, 188 пакетов, 0 уязвимостей |
+| `npm.cmd run lint` | exit 0 |
+| `npm.cmd run test` | exit 0, 2828 тестов / 77 файлов (до редизайна — 2741 / 72) |
+| `npm.cmd run build` | exit 0, 177 модулей |
+| `node src/features/login/preview/build.mjs` | exit 0, `preview/index.html` — 525 947 символов |
+
+Текстовый поиск по исходникам (статический аудит, не запуск):
+
+| Что искали | Результат |
+| --- | --- |
+| hex / `rgb()` / `hsl()` в `frontend/src/**/*.css`, кроме `theme/tokens.css` и каталогов превью | не найдено; именованных цветов (`white`, `black`, `red` …) в значениях свойств тоже нет |
+| `var(--ck-*)`, не определённые в `tokens.css` либо в самом файле | не найдено: используются только токены договора и локальные `--ck-chart-*`, `--ck-c`, `--stats-effect-*` |
+| `localStorage` / `sessionStorage` в `frontend/src` вне `theme/` | в рабочем коде нет; встречается только в собранном снимке `features/login/preview/index.html` (внутри него тот же код темы) и во встроенном скрипте `frontend/index.html` |
+| состав `dist/` | `favicon.svg` (325 байт), `apple-touch-icon.png` (56 164), `index.html`, `assets/emblem-96` и `emblem-192` `.webp`, `assets/logo-640` и `logo-1280` `.webp`, шрифт Oswald `.woff2` (32 484), по одному файлу CSS (68 кБ) и JS (582 кБ); исходника `logo-source.png` (1 584 643 байта) нет, файла крупнее 582 кБ нет |
+| маршрут `/login` | `App.tsx` импортирует `LoginPage` из `features/login` и для маршрута `login` возвращает его без оболочки; заглушки нет |
+| переключатель темы на шапке и на экране входа | в шапке — `placement="header"` с токенами `--ck-header-*` (текст на полосе 15,78:1 по расчёту в `tokens.css`), на экране входа — токены страницы; это сверка правил CSS, не вид на экране |
+
+Проверено и не прошло: ничего.
+
+Не проверено и почему:
+
+- **Экраны в браузере не открывались** — автоматизация браузера запрещена правилами проекта. Вид в обеих темах, контраст на экране, отсутствие вспышки темы при загрузке, логотип и эмблема на подложке, графики, узкий экран, масштаб 200 %, клавиатура, «уменьшить движение», высококонтрастный режим Windows, значок вкладки и экранный диктор принимает человек по [frontend/REDESIGN_ACCEPTANCE.md](../frontend/REDESIGN_ACCEPTANCE.md) (11 сценариев).
+- **Backend-тесты, миграции, `check_services` и proxy-скрипты** (`check_stats_proxy.mjs`, `check_product_classifications_proxy.mjs`, `check_product_merges_proxy.mjs`, `check_review_proxy.mjs`, `check_recognition_proxy.mjs`, `check_health_proxy.mjs`) не запускались: сервер, контракт и адаптеры не менялись — действуют прежние результаты. Dev-сервер Vite и Django не запускались.
+- Контрасты в `tokens.css` посчитаны по формуле WCAG авторами подзадачи токенов; в этой задаче не пересчитывались.
+- Статические превью `frontend/*-preview/`, `frontend/src/features/merges/preview/` и `frontend/src/features/classification/preview/` не пересобирались: это снимки прежнего зелёного оформления.
+
+Замечания для решения человеком (не дефекты сборки): ироничных фраз на экране оболочки две (строка над заголовком и подвал), на «Странице не найдена» и на экране входа — три, то есть правило «не больше одной на экран» выполнено не буквально; отдельного вида опасного действия нет — «Отклонить», «Отменить слияние», «Удалить …» выглядят как остальные контурные кнопки.
+
+Отложено в отдельную глобальную задачу: глубокая мобильная переработка — карточный вид таблиц, закреплённые панели действий, загрузка с камеры, графики под палец, нижняя навигация.
+
 ### Фактические результаты: слияние статистики и категорий в main, 2026-10-07
 
 Ветка статистики `feature/run_mux354c8h8-podschet-statistiki` слита в `main`, куда раньше вошли предположения категорий. Конфликты были только там, где обе ветки добавляли своё рядом: маршруты `backend/api/urls.py`, `frontend/src/navigation/routes.ts` и `index.ts`, `frontend/src/pages/types.ts`, `frontend/src/App.tsx` и документы; оставлены обе стороны, код экранов и эндпоинтов не менялся. Проверки — на слитом дереве до коммита слияния, Windows, PowerShell, отдельный QA-проект `checkist_qa_f7` (Postgres 25477, Redis 16477), `RECEIPT_OCR_PROVIDER=fake`, `PRODUCT_MERGE_AUTO_DETECT=0`, `PRODUCT_CLASSIFICATION_AUTO_SUGGEST=0`.
@@ -998,7 +1043,7 @@ curl.exe -s http://127.0.0.1:18000/api/product-classifications/status/
 
 ### Фактические результаты: читаемая активная кнопка фильтра предположений, 2026-10-07
 
-Ветка `orca/task_muy9r8uhu3` от main после слияния статистики и категорий. Windows 11, Node v24.18.0, npm 11.16.0. Исправление только в `frontend/src/features/classification/Classification.css`: общее правило цвета ссылок экрана `/catalog/classification` перекрашивало текст активной кнопки фильтра в цвет её фона (`#246044` на `#246044`); селектор теперь `.ck-class a:not(.action-link):not([aria-current])`. Разметка, сервер, контракт и адаптеры не менялись.
+Ветка `orca/task_muy9r8uhu3` от main после слияния статистики и категорий. Windows 11, Node v24.18.0, npm 11.16.0. Исправление только в `frontend/src/features/classification/Classification.css`: общее правило цвета ссылок экрана `/catalog/classification` перекрашивало текст активной кнопки фильтра в цвет её фона (`#246044` на `#246044` — прежняя зелёная схема; после редизайна цвета берутся из токенов, правило о селекторе действует); селектор теперь `.ck-class a:not(.action-link):not([aria-current])`. Разметка, сервер, контракт и адаптеры не менялись.
 
 #### Проверено и прошло
 
@@ -1011,7 +1056,7 @@ PowerShell, из `frontend/`, `VITE_API_BASE_URL=/api`, на окончател�
 | `npm.cmd run test` | 0 | 73 файла, 2743 теста (было 72 / 2741) |
 | `npm.cmd run build` | 0 | `tsc -b` и Vite build, 164 модуля |
 
-Новый `features/classification/classification-css.test.ts` (2 теста) читает текст `Classification.css`: у `.ck-class-filter a[aria-current]` есть `color: #fff` и `background: #246044`; единственное правило с цветом, чей селектор начинается с `.ck-class a`, исключает `[aria-current]`. До правки CSS: `npm.cmd run test -- src/features/classification/classification-css.test.ts` — exit 1, 1 отказ из 2 (второй тест), как и должно быть. Ожидания прежних тестов не менялись.
+Новый `features/classification/classification-css.test.ts` (2 теста) читает текст `Classification.css`: у `.ck-class-filter a[aria-current]` есть `color: #fff` и `background: #246044` (после редизайна тест ждёт `var(--ck-accent-text)` и `var(--ck-accent-bg)`); единственное правило с цветом, чей селектор начинается с `.ck-class a`, исключает `[aria-current]`. До правки CSS: `npm.cmd run test -- src/features/classification/classification-css.test.ts` — exit 1, 1 отказ из 2 (второй тест), как и должно быть. Ожидания прежних тестов не менялись.
 
 #### Проверено и не прошло
 

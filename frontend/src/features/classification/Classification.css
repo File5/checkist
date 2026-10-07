@@ -5,7 +5,7 @@
 .ck-class-list, .ck-class-run-actions { display: grid; gap: 16px; min-width: 0; }
 .ck-class-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
 .ck-class-actions > * { max-width: 100%; }
-.ck-class-secondary { background: var(--ck-surface); color: var(--ck-link); }
+.ck-class-secondary { background: var(--ck-surface); border-color: var(--ck-border-field); color: var(--ck-link); }
 .ck-class-secondary:hover:not(:disabled) { background: var(--ck-surface-raised); }
 .ck-class-note { color: var(--ck-text-muted); font-size: 0.9rem; }
 .ck-class-subtext { display: block; color: var(--ck-text-muted); font-size: 0.85rem; font-weight: 400; margin-top: 4px; }

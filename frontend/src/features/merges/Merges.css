@@ -4,7 +4,7 @@
 .ck-merge-form { display: grid; gap: 18px; min-width: 0; }
 .ck-merge-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
 .ck-merge-actions > * { max-width: 100%; }
-.ck-merge-secondary { background: var(--ck-surface); color: var(--ck-link); }
+.ck-merge-secondary { background: var(--ck-surface); border-color: var(--ck-border-field); color: var(--ck-link); }
 .ck-merge-secondary:hover:not(:disabled) { background: var(--ck-surface-raised); }
 .ck-merge-field { display: grid; gap: 6px; min-width: 0; }
 .ck-merge-field label, .ck-merge legend { font-weight: 600; }

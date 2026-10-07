@@ -41,7 +41,7 @@
 .stats-check input { flex: 0 0 auto; width: 20px; height: 20px; min-height: 0; margin: 2px 0 0; accent-color: var(--ck-brand); }
 .stats-reference-error { display: grid; justify-items: start; gap: 10px; }
 .stats-actions { display: flex; flex-wrap: wrap; gap: 12px; }
-.stats-secondary { background: var(--ck-surface); color: var(--ck-link); }
+.stats-secondary { background: var(--ck-surface); border-color: var(--ck-border-field); color: var(--ck-link); }
 .stats-secondary:hover:not(:disabled) { background: var(--ck-surface-raised); }
 
 .stats-currency { display: grid; gap: 18px; min-width: 0; padding-top: 18px; border-top: 1px solid var(--ck-divider); }
