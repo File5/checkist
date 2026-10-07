@@ -105,6 +105,7 @@ INSTALLED_APPS = [
     "api.apps.ApiConfig",
 ]
 MIDDLEWARE = [
+    "config.robots.NoIndexMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "config.requests.ApiCommonMiddleware",
@@ -279,6 +280,11 @@ RECEIPT_OCR_MAX_ATTEMPTS = env_integer("RECEIPT_OCR_MAX_ATTEMPTS", 2, 1, 2)
 RECEIPT_IMAGE_MAX_BYTES = env_integer("RECEIPT_IMAGE_MAX_BYTES", 20971520, 20971520, 20971520)
 RECEIPT_IMAGE_MAX_PIXELS = env_integer("RECEIPT_IMAGE_MAX_PIXELS", 40000000, 40000000, 40000000)
 RECEIPT_IMAGE_MAX_RECEIPTS = env_integer("RECEIPT_IMAGE_MAX_RECEIPTS", 10, 10, 10)
+LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
+# A served host is trusted only as the exact https origin of DJANGO_ALLOWED_HOSTS: no port, no path.
+served_origins = {
+    f"https://{host.lower()}" for host in ALLOWED_HOSTS if host.strip("[]").lower() not in LOOPBACK_HOSTS
+}
 csrf_origins = os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS", "")
 CSRF_TRUSTED_ORIGINS = []
 if csrf_origins:
@@ -287,12 +293,39 @@ if csrf_origins:
         try:
             parsed = urlsplit(origin)
             valid = (
-                parsed.scheme in {"http", "https"} and parsed.hostname in {"127.0.0.1", "localhost", "::1"}
+                parsed.scheme in {"http", "https"} and parsed.hostname in LOOPBACK_HOSTS
                 and parsed.port is not None and not parsed.path and not parsed.query and not parsed.fragment
                 and not parsed.username and not parsed.password and not any(char.isspace() for char in origin)
             )
         except ValueError:
             valid = False
-        if not valid:
-            raise ImproperlyConfigured("DJANGO_CSRF_TRUSTED_ORIGINS: expected exact local origins with ports.")
+        if not valid and origin not in served_origins:
+            raise ImproperlyConfigured(
+                "DJANGO_CSRF_TRUSTED_ORIGINS: expected exact local origins with ports "
+                "or https://<host from DJANGO_ALLOWED_HOSTS> without port and path."
+            )
         CSRF_TRUSTED_ORIGINS.append(origin)
+
+
+def env_flag(name, default):
+    value = env_text(name, default).lower()
+    if value not in {"0", "1", "true", "false"}:
+        raise ImproperlyConfigured(f"{name}: expected 0, 1, true or false.")
+    return value in {"1", "true"}
+
+
+# Server deployment. Defaults follow DEBUG, so a local DEBUG=1 run is unchanged.
+# Trust X-Forwarded-Proto / X-Forwarded-For only behind a proxy that overwrites them.
+TRUST_PROXY = env_flag("DJANGO_TRUST_PROXY", "0")
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https") if TRUST_PROXY else None
+SECURE_SSL_REDIRECT = TRUST_PROXY
+SESSION_COOKIE_SECURE = CSRF_COOKIE_SECURE = env_flag("DJANGO_SECURE_COOKIES", "0" if DEBUG else "1")
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_SAMESITE = "Lax"
+# Start small and raise after acceptance: a browser remembers the value for the whole period.
+SECURE_HSTS_SECONDS = env_integer("DJANGO_HSTS_SECONDS", 0 if DEBUG else 3600, 0, 63072000)
+# The domain may have foreign subdomains.
+SECURE_HSTS_INCLUDE_SUBDOMAINS = False
+SECURE_HSTS_PRELOAD = False
+STATIC_ROOT = env_directory("DJANGO_STATIC_ROOT", BASE_DIR.parent / "staticfiles")
