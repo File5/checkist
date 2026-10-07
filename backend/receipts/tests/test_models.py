@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from django.db import IntegrityError, transaction
 from django.db.models import ProtectedError
-from django.test import TestCase, tag
+from django.test import SimpleTestCase, TestCase, tag
 
 from catalog.models import Category, GenericProduct, Product
 from catalog.units import BaseUnit, Unit
@@ -362,3 +362,8 @@ class CascadeTests(ReceiptTestCase):
             with transaction.get_connection().cursor() as cursor:
                 cursor.execute("DELETE FROM stores_store WHERE id = %s", [self.store.pk])
                 cursor.execute("SET CONSTRAINTS ALL IMMEDIATE")
+
+
+class VerboseNamePluralTests(SimpleTestCase):
+    def test_receipt_tax(self):
+        self.assertEqual(ReceiptTax._meta.verbose_name_plural, "receipt taxes")

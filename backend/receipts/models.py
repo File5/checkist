@@ -174,6 +174,7 @@ class ReceiptTax(models.Model):
     gross = models.DecimalField(max_digits=14, decimal_places=2)
 
     class Meta:
+        verbose_name_plural = "receipt taxes"
         constraints = [
             models.UniqueConstraint(
                 fields=["receipt", "tax_rate"],
