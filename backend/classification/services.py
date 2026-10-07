@@ -18,6 +18,12 @@ The one refusal that saves something is the reconciliation of a record
 (``_reconcile``): a record that lost its product, whose product was moved by a
 human or whose snapshot is stale is updated and committed, and only then the
 operation raises ``ClassificationResolved`` / ``ClassificationChanged``.
+
+``Product.generic`` is written in four places only: ``apply`` (the product has
+the service generic product), ``confirm`` with another generic product (the
+decision of a human), and ``reject`` / ``cancel_pending`` through
+``_return_product``. The reconciliation, the cleanup and the merge step never
+write it.
 """
 import uuid
 from collections import Counter, defaultdict
@@ -433,20 +439,14 @@ def _snapshot(generic, session):
 
 
 def _orphan(record, session):
-    """The product is gone: the record moves to the merge survivor or is closed."""
+    """The product is gone: the record is closed, and the merge survivor, if any, is left as it is.
+
+    The record never moves here. Whether the survivor owes its value to this
+    suggestion is known only to the merge step (``after_merge_confirmed``): the
+    journal of a merge keeps the survivor's facts as they are after the merge.
+    """
     successor_id = _successor(record.product_ref)
     successor = _lock_products([successor_id]).get(successor_id) if successor_id is not None else None
-    if successor is not None and successor.generic_id == record.suggested_generic_ref \
-            and not ProductClassification.objects.filter(active_product=successor).exists():
-        if record.origin_product_ref is None:
-            record.origin_product_ref = record.product_ref
-        record.product_ref, record.active_product = successor.pk, successor
-        record.product_name, record.product_facts = successor.name, _facts(successor)
-        (record.suggested_generic_name, record.suggested_base_unit,
-         record.suggested_category_path) = _snapshot(successor.generic, session)
-        record.version += 1
-        record.save()
-        return _CHANGED
     _close(
         record, Status.SUPERSEDED,
         Resolution.MERGED if successor_id is not None else Resolution.PRODUCT_REMOVED,
@@ -458,10 +458,10 @@ def _orphan(record, session):
 def _reconcile(records, session):
     """Bring locked pending records in line with the catalog; ``{record id: outcome}``.
 
-    Outcomes: the record moved to a merge survivor or its snapshot was updated
-    (``changed``); the record was closed as superseded (``resolved``). Records in
-    line with the catalog are absent from the result. The catalog itself only
-    loses created records that became empty.
+    Outcomes: the snapshot of the record was updated (``changed``); the record
+    was closed as superseded (``resolved``). Records in line with the catalog
+    are absent from the result. ``Product.generic`` is never written here; the
+    catalog only loses created records that became empty.
     """
     outcomes, touched = {}, []
     pending = [record for record in records if record.status == Status.PENDING]
@@ -701,7 +701,14 @@ def _service_generic(session):
 
 
 def _return_product(record, product, session):
-    """Put the product back into the generic product it had before the suggestion."""
+    """Put the product back into the generic product it had before the suggestion.
+
+    Only for a pending record after its reconciliation: the product still has
+    the suggested value, and that value was written by the mechanism — by
+    ``apply`` to this product, or by a merge that completed the empty fact of
+    this product with the suggestion (``after_merge_confirmed``, which then
+    stores this product's own previous value in the record).
+    """
     previous = GenericProduct.objects.filter(pk=record.previous_generic_ref).first() or _service_generic(session)
     product.generic = previous
     product.save(update_fields=["generic"])
@@ -829,21 +836,77 @@ def confirm_many(items):
     return list(ProductClassification.objects.filter(pk__in=index).order_by("pk"))
 
 
-def after_merge_confirmed(*, target_id, absorbed_ids):
+def _own_values(target_id, absorbed_ids, records):
+    """Generic products the absorbed products had on their own, not as a pending suggestion.
+
+    Read from the journal of the confirmed merge: the snapshot of an absorbed
+    record is taken right before the merge.
+    """
+    suggested = {(record.product_ref, record.suggested_generic_ref) for record in records}
+    values = set()
+    for product_ref, facts in ProductMergeMember.objects.filter(
+        product_ref__in=absorbed_ids, state=ProductMergeMember.State.ACTIVE,
+        group__status=ProductMerge.Status.CONFIRMED, group__target_ref=target_id,
+    ).values_list("product_ref", "facts"):
+        generic = (facts or {}).get("generic") or {}
+        if not is_service_generic(generic.get("name")) and (product_ref, generic.get("id")) not in suggested:
+            values.add(generic.get("id"))
+    return values
+
+
+def _move(record, target, previous, session):
+    """The pending record follows the suggestion to the merge survivor that received it."""
+    if record.origin_product_ref is None:
+        record.origin_product_ref = record.product_ref
+    record.product_ref, record.active_product = target.pk, target
+    record.product_name, record.product_facts = target.name, _facts(target)
+    # What a rejection returns the survivor to is the survivor's own previous value.
+    record.previous_generic_ref, record.previous_generic_name = previous.pk, previous.name
+    record.previous_generic_base_unit = previous.base_unit
+    (record.suggested_generic_name, record.suggested_base_unit,
+     record.suggested_category_path) = _snapshot(target.generic, session)
+    record.version += 1
+    record.save()
+
+
+def after_merge_confirmed(*, target_id, absorbed_ids, target_generic_before):
     """Step of ``merges.services.confirm``: records of the absorbed products follow the merge.
 
-    A pending record of an absorbed product moves to the surviving product when
-    the survivor now has the suggested generic product and no pending record of
-    its own; otherwise it is closed as ``merged``. Then the survivor's own
-    pending record is reconciled (``changed`` when the human chose another
-    value). Runs inside the merge transaction, which already holds the mutex.
+    ``target_generic_before`` — id of the generic product the survivor had
+    before the merge completed its facts. A pending record of an absorbed
+    product moves to the survivor only when the survivor's value comes from the
+    suggestion: before the merge the survivor had the service generic product,
+    now it has the suggested one, no absorbed product had that value on its own
+    (set by a human or confirmed) and the survivor has no pending record. In
+    every other case the record is closed as ``merged`` and the survivor is not
+    touched: a value it had before the merge is never undone by a rejection.
+    Then the survivor's own pending record is reconciled (``changed`` when the
+    human chose another value). Runs inside the merge transaction, which
+    already holds the mutex.
     """
+    absorbed_ids = list(absorbed_ids)
     with _mutation() as session:
-        for record in _lock_records(list(
-            ProductClassification.objects.filter(status=Status.PENDING, product_ref__in=list(absorbed_ids))
+        records = _lock_records(list(
+            ProductClassification.objects.filter(status=Status.PENDING, product_ref__in=absorbed_ids)
             .values_list("pk", flat=True)
-        )):
-            _reconcile([record], session)
+        ))
+        if records:
+            target = _lock_products([target_id]).get(target_id)
+            previous = GenericProduct.objects.filter(pk=target_generic_before).first()
+            inherited = previous is not None and is_service_generic(previous.name)
+            own = _own_values(target_id, absorbed_ids, records) if inherited else set()
+            touched = []
+            for record in records:
+                if record.active_product_id is not None:
+                    _reconcile([record], session)  # the product is still there: not absorbed after all
+                elif inherited and target is not None and target.generic_id == record.suggested_generic_ref \
+                        and record.suggested_generic_ref not in own \
+                        and not ProductClassification.objects.filter(active_product=target).exists():
+                    _move(record, target, previous, session)
+                else:
+                    _orphan(record, session)
+                    touched.append(record.suggested_generic_ref)
+            _cleanup(touched, session)
         _reconcile(_lock_records(list(
             ProductClassification.objects.filter(status=Status.PENDING, active_product_id=target_id)
             .values_list("pk", flat=True)

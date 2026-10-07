@@ -395,13 +395,18 @@ def _resolve(group, status):
     group.save(update_fields=["status", "resolved_at", "version", "target_ref"])
 
 
-def _notify_classification(target_id, absorbed_ids):
-    """Classification records of the merged products, in a savepoint; never fails the merge."""
+def _notify_classification(target_id, absorbed_ids, generic_before):
+    """Classification records of the merged products, in a savepoint; never fails the merge.
+
+    ``generic_before`` — id of the generic product the survivor had before its facts were completed.
+    """
     try:
         with transaction.atomic():
             from classification import services as classification  # lazy: classification imports merges
 
-            classification.after_merge_confirmed(target_id=target_id, absorbed_ids=absorbed_ids)
+            classification.after_merge_confirmed(
+                target_id=target_id, absorbed_ids=absorbed_ids, target_generic_before=generic_before,
+            )
     except Exception as error:
         logger.error("Classification step after merge confirmation failed: %s", type(error).__name__)
 
@@ -625,6 +630,7 @@ def confirm(group_id, *, version, target_product_id, name_product_id=None, resol
                 or ProductAlias.objects.filter(product_id__in=absorbed).exists():
             raise RuntimeError("links to absorbed products remain")
         target = products[target_product_id]
+        generic_before = target.generic_id
         for name in FACT_FIELDS:
             values = {pk: _fact_value(product, name) for pk, product in products.items()}
             if name in resolutions:
@@ -645,7 +651,7 @@ def confirm(group_id, *, version, target_product_id, name_product_id=None, resol
         Product.objects.filter(pk__in=absorbed).delete()
         target.save()
         _resolve(group, Status.CONFIRMED)
-        _notify_classification(target_product_id, absorbed)
+        _notify_classification(target_product_id, absorbed, generic_before)
     return _fresh(group_id)
 
 
