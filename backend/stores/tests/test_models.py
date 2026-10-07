@@ -2,7 +2,7 @@ from decimal import Decimal
 
 from django.db import IntegrityError, transaction
 from django.db.models import ProtectedError
-from django.test import TestCase, tag
+from django.test import SimpleTestCase, TestCase, tag
 
 from stores.models import Country, Currency, Merchant, Store, TaxRate
 
@@ -260,3 +260,11 @@ class ProtectTests(TestCase):
         currency.delete()
         self.assertFalse(Country.objects.filter(pk__in=["XA", "XB"]).exists())
         self.assertFalse(Currency.objects.filter(pk="XTS").exists())
+
+
+class VerboseNamePluralTests(SimpleTestCase):
+    def test_country(self):
+        self.assertEqual(Country._meta.verbose_name_plural, "countries")
+
+    def test_currency(self):
+        self.assertEqual(Currency._meta.verbose_name_plural, "currencies")
