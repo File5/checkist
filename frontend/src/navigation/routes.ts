@@ -110,6 +110,7 @@ export type NavigableRoute = CatalogRoute
   | { kind: 'merges'; query: MergesQuery }
   | { kind: 'merge'; groupId: number }
   | { kind: 'classification'; query: ClassificationQuery }
+  | { kind: 'login' }
 
 export type Route = NavigableRoute
   | { kind: 'not-found'; path: string }
@@ -422,6 +423,7 @@ export function buildRoute(route: NavigableRoute): string {
     case 'merges': return `/catalog/merges${buildMergesQuery(route.query)}`
     case 'merge': return `/catalog/merges/${buildId(route.groupId)}`
     case 'classification': return `/catalog/classification${buildClassificationQuery(route.query)}`
+    case 'login': return '/login'
   }
 }
 
@@ -435,6 +437,7 @@ export function parseRoute(input: string | URL): Route {
   const path = url.pathname
   const normalizedPath = path === '/' ? path : path.replace(/\/$/, '')
   if (normalizedPath === '/health') return { kind: 'health' }
+  if (normalizedPath === '/login') return { kind: 'login' }
   if (normalizedPath === '/receipts/upload') return { kind: 'upload' }
   // Statistics never answer with invalid-query: a wrong value is dropped and the screen opens without it.
   if (normalizedPath === '/stats') return { kind: 'spending', query: parseSpendingQuery(url.searchParams).query }

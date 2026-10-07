@@ -11,6 +11,10 @@ import { ReceiptsPage, ReceiptPage } from './features/receipts'
 import { MergesPage, MergePage } from './features/merges'
 import { ClassificationPage } from './features/classification'
 import { SpendingPage, ReceiptsStatsPage } from './features/stats'
+import { LoginPage } from './features/login'
+import { ThemeToggle } from './theme'
+import emblem from './assets/brand/emblem-96.webp'
+import emblem2x from './assets/brand/emblem-192.webp'
 
 function pageTitle(route: Route) {
   switch (route.kind) {
@@ -28,6 +32,7 @@ function pageTitle(route: Route) {
     case 'merges': return 'Дубли товаров'
     case 'merge': return 'Группа дублей'
     case 'classification': return 'Категории товаров'
+    case 'login': return 'Вход'
     case 'invalid-query': return 'Некорректная ссылка'
     case 'not-found': return 'Страница не найдена'
   }
@@ -49,8 +54,9 @@ function pageContent({ route, returnTo }: NavigationSnapshot) {
     case 'merges': return <MergesPage query={route.query} />
     case 'merge': return <MergePage groupId={route.groupId} returnTo={returnTo} />
     case 'classification': return <ClassificationPage query={route.query} />
+    case 'login': return <LoginPage />
     case 'invalid-query': return <RequestState kind="empty" message="В адресе указаны некорректные фильтры или номер страницы. Сбросьте параметры и попробуйте снова." action={<Link className="action-link" to={route.resetTo} replace>Сбросить параметры</Link>} />
-    case 'not-found': return <RequestState kind="empty" message="Такой страницы нет. Перейдите в каталог продуктов." action={<Link className="action-link" to="/catalog">В каталог</Link>} />
+    case 'not-found': return <RequestState kind="empty" message="Такой страницы нет. Перейдите в каталог продуктов." action={<><p className="request-state-note">Наружное наблюдение результатов не дало.</p><Link className="action-link" to="/catalog">В каталог</Link></>} />
   }
 }
 
@@ -59,6 +65,7 @@ export default function App() {
   const { route } = navigation
   const heading = useRef<HTMLHeadingElement>(null)
   const content = useRef<HTMLElement>(null)
+  const mainNavigation = useRef<HTMLElement>(null)
   const previousNavigation = useRef<NavigationSnapshot | undefined>(undefined)
   const pathname = navigation.href.split(/[?#]/)[0]
   const title = pageTitle(route)
@@ -67,7 +74,9 @@ export default function App() {
     const previous = previousNavigation.current
     previousNavigation.current = navigation
     if (previous?.href.split(/[?#]/)[0] === pathname) return
-    heading.current?.focus()
+    // The login screen draws its own heading with the same id.
+    const target = heading.current ?? document.getElementById('page-heading')
+    target?.focus()
     if (!previous?.returnTo
       || !['product', 'receipt', 'job', 'merge'].includes(previous.route.kind)
       || (route.kind !== 'catalog' && route.kind !== 'category' && route.kind !== 'receipts' && route.kind !== 'jobs' && route.kind !== 'merges' && route.kind !== 'classification')
@@ -96,25 +105,36 @@ export default function App() {
   }, [navigation, pathname, route])
 
   useEffect(() => {
-    document.title = `Checkist — ${title}`
+    document.title = `Чекист — ${title}`
   }, [title])
+
+  useLayoutEffect(() => {
+    // On a narrow window the menu is one row scrolled sideways: keep the current item in view.
+    const menu = mainNavigation.current
+    const current = menu?.querySelector<HTMLElement>('[aria-current]')
+    if (!menu || !current || menu.scrollWidth <= menu.clientWidth) return
+    const offset = current.getBoundingClientRect().left - menu.getBoundingClientRect().left + menu.scrollLeft
+    menu.scrollLeft = offset - (menu.clientWidth - current.offsetWidth) / 2
+  }, [pathname])
 
   const mergesActive = route.kind === 'merges' || route.kind === 'merge'
   const classificationActive = route.kind === 'classification'
   const catalogActive = route.kind === 'catalog' || route.kind === 'category' || route.kind === 'product' || mergesActive || classificationActive
   const statsActive = route.kind === 'spending' || route.kind === 'receipts-stats'
+  if (route.kind === 'login') return <LoginPage />
   return (
-    <div className="page">
+    <>
       <a className="skip-link" href="#page-heading">К содержимому</a>
       <header className="brand-bar">
-        <Link className="brand" to="/catalog" aria-label="Checkist — каталог">
-          <svg className="brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
-            <path d="M9 5h14v23l-3-2-4 2-4-2-3 2V5Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
-            <path d="m12 12 3 3 5-5M12 20h8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          <span>Checkist</span>
+        <Link className="brand" to="/catalog" aria-label="Чекист — каталог">
+          <img className="brand-mark" src={emblem} srcSet={`${emblem} 1x, ${emblem2x} 2x`} width={44} height={44} alt="" />
+          <span>Чекист</span>
         </Link>
-        <nav className="main-navigation" aria-label="Основная навигация">
+        <div className="brand-actions">
+          <Link to="/login">Вход</Link>
+          <ThemeToggle placement="header" />
+        </div>
+        <nav className="main-navigation" aria-label="Основная навигация" ref={mainNavigation}>
           <Link to="/catalog" aria-current={catalogActive ? 'page' : undefined}>Каталог</Link>
           <Link to="/receipts" aria-current={['receipts', 'upload', 'receipt'].includes(route.kind) ? 'page' : undefined}>Чеки</Link>
           <Link to="/stats" aria-current={statsActive ? 'page' : undefined}>Статистика</Link>
@@ -123,24 +143,26 @@ export default function App() {
         </nav>
       </header>
 
-      <main id="main" ref={content}>
-        <div className="intro">
-          <p className="eyebrow">От чека к понятным покупкам</p>
-          <h1 id="page-heading" ref={heading} tabIndex={-1}>{title}</h1>
-          {route.kind === 'health' && <p className="intro-note">Техническая страница проверки соединения с сервером.</p>}
-        </div>
-        {catalogActive && <nav className="main-navigation section-navigation" aria-label="Раздел каталога">
-          <Link to="/catalog" aria-current={mergesActive || classificationActive ? undefined : 'page'}>Товары</Link>
-          <Link to="/catalog/merges" aria-current={mergesActive ? 'page' : undefined}>Дубли</Link>
-          <Link to="/catalog/classification" aria-current={classificationActive ? 'page' : undefined}>Категории</Link>
-        </nav>}
-        {statsActive && <nav className="main-navigation section-navigation" aria-label="Раздел статистики">
-          <Link to="/stats" aria-current={route.kind === 'spending' ? 'page' : undefined}>Траты</Link>
-          <Link to="/stats/receipts" aria-current={route.kind === 'receipts-stats' ? 'page' : undefined}>Средний чек</Link>
-        </nav>}
-        {pageContent(navigation)}
-      </main>
-      <footer>Checkist · Каркас приложения</footer>
-    </div>
+      <div className="page">
+        <main id="main" ref={content}>
+          <div className="intro">
+            <p className="eyebrow">Доверяй, но проверяй чек</p>
+            <h1 id="page-heading" ref={heading} tabIndex={-1}>{title}</h1>
+            {route.kind === 'health' && <p className="intro-note">Сводка о состоянии служб.</p>}
+          </div>
+          {catalogActive && <nav className="main-navigation section-navigation" aria-label="Раздел каталога">
+            <Link to="/catalog" aria-current={mergesActive || classificationActive ? undefined : 'page'}>Товары</Link>
+            <Link to="/catalog/merges" aria-current={mergesActive ? 'page' : undefined}>Дубли</Link>
+            <Link to="/catalog/classification" aria-current={classificationActive ? 'page' : undefined}>Категории</Link>
+          </nav>}
+          {statsActive && <nav className="main-navigation section-navigation" aria-label="Раздел статистики">
+            <Link to="/stats" aria-current={route.kind === 'spending' ? 'page' : undefined}>Траты</Link>
+            <Link to="/stats/receipts" aria-current={route.kind === 'receipts-stats' ? 'page' : undefined}>Средний чек</Link>
+          </nav>}
+          {pageContent(navigation)}
+        </main>
+        <footer>Чекист · Продуктовая разведка · Совершенно несекретно</footer>
+      </div>
+    </>
   )
 }

@@ -57,6 +57,40 @@ describe('App feature connections (Node server markup, not browser behavior)', (
     expect(html).not.toContain('Распознавание магазина и адреса, товаров и их стоимостей')
   })
 
+  it('draws the header bar with the brand, five sections, the login link and the theme switch', () => {
+    const html = renderToStaticMarkup(<App />)
+    const header = html.slice(html.indexOf('<header'), html.indexOf('</header>'))
+    expect(header).toContain('<span>Чекист</span>')
+    expect(header).toMatch(/<img class="brand-mark" src="[^"]*emblem-96[^"]*" srcSet="[^"]*emblem-96[^"]* 1x, [^"]*emblem-192[^"]* 2x" width="44" height="44" alt=""\/>/)
+    expect(header.match(/<a\b[^>]*href="[^"]*"/g)).toEqual([
+      '<a class="brand" aria-label="Чекист — каталог" href="/catalog"', '<a href="/login"', '<a aria-current="page" href="/catalog"',
+      '<a href="/receipts"', '<a href="/stats"', '<a href="/recognition/jobs"', '<a href="/health"',
+    ])
+    expect(header).toContain('<a href="/login">Вход</a>')
+    expect(header.match(/<button\b[^>]*class="ck-theme-toggle ck-theme-toggle-header"/g)).toHaveLength(1)
+    expect(html).toContain('<a class="skip-link" href="#page-heading">К содержимому</a>')
+    expect(html).toContain('<h1 id="page-heading" tabindex="-1">Каталог продуктов</h1>')
+  })
+
+  it('opens /login without the application shell: no header, menu, footer or heading of its own', () => {
+    navigation.snapshot = { href: '/login', route: { kind: 'login' } }
+    const html = renderToStaticMarkup(<App />)
+    expect(html).toContain('class="ck-login"')
+    for (const part of ['<header', 'brand-bar', 'main-navigation', '<nav', '<footer', 'skip-link', 'class="page"', 'class="intro"', 'Доверяй, но проверяй чек']) {
+      expect(html, part).not.toContain(part)
+    }
+    // The screen itself owns the only heading; the shell must not add a second one.
+    expect(html.match(/<h1\b/g) ?? []).toHaveLength((html.match(/id="page-heading"/g) ?? []).length)
+  })
+
+  it('keeps the old text of the missing page and adds one line under it', () => {
+    navigation.snapshot = { href: '/missing', route: { kind: 'not-found', path: '/missing' } }
+    const html = renderToStaticMarkup(<App />)
+    expect(html).toContain('<p>Такой страницы нет. Перейдите в каталог продуктов.</p>')
+    expect(html).toContain('<p class="request-state-note">Наружное наблюдение результатов не дало.</p><a class="action-link" href="/catalog">В каталог</a>')
+    expect(html).toContain('Страница не найдена</h1>')
+  })
+
   it('keeps invalid queries outside feature screens', () => {
     navigation.snapshot = { href: '/catalog?page=0', route: { kind: 'invalid-query', path: '/catalog', fields: ['page'], resetTo: '/catalog' } }
     const html = renderToStaticMarkup(<App />)
