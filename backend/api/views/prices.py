@@ -14,6 +14,7 @@ from stores.models import Store
 from .. import common
 from ..pagination import HISTORY_MAX_PAGE_SIZE, HISTORY_PAGE_SIZE, paginate
 from ..params import MAX_ID, Params
+from ..projection import own_annotation
 from .base import ReadOnlyAPIView
 
 # Порядок наблюдений: момент покупки, затем чек и позиция — стабилен при равных моментах.
@@ -71,21 +72,28 @@ def _observations(product, params):
 
 
 def _point(line, base_unit):
+    """Точка истории цен; ``line.own`` — аннотация ``own_annotation``.
+
+    У чужого наблюдения нет полей, по которым находится чек: точного момента, количества,
+    скидки, id чека и позиции. Цена, день и магазин общие.
+    """
+    own = line.own
     return {
-        "observed_at": common.utc_datetime(line.observed_at),
+        "observed_at": common.utc_datetime(line.observed_at) if own else None,
         "purchased_on": common.iso_date(line.receipt.purchased_on),
         "store": common.store_brief(line.receipt.store),
         "currency": line.currency_code,
-        "quantity": common.quantity(line.quantity),
+        "quantity": common.quantity(line.quantity) if own else None,
         "unit": line.unit,
         "list_unit_price": common.price(line.list_unit_price),
         "paid_unit_price": common.price(line.paid_unit_price),
-        "discount_amount": common.amount(line.discount_amount),
+        "discount_amount": common.amount(line.discount_amount) if own else None,
         "normalized_price": common.price(line.normalized_price),
         "normalized_unit": line.normalized_unit,
         "comparable": line.normalized_unit is not None and line.normalized_unit == base_unit,
-        "receipt_id": line.receipt_id,
-        "position": line.position,
+        "receipt_id": line.receipt_id if own else None,
+        "position": line.position if own else None,
+        "own": own,
     }
 
 
@@ -100,7 +108,11 @@ class ProductPricesView(ReadOnlyAPIView):
         page = params.page(default=HISTORY_PAGE_SIZE, maximum=HISTORY_MAX_PAGE_SIZE)
         params.check()
 
-        lines = lines.select_related("receipt__store__merchant").defer(*_DEFERRED).order_by(*ORDERINGS[ordering])
+        # Порядок считает сервер по всем наблюдениям: чужие точки стоят на своих местах.
+        lines = (
+            lines.annotate(own=own_annotation(request)).select_related("receipt__store__merchant")
+            .defer(*_DEFERRED).order_by(*ORDERINGS[ordering])
+        )
         base_unit = product.generic.base_unit
         body = paginate(lines, page, lambda line: _point(line, base_unit))
         return Response({"product": _product_brief(product), **body})

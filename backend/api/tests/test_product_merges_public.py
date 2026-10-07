@@ -17,6 +17,8 @@ EXAMPLES = {
     "group-cancelled.json", "groups.json", "lines.json", "error-merge-conflict.json", "error-merge-changed.json",
     "error-merge-resolved.json", "error-merge-busy.json", "error-invalid-parameter.json",
 }
+# Эталон проекции «своё / чужое»: с настоящим ответом его сверяет api/tests/test_projection.py.
+PROJECTION_EXAMPLES = {"lines_foreign.json"}
 
 
 @tag("integration")
@@ -73,7 +75,7 @@ class PublicExamplesTests(TestCase):
                 self.check("error-merge-busy.json", self.post(f"/api/product-merges/{pizza}/cancel/", {}), 409)
 
         self.assertEqual(self.seen, EXAMPLES)
-        self.assertEqual({path.name for path in PUBLIC.glob("*.json")}, EXAMPLES)
+        self.assertEqual({path.name for path in PUBLIC.glob("*.json")}, EXAMPLES | PROJECTION_EXAMPLES)
         # Молоко подтверждено: поглощённые удалены, оставляемый получил выбранный обобщённый продукт.
         self.assertEqual(list(Product.objects.filter(pk__in=MILK_IDS).values_list("pk", "generic_id")), [(2, 92)])
 
