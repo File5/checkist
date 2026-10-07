@@ -896,6 +896,33 @@ curl.exe -s http://127.0.0.1:18000/api/product-classifications/status/
 
 После прогона свои `runserver` и Vite остановлены, `docker compose -p checkist_qa_muxib down` — exit 0; тома `checkist_qa_muxib_postgres_data` / `checkist_qa_muxib_redis_data` сохранены.
 
+### Фактические результаты: читаемая активная кнопка фильтра предположений, 2026-10-07
+
+Ветка `orca/task_muy9r8uhu3` от main после слияния статистики и категорий. Windows 11, Node v24.18.0, npm 11.16.0. Исправление только в `frontend/src/features/classification/Classification.css`: общее правило цвета ссылок экрана `/catalog/classification` перекрашивало текст активной кнопки фильтра в цвет её фона (`#246044` на `#246044`); селектор теперь `.ck-class a:not(.action-link):not([aria-current])`. Разметка, сервер, контракт и адаптеры не менялись.
+
+#### Проверено и прошло
+
+PowerShell, из `frontend/`, `VITE_API_BASE_URL=/api`, на окончательном состоянии ветки:
+
+| Команда | Exit | Результат |
+| --- | --- | --- |
+| `npm.cmd ci` | 0 | 0 vulnerabilities |
+| `npm.cmd run lint` | 0 | без ошибок и предупреждений |
+| `npm.cmd run test` | 0 | 73 файла, 2743 теста (было 72 / 2741) |
+| `npm.cmd run build` | 0 | `tsc -b` и Vite build, 164 модуля |
+
+Новый `features/classification/classification-css.test.ts` (2 теста) читает текст `Classification.css`: у `.ck-class-filter a[aria-current]` есть `color: #fff` и `background: #246044`; единственное правило с цветом, чей селектор начинается с `.ck-class a`, исключает `[aria-current]`. До правки CSS: `npm.cmd run test -- src/features/classification/classification-css.test.ts` — exit 1, 1 отказ из 2 (второй тест), как и должно быть. Ожидания прежних тестов не менялись.
+
+#### Проверено и не прошло
+
+На окончательном состоянии — ничего.
+
+#### Не проверено и почему
+
+- **Вид в браузере**: цвет активной и неактивных кнопок фильтра, обводка фокуса, текущая страница пагинации, ширина 360 px — browser automation запрещён; шаги — [ACCEPTANCE.md](../frontend/src/features/classification/ACCEPTANCE.md#читаемая-активная-кнопка-фильтра-2026-10-07). Тест проверяет текст правил, а не отрисовку и не каскад с другими файлами стилей.
+- Статические страницы `frontend/src/features/classification/preview/`: не пересоздавались и показывают прежний дефект — `render.mjs` требует QA-сервера с демо, Vite и proxy-сценария.
+- Backend, `check_services` и proxy-скрипты: не запускались — затронут один CSS-файл клиента; их результаты — прежних разделов.
+
 ## Распознавание: сквозная серверная проверка
 
 Сначала полный QA environment выше, затем recognition overrides из [development.md](development.md#qa-сервер-worker-демо). MEDIA/scratch отдельно от dev. Автотесты не вызывают настоящий Codex:
