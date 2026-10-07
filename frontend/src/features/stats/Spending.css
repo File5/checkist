@@ -1,0 +1,55 @@
+.spending-page { display: grid; gap: 24px; min-width: 0; }
+.spending-panel { display: grid; gap: 18px; min-width: 0; padding: 24px; border: 1px solid #d7e0d3; border-radius: 16px; background: #fff; }
+.spending-panel form { display: grid; gap: 16px; min-width: 0; }
+.spending-panel h3 { margin: 0; font-size: 1.2rem; }
+.spending-chips, .spending-crumbs, .spending-store-list { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; padding: 0; margin: 0; }
+.spending-chips a { display: inline-flex; align-items: center; min-height: 44px; padding: 8px 14px; border: 1px solid #cbd7c7; border-radius: 8px; color: #246044; text-decoration: none; }
+.spending-chips a:hover { background: #edf5ee; }
+.spending-chips a[aria-current] { border-color: #246044; background: #246044; color: #fff; font-weight: 600; }
+.spending-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.spending-field { display: grid; gap: 6px; min-width: 0; align-content: start; }
+.spending-field label, .spending-stores legend { font-weight: 600; }
+.spending-field input, .spending-field select { width: 100%; padding: 8px 12px; border: 1px solid #8b9c8d; border-radius: 8px; background: #fff; color: inherit; }
+.spending-field [aria-invalid="true"] { border-color: #a33427; }
+.spending-field-error { color: #a33427; }
+.spending-note { color: #526158; font-size: 0.9rem; }
+.spending-stores { display: grid; gap: 10px; min-width: 0; margin: 0; padding: 14px 16px; border: 1px solid #d7e0d3; border-radius: 8px; }
+.spending-stores legend { padding: 0 6px; }
+.spending-store-list { flex-direction: column; flex-wrap: nowrap; gap: 0; max-height: 264px; overflow-y: auto; overscroll-behavior: contain; }
+.spending-store-list label { display: flex; align-items: flex-start; gap: 10px; min-height: 44px; padding: 10px 4px; cursor: pointer; }
+.spending-store-list input { flex: 0 0 auto; width: 20px; height: 20px; min-height: 0; margin: 2px 0 0; accent-color: #246044; }
+.spending-store-list input:focus-visible { outline-offset: 2px; }
+.spending-store-list span { min-width: 0; }
+.spending-reference-error { display: grid; gap: 10px; justify-items: start; color: #784b0b; }
+.spending-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.spending-secondary { justify-self: start; background: #fff; color: #246044; }
+.spending-secondary:hover:not(:disabled) { background: #edf5ee; }
+.spending-path { display: grid; gap: 12px; justify-items: start; min-width: 0; }
+.spending-crumbs { align-items: center; gap: 4px 8px; }
+.spending-crumbs li { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.spending-crumbs li + li::before { content: "/"; color: #8b9c8d; }
+.spending-crumbs a { display: inline-flex; align-items: center; min-height: 44px; color: #246044; text-underline-offset: 3px; }
+.spending-crumbs [aria-current] { font-weight: 600; }
+/* Always one line tall, so the text coming and going does not move the blocks below. */
+.spending-status { min-height: 1.5em; color: #526158; font-size: 0.9rem; }
+.spending-blocks { display: grid; gap: 28px; min-width: 0; }
+.spending-blocks[data-stale] .spending-currency { opacity: 0.55; }
+.spending-currency { display: grid; gap: 16px; min-width: 0; padding-top: 20px; border-top: 1px solid #d7e0d3; }
+.spending-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 0; }
+.spending-facts dt { color: #526158; font-size: 0.9rem; }
+.spending-facts dd { margin: 4px 0 0; font-variant-numeric: tabular-nums; }
+.spending-total { font-size: 1.35rem; font-weight: 700; }
+/* Long names wrap inside the name column; sums keep their own width. */
+.spending-currency .ck-pie-legend { table-layout: auto; }
+.spending-currency .ck-pie-legend a { display: inline-block; padding-block: 6px; color: #246044; }
+@media (max-width: 540px) {
+  .spending-panel { padding: 16px; }
+  .spending-grid, .spending-facts { grid-template-columns: minmax(0, 1fr); }
+  .spending-actions > *, .spending-chips li { flex: 1 1 140px; }
+  .spending-chips a { width: 100%; justify-content: center; text-align: center; }
+  .spending-currency .ck-pie-legend th, .spending-currency .ck-pie-legend td { padding-inline: 6px; }
+  .spending-currency .ck-chart-number { white-space: normal; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spending-currency .ck-pie-shape, .spending-currency .ck-pie-legend tbody tr { transition: none; }
+}

@@ -1,0 +1,170 @@
+{
+  "group_by": "product",
+  "date_from": "2026-01-01",
+  "date_to": "2026-09-30",
+  "parent": null,
+  "currencies": [
+    {
+      "currency": "EUR",
+      "totals": {
+        "receipts_count": 37,
+        "receipts_total": "1638.94",
+        "lines_paid": "1640.53",
+        "difference": "-1.59"
+      },
+      "items": [
+        {
+          "kind": "product",
+          "id": 24,
+          "name": "Demo Hähnchenbrust 600g",
+          "direct": false,
+          "unassigned": false,
+          "amount": "141.59",
+          "share_percent": "8.63",
+          "lines_count": 18,
+          "receipts_count": 18,
+          "quantity": "18.000",
+          "unit": "pcs"
+        },
+        {
+          "kind": "product",
+          "id": 7,
+          "name": "Demo Bohnenkaffee gemahlen",
+          "direct": false,
+          "unassigned": false,
+          "amount": "130.61",
+          "share_percent": "7.96",
+          "lines_count": 20,
+          "receipts_count": 20,
+          "quantity": "18.000",
+          "unit": "pcs"
+        },
+        {
+          "kind": "product",
+          "id": 18,
+          "name": "Demo Waschmittel 1,35L",
+          "direct": false,
+          "unassigned": false,
+          "amount": "109.70",
+          "share_percent": "6.69",
+          "lines_count": 18,
+          "receipts_count": 18,
+          "quantity": "18.000",
+          "unit": "pcs"
+        },
+        {
+          "kind": "unmatched",
+          "id": null,
+          "name": null,
+          "direct": false,
+          "unassigned": false,
+          "amount": "36.02",
+          "share_percent": "2.20",
+          "lines_count": 12,
+          "receipts_count": 12,
+          "quantity": null,
+          "unit": null
+        },
+        {
+          "kind": "service",
+          "id": null,
+          "name": null,
+          "direct": false,
+          "unassigned": false,
+          "amount": "7.28",
+          "share_percent": "0.44",
+          "lines_count": 2,
+          "receipts_count": 2,
+          "quantity": null,
+          "unit": null
+        },
+        {
+          "kind": "deposit",
+          "id": null,
+          "name": null,
+          "direct": false,
+          "unassigned": false,
+          "amount": "15.00",
+          "share_percent": "0.91",
+          "lines_count": 26,
+          "receipts_count": 21,
+          "quantity": null,
+          "unit": null
+        }
+      ],
+      "other": {
+        "count": 25,
+        "amount": "1200.33",
+        "share_percent": "73.17"
+      }
+    },
+    {
+      "currency": "KZT",
+      "totals": {
+        "receipts_count": 9,
+        "receipts_total": "67312.93",
+        "lines_paid": "67462.93",
+        "difference": "-150.00"
+      },
+      "items": [
+        {
+          "kind": "product",
+          "id": 37,
+          "name": "Демо Курица охлаждённая 1 кг",
+          "direct": false,
+          "unassigned": false,
+          "amount": "20186.00",
+          "share_percent": "29.92",
+          "lines_count": 6,
+          "receipts_count": 6,
+          "quantity": "6.000",
+          "unit": "pcs"
+        },
+        {
+          "kind": "product",
+          "id": 3,
+          "name": "Демо Молоко 2,5% 1 л",
+          "direct": false,
+          "unassigned": false,
+          "amount": "9496.00",
+          "share_percent": "14.08",
+          "lines_count": 9,
+          "receipts_count": 9,
+          "quantity": "14.000",
+          "unit": "pcs"
+        },
+        {
+          "kind": "product",
+          "id": 31,
+          "name": "Демо Чай чёрный 100 г",
+          "direct": false,
+          "unassigned": false,
+          "amount": "7504.00",
+          "share_percent": "11.12",
+          "lines_count": 6,
+          "receipts_count": 6,
+          "quantity": "6.000",
+          "unit": "pcs"
+        },
+        {
+          "kind": "unmatched",
+          "id": null,
+          "name": null,
+          "direct": false,
+          "unassigned": false,
+          "amount": "1999.00",
+          "share_percent": "2.96",
+          "lines_count": 3,
+          "receipts_count": 3,
+          "quantity": null,
+          "unit": null
+        }
+      ],
+      "other": {
+        "count": 8,
+        "amount": "28277.93",
+        "share_percent": "41.92"
+      }
+    }
+  ]
+}

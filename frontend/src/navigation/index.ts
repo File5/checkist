@@ -10,3 +10,8 @@ export { buildMergesQuery, parseMergesQuery } from './routes'
 export type { MergesQuery } from './routes'
 export { buildClassificationQuery, parseClassificationQuery } from './routes'
 export type { ClassificationQuery } from './routes'
+export { buildProductQuery, parseProductQuery, priceModes, priceIntervals } from './routes'
+export type { ProductQuery, PriceMode, PriceInterval } from './routes'
+export { buildSpendingQuery, parseSpendingQuery, spendingHref, buildReceiptsStatsQuery, parseReceiptsStatsQuery, receiptsStatsHref,
+  spendingGroupings, receiptsStatsIntervals, maxStatsStores } from './routes'
+export type { StatsScopeQuery, SpendingQuery, SpendingGroupBy, ReceiptsStatsQuery, ReceiptsStatsInterval } from './routes'

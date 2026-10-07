@@ -1,5 +1,5 @@
 import { parseHistoryQuery } from '../../navigation/routes'
-import type { HistoryQuery } from '../../navigation/routes'
+import type { HistoryQuery, ProductQuery } from '../../navigation/routes'
 import type { ApiFailure, ApiResult, PriceFilters, PriceParams, PriceSummaryParams, ProductDetail, Store, StoreBrief, StoreParams } from '../../api/types'
 
 export type FilterField = 'store' | 'country' | 'currency' | 'date_from' | 'date_to'
@@ -47,6 +47,11 @@ export function historyParams(query: HistoryQuery): PriceParams {
 
 export function summaryParams(query: HistoryQuery): PriceSummaryParams {
   return { ...priceFilters(query), group_by: 'store', price: 'paid', interval: 'none' }
+}
+
+/** New history filters keep the chart modes of the address: `price` and `interval` are not filters. */
+export function withChartModes(filters: HistoryQuery, current: ProductQuery): ProductQuery {
+  return { ...filters, ...(current.price && { price: current.price }), ...(current.interval && { interval: current.interval }), page: 1 }
 }
 
 export function storeParams(country: string, q: string, page: number): StoreParams {

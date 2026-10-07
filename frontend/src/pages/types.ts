@@ -1,4 +1,4 @@
-import type { CatalogQuery, ClassificationQuery, HistoryQuery, JobsQuery, MergesQuery, ReceiptsQuery } from '../navigation'
+import type { CatalogQuery, ClassificationQuery, JobsQuery, MergesQuery, ProductQuery, ReceiptsQuery, ReceiptsStatsQuery, SpendingQuery } from '../navigation'
 
 /** The shell owns the page's single h1. Feature screens render below it. */
 export interface CatalogPageProps {
@@ -12,7 +12,8 @@ export interface CategoryPageProps {
 
 export interface ProductPageProps {
   productId: number
-  query: HistoryQuery
+  /** History filters plus `price`/`interval` of the price chart (absent means `paid`/`month`). */
+  query: ProductQuery
   /** Known list URL. For direct entry use the product's category after loading it. */
   returnTo?: string
 }
@@ -29,3 +30,10 @@ export interface MergePageProps { groupId: number; returnTo?: string }
 
 /** Category suggestions of the catalog section: the filter, one product and the page live in the URL. */
 export interface ClassificationPageProps { query: ClassificationQuery }
+
+/**
+ * Statistics screens. The query is already normalized: wrong values are dropped, defaults are absent
+ * (`group_by` — `category`, `interval` — `month`). Change filters with `spendingHref`/`receiptsStatsHref`.
+ */
+export interface SpendingPageProps { query: SpendingQuery }
+export interface ReceiptsStatsPageProps { query: ReceiptsStatsQuery }

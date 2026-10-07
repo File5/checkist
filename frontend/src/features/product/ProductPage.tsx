@@ -8,11 +8,12 @@ import type { HistoryQuery } from '../../navigation'
 import RequestState from '../../components/RequestState'
 import { useLocalRequestFocus } from '../../components/useLocalRequestFocus'
 import { formatQuantity } from '../../lib/format'
+import PriceChart from './PriceChart'
 import PriceHistory from './PriceHistory'
 import PriceSummary from './PriceSummary'
 import StoreFilter from './StoreFilter'
 import ProductRequestState from './ProductRequestState'
-import { filterDraft, filterOptions, historyParams, mergeStores, serverFieldErrors, summaryParams, validateFilters } from './state'
+import { filterDraft, filterOptions, historyParams, mergeStores, serverFieldErrors, summaryParams, validateFilters, withChartModes } from './state'
 import type { FieldErrors, FilterField } from './state'
 import { useProductRequest } from './useProductRequest'
 import { MergedProductHint, ProductMergeNotice } from '../merges/MergeMarks'
@@ -101,7 +102,7 @@ function ProductScreen({ productId, query, returnTo }: ProductPageProps) {
   const summaryRequest = useProductRequest(loadSummary)
   const [directoryStores, setDirectoryStores] = useState<Store[]>([])
   const onStores = useCallback((stores: Store[]) => setDirectoryStores((previous) => mergeStores(previous, stores)), [])
-  const apply = (next: HistoryQuery) => navigate({ kind: 'product', productId, query: { ...next, page: 1 } })
+  const apply = (next: HistoryQuery) => navigate({ kind: 'product', productId, query: withChartModes(next, query) })
   const reset = () => apply({ page: 1 })
   const buildPageHref = (nextPage: number) => ({ kind: 'product' as const, productId, query: { ...query, page: nextPage } })
   const product = productRequest.state.kind === 'ok' ? productRequest.state.data : undefined
@@ -154,6 +155,7 @@ function ProductScreen({ productId, query, returnTo }: ProductPageProps) {
         </aside>
         <FilterForm query={query} product={product} stores={stores} selectedStore={selectedStore}
           failures={failures} apply={apply} reset={reset} onStores={onStores} />
+        <PriceChart productId={productId} query={query} reset={reset} />
         <PriceHistory state={historyRequest.state} query={query} stores={stores} retry={historyRequest.retry} reset={reset} buildPageHref={buildPageHref} />
         <PriceSummary state={summaryRequest.state} retry={summaryRequest.retry} reset={reset} />
       </>}

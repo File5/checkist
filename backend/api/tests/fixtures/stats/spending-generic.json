@@ -1,0 +1,128 @@
+{
+  "group_by": "generic",
+  "date_from": null,
+  "date_to": null,
+  "parent": null,
+  "currencies": [
+    {
+      "currency": "EUR",
+      "totals": {
+        "receipts_count": 373,
+        "receipts_total": "13041.07",
+        "lines_paid": "13083.66",
+        "difference": "-42.59"
+      },
+      "items": [
+        {
+          "kind": "generic",
+          "id": 15,
+          "name": "Не разобрано",
+          "direct": false,
+          "unassigned": true,
+          "amount": "5184.91",
+          "share_percent": "39.63",
+          "lines_count": 1832,
+          "receipts_count": 373,
+          "quantity": null,
+          "unit": null
+        },
+        {
+          "kind": "generic",
+          "id": 11,
+          "name": "Курица",
+          "direct": false,
+          "unassigned": false,
+          "amount": "1213.44",
+          "share_percent": "9.27",
+          "lines_count": 173,
+          "receipts_count": 173,
+          "quantity": null,
+          "unit": null
+        },
+        {
+          "kind": "generic",
+          "id": 13,
+          "name": "Стиральное средство",
+          "direct": false,
+          "unassigned": false,
+          "amount": "1012.70",
+          "share_percent": "7.74",
+          "lines_count": 181,
+          "receipts_count": 181,
+          "quantity": null,
+          "unit": null
+        },
+        {
+          "kind": "generic",
+          "id": 3,
+          "name": "Сыр",
+          "direct": false,
+          "unassigned": false,
+          "amount": "928.99",
+          "share_percent": "7.10",
+          "lines_count": 267,
+          "receipts_count": 246,
+          "quantity": null,
+          "unit": null
+        },
+        {
+          "kind": "generic",
+          "id": 6,
+          "name": "Хлеб",
+          "direct": false,
+          "unassigned": false,
+          "amount": "694.68",
+          "share_percent": "5.31",
+          "lines_count": 358,
+          "receipts_count": 268,
+          "quantity": null,
+          "unit": null
+        },
+        {
+          "kind": "unmatched",
+          "id": null,
+          "name": null,
+          "direct": false,
+          "unassigned": false,
+          "amount": "336.88",
+          "share_percent": "2.57",
+          "lines_count": 124,
+          "receipts_count": 124,
+          "quantity": null,
+          "unit": null
+        },
+        {
+          "kind": "service",
+          "id": null,
+          "name": null,
+          "direct": false,
+          "unassigned": false,
+          "amount": "75.84",
+          "share_percent": "0.58",
+          "lines_count": 23,
+          "receipts_count": 23,
+          "quantity": null,
+          "unit": null
+        },
+        {
+          "kind": "deposit",
+          "id": null,
+          "name": null,
+          "direct": false,
+          "unassigned": false,
+          "amount": "127.50",
+          "share_percent": "0.97",
+          "lines_count": 269,
+          "receipts_count": 220,
+          "quantity": null,
+          "unit": null
+        }
+      ],
+      "other": {
+        "count": 9,
+        "amount": "3508.72",
+        "share_percent": "26.82"
+      }
+    }
+  ]
+}

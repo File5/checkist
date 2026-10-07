@@ -8,6 +8,9 @@ from .pagination import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, PageParams
 
 MAX_ID = 2**63 - 1  # BigAutoField
 MAX_COUNTRIES = 20
+MAX_IDS = 20
+# Интервалы рядов статистики (/api/stats/*); неделя — с понедельника.
+STATS_INTERVALS = ("month", "week", "quarter", "year")
 SEARCH_MIN_LENGTH = 2
 SEARCH_MAX_LENGTH = 100
 
@@ -101,6 +104,10 @@ class Params:
         self.error(name, f"Допустимые значения: {', '.join(choices)}.")
         return default
 
+    def interval(self, name="interval", *, choices=STATS_INTERVALS, default="month"):
+        """Интервал ряда статистики: ``month`` (по умолчанию), ``week``, ``quarter``, ``year``."""
+        return self.choice(name, choices, default=default)
+
     def search(self, name="q"):
         """Строка поиска от 2 до 100 символов без пробелов по краям и управляющих символов."""
         value = self.raw(name)
@@ -113,10 +120,12 @@ class Params:
 
     # --- даты ---
 
-    def date(self, name):
-        """Дата ``ГГГГ-ММ-ДД``."""
+    def date(self, name, *, required=False):
+        """Дата ``ГГГГ-ММ-ДД``; с ``required`` отсутствующая или пустая — ошибка."""
         value = self.raw(name)
         if value is None:
+            if required and name not in self.errors:
+                self.error(name, "Обязательный параметр.")
             return None
         if _DATE.fullmatch(value):
             try:
@@ -126,9 +135,12 @@ class Params:
         self.error(name, "Ожидается дата ГГГГ-ММ-ДД.")
         return None
 
-    def date_range(self, from_name="date_from", to_name="date_to"):
-        """Пара дат, обе необязательны и включительны; ``date_from > date_to`` — ошибка."""
-        date_from, date_to = self.date(from_name), self.date(to_name)
+    def date_range(self, from_name="date_from", to_name="date_to", *, required=False):
+        """Пара включительных дат; ``date_from > date_to`` — ошибка.
+
+        Обе необязательны, с ``required`` — обе обязательны.
+        """
+        date_from, date_to = self.date(from_name, required=required), self.date(to_name, required=required)
         if date_from and date_to and date_from > date_to:
             self.error(from_name, f"Должна быть не позже {to_name}.")
         return date_from, date_to
@@ -185,6 +197,29 @@ class Params:
             return value
         self.error(name, message)
         return None
+
+    def object_ids(self, name, queryset, *, maximum=MAX_IDS, message="Объект не найден."):
+        """Идентификаторы существующих объектов через запятую, не больше ``maximum``.
+
+        Без параметра — ``[]``; повторы убираются, порядок сохраняется. Несуществующий
+        идентификатор — ошибка ``400``, как в ``object_id``. Один запрос.
+        """
+        value = self.raw(name)
+        if value is None:
+            return []
+        parts = [part.strip() for part in value.split(",")]
+        if not all(_INTEGER.fullmatch(part) and 1 <= int(part) <= MAX_ID for part in parts):
+            self.error(name, "Ожидаются целые положительные числа через запятую.")
+            return []
+        ids = list(dict.fromkeys(int(part) for part in parts))
+        if len(ids) > maximum:
+            self.error(name, f"Не больше {maximum} значений.")
+            return []
+        known = set(queryset.filter(pk__in=ids).values_list("pk", flat=True))
+        if len(known) != len(ids):
+            self.error(name, message)
+            return []
+        return ids
 
     # --- пагинация ---
 

@@ -2,7 +2,7 @@
 
 ## Реализовано и планируется
 
-Локально запускаются Django/DRF, React/TypeScript/Vite SPA и host `recognition_worker`; Postgres, Redis и Celery worker — в Linux Docker. SPA пока показывает health через proxy ([frontend.md](frontend.md)). Реализованы stores/catalog/receipts, 13 GET каталога/цен и новый локальный recognition/receipts API: загрузка фото, очередь PostgreSQL, detect/crop/recognize/import, отмена и retry. Провайдеры — Codex CLI и явно выбранный FakeProvider. Данные также вводят через [Django admin](#админка). Клиент загрузки/чеков, API ручных правок, авторизация пользователей, дашборд и серверные курсы валют ещё не реализованы.
+Локально запускаются Django/DRF, React/TypeScript/Vite SPA и host `recognition_worker`; Postgres, Redis и Celery worker — в Linux Docker. SPA пока показывает health через proxy ([frontend.md](frontend.md)). Реализованы stores/catalog/receipts, 13 GET каталога/цен и новый локальный recognition/receipts API: загрузка фото, очередь PostgreSQL, detect/crop/recognize/import, отмена и retry. Провайдеры — Codex CLI и явно выбранный FakeProvider. Данные также вводят через [Django admin](#админка). Серверная часть статистики (траты за период, походы, разложение среднего чека, ряды цен) реализована, [запуск с демо](#qa-статистика-для-клиента) — ниже; её клиент — экраны `/stats`, `/stats/receipts` и график цен в карточке товара — тоже ([frontend.md](frontend.md#статистика-траты-средний-чек-и-график-цен-ф1ф7)). Клиент загрузки/чеков, API ручных правок, авторизация пользователей, дашборд и серверные курсы валют ещё не реализованы.
 
 ## Версии и установка Windows
 
@@ -371,6 +371,39 @@ Measure-Command { ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py r
 `Measure-Command` включает запуск интерпретатора и стартовую проверку Codex воркером (`--version`, `exec --help`, `login status`); время самого запроса — `finished_at - started_at` строки `ClassificationAttempt` (у успешной попытки в него входит и применение ответа). В отчёт: число товаров пакета, время, число предложенных, «не знаю» и отброшенных по причинам (`ClassificationRun.stats`), ошибка — если нет `codex.exe`, входа или сети. Демо-каталог — 10 кандидатов, один пакет; несколько пакетов даёт меньший `PRODUCT_CLASSIFICATION_BATCH_SIZE`. Срок запроса — `PRODUCT_CLASSIFICATION_TIMEOUT_SECONDS`.
 
 Фактическое измерение И1 (2026-10-07, Codex CLI 0.160.0, модель `gpt-6.1-sol`, демо-каталог, текстовый вызов без `-i`): `suggest --dry-run` — 12.3 с всей команды; пакет из 10 товаров через очередь и `recognition_worker --once` — 11.1 с всей команды, попытка — 9.71 с; 9 предложено, 1 «не знаю», отброшенных нет. Предложенные названия и пути — [verification.md](verification.md#фактические-результаты-и1-окончательная-ветка-2026-10-07).
+
+### QA: статистика для клиента
+
+Сервер с демо-данными статистики — для экранов статистики, proxy-скрипта и ручной приёмки. В терминале из корня сначала **весь** QA environment из [verification.md](verification.md#изолированная-qa-среда), затем:
+
+```powershell
+$env:DJANGO_DEBUG='1'
+$env:ALLOW_LOCAL_RECOGNITION_API='1'
+$env:PRODUCT_MERGE_AUTO_DETECT='0'
+docker compose -p checkist_qa up -d --wait --wait-timeout 90 postgres redis
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py migrate --noinput
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py seed_stats_demo
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py runserver 127.0.0.1:18000 --noreload
+```
+
+- `seed_stats_demo` разрешён только для `test_*` и `checkist_qa` с необязательным `_суффиксом`. На свежей базе печатает `{"created": true, "merchants": 3, "products": 39, "receipts": 466, "lines": 5604, "discounts": 151}`, повтор — `{"created": false}` и ничего не меняет. Случайности нет: числа одинаковы при каждом запуске.
+- Данные вымышлены: 2019 год — сентябрь 2026, два немецких магазина разных продавцов (EUR) и казахстанский (KZT), дерево категорий, «Молоко» в каждом магазине, часть товаров в «Не разобрано», несопоставленные строки, залог и возврат тары, услуга, скидки строки и чека, один чек возврата, один чек с ценами без налога. Состав — `backend/receipts/demo.py`, ожидаемые числа — `backend/receipts/tests/test_demo.py`.
+- Эталонные ответы совпадают с ответами этого сервера только на **свежей** базе: id в них — категория «Продукты питания» 1, «Молоко» 1, товары молока 1 / 2 / 3, магазины 1 / 2 / 3. Если в базе до демо уже были товары или магазины, id сдвинутся, а одноимённые обобщённые продукты в других категориях изменят суммы по категориям. Список эталонов и запросов — [api-contract.md](api-contract.md#эталонные-ответы-статистики).
+- Эндпоинты только читают: одну базу можно использовать повторно. Воркер распознавания и Celery не нужны; `MEDIA_ROOT` и `DJANGO_CSRF_TRUSTED_ORIGINS` для статистики не требуются (POST нет).
+- `PRODUCT_MERGE_AUTO_DETECT=0` задавайте явно: значение из `.env` может быть другим. Демо слияния (`seed_product_merge_demo`) можно добавить в ту же базу, но id эталонов статистики верны только когда `seed_stats_demo` выполнен первым.
+- При `ALLOW_LOCAL_RECOGNITION_API=0` `/api/stats/*` отвечает `403 permission_denied`, а `/api/products/{id}/prices/series/` остаётся доступным.
+
+Проверка без браузера во втором терминале:
+
+```powershell
+$B = 'http://127.0.0.1:18000'
+curl.exe -s "$B/api/stats/spending/"
+curl.exe -s "$B/api/stats/receipts/series/?interval=year"
+curl.exe -s "$B/api/stats/receipts/compare/?base_from=2020-01-01&base_to=2020-12-31&current_from=2026-01-01&current_to=2026-09-30&limit=5"
+curl.exe -s "$B/api/products/1/prices/series/?date_from=2025-01-01"
+```
+
+Vite dev/preview на 15173 запускается как в разделе выше (из PowerShell); proxy `/api` уже передаёт эти пути на Django. Экраны — `http://127.0.0.1:15173/stats`, `/stats/receipts` и `/catalog/products/1`; сценарий для человека и демо-числа — [frontend/src/features/stats/ACCEPTANCE.md](../frontend/src/features/stats/ACCEPTANCE.md). Проверка адаптеров настоящим HTTP без браузера, из корня в третьем терминале с тем же environment: `node frontend/scripts/check_stats_proxy.mjs dev http://127.0.0.1:15173` (для сборки — `preview`). Скрипт только читает, повторный запуск безопасен; ему нужна свежая база с демо, имя базы `checkist_qa` либо `checkist_qa_<суффикс>`, порты — не dev. Ожидаемые ответы и замер времени сервера — [verification.md](verification.md#статистика-серверная-часть-с5), проверка клиента — [там же](verification.md#статистика-клиент-ф7).
 
 ### Настоящий Codex в QA
 

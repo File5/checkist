@@ -151,6 +151,8 @@ DATABASES = {"default": {
     "CONN_MAX_AGE": 0,
     "OPTIONS": {"connect_timeout": 2, "options": "-c statement_timeout=2000"},
 }}
+# В тестовой БД autovacuum отключён: планы запросов не зависят от момента фоновой очистки.
+TEST_RUNNER = "config.test_runner.Runner"
 CACHES = {"default": {
     "BACKEND": "django.core.cache.backends.redis.RedisCache",
     "LOCATION": env_redis_url("DJANGO_CACHE_URL", "redis://127.0.0.1:6379/2"),
