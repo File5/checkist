@@ -5,7 +5,8 @@
 .receipt-actions { display: flex; flex-wrap: wrap; gap: 12px; }
 .receipt-actions > * { max-width: 100%; text-align: center; }
 .action-link.receipt-primary { background: var(--ck-brand); border-color: var(--ck-brand); color: var(--ck-on-brand); }
-.action-link.receipt-primary:hover { background: var(--ck-brand-hover); }
+.action-link.receipt-primary:hover { background: var(--ck-brand-hover); border-color: var(--ck-brand-hover); color: var(--ck-on-brand); }
+.action-link.receipt-primary:active { background: var(--ck-brand-active); border-color: var(--ck-brand-active); color: var(--ck-on-brand); }
 .receipt-secondary { background: var(--ck-surface); border-color: var(--ck-border-field); color: var(--ck-link); }
 .receipt-secondary:hover:not(:disabled) { background: var(--ck-surface-raised); }
 .receipt-filter-grid, .receipt-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }

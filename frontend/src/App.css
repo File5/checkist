@@ -56,7 +56,9 @@ button:where(:active:not(:disabled)) { border-color: var(--ck-brand-active); bac
 button:disabled { background: var(--ck-disabled-bg); border-color: var(--ck-disabled-border); color: var(--ck-disabled-text); cursor: default; }
 input, select { min-height: 44px; max-width: 100%; }
 .action-link { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 10px 16px; border: 1px solid var(--ck-link); border-radius: var(--ck-radius-sm); color: var(--ck-link); text-underline-offset: 3px; }
-.action-link:hover { border-color: var(--ck-link-hover); color: var(--ck-link-hover); }
+/* :where keeps the hover as weak as `.action-link`: a filled link of a screen (its class sets the fill and the text
+   over it) keeps its own text and border while hovered instead of taking the link colour. */
+.action-link:where(:hover) { border-color: var(--ck-link-hover); color: var(--ck-link-hover); }
 .request-state { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 18px; min-height: 192px; padding: 28px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius); background: var(--ck-surface); }
 .request-state-error { border-color: var(--ck-error-border); }
 .request-state-loading { color: var(--ck-text-muted); }
