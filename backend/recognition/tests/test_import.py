@@ -12,6 +12,7 @@ from django.test import TestCase, TransactionTestCase, override_settings, tag
 
 from catalog.models import Brand, Category, GenericProduct, Product
 from receipts.models import ProductAlias, Receipt, ReceiptDiscount, ReceiptLine, ReceiptTax
+from receipts.ownership import local_user
 from receipts.validation import validate_receipt
 from recognition import importer
 from recognition.importer import ImportBusy, import_receipt
@@ -1031,7 +1032,7 @@ class ImportConcurrencyTests(TransactionTestCase):
             try:
                 with transaction.atomic():
                     effective, derived = importer._domain_observation(self.obs)
-                    return importer._import_domain(effective, derived)[0].pk
+                    return importer._import_domain(effective, derived, owner_id=local_user().pk)[0].pk
             finally:
                 connections.close_all()
 
