@@ -1,6 +1,8 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { errorFixtures } from '../../api/product-merges-test-support'
+import { isMergeLine } from '../../api/product-merges-schema'
+import { errorFixtures, mergeFixture } from '../../api/product-merges-test-support'
+import { page } from '../../api/schema'
 import type { LocalApiFailure } from '../../api/types'
 import type { RequestState } from '../recognition/polling'
 import type { ActionState, MergeAction } from './actions'
@@ -261,6 +263,31 @@ describe('purchases of a group', () => {
     expect(html).toContain('href="/receipts/13">Чек №13</a>')
     expect(html).toContain('Musterstadt · DE')
     expect(html).not.toContain('<nav')
+  })
+  it('shows «Чужая покупка» instead of the receipt link and keeps the quantity and the money of such a line', () => {
+    const body = mergeFixture('lines_foreign.json')
+    if (!page(isMergeLine)(body)) throw new Error('Invalid fixture lines_foreign.json')
+    const html = renderToStaticMarkup(<MergeLines group={pizza} lines={body} onPage={noop} />)
+    expect(html).toContain('4 покупки · страница 1 из 1')
+    const rows = html.split('<tr>').filter((row) => row.startsWith('<th scope="row">'))
+    expect(rows).toHaveLength(4)
+    const foreign = rows.filter((row) => row.includes('<td>Чужая покупка</td>'))
+    expect(foreign).toHaveLength(2)
+    expect(foreign[0]).toContain('<th scope="row">Steinhof.PizzaSpezial</th>')
+    expect(foreign[1]).toContain('<th scope="row">Steinhof PizzaSpezial</th><td>№26: Steinhof PizzaSpezial</td>')
+    expect(foreign[1]).toContain('<time dateTime="2026-10-01">01.10.2026</time>')
+    for (const row of foreign) {
+      expect(row).not.toContain('<a ')
+      expect(row).not.toContain('Чек №')
+      expect(row).not.toContain('позиция')
+      expect(row).toContain('Demomarkt'); expect(row).toContain('шт')
+      expect(row.match(/<td class="ck-merge-number">[^<]*3,49[^<]*EUR<\/td>/g)).toHaveLength(2)
+    }
+    const mine = rows.filter((row) => !row.includes('Чужая покупка'))
+    expect(mine[0]).toContain('href="/receipts/9">Чек №9</a><span class="ck-merge-subtext">позиция 1</span>')
+    expect(mine[1]).toContain('href="/receipts/11">Чек №11</a>')
+    expect(html).not.toContain('/receipts/null')
+    expect(html).not.toContain('null')
   })
   it('paginates locally with buttons', () => {
     const html = renderToStaticMarkup(<MergeLines group={pizza} lines={{ ...lines(), count: 120, pages: 3, page: 2 }} onPage={noop} />)
