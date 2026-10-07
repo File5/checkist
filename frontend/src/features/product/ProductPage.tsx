@@ -17,6 +17,8 @@ import type { FieldErrors, FilterField } from './state'
 import { useProductRequest } from './useProductRequest'
 import { MergedProductHint, ProductMergeNotice } from '../merges/MergeMarks'
 import { useProductMergeLookup } from '../merges/marks'
+import { ProductClassificationNotice } from '../classification/ClassificationMarks'
+import { markFor, useProductClassificationMarks } from '../classification/marks'
 import './Product.css'
 
 function FilterForm({ query, product, stores, selectedStore, failures, apply, reset, onStores }: {
@@ -114,6 +116,9 @@ function ProductScreen({ productId, query, returnTo }: ProductPageProps) {
   // Independent of the card: a refusal of the local API leaves the card and «не найден» as they were.
   const merges = useProductMergeLookup(productId)
   const merged = missing ? merges.hint : undefined
+  // Independent as well: loading and any refusal mean a card without the category notice.
+  const classifications = useProductClassificationMarks(productId)
+  const classification = product && markFor(classifications, product)
   return (
     <div className="product-page">
       <section ref={productBlock} className="product-panel" aria-labelledby="product-heading" aria-busy={productRequest.state.kind === 'loading'}>
@@ -134,6 +139,7 @@ function ProductScreen({ productId, query, returnTo }: ProductPageProps) {
             <div><dt>Обобщённый продукт</dt><dd>{product.generic.name.trim() || 'Не указано'}</dd></div>
           </dl>
           {merges.mark && <ProductMergeNotice mark={merges.mark} />}
+          {classification && <ProductClassificationNotice mark={classification} />}
           <div className="product-actions">
             {returnTo && <Link className="action-link" to={returnTo}>{returnTo.startsWith('/receipts/') ? 'К чеку' : 'Назад к списку'}</Link>}
             <Link className="action-link" to={{ kind: 'category', categoryId: product.category.id, query: { page: 1 } }}>Назад в категорию</Link>

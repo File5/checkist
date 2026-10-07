@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "items"],
+  "properties": {
+    "schema_version": {"type": "string", "enum": ["1"]},
+    "items": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["product_id", "decision", "generic_id", "generic_name", "category_path", "base_unit", "confidence", "note"],
+        "properties": {
+          "product_id": {"type": "integer", "minimum": 1},
+          "decision": {"type": "string", "enum": ["existing", "new", "unknown"]},
+          "generic_id": {"type": ["integer", "null"], "minimum": 1},
+          "generic_name": {"type": ["string", "null"], "maxLength": 100},
+          "category_path": {
+            "type": ["array", "null"], "minItems": 1, "maxItems": 3,
+            "items": {"type": "string", "minLength": 1, "maxLength": 100}
+          },
+          "base_unit": {"type": ["string", "null"], "enum": ["kg", "l", "pcs", null]},
+          "confidence": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+          "note": {"type": ["string", "null"], "maxLength": 200}
+        }
+      }
+    }
+  }
+}

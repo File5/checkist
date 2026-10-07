@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "classification_changed",
+    "message": "Предположение изменилось."
+  }
+}

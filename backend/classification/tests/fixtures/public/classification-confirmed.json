@@ -1,0 +1,77 @@
+{
+  "id": 4,
+  "status": "confirmed",
+  "resolution": "confirmed",
+  "version": 2,
+  "created_at": "2026-10-06T10:00:00Z",
+  "resolved_at": "2026-10-06T10:05:00Z",
+  "product": {
+    "id": 14,
+    "exists": true,
+    "name": "Demo Frischmilch 1,5%",
+    "brand": null,
+    "package": null,
+    "generic": {
+      "id": 92,
+      "name": "Молоко",
+      "base_unit": "l"
+    },
+    "aliases": [
+      {
+        "store_name": "Demomarkt",
+        "raw_name": "Demo Frischmilch 1,5%",
+        "store_item_code": ""
+      }
+    ],
+    "merge_group_id": null
+  },
+  "previous_generic": {
+    "id": 91,
+    "name": "Не разобрано",
+    "base_unit": "pcs"
+  },
+  "suggested": {
+    "generic": {
+      "id": 92,
+      "name": "Молоко",
+      "base_unit": "l",
+      "exists": true,
+      "is_new": false
+    },
+    "category": {
+      "id": 3,
+      "name": "Молочные продукты",
+      "path": [
+        {
+          "id": 2,
+          "name": "Продукты питания",
+          "is_new": false
+        },
+        {
+          "id": 3,
+          "name": "Молочные продукты",
+          "is_new": false
+        }
+      ]
+    },
+    "pending_count": 0
+  },
+  "final_generic": {
+    "id": 92,
+    "name": "Молоко",
+    "base_unit": "l"
+  },
+  "source": {
+    "run_id": 1,
+    "trigger": "manual",
+    "provider": "fake",
+    "model": "",
+    "prompt_version": "1",
+    "schema_version": "1"
+  },
+  "actions": {
+    "can_confirm": false,
+    "can_choose": false,
+    "can_reject": false
+  }
+}

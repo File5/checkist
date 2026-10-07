@@ -1,0 +1,68 @@
+.ck-class { display: grid; gap: 20px; min-width: 0; overflow-wrap: anywhere; }
+.ck-class-panel { display: grid; gap: 16px; min-width: 0; padding: 24px; background: #fff; border: 1px solid #d7e0d3; border-radius: 16px; }
+.ck-class-panel > *, .ck-class-list > *, .ck-class-area > * { min-width: 0; max-width: 100%; }
+.ck-class p { margin: 0; }
+.ck-class-list, .ck-class-run-actions { display: grid; gap: 16px; min-width: 0; }
+.ck-class-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.ck-class-actions > * { max-width: 100%; }
+.ck-class-secondary { background: #fff; color: #246044; }
+.ck-class-secondary:hover:not(:disabled) { background: #edf5ee; }
+.ck-class-note { color: #526158; font-size: 0.9rem; }
+.ck-class-subtext { display: block; color: #526158; font-size: 0.85rem; font-weight: 400; margin-top: 4px; }
+.ck-class-counters { font-weight: 600; }
+.ck-class-run { padding: 12px; border-radius: 8px; background: #edf5ee; color: #20332c; }
+.ck-class-warning { display: grid; gap: 12px; justify-items: start; color: #604512; background: #fff4dc; border: 1px solid #dfcd9c; padding: 14px; border-radius: 8px; }
+.ck-class-error { color: #8c2c22; }
+/* Empty live regions stay in the accessibility tree and take no room. */
+.ck-class-result:empty, .ck-class-error:empty, .ck-class-result-bar:not(.ck-class-result-shown) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.ck-class-result-bar.ck-class-result-shown { position: sticky; top: 8px; z-index: 1; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 12px 14px; border: 1px solid #cbd7c7; border-radius: 8px; background: #f4f8f2; box-shadow: 0 2px 8px rgb(32 51 44 / 12%); }
+.ck-class-result-bar p { flex: 1 1 240px; font-weight: 600; }
+.ck-class-new { display: inline-block; padding: 2px 8px; border: 1px solid #dfcd9c; border-radius: 999px; background: #fff4dc; color: #604512; font-size: 0.8rem; font-weight: 600; vertical-align: middle; white-space: nowrap; }
+.ck-class-filter ul { display: flex; flex-wrap: wrap; gap: 8px; padding: 0; margin: 0; list-style: none; }
+.ck-class-filter a { display: inline-flex; align-items: center; min-height: 44px; padding: 8px 14px; border: 1px solid #cbd7c7; border-radius: 8px; background: #fff; color: #246044; text-underline-offset: 3px; }
+.ck-class-filter a[aria-current] { background: #246044; border-color: #246044; color: #fff; font-weight: 600; }
+.ck-class-groups, .ck-class-records, .ck-class-aliases { display: grid; gap: 16px; padding: 0; margin: 0; list-style: none; min-width: 0; }
+.ck-class-group { min-width: 0; padding: 18px; border: 1px solid #d7e0d3; border-radius: 12px; }
+.ck-class-group > section { display: grid; gap: 12px; min-width: 0; }
+.ck-class h3 { margin: 0; font-size: 1.15rem; }
+.ck-class-path { color: #20332c; }
+.ck-class-record { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px 20px; align-items: start; min-width: 0; padding-top: 16px; border-top: 1px solid #d7e0d3; }
+.ck-class-record > * { min-width: 0; }
+.ck-class-record-main { display: grid; gap: 8px; }
+.ck-class-record > .ck-class-area, .ck-class-flat > p { grid-column: 1 / -1; }
+.ck-class-product { font-weight: 600; }
+.ck-class a:not(.action-link) { color: #246044; text-underline-offset: 3px; }
+.ck-class-record a { display: inline-flex; align-items: center; min-height: 44px; }
+.ck-class-aliases { gap: 6px; font-size: 0.95rem; }
+.ck-class-state { justify-self: start; padding: 8px 12px; border-radius: 8px; background: #fff4dc; color: #604512; font-weight: 600; }
+.ck-class-state-confirmed { background: #edf5ee; color: #246044; }
+.ck-class-state-rejected, .ck-class-state-superseded { background: #edf2ea; color: #40564a; }
+.ck-class-facts { display: grid; gap: 10px; margin: 0; }
+.ck-class-facts dt { color: #526158; font-size: 0.9rem; }
+.ck-class-facts dd { margin: 2px 0 0; }
+.ck-class-area { display: grid; gap: 14px; min-width: 0; padding: 14px; border: 1px solid #cbd7c7; border-radius: 10px; background: #f7faf5; }
+.ck-class-area-title { font-weight: 600; }
+.ck-class-field { display: grid; gap: 6px; min-width: 0; }
+.ck-class-field label, .ck-class legend { font-weight: 600; }
+.ck-class-field input { width: 100%; min-width: 0; min-height: 44px; padding: 10px; border: 1px solid #6f8275; border-radius: 8px; background: #fff; color: #20332c; font: inherit; }
+.ck-class-options { display: grid; gap: 12px; justify-items: start; min-width: 0; }
+.ck-class fieldset { width: 100%; min-width: 0; max-height: 320px; margin: 0; padding: 8px 14px; overflow-y: auto; border: 1px solid #d7e0d3; border-radius: 10px; background: #fff; }
+.ck-class legend { padding: 0 6px; }
+.ck-class-choice { display: flex; align-items: flex-start; gap: 10px; min-height: 44px; padding-block: 8px; cursor: pointer; }
+.ck-class-choice input { flex: 0 0 auto; width: 20px; height: 20px; min-height: 0; margin: 2px 0 0; accent-color: #246044; }
+.ck-class-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.ck-class .pagination { padding: 0; }
+/* Marks outside the screen: the catalog list and the product card. */
+.ck-class-badge { margin-top: 8px; }
+.ck-class-badge a { display: inline-flex; align-items: center; min-height: 44px; padding: 6px 12px; border: 1px solid #dfcd9c; border-radius: 8px; background: #fff4dc; color: #604512; font-size: 0.9rem; font-weight: 600; text-underline-offset: 3px; }
+.ck-class-notice { margin: 16px 0; overflow-wrap: anywhere; }
+.ck-class-notice p { margin: 0; }
+@media (max-width: 720px) {
+  .ck-class-record { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 540px) {
+  .ck-class-panel { padding: 16px; }
+  .ck-class-group { padding: 14px; }
+  .ck-class-actions button, .ck-class-actions .action-link { flex: 1 1 180px; }
+  .ck-class fieldset { max-height: none; }
+}

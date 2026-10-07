@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "classification_busy",
+    "message": "Каталог сейчас изменяется. Повторите позже."
+  }
+}

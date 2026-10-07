@@ -1,16 +1,27 @@
 import type { Product } from '../../api/types'
 import { formatPrice, formatPurchasedOn, formatQuantity } from '../../lib/format'
 import { Link } from '../../navigation'
+import { ClassificationBadge } from '../classification/ClassificationMarks'
+import { markFor } from '../classification/marks'
+import type { ClassificationMark } from '../classification/marks'
 import { MergeBadge } from '../merges/MergeMarks'
 import type { PendingMark } from '../merges/state'
 
-/** `merges`: kept products of pending duplicate groups; absent or empty — the list has no marks. */
-export default function ProductList({ products, merges }: { products: Product[]; merges?: ReadonlyMap<number, PendingMark> }) {
+/**
+ * `merges`: kept products of pending duplicate groups; `classifications`: products with a pending category suggestion.
+ * Absent or empty — the list has no marks of that kind.
+ */
+export default function ProductList({ products, merges, classifications }: {
+  products: Product[]; merges?: ReadonlyMap<number, PendingMark>; classifications?: ReadonlyMap<number, ClassificationMark>
+}) {
   return <ul className="ck-catalog-products">
-    {products.map((product) => <li className="ck-catalog-product" key={product.id}>
+    {products.map((product) => {
+      const classification = markFor(classifications, product)
+      return <li className="ck-catalog-product" key={product.id}>
       <div className="ck-catalog-product-description">
         <h3><Link to={{ kind: 'product', productId: product.id, query: { page: 1 } }}>{product.name}</Link></h3>
         {merges?.has(product.id) && <MergeBadge mark={merges.get(product.id)!} />}
+        {classification && <ClassificationBadge mark={classification} />}
         <dl className="ck-catalog-metadata">
           <div><dt>Бренд</dt><dd>{product.brand?.name || 'Не указано'}</dd></div>
           <div><dt>Фасовка</dt><dd>{product.package ? formatQuantity(product.package.quantity, product.package.unit) : 'Не указано'}</dd></div>
@@ -27,6 +38,7 @@ export default function ProductList({ products, merges }: { products: Product[];
             </li>)}
           </ul>}
       </div>
-    </li>)}
+    </li>
+    })}
   </ul>
 }

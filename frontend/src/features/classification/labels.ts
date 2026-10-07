@@ -1,0 +1,135 @@
+import type {
+  Classification, ClassificationCategory, ClassificationProduct, ClassificationState, ClassificationStatus,
+} from '../../api/product-classifications'
+import type { ExecutorState } from '../../api/recognition-types'
+import type { BaseUnit, LocalApiFailure } from '../../api/types'
+import { formatQuantity } from '../../lib/format'
+import type { ClassificationQuery } from '../../navigation'
+import { counted } from '../merges/labels'
+import type { AreaFate, OpenArea } from './state'
+
+export const missing = 'Не указано'
+export const unitLabels: Record<BaseUnit, string> = { kg: 'кг', l: 'л', pcs: 'шт' }
+export const named = (value: { name: string }) => value.name.trim() || missing
+export const pathSeparator = ' → '
+
+const statusLabels: Record<ClassificationStatus, string> = {
+  pending: 'Ожидает подтверждения', confirmed: 'Подтверждено', rejected: 'Отклонено', superseded: 'Заменено',
+}
+const resolutionLabels: Record<string, string> = {
+  'confirmed/confirmed': 'Подтверждено', 'confirmed/other': 'Выбран другой обобщённый продукт',
+  'rejected/rejected': 'Отклонено', 'rejected/cancelled': 'Отменено командой',
+  'superseded/changed': 'Заменено: обобщённый продукт изменён вручную', 'superseded/merged': 'Заменено: товар объединён с другим',
+  'superseded/product_removed': 'Заменено: товар удалён',
+}
+/** State of a record in words: the way it was decided, not only the status. */
+export function statusLabel(record: Pick<Classification, 'status' | 'resolution'>): string {
+  return resolutionLabels[`${record.status}/${record.resolution}`] ?? statusLabels[record.status]
+}
+
+export const filters: { value: NonNullable<ClassificationQuery['status']> | ''; label: string }[] = [
+  { value: '', label: 'Ожидают' }, { value: 'confirmed', label: 'Подтверждённые' }, { value: 'rejected', label: 'Отклонённые' },
+  { value: 'superseded', label: 'Заменённые' }, { value: 'all', label: 'Все' },
+]
+
+export function categoryText(category: Pick<ClassificationCategory, 'path'> | { path: { name: string }[] } | null): string {
+  return category && category.path.length ? category.path.map(named).join(pathSeparator) : 'Категория не указана'
+}
+export const productsCount = (count: number) => counted(count, 'товар', 'товара', 'товаров')
+/** Brand and package of a product; empty facts are left out. */
+export function productFacts(product: Pick<ClassificationProduct, 'brand' | 'package'>): string {
+  return [
+    product.brand?.name.trim() && `Бренд: ${product.brand.name.trim()}`,
+    product.package && `Фасовка: ${formatQuantity(product.package.quantity, product.package.unit)}`,
+  ].filter(Boolean).join(' · ')
+}
+
+/** Local texts of a failed run. The server message is never shown. */
+const runErrors: Record<string, string> = {
+  auth_required: 'требуется вход в сервис модели', network_unavailable: 'сеть сервиса модели недоступна',
+  rate_limited: 'сервис модели временно ограничил запросы', provider_unavailable: 'сервис модели недоступен',
+  configuration_error: 'настройки сервиса модели требуют проверки', invalid_input: 'запрос к модели не прошёл проверку',
+  invalid_output: 'ответ модели не прошёл проверку', timeout: 'время ожидания ответа модели истекло',
+  worker_lost: 'обработчик перестал отвечать', input_too_large: 'каталог слишком велик для одного запроса к модели',
+}
+const number = (value: number) => value.toLocaleString('ru-RU')
+
+/**
+ * One line about the run to show and the worker: every run status is decided for every state of the worker.
+ * An unknown worker state adds nothing about the worker; a finished run does not depend on it.
+ */
+export function runText({ run, executor }: Pick<ClassificationState, 'run' | 'executor'>): { text: string; warning: boolean } | undefined {
+  if (!run) return undefined
+  const { progress } = run
+  const processed = `обработано ${number(progress.processed)} из ${number(progress.requested)}`
+  const working = { text: `Модель предлагает категории: ${processed}.`, warning: false }
+  // Nothing moves a started run without the worker: said in the same words wherever it stopped.
+  const paused = { text: `Запуск приостановлен: ${processed}. Воркер распознавания не запущен: запуск продолжится, когда воркер запустят.`, warning: true }
+  const queued = { text: 'Запуск в очереди.', warning: false }
+  const busy = ' Воркер занят другим заданием.'
+  const byWorker = (texts: Record<ExecutorState, { text: string; warning: boolean }>) => texts[executor.state]
+  switch (run.status) {
+    // A started run waits in the queue between its batches: it is under way, not about to begin.
+    case 'queued': return run.started_at !== null
+      ? byWorker({ absent: paused, busy: { ...working, text: working.text + busy }, idle: working, unknown: working })
+      : byWorker({
+        absent: { text: 'Запуск в очереди. Воркер распознавания не запущен: запуск начнётся, когда воркер запустят.', warning: true },
+        busy: { ...queued, text: queued.text + busy },
+        idle: { text: 'Запуск в очереди и начнётся в ближайшие секунды.', warning: false },
+        unknown: queued,
+      })
+    // The worker died during a batch: the server keeps the run `running` — `busy` until its lease ends, `absent` after it.
+    case 'running': return byWorker({ absent: paused, busy: working, idle: working, unknown: working })
+    case 'succeeded': return {
+      text: `Запуск завершён: предложено ${number(progress.applied)}, не распознано ${number(progress.unknown)}, пропущено ${number(progress.skipped)}.`
+        + (run.remaining > 0 ? ` Без предложения осталось ${number(run.remaining)}: запустите ещё раз.` : ''),
+      warning: false,
+    }
+    case 'failed': {
+      const cause = run.error && Object.hasOwn(runErrors, run.error.code) ? `: ${runErrors[run.error.code]}` : ''
+      return { text: `Запуск завершился ошибкой${cause}. Уже предложенные категории сохранены.`, warning: true }
+    }
+    case 'cancelled': return { text: 'Запуск отменён.', warning: false }
+  }
+}
+
+/** After these the server may have saved the action: the record is read again before any new attempt. */
+export function uncertain(error: LocalApiFailure): boolean {
+  return ['network', 'timeout', 'server', 'database_unavailable', 'invalid_response'].includes(error.reason)
+}
+
+export const apiOffText = 'Локальный API выключен или недоступен с этого адреса. Запустите сервер с ALLOW_LOCAL_RECOGNITION_API=1 и откройте приложение с этого компьютера.'
+
+/** Local translations only: a server message never reaches the screen. `choose` — the refusal of «Выбрать другой». */
+export function errorText(error: LocalApiFailure, context: 'read' | 'action' | 'choose' = 'read'): string {
+  const mutation = context !== 'read'
+  switch (error.reason) {
+    case 'permission_denied': return apiOffText
+    case 'csrf_failed': return 'Токен безопасности устарел. Повторите действие.'
+    case 'classification_busy': return 'Каталог сейчас изменяется: идёт импорт чека, слияние дублей или другое действие. Ничего не сохранено.'
+    case 'classification_changed': return 'Предложение изменилось. Данные обновлены: проверьте запись и повторите действие.'
+    case 'classification_resolved': return 'Предложение уже решено. Показано актуальное состояние.'
+    case 'not_found': return mutation ? 'Запись не найдена. Список обновлён.' : 'Запись не найдена. Возможно, ссылка устарела.'
+    case 'page_out_of_range': return 'Такой страницы больше нет. Откройте первую страницу.'
+    case 'invalid_parameter': case 'invalid_request': return context === 'choose'
+      ? 'Этот обобщённый продукт больше недоступен. Выберите другой.'
+      : mutation ? 'Запрос отклонён. Данные обновлены: проверьте запись и повторите действие.' : 'Запрос отклонён: проверьте параметры страницы.'
+    case 'network': case 'timeout': case 'server': case 'database_unavailable': return mutation
+      ? 'Ответ сервера не получен. Действие могло выполниться: проверьте состояние записи перед повтором.'
+      : error.reason === 'network' || error.reason === 'timeout'
+        ? 'Нет ответа сервера. Проверьте соединение и повторите запрос.' : 'Сервис временно недоступен. Повторите запрос позже.'
+    case 'invalid_response': return mutation
+      ? 'Ответ сервера не соответствует ожидаемому формату. Действие могло выполниться: проверьте состояние записи перед повтором.'
+      : 'Ответ сервера не соответствует ожидаемому формату. Повторите запрос позже.'
+    default: return 'Запрос не выполнен. Повторите действие позже.'
+  }
+}
+
+/** A read of the list closed an open area: the same words as the refusal the action itself would have got. */
+export function areaNotice(fate: Exclude<AreaFate, 'open'>, area: OpenArea): string {
+  if (area.kind === 'bulk') return fate === 'changed'
+    ? 'Состав группы изменился. Данные обновлены: проверьте группу и повторите действие.'
+    : 'В группе больше нет записей для подтверждения. Показано актуальное состояние.'
+  return fate === 'changed' ? errorText({ kind: 'error', reason: 'classification_changed' }, 'action')
+    : 'Предложение уже решено либо записи больше нет в этом списке. Показано актуальное состояние.'
+}

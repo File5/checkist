@@ -1,0 +1,195 @@
+# classification: предположение обобщённого продукта с подтверждением (шаг С1)
+
+Ядро без HTTP, очереди воркера и настоящей модели: таблицы, таксономия, проверка ответа, сервис операций, явный fake, исполнение пакета, команды, демо. Очередь, воркер, Codex и автозапуск из импорта — шаг С2; HTTP и эталонные JSON — шаг С3. Контракт — ответ задачи `task_mux37gz1hc` (К1); общие `docs/` обновляет С3.
+
+Товар, созданный распознаванием, лежит в служебном «Не разобрано». Модель предполагает обобщённый продукт (существующий либо новый, с путём категории). Предположение применяется **сразу**: `Product.generic` меняется, а запись `ProductClassification` помнит прежнее и предложенное значение и ждёт человека. Человек подтверждает, выбирает другой существующий обобщённый продукт или отклоняет.
+
+Правила, которые нельзя нарушать:
+
+- автоматика меняет обобщённый продукт товара, только если сейчас это служебное «Не разобрано» — проверка при отборе (`candidates`) и ещё раз под блокировкой (`apply`);
+- значение, выставленное человеком, не перезаписывается: запись закрывается как «заменено» (`superseded` / `changed`);
+- отклонение возвращает товар в прежний обобщённый продукт, убирает созданное механизмом и опустевшее, и запоминает отказ (`ClassificationRejection`): тот же вариант этому товару больше не предлагается;
+- сам «Не разобрано», его категория и категории существующих обобщённых продуктов не меняются;
+- значение, которое было у товара до предположения, отклонением и `cancel-pending` не затрагивается: вернуть товар в прежний обобщённый продукт можно только по записи, значение которой выставил сам механизм ([слияние дублей](#слияние-дублей-когда-запись-переходит-к-оставляемому-товару)).
+
+## Модель (`models.py`, миграция `0001_initial`)
+
+Таблицы `catalog`, `receipts`, `recognition`, `merges` не меняются. Внешние ключи на каталог — `SET_NULL` / `CASCADE`, без `PROTECT`: правке и удалению каталога они не мешают; рядом хранится числовой `*_ref` и снимок названия.
+
+| Модель | Назначение |
+| --- | --- |
+| `ProductClassification` | Запись-предположение. `status`: `pending` / `confirmed` / `rejected` / `superseded`; `resolution`: `confirmed`, `other`, `rejected`, `cancelled`, `changed`, `merged`, `product_removed` (пусто, пока `pending`); `version` с 1, растёт при каждом изменении сервисом; `active_product` (one-to-one, `related_name="pending_classification"`) заполнен, только пока запись ожидает |
+| `CreatedGenericProduct`, `CreatedCategory` | Журнал созданного механизмом: `state` `provisional` («новая») / `kept` / `removed` |
+| `ClassificationRejection` | Память отказов: unique `(product, generic_key)`, ключ — `taxonomy.name_key` названия |
+| `ClassificationRun` | Запуск: `status` `queued` / `running` / `succeeded` / `failed` / `cancelled`, `trigger` `manual` / `import` / `command`, `scope` `all` / `products`. Не больше одного `queued` и одного `running`; `run_token`, `heartbeat_at`, `lease_expires_at` заполнены только у `running`; `finished_at` — только у конечного статуса |
+| `ClassificationAttempt` | Приватная попытка пакета: сырой ответ, текст неверного ответа. В API не отдаётся |
+
+Перечисления: `ProductClassification.Status`, `.Resolution`, `ClassificationRun.Status`, `.Trigger`, `.Scope`.
+
+Админка (`admin.py`) — только чтение: `ProductClassification`, `ClassificationRun`, `CreatedGenericProduct`, `CreatedCategory`. `ClassificationRejection` не зарегистрирована намеренно: она каскадно удаляется вместе с товаром, и регистрация «только чтение» запретила бы удалять такой товар в админке. `ClassificationAttempt` не зарегистрирована: в ней приватный ответ модели.
+
+## Что вызывать из С2 и С3
+
+### `classification.services`
+
+Каждая изменяющая операция — одна транзакция: неблокирующий `IMPORT_LOCK` первым, затем (только при создании или удалении категории) неблокирующая блокировка дерева `CATEGORY_TREE_LOCK`, затем строки — записи по возрастанию id, товары по возрастанию id. «Занято» — `ClassificationBusy`, полный откат, без скрытого повтора. `transaction.atomic()` не `durable`, advisory-блокировка в пределах сессии повторно входима: `after_merge_confirmed` и `request_run(trigger="import")` вызываются из чужой транзакции.
+
+| Подпись | Кому | Результат |
+| --- | --- | --- |
+| `candidates(*, product_ids=None, auto=False) -> QuerySet[Product]` | С2, С3 | Товары по возрастанию id: служебный обобщённый продукт, нет ожидающей записи, не поглощён ожидающим слиянием, не услуга и не залог. `auto=True` — ещё и ни одной записи в любом статусе |
+| `request_run(*, trigger, product_ids=None) -> tuple[ClassificationRun \| None, bool]` | С2 (импорт), С3 (`POST runs/`) | Только строка очереди, модель не вызывается. `IMPORT_LOCK` берётся при `trigger != "import"` |
+| `apply(run, response, *, source) -> ApplyResult` | С2 | Применить проверенный ответ. `run` может быть `None`. Увеличивает `applied_count` / `unknown_count` / `skipped_count` / `stats` / `version` запуска; `cursor` и статус — забота исполнителя |
+| `reconcile() -> int` | С2 | Сверка всех ожидающих записей, число изменённых |
+| `confirm(record_id, *, version, generic_id) -> ProductClassification` | С3 | `generic_id` равен предложенному — подтверждение, другой — «выбрать другой» |
+| `reject(record_id, *, version) -> ProductClassification` | С3 | |
+| `confirm_many(items: Sequence[tuple[int, int]]) -> list[ProductClassification]` | С3 | 1–100 пар `(id, version)`, всё или ничего, результат по возрастанию id |
+| `cancel_pending() -> dict` | команда | `{"cancelled": [...], "superseded": [...], "runs_cancelled": [...], "removed_generics": n, "removed_categories": n}` |
+| `after_merge_confirmed(*, target_id, absorbed_ids, target_generic_before) -> None` | `merges` | Шаг после подтверждения слияния; `target_generic_before` — id обобщённого продукта оставляемого товара до дополнения фактов (обязательный именованный, отступление от §12.3 К1) |
+| `get_record(record_id) -> ProductClassification` | С3 | Либо `ClassificationNotFound`; `run` загружен, 1 запрос |
+| `records(*, status=None, product=None, generic=None, run=None, ordering="generic") -> QuerySet` | С3 | `product` ищет по `product_ref` и `origin_product_ref`; `ordering`: `generic` (`suggested_generic_name`, `suggested_generic_ref`, `id`) либо `-id`; `run` загружен |
+| `describe(records) -> list[RecordInfo]` | С3 | 7 запросов на страницу любого размера (меньше — только когда набор для запроса пуст) |
+| `summary() -> Summary` | С3 | 3 запроса |
+| `get_run(run_id) -> ClassificationRun`, `runs(*, status=None) -> QuerySet` | С3 | Порядок `-id` |
+
+Данные:
+
+- `Source(provider, model="", prompt_version="1", schema_version="1", classifier_version=1)`; `default_source(classifier=None)` — источник по классификатору либо по `RECEIPT_OCR_PROVIDER` / `RECEIPT_OCR_MODEL`.
+- `ApplyResult(record_ids, applied, unknown, skipped: dict[str, int])` — `skipped` без `unknown`.
+- `RecordInfo`: `record`, `product` (живой `Product` либо `None`; у решённой записи ищется по `product_ref`), `product_generic` (текущий `GenericProduct` либо `None`), `aliases` (до 10 `ProductAlias` с загруженным `merchant`, порядок `raw_name, id`), `merge_group_id` (id ожидающей группы, в которой товар поглощён), `suggested_generic` (живой либо `None`), `category_path` (`[(id, name, is_new)]` от корня; при удалённом обобщённом продукте — снимок с `is_new = False`), `generic_is_new`, `pending_count`, `can_act`.
+- `Summary`: `pending_count`, `unclassified_count`, `run` (выполняющийся, иначе в очереди, иначе последний по id, иначе `None`).
+
+Исключения наследуют `ClassificationError`, у каждого `code` — код контракта:
+
+| Исключение | `code` | Данные |
+| --- | --- | --- |
+| `ClassificationNotFound` | `not_found` | — |
+| `ClassificationBusy` | `classification_busy` | занят `IMPORT_LOCK` либо дерево категорий, либо SQLSTATE `55P03` / `57014` / `40P01` |
+| `ClassificationResolved` | `classification_resolved` | `.record`; у `confirm_many` — `.record is None`, `.fields` |
+| `ClassificationChanged` | `classification_changed` | `.record` с текущей `version`; у `confirm_many` — `.fields` |
+| `ClassificationInvalidParameter` | `invalid_parameter` | `.fields`: `{параметр: причина}` |
+
+Причины `ClassificationInvalidParameter`: `{"generic_id": "unknown"}` (обобщённого продукта нет либо значение не целое положительное), `{"generic_id": "service_generic"}`, `{"items": "empty"}`, `{"items": "too_many"}`, `{"items.N.id": "duplicate"}` (N — позиция повторного id). `.fields` у `confirm_many`: `{"items.N": "resolved" | "changed"}` по всем отказавшим записям сразу; исключение — `ClassificationResolved`, если есть хотя бы одна `resolved`, иначе `ClassificationChanged`. Прочий отказ БД сервис не перехватывает — это `503 database_unavailable` на стороне представления.
+
+Порядок проверок `confirm` / `reject`: запись существует → повтор → статус → сверка → `version` → параметр. Повтор без `Idempotency-Key`: `confirm` на записи `confirmed` с тем же `final_generic_ref` и `reject` на записи `rejected` возвращают запись без записи в БД при любой `version`.
+
+**Сверка** (`_reconcile`) выполняется внутри каждой операции над записью и в начале `apply`, `request_run` (кроме `import`), `start_run`: товара нет — запись закрывается (`merged`, если по журналу слияний найден оставляемый товар, иначе `product_removed`), к оставляемому товару сверка запись **не переносит** и товар не трогает; обобщённый продукт товара сменили — `superseded` / `changed`; живые название, единица или путь категории отличаются от снимка — снимок обновляется. Эти исходы **фиксируются**, и только потом операция поднимает `ClassificationResolved` / `ClassificationChanged`. «Занято» и устаревшая `version` не сохраняют ничего. Чтение ничего не пишет: до сверки такая запись отдаётся `pending` с `can_act = False`.
+
+Запуск без очереди (использует команда `suggest`; С2 может взять либо написать свои переходы в `queue.py`): `start_run(*, product_ids=None, limit=None, source=None) -> ClassificationRun | None` (сразу `running`; живая lease чужого запуска — `ClassificationBusy`, истёкшая — `failed` / `worker_lost`), `advance_run(run, consumed)` (курсор и продление lease), `finish_run(run, *, error_code="")`, `count_skipped(run, reason, count)`, `lease_until(now)` — `now + PRODUCT_CLASSIFICATION_TIMEOUT_SECONDS + 60 с`.
+
+### Остальные модули
+
+| Подпись | Назначение |
+| --- | --- |
+| `classification.taxonomy.name_key(text)`, `display_name(text)`, `SERVICE_KEY` | Ключ названия (NFKC, `casefold`, `ё` → `е`, все тире → `-`, пробелы) и отображаемое название. Ещё `SERVICE_NAME`, `is_valid_name`, `is_service_name` |
+| `classification.context.build_request(product_ids) -> ClassificationRequest` | Вход модели, только чтение, 9 запросов при любом числе товаров (на один больше при продавце без вывески и ещё на один при превышении предела в 500 обобщённых продуктов). `request.product_ids` — товары документа по возрастанию id (исчезнувшие пропущены). Больше 120 000 байт — `InputTooLarge` (`code = "input_too_large"`); `fit_request(product_ids)` делит пакет пополам до соблюдения предела |
+| `classification.validation.validate_response(data, *, product_ids) -> ClassificationResponse` | `data` — текст JSON либо разобранный объект. Неверный ответ целиком — `ClassificationOutputError` (`.path`, `.reason`, без значений входа). `drop_reason(suggestion)` — причина отброса одного пункта, известная без каталога: `unknown`, `service_target`, `name_invalid`, `category_invalid` |
+| `classification.runner.run_batch(product_ids, *, classifier, run=None, context=None, dry_run=False) -> BatchResult` | Один пакет: повторная проверка кандидатов → вход → классификатор → проверка → `apply` |
+| `classification.classifier.ProductClassifier`, `FakeClassifier`, `FAKE_SCENARIOS`, `get_classifier(*, scenario=None)` | Протокол, явный fake, фабрика |
+| `classification.dto` | `ClassificationRequest(document, product_ids, sha256)` с `to_json()`; `Suggestion`; `ClassificationResponse(items)` с `to_dict()`; версии `PROMPT_VERSION`, `SCHEMA_VERSION`, `INPUT_VERSION` = `"1"`, `CLASSIFIER_VERSION` = `1` |
+
+`BatchResult`: `request` (`None`, если кандидатов в пакете не осталось либо вход не поместился), `response`, `raw_payload` (`response.to_dict()`), `error_code`, `invalid_output_text` (до 65536 символов), `apply` (`ApplyResult | None`), `consumed`.
+
+`run_batch` при заданном `run` сам пишет `ClassificationAttempt` (номер пакета — следующий за последним у запуска, попытки с 1) и счётчики запуска; курсор и статус двигает вызывающий — на `result.consumed`. Сбой с признаком `retryable` повторяется до `RECEIPT_OCR_MAX_ATTEMPTS` с паузой 2–3 с; итоговый сбой — `error_code` (код провайдера либо `input_too_large`), ничего не применено. Занятый каталог повторяется три раза с паузами 0,2 и 0,4 с; после третьего отказа товары пакета остаются без предположения (`skipped: {"catalog_busy": n}`), запуск идёт дальше. `context` — `RunContext` воркера (отмена); срок одного запроса — `PRODUCT_CLASSIFICATION_TIMEOUT_SECONDS`. У запуска из импорта (`trigger="import"`, `scope="products"`) повторная проверка идёт с `auto=True`. `runner.execute(run, *, classifier)` выполняет все пакеты запуска `running` в текущем процессе.
+
+Причины пропуска пункта в `run.stats` и `ApplyResult.skipped`: `unknown_generic`, `service_target`, `name_invalid`, `category_invalid`, `generic_ambiguous`, `category_ambiguous`, `rejected_before`, `not_eligible`, `catalog_conflict`, `catalog_busy`; в `stats` дополнительно `unknown`.
+
+`get_classifier` выбирает по `RECEIPT_OCR_PROVIDER`: `fake` — `FakeClassifier` (сценарий из аргумента, иначе из переменной окружения `PRODUCT_CLASSIFICATION_FAKE_SCENARIO`, иначе `mixed`); `codex_cli` — `classification.codex.CodexClassifier` (шаг С2; модель — `RECEIPT_OCR_MODEL`). Сбой никогда не включает fake. Очередь запусков, шаг воркера, автозапуск после импорта и измерение времени запроса — [QUEUE.md](QUEUE.md).
+
+Сценарии `FakeClassifier(scenario="mixed", *, gate=None, entered=None)`: `mixed`, `existing`, `new_category`, `unknown`, `provider_error`, `auth_failure`, `invalid_output`, `foreign_product`, `missing_product`, `service_target`, `rejected_again`, `pause`. У неверного ответа `ProviderError.private_output` несёт текст ответа — он попадает в `BatchResult.invalid_output_text`.
+
+### Что меняется вне приложения
+
+- `merges/services.py`: `_notify_classification(target_id, absorbed_ids, generic_before)` после `_resolve(group, Status.CONFIRMED)` в `confirm()`, в savepoint; `generic_before` — `generic_id` оставляемого товара, запомненный в `confirm()` до дополнения фактов. Сбой шага пишет в журнал только класс ошибки и слияние не отменяет. Если шаг не выполнился, запись остаётся `pending` без товара и закрывается первой же сверкой.
+- `api/recognition_serialization.py`: `executor.state = "busy"` также при `ClassificationRun` в `running` с живой lease; проверка добавлена в тот же оператор, что читает `pg_locks`, число запросов прежнее; `last_seen_at` при этом — heartbeat выполняющегося задания распознавания либо `null`.
+- `config/settings.py` и `.env.example`: `PRODUCT_CLASSIFICATION_AUTO_SUGGEST` (0), `PRODUCT_CLASSIFICATION_TIMEOUT_SECONDS` (180, 1..2400), `PRODUCT_CLASSIFICATION_BATCH_SIZE` (25, 1..50), `PRODUCT_CLASSIFICATION_RUN_LIMIT` (200, 1..1000). Флаг автозапуска включает постановку запуска в очередь из импорта и из подтверждения вырезки (шаг С2, [QUEUE.md](QUEUE.md)).
+
+## Слияние дублей: когда запись переходит к оставляемому товару
+
+Подтверждение слияния дополняет пустой обобщённый продукт оставляемого товара значением поглощённого — в том числе неподтверждённым предположением. Шаг `after_merge_confirmed` решает судьбу ожидающей записи каждого поглощённого товара:
+
+| Оставляемый товар | Запись поглощённого товара |
+| --- | --- |
+| До слияния был в «Не разобрано», после слияния — в предложенном обобщённом продукте; ни один поглощённый товар не имел этого значения сам; своей ожидающей записи у оставляемого нет | **Переходит**: `product_ref`, `active_product`, снимок товара — оставляемого; `origin_product_ref` — товар, для которого запись создана; `previous_generic_*` — прежнее значение самого оставляемого товара; `version + 1`, статус `pending` |
+| До слияния имел содержательный обобщённый продукт — равный предложенному или нет, свой либо выбранный человеком при решении конфликта | `superseded` / `merged`, `final_*` — значение оставляемого; товар не трогается, пометки «требует подтверждения» на нём нет |
+| Был в «Не разобрано», но то же значение имел другой поглощённый товар — от человека либо подтверждённое | `superseded` / `merged`: без предположения слияние дало бы оставляемому то же значение |
+| Был в «Не разобрано», получил другое значение (человек решил конфликт иначе) | `superseded` / `merged`; уборка предложенного |
+| Имеет свою ожидающую запись | `superseded` / `merged`; своя запись оставляемого затем проходит сверку — таблица ниже |
+
+«Имел значение сам» читается из журнала слияния: снимок `facts` **поглощённой** записи снят до слияния, и значение считается предположением, только если на него указывает ожидающая запись этого товара. Прежнее значение **оставляемого** товара в журнале не хранится (его снимок пишется после дополнения фактов), поэтому `merges.services.confirm` передаёт его шагу параметром.
+
+### Своя ожидающая запись оставляемого товара
+
+Оставляемый товар мог сам ждать подтверждения: до предположения был в «Не разобрано», механизм предложил ему обобщённый продукт X. Слияние по своим правилам дополнило бы его пустой факт единственным содержательным значением группы, поэтому судьба его записи зависит от того, что было у поглощённых:
+
+| Поглощённый товар | Своя запись оставляемого (предлагает X) | `reject` и `cancel-pending` после слияния |
+| --- | --- | --- |
+| В «Не разобрано» | остаётся `pending` | возвращают оставляемого в «Не разобрано»: X ему дал только механизм |
+| X **от человека**: выставлен в админке, подтверждён (`confirmed`) либо выбран вместо другого предположения (`other`) | `superseded` / `merged`, `final_*` = X; товар не трогается, пометки нет; журнал созданного X — `kept`; память отказов не пишется | `classification_resolved`; команда запись не находит — оставляемый остаётся в X |
+| X из своего ожидающего предположения | остаётся `pending`; запись поглощённого — `superseded` / `merged` | возвращают в «Не разобрано»: оба значения — неподтверждённые предположения |
+| Другое значение Y от человека, конфликт решён в пользу X | остаётся `pending` (К1 §5.1: человек выбрал неподтверждённое предположение и сам отказался от Y, пометка сохраняется) | возвращают в «Не разобрано» |
+| Другое значение Y от человека, конфликт решён в пользу Y | `superseded` / `changed`, `final_*` = Y; уборка X | `classification_resolved`; оставляемый остаётся в Y |
+| Несколько поглощённых | достаточно одного с X от человека — запись закрывается как во второй строке | — |
+
+Статус `merged`, а не `changed` и не `confirmed`: запись потеряла силу без решения на экране (`superseded` по словарю К1 §1), причина — слияние, а значение товара не менялось и предположение на экране никто не подтверждал; подпись клиента для этого сочетания — «Заменено: товар объединён с другим».
+
+Правило живёт в **сверке** (`_reconcile` → `_settled_by_duplicate`), а шаг слияния лишь запускает её для записи оставляемого, поэтому после сбоя шага первая же сверка (внутри `reject`, `confirm`, `confirm-many`, `cancel-pending`, `reconcile`, `apply`, запуска) решает то же самое и до возврата товара дело не доходит. Данных журнала для этого хватает:
+
+- значение X поглощённого товара — снимок `ProductMergeMember.facts` его записи в подтверждённой группе с `target_ref` = оставляемый;
+- оно **не своё**, если на X указывала ожидающая на момент слияния запись этого товара: она с тех пор закрыта как `merged` (либо ещё ждёт сверки), и её саму не закрыл раньше дубль с X от человека; либо это сама проверяемая запись, перешедшая сюда слиянием (`origin_product_ref` и цепочка подтверждённых слияний от него);
+- слияние старше записи (`resolved_at` группы раньше `created_at` записи) о её значении ничего не говорит: предположение сделано уже после него.
+
+То же определение «своего значения» применяет переход записи поглощённого товара (таблица выше): ожидающая запись, которую дубль с X от человека уже лишил силы, но сверка ещё не закрыла, предположением не считается и к оставляемому не переходит.
+
+Страховочная сверка (шаг не выполнился: сбой либо товар удалён в админке) прежнего значения оставляемого не знает и запись поглощённого товара **никогда не переносит** — только закрывает. **Известное ограничение:** после сбоя шага оставляемый товар, получивший из слияния неподтверждённое предположение, сохраняет его без пометки «требует подтверждения»; созданный механизмом обобщённый продукт при этом становится обычным (`kept`). Своя запись оставляемого от шага не зависит (см. выше), ограничений для неё нет.
+
+`Product.generic` пишется в четырёх местах: `apply` (товар в «Не разобрано», проверка под блокировкой), `confirm` с другим обобщённым продуктом (решение человека), `reject` и `cancel_pending` (`_return_product`). Последние два работают только с ожидающей записью после сверки — товар существует, несёт предложенное значение, ни один слитый с ним дубль не имел этого значения от человека, и выставил его механизм: `apply` этому товару либо слиянием, дополнившим пустой факт этого товара предположением. Сверка, уборка и шаг слияния `Product.generic` не пишут. Уборка удаляет созданный обобщённый продукт, только когда на него не ссылается ни один товар и ни одна ожидающая запись; тот, которым пользуется товар без ожидающей записи, становится обычным. Каждый путь закреплён тестом в `tests/test_merge.py` (`HumanValueTests`, `SurvivorRecordTests`).
+
+## Команды
+
+```powershell
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py product_classifications suggest [--dry-run] [--product ID ...] [--limit N] [--fake-scenario NAME]
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py product_classifications cancel-pending
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py product_classifications reconcile
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py seed_product_classification_demo
+```
+
+`suggest` выполняет запуск прямо в процессе команды (`trigger="command"`, сразу `running`), все пакеты подряд; сбой запуска — ненулевой код выхода после печати JSON. `--dry-run` вызывает классификатор и печатает проверенные предположения, ничего не пишет: ни каталог, ни запуск, ни попытку. `--fake-scenario` требует `RECEIPT_OCR_PROVIDER=fake`. С настоящим Codex (после С2) команда делает модельный вызов — только в QA.
+
+## Демо (только QA и тесты)
+
+`seed_product_classification_demo` работает только на базах `test_*` и `checkist_qa[_суффикс]`; повтор ничего не меняет. Вымышленный продавец «Kategoriemarkt», 3 чека, 14 строк, 12 товаров, 13 написаний; в каталоге заранее «Продукты питания» → «Молочные продукты» и «Молоко» (`l`). Таблица `demo.MIXED` — одновременно ответы fake-сценария `mixed`.
+
+```powershell
+$env:RECEIPT_OCR_PROVIDER = 'fake'
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py seed_product_classification_demo
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py product_classifications suggest --dry-run --fake-scenario mixed
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py product_classifications suggest --fake-scenario mixed
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py product_classifications cancel-pending
+```
+
+Ожидается на чистой базе: кандидатов 10; после `suggest` — `requested: 10, applied: 9, unknown: 1`, 9 ожидающих записей в 7 группах, создано 6 обобщённых продуктов и 4 категории; повтор — `requested: 1, applied: 0, unknown: 1`; `cancel-pending` — `removed_generics: 6, removed_categories: 4`, каталог совпадает с исходным (11 товаров в «Не разобрано»).
+
+## Откат
+
+1. Остановить воркер. `product_classifications cancel-pending`: каждый ожидающий товар возвращается в прежний обобщённый продукт, если его значение всё ещё предложенное (значение, которое человек успел сменить, остаётся); созданное механизмом и опустевшее удаляется; запуск в очереди отменяется; память отказов по этим записям не пишется. Каждая запись — своя транзакция: при «занято» команду достаточно повторить.
+2. `migrate classification zero` удаляет шесть таблиц. Каталог не трогает.
+
+После обеих команд каталог совпадает с видом до предположений, **кроме** подтверждённых классификаций и принятых вместе с ними категорий и обобщённых продуктов (они остаются обычными записями каталога без следа происхождения) и правок человека. Без `cancel-pending` ожидающие товары останутся в предложенных обобщённых продуктах без пометки и без возможности возврата — только из `pg_dump`. Повторный `migrate` создаёт пустые таблицы: история, журнал созданного и память отказов не восстанавливаются. Откат шага в слиянии, `executor.busy` и настроек — revert кода.
+
+## Отклонения от контракта К1 и уточнения
+
+Формат данных и подписи §12.3 не менялись; добавлено и уточнено:
+
+1. `BatchResult.consumed` — добавленное поле: сколько id из переданных пакет закрыл (вход может быть урезан до предела размера). Без него исполнитель не знает, на сколько двигать курсор.
+2. `run_batch` сам пишет попытки (`ClassificationAttempt`) и повторяет сбои `retryable` и «занято»: последовательность §7.3 «запись попытки → вызов → результат попытки» не делится на две функции с данной подписью.
+3. Добавлены `start_run`, `advance_run`, `finish_run`, `count_skipped`, `lease_until`, `default_source`, `runner.execute`, `context.fit_request`, `validation.drop_reason`, `taxonomy.is_valid_name` / `is_service_name` — нужны команде `suggest` и применению; очередь С2 может использовать их либо свои переходы.
+4. `request_run(trigger="import")` не выполняет сверку (§4.2 называет `request_run` целиком): по §4.6 импорт делает «только вставку в таблицу очереди» внутри своей транзакции. Сверка идёт в ручном запуске, в `apply` и в `start_run`.
+5. Блокировка дерева категорий берётся в момент первой потребности (создание либо удаление категории), а не строго до строк. Она неблокирующая, поэтому взаимная блокировка невозможна, а отказ даёт тот же полный откат.
+6. Занятое дерево категорий откатывает и исход сверки той же операции: правило «занято ничего не меняет» сильнее правила «исход сверки фиксируется».
+7. Добавлена причина пропуска `catalog_busy` (три отказа «занято» при применении пакета) — в §6.4 такого кода нет, а §4.0 требует оставить товары пакета без предположения, не проваливая запуск.
+8. Пункт про товар, который не является кандидатом, считается `not_eligible` даже при `decision: "unknown"`.
+9. `summary().run` читается одним запросом с порядком «выполняющийся, в очереди, последний».
+10. Ручной запуск при активных запусках возвращает запуск в очереди, а если его нет — выполняющийся (§4.6 говорит «он», не различая).
+11. Миграция `0001_initial` зависит от `catalog.0001_initial` и `receipts.0001_initial`, но **не** от `merges.0001_initial` (§2 называет все три). Внешних ключей на `merges` нет, а с такой зависимостью `migrate merges zero` молча удалял бы и таблицы предположений вместе с ожидающими записями, без `cancel-pending`; существующий тест отката `merges` оставлял бы базу без этих таблиц.
+12. **Переход записи при слиянии (заход 5 ревью).** §5.1 и §4.2 К1 переносят запись поглощённого товара к оставляемому всякий раз, когда его обобщённый продукт равен предложенному, — и шагом, и сверкой. Этого недостаточно: оставляемый товар мог иметь это значение до слияния, и тогда отклонение и `cancel-pending` уводили его в «Не разобрано». Теперь запись переходит только по правилу раздела «Слияние дублей» выше; сверка запись не переносит (в строке §4.2 «Товара нет» остаётся только закрытие, отказ операции — всегда `classification_resolved`); подпись шага §12.3 получила обязательный параметр `target_generic_before`; перешедшая запись хранит в `previous_generic_*` прежнее значение оставляемого товара. Известное последствие К1 «человек выбрал значение поглощаемой записи — оставляемый попросит подтверждения ещё раз» теперь верно, только если оставляемый был в «Не разобрано». Формат HTTP и эталонные JSON не менялись.
+13. **Своя запись оставляемого товара при слиянии (заход 5, Б4).** §5.1 К1 отправляет собственную ожидающую запись оставляемого товара на сверку §4.2, а та закрывает её, только если значение товара сменилось. Этого недостаточно: поглощённый дубль мог иметь то же значение от человека, и тогда отклонение и `cancel-pending` лишали оставляемого значения, которое слияние дало бы ему и без предположения. В таблицу сверки §4.2 добавлена строка: «товар есть, его обобщённый продукт равен предложенному, и слитый с ним после создания записи дубль имел это значение сам — `superseded` / `merged`, `final_*` — это значение; ответ операции `classification_resolved`». Сочетание `superseded` / `merged` раньше означало только «товар записи поглощён»; теперь — и «слияние подтвердило значение товара записи», при этом `product.exists` остаётся `true`. Подписи §12.3, формат HTTP, коды и эталонные JSON не менялись.

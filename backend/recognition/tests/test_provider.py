@@ -348,3 +348,164 @@ class ProviderTests(SimpleTestCase):
                 self.assertEqual(configured.local_time, time_printed)
                 parser = WorkerCommand().create_parser("manage.py", "recognition_worker")
                 self.assertEqual(parser.parse_args(["--fake-scenario", name]).fake_scenario, name)
+
+
+class TextCallTests(SimpleTestCase):
+    """run_text: the same call as detect/recognize, without an image and without knowing the schema."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="checkist-text-provider-")
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.schema = self.root / "any.schema.json"
+        self.schema.write_text('{"type": "object"}', encoding="utf-8")
+        self.config = CodexConfig(sys.executable, "gpt-6.1-sol", self.root / "scratch")
+
+    def call(self, provider, **kwargs):
+        kwargs.setdefault("run", RunContext(time.monotonic() + 5))
+        return provider.run_text(prompt="Текст запроса\nINPUT JSON:\n{}", schema=self.schema, timeout_seconds=5, **kwargs)
+
+    def provider(self, **kwargs):
+        kwargs.setdefault("payload", {"answer": [1, "два", None]})
+        stub = StubProcess(self, **kwargs)
+        return CodexCLIProvider(config=self.config, supervisor=stub), stub
+
+    def test_argv_has_every_flag_of_an_image_call_except_the_image_pair(self):
+        with_image = build_argv("codex", "m", "work", "schema", "out", "image.png")
+        text_only = build_argv("codex", "m", "work", "schema", "out")
+        position = with_image.index("-i")
+        self.assertEqual(with_image[position:position + 2], ["-i", "image.png"])
+        self.assertEqual(text_only, with_image[:position] + with_image[position + 2:])
+        self.assertNotIn("-i", text_only)
+        self.assertEqual(text_only[-1], "-")
+
+    def test_text_call_argv_stdin_schema_copy_isolation_and_cleanup(self):
+        stages = []
+        provider, stub = self.provider()
+        with patch.dict(os.environ, {"POSTGRES_PASSWORD": "secret", "ORCA_DISPATCH_ID": "secret", "OPENAI_API_KEY": "secret"}):
+            run = RunContext(time.monotonic() + 5, on_stage=stages.append)
+            self.assertEqual(self.call(provider, run=run), {"answer": [1, "два", None]})
+            self.call(provider, stage="other")
+        self.assertEqual(stages, ["classify"])
+        argv, work, env, prompt = stub.calls[0]
+        self.assertNotEqual(work, stub.calls[1][1])
+        self.assertFalse(work.exists())
+        self.assertTrue(work.is_relative_to(self.config.temp_root.resolve()))
+        self.assertEqual(prompt.decode("utf-8"), "Текст запроса\nINPUT JSON:\n{}")
+        self.assertNotIn("-i", argv)
+        self.assertEqual(argv[-1], "-")
+        for flag in ("--ignore-user-config", "--ignore-rules", "--ephemeral", "--skip-git-repo-check", "--json", "--output-schema"):
+            self.assertIn(flag, argv)
+        for tool in ("shell_tool", "unified_exec", "multi_agent"):
+            self.assertIn(tool, argv)
+        self.assertEqual(argv[argv.index("-s") + 1], "read-only")
+        self.assertEqual(Path(argv[argv.index("--output-schema") + 1]).parent, work)  # a copy, not the source file
+        self.assertEqual(Path(argv[argv.index("-o") + 1]), work / "result.json")
+        for key in ("POSTGRES_PASSWORD", "ORCA_DISPATCH_ID", "OPENAI_API_KEY"):
+            self.assertNotIn(key, env)
+
+    def test_events_are_checked_as_for_an_image_call(self):
+        for events in ([], [{"type": "turn.started"}], [{"type": "turn.completed"}] * 2,
+                       [{"type": "turn.started"}, {"type": "item.completed", "item": {"type": "command_execution"}},
+                        {"type": "turn.completed"}],
+                       [{"type": "new.unknown"}]):
+            provider, _ = self.provider(events=events)
+            with self.subTest(events=events), self.assertRaises(ProviderError) as raised:
+                self.call(provider)
+            self.assertEqual(raised.exception.code, "invalid_output")
+        provider, _ = self.provider(stdout=b"not-json")
+        with self.assertRaises(ProviderError) as raised:
+            self.call(provider)
+        self.assertEqual(raised.exception.code, "invalid_output")
+        reasoning = [{"type": "thread.started"}, {"type": "turn.started"},
+                     {"type": "item.completed", "item": {"type": "reasoning"}},
+                     {"type": "item.completed", "item": {"type": "agent_message"}}, {"type": "turn.completed"}]
+        provider, _ = self.provider(events=reasoning)
+        self.assertEqual(self.call(provider), {"answer": [1, "два", None]})
+
+    def test_result_file_missing_empty_truncated_stale_or_not_utf8(self):
+        for mode in ("missing", "empty", "truncated", "stale", "invalid_utf8"):
+            provider, _ = self.provider(mode=mode)
+            with self.subTest(mode=mode), self.assertRaises(ProviderError) as raised:
+                self.call(provider)
+            self.assertEqual((raised.exception.code, raised.exception.retryable), ("invalid_output", False))
+            if mode in ("truncated", "stale"):
+                self.assertIsInstance(raised.exception.private_output, str)
+
+    def test_provider_failures_are_normalized_without_private_text(self):
+        for message, expected in (("unexpected status: 401 private text", "auth_required"),
+                                  ("status 429 Too Many Requests private text", "rate_limited"),
+                                  ("Connection failed: error sending request private text", "network_unavailable"),
+                                  ("unknown upstream private text", "provider_unavailable")):
+            provider, _ = self.provider(events=[{"type": "turn.failed", "error": {"message": message}}], code=1, stderr=message.encode())
+            with self.subTest(expected=expected), self.assertRaises(ProviderError) as raised:
+                self.call(provider)
+            self.assertEqual(raised.exception.code, expected)
+            self.assertNotIn("private text", str(raised.exception))
+            self.assertIsNone(raised.exception.private_output)
+        provider, _ = self.provider(code=2, stderr=b"unexpected argument private text")
+        with self.assertRaises(ProviderError) as raised:
+            self.call(provider)
+        self.assertEqual(raised.exception.code, "configuration_error")
+
+    def test_cancellation_timeout_and_late_completion(self):
+        for mode, code in (("cancelled", "cancelled"), ("timeout", "timeout"), ("late", "timeout")):
+            provider, _ = self.provider(mode=mode)
+            run = RunContext(time.monotonic() + (0.01 if mode == "late" else 2))
+            with self.subTest(mode=mode), self.assertRaises(ProviderError) as raised:
+                self.call(provider, run=run)
+            self.assertEqual(raised.exception.code, code)
+        provider, stub = self.provider()
+        with self.assertRaises(ProviderError) as raised:
+            self.call(provider, run=RunContext(time.monotonic() + 5, is_cancelled=lambda: True))
+        self.assertEqual((raised.exception.code, stub.calls), ("cancelled", []))
+        # The call may only shorten the deadline of its run.
+        provider, _ = self.provider(mode="late")
+        with self.assertRaises(ProviderError) as raised:
+            provider.run_text(prompt="x", schema=self.schema, timeout_seconds=0.01, run=RunContext(time.monotonic() + 5))
+        self.assertEqual(raised.exception.code, "timeout")
+
+    def test_invalid_call_and_configuration_before_spawn(self):
+        provider, stub = self.provider()
+        for prompt in ("", None, b"bytes"):
+            with self.subTest(prompt=prompt), self.assertRaises(ProviderError) as raised:
+                provider.run_text(prompt=prompt, schema=self.schema, timeout_seconds=5, run=RunContext(time.monotonic() + 5))
+            self.assertEqual(raised.exception.code, "invalid_input")
+        with self.assertRaises(ProviderError) as raised:
+            provider.run_text(prompt="x", schema=self.root / "absent.json", timeout_seconds=5, run=RunContext(time.monotonic() + 5))
+        self.assertEqual(raised.exception.code, "configuration_error")
+        for seconds in (0, -1, True, "many"):
+            with self.subTest(seconds=seconds), self.assertRaises(ProviderError) as raised:
+                provider.run_text(prompt="x", schema=self.schema, timeout_seconds=seconds, run=RunContext(time.monotonic() + 5))
+            self.assertEqual(raised.exception.code, "configuration_error")
+        missing = CodexCLIProvider(config=replace(self.config, executable="no-such-codex-binary"), supervisor=stub)
+        with self.assertRaises(ProviderError) as raised:
+            self.call(missing)
+        self.assertEqual(raised.exception.code, "configuration_error")
+        with override_settings(MEDIA_ROOT=str(self.root)), self.assertRaises(ProviderError) as raised:
+            self.call(provider)
+        self.assertEqual(raised.exception.code, "configuration_error")
+        self.assertEqual(stub.calls, [])
+
+    def test_text_call_with_real_supervised_substitute_process(self):
+        # A safe Python stand-in, never an installed Codex invocation.
+        script = self.root / "substitute.py"
+        script.write_text(
+            "import json, pathlib, sys\n"
+            "prompt = sys.stdin.buffer.read().decode('utf-8')\n"
+            "assert '-i' not in sys.argv\n"
+            "schema = pathlib.Path(sys.argv[sys.argv.index('--output-schema') + 1])\n"
+            "assert json.loads(schema.read_text(encoding='utf-8')) == {'type': 'object'}\n"
+            "output = pathlib.Path(sys.argv[sys.argv.index('-o') + 1])\n"
+            "output.write_text(json.dumps({'echo': prompt}), encoding='utf-8')\n"
+            "print(json.dumps({'type':'thread.started'}))\n"
+            "print(json.dumps({'type':'turn.started'}))\n"
+            "print(json.dumps({'type':'turn.completed','usage':{}}))\n",
+            encoding="utf-8",
+        )
+        def substitute(*args):
+            return [sys.executable, str(script), *build_argv(*args)[1:]]
+        with patch("recognition.providers.codex_cli.build_argv", side_effect=substitute):
+            provider = CodexCLIProvider(config=self.config)
+            self.assertEqual(self.call(provider, run=RunContext(time.monotonic() + 30)), {"echo": "Текст запроса\nINPUT JSON:\n{}"})
+        self.assertEqual(list(self.config.temp_root.iterdir()), [])

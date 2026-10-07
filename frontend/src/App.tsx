@@ -9,6 +9,7 @@ import RequestState from './components/RequestState'
 import { UploadPage, JobsPage, JobPage } from './features/recognition'
 import { ReceiptsPage, ReceiptPage } from './features/receipts'
 import { MergesPage, MergePage } from './features/merges'
+import { ClassificationPage } from './features/classification'
 
 function pageTitle(route: Route) {
   switch (route.kind) {
@@ -23,6 +24,7 @@ function pageTitle(route: Route) {
     case 'job': return 'Задание обработки'
     case 'merges': return 'Дубли товаров'
     case 'merge': return 'Группа дублей'
+    case 'classification': return 'Категории товаров'
     case 'invalid-query': return 'Некорректная ссылка'
     case 'not-found': return 'Страница не найдена'
   }
@@ -41,6 +43,7 @@ function pageContent({ route, returnTo }: NavigationSnapshot) {
     case 'job': return <JobPage jobId={route.jobId} returnTo={returnTo} />
     case 'merges': return <MergesPage query={route.query} />
     case 'merge': return <MergePage groupId={route.groupId} returnTo={returnTo} />
+    case 'classification': return <ClassificationPage query={route.query} />
     case 'invalid-query': return <RequestState kind="empty" message="В адресе указаны некорректные фильтры или номер страницы. Сбросьте параметры и попробуйте снова." action={<Link className="action-link" to={route.resetTo} replace>Сбросить параметры</Link>} />
     case 'not-found': return <RequestState kind="empty" message="Такой страницы нет. Перейдите в каталог продуктов." action={<Link className="action-link" to="/catalog">В каталог</Link>} />
   }
@@ -62,7 +65,7 @@ export default function App() {
     heading.current?.focus()
     if (!previous?.returnTo
       || !['product', 'receipt', 'job', 'merge'].includes(previous.route.kind)
-      || (route.kind !== 'catalog' && route.kind !== 'category' && route.kind !== 'receipts' && route.kind !== 'jobs' && route.kind !== 'merges')
+      || (route.kind !== 'catalog' && route.kind !== 'category' && route.kind !== 'receipts' && route.kind !== 'jobs' && route.kind !== 'merges' && route.kind !== 'classification')
       || buildRoute(route) !== previous.returnTo || !content.current) return
 
     // The list loads asynchronously. Restore the selected link only while the
@@ -92,7 +95,8 @@ export default function App() {
   }, [title])
 
   const mergesActive = route.kind === 'merges' || route.kind === 'merge'
-  const catalogActive = route.kind === 'catalog' || route.kind === 'category' || route.kind === 'product' || mergesActive
+  const classificationActive = route.kind === 'classification'
+  const catalogActive = route.kind === 'catalog' || route.kind === 'category' || route.kind === 'product' || mergesActive || classificationActive
   return (
     <div className="page">
       <a className="skip-link" href="#page-heading">К содержимому</a>
@@ -119,8 +123,9 @@ export default function App() {
           {route.kind === 'health' && <p className="intro-note">Техническая страница проверки соединения с сервером.</p>}
         </div>
         {catalogActive && <nav className="main-navigation section-navigation" aria-label="Раздел каталога">
-          <Link to="/catalog" aria-current={mergesActive ? undefined : 'page'}>Товары</Link>
+          <Link to="/catalog" aria-current={mergesActive || classificationActive ? undefined : 'page'}>Товары</Link>
           <Link to="/catalog/merges" aria-current={mergesActive ? 'page' : undefined}>Дубли</Link>
+          <Link to="/catalog/classification" aria-current={classificationActive ? 'page' : undefined}>Категории</Link>
         </nav>}
         {pageContent(navigation)}
       </main>

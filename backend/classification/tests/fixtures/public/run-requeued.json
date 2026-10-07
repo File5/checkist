@@ -1,0 +1,19 @@
+{
+  "id": 3,
+  "status": "queued",
+  "trigger": "manual",
+  "scope": "all",
+  "version": 3,
+  "created_at": "2026-10-06T10:22:00Z",
+  "started_at": "2026-10-06T10:22:05Z",
+  "finished_at": null,
+  "progress": {
+    "requested": 7,
+    "processed": 0,
+    "applied": 0,
+    "unknown": 0,
+    "skipped": 0
+  },
+  "remaining": 0,
+  "error": null
+}

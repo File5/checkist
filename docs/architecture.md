@@ -46,6 +46,7 @@ Postgres содержит технические таблицы стандарт
 | `catalog` | `Category`, `GenericProduct`, `Brand`, `Product` | `units.py` — единицы и приведение к базовой; `admin.py` — 4 админки, защита от цикла категорий |
 | `receipts` | `Receipt`, `ReceiptLine`, `ReceiptDiscount`, `ReceiptTax`, `ProductAlias` | `dedup.py` — фискальный ключ, поиск дубликатов и сопоставлений; `validation.py` — проверка чека; `prices.py` — история цен и её агрегаты по группам «товар, страна, валюта»; `admin.py` — чек с тремя inline, строки чеков, сопоставления |
 | `api` | Нет | `views/` — эндпоинты чтения; `params.py`, `pagination.py`, `common.py`, `rates.py` — разбор query, страницы, сериализация, курсы из запроса |
+| `classification` | `ProductClassification`, `CreatedGenericProduct`, `CreatedCategory`, `ClassificationRejection`, `ClassificationRun`, `ClassificationAttempt` | `taxonomy.py` — ключ и проверка названий; `context.py` — вход модели; `validation.py` и `schemas/` — проверка ответа; `classifier.py` — протокол и явный fake; `runner.py` — исполнение пакета; `services.py` — применение, подтверждение, выбор другого, отклонение, сверка, запуски под `IMPORT_LOCK`; `admin.py` — только чтение; команды `product_classifications`, `seed_product_classification_demo`. HTTP — `/api/product-classifications/` в `api` |
 | `merges` | `ProductMerge`, `ProductMergeMember`, `ProductMergeLine`, `ProductMergeAlias`, `ProductMergeRejection` | `detection.py` — поиск похожих названий одного продавца; `services.py` — предварительное слияние, подтверждение, отмена, исключение под `IMPORT_LOCK`; `visibility.py` — скрытие поглощённых товаров в 13 GET; `admin.py` — только чтение; команды `product_merges`, `seed_product_merge_demo`. HTTP — `/api/product-merges/` в `api`; клиент — `frontend/src/api/product-merges*.ts` и `features/merges` ([frontend.md](frontend.md)) |
 | `recognition` | `SourcePhoto`, `ProcessingJob`, `ReceiptImage`, `RecognitionAttempt` | `queue`, `storage`, `images`, DTO/схемы, providers/supervisor, `resolution`/`importer`, `pipeline`, host-команды |
 
@@ -94,6 +95,28 @@ Import сериализован отдельной transaction advisory-блок
 Cancel queued сразу даёт cancelled, running — cancel_requested до остановки провайдера. Перед импортом проверяется durable cancel; последний import и terminal status фиксируются одним commit. Уже сохранённые чеки остаются. Ошибка одного crop не теряет другие; terminal statuses: succeeded, partial_succeeded (включая только review), failed, cancelled. Повтор провайдера — максимум одна дополнительная попытка для transient ошибок; budget 2400 с от первого claim, detect 90 с, recognize 180 с/crop.
 
 Доступ новых API: DEBUG + `ALLOW_LOCAL_RECOGNITION_API=1` + loopback peer; unsafe методы требуют CSRF даже для анонима. Авторизации пользователей/владельца чека нет. Health/Celery не проверяют OCR-воркер, Codex или его auth. Запуск — [development.md](development.md#распознавание-запуск-для-клиента), проверки — [verification.md](verification.md#распознавание-сквозная-серверная-проверка).
+
+## Предположение категорий
+
+```mermaid
+flowchart LR
+  I[Импорт чека: товар в «Не разобрано»] --> Q[ClassificationRun queued]
+  B[POST runs/ — кнопка] --> Q
+  K[Команда suggest] --> R
+  Q --> R[Пакеты: вход → модель → проверка ответа]
+  R --> A[apply: Product.generic меняется сразу]
+  A --> P[ProductClassification pending]
+  P --> C[POST confirm: подтвердить / выбрать другой]
+  P --> X[POST reject: вернуть в «Не разобрано»]
+  P --> S[Сверка: superseded]
+  A --> G[13 GET: товар уже в предложенной категории]
+```
+
+Товар, созданный распознаванием, получает служебный обобщённый продукт «Не разобрано». Приложение `classification` спрашивает модель пакетами и **сразу** переводит товар в предложенный обобщённый продукт — существующий либо новый, с путём категории. Запись `ProductClassification` хранит прежнее и предложенное значение и ждёт человека; созданные механизмом категории и обобщённые продукты помечены в журнале как «новые», пока их не примут. Человек подтверждает, выбирает другой существующий обобщённый продукт или отклоняет через локальный `/api/product-classifications/` (тот же доступ и CSRF, что у распознавания и слияний). Отклонение возвращает товар, убирает созданное и опустевшее и запоминает отказ.
+
+Автоматика меняет обобщённый продукт товара, только пока это «Не разобрано»; значение человека не перезаписывается — запись закрывается сверкой. Операции идут строго по очереди с импортом чека и слиянием дублей: общая неблокирующая advisory-блокировка `IMPORT_LOCK`, при создании и удалении категории — ещё и блокировка дерева категорий админки; «занято» — отказ с полным откатом. После подтверждения слияния `merges` вызывает шаг `classification`, который переносит запись поглощённого товара к оставляемому либо закрывает её. Старые 13 GET не менялись: неподтверждённый товар сразу виден в предложенной категории и участвует в сравнении цен.
+
+Модель из HTTP не вызывается: `POST runs/` только ставит запуск в очередь PostgreSQL (не больше одного в очереди и одного выполняющегося). Очередь исполняет тот же host-процесс `recognition_worker`, что и распознавание, тем же провайдером (`RECEIPT_OCR_PROVIDER`: Codex CLI одним текстовым вызовом без изображения либо явный fake; сбой Codex fake не включает). Проход цикла: восстановление истёкших lease → задание распознавания, если оно есть, целиком → иначе один пакет запуска (`PRODUCT_CLASSIFICATION_BATCH_SIZE` товаров). После пакета запуск возвращается в очередь либо завершается, поэтому задание распознавания ждёт не дольше одного запроса к модели, а `running` означает «сейчас выполняется пакет»; `executor.state = "busy"` расширен на это время без изменения формы. Запрос к модели идёт вне транзакции; lease запуска (срок запроса + 60 с) продлевается в начале каждого запроса, истёкшая возвращает запуск в очередь дважды, затем `failed` / `worker_lost`. При `PRODUCT_CLASSIFICATION_AUTO_SUGGEST=1` импорт чека и подтверждение вырезки ставят запуск для новых товаров чека в той же транзакции, после поиска дублей; модель спрашивается позже, другим проходом воркера, и исход запуска не меняет ни чек, ни задание распознавания. Команда `product_classifications suggest` исполняет свой запуск в собственном процессе, минуя очередь. Контракт — [api-contract.md](api-contract.md#реализовано-локальный-api-предположений-категорий-товаров), очередь для клиента — [там же](api-contract.md#предположения-очередь-и-воркер), модель, переходы и откат — [data-model.md](data-model.md#classification-предположение-обобщённого-продукта), запуск QA с демо и воркером — [development.md](development.md#qa-предположения-категорий-для-клиента).
 
 ## Планируется
 

@@ -646,6 +646,45 @@ class RecognitionAPITests(TestCase):
             self.assertEqual((requested.json()["status"], requested.json()["executor"]), ("cancel_requested", busy))
         self.assertEqual(self.executors(running.pk), [busy] * 4)
 
+    def test_executor_busy_while_classification_batch_runs(self):
+        from classification.models import ClassificationRun
+
+        job = ProcessingJob.objects.create(photo=make_photo())
+        make_image(job)
+        now = timezone.now()
+        queued = ClassificationRun.objects.create(trigger="manual", scope="all")
+        # A queued run is not executing: the worker is still absent or idle.
+        self.assertEqual(self.executors(job.pk), [ABSENT] * 3)
+        ClassificationRun.objects.filter(pk=queued.pk).update(
+            status="running", run_token=uuid.uuid4(), started_at=now, heartbeat_at=now,
+            lease_expires_at=now + timedelta(seconds=60),
+        )
+        # No recognition job executes, so there is no heartbeat to show.
+        busy = {"available": True, "state": "busy", "last_seen_at": None}
+        self.assertEqual(self.executors(job.pk), [busy] * 3)
+        for held in (False, True):
+            with self.subTest(held=held), worker_slot() if held else nullcontext():
+                self.assertEqual(self.executors(job.pk), [busy] * 3)
+                # The same numbers of queries as without a classification run.
+                with self.assertNumQueries(2):
+                    self.assertEqual(self.client.get("/api/recognition/csrf/").json()["executor"], busy)
+                with self.assertNumQueries(4):
+                    self.assertEqual(self.client.get("/api/recognition/jobs/").json()["results"][0]["executor"], busy)
+                with self.assertNumQueries(4):
+                    self.assertEqual(self.client.get(f"/api/recognition/jobs/{job.pk}/").json()["executor"], busy)
+        # An expired lease is a lost worker, not a busy one.
+        ClassificationRun.objects.filter(pk=queued.pk).update(lease_expires_at=now - timedelta(seconds=1))
+        self.assertEqual(self.executors(job.pk), [ABSENT] * 3)
+        with worker_slot():
+            self.assertEqual(self.executors(job.pk), [IDLE] * 3)
+        # A recognition job and a batch together: the heartbeat of the job is shown.
+        ClassificationRun.objects.filter(pk=queued.pk).update(lease_expires_at=now + timedelta(seconds=60))
+        running = claim_job()
+        heartbeat = self.client.get(f"/api/recognition/jobs/{running.pk}/").json()["heartbeat_at"]
+        self.assertEqual(
+            self.executors(running.pk), [{"available": True, "state": "busy", "last_seen_at": heartbeat}] * 3,
+        )
+
     def test_executor_ignores_other_lock_key_and_other_database(self):
         job = ProcessingJob.objects.create(photo=make_photo())
         # Queue capacity key of the same namespace, as a session lock elsewhere.

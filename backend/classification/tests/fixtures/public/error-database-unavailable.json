@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "database_unavailable",
+    "message": "База данных недоступна."
+  }
+}

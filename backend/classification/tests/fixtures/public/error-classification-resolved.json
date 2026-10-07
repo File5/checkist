@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "classification_resolved",
+    "message": "Предположение уже решено."
+  }
+}
