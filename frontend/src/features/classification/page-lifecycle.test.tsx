@@ -36,7 +36,9 @@ const turn = () => new Promise<void>((resolve) => { setTimeout(resolve, 0) })
 
 type Held = { url: string; answer: (body: unknown, status?: number) => void; fail: () => void }
 function server(start: { state: ClassificationState; list: Page<Classification> }) {
-  const data = { ...start }
+  /** `holdLists` — reads of the list wait for the test too, in `listReads`. */
+  const data = { ...start, holdLists: false }
+  const listReads: Held[] = []
   const reads = { state: 0, list: 0, record: 0 }
   const lists: string[] = []
   const posts: Held[] = []
@@ -53,9 +55,9 @@ function server(start: { state: ClassificationState; list: Page<Classification> 
     if (/\/product-classifications\/\d+\/$/.test(url)) { reads.record++; return held(records, url) }
     reads.list++
     lists.push(url)
-    return Promise.resolve(json(data.list))
+    return data.holdLists ? held(listReads, url) : Promise.resolve(json(data.list))
   })
-  return { data, reads, lists, posts, records }
+  return { data, reads, lists, posts, records, listReads }
 }
 
 function page(first: ClassificationQuery = { page: 1 }) {
@@ -275,6 +277,35 @@ describe('page: the person goes on while a POST is in flight', () => {
     expect(backend.lists).toHaveLength(before + 1)
     expect(backend.lists.at(-1)).toContain('ordering=-id')
     expect(backend.lists.at(-1)).not.toContain('status=')
+    screen.leave()
+  })
+})
+
+describe('page: the person goes on while reads are in flight', () => {
+  it('the late answer of the list that is gone never replaces the new one, and nothing is left waiting', async () => {
+    const backend = server({ state: activeState(4), list: records() })
+    const screen = page()
+    await screen.settled()
+    // A batch was applied: the poll of the state asks for the list, and its read is still in flight.
+    backend.data.holdLists = true
+    backend.data.state = { ...activeState(5), run: { ...activeState(5).run!, version: 9, progress: { ...activeState(5).run!.progress, applied: 2 } } }
+    screen.poll()
+    await vi.waitFor(() => expect(backend.listReads).toHaveLength(1))
+    screen.go({ status: 'confirmed', page: 1 })
+    await vi.waitFor(() => expect(backend.listReads).toHaveLength(2))
+    expect(backend.listReads.map((read) => read.url.includes('status=confirmed'))).toEqual([false, true])
+    const confirmed = pageOf([record('classification-confirmed.json')])
+    backend.listReads[1].answer(confirmed)
+    await quiet(screen)
+    backend.listReads[0].answer(records())
+    await quiet(screen)
+    expect(screen.lists.getSnapshot()).toEqual({ kind: 'ok', data: confirmed, refreshing: false })
+    expect(backend.reads).toMatchObject({ state: 2, list: 3 })
+    // The poll of the active run was never interrupted by the change of the list.
+    expect(screen.polling()).toBe(true)
+    screen.poll()
+    await quiet(screen)
+    expect(backend.reads).toMatchObject({ state: 3, list: 3 })
     screen.leave()
   })
 })
