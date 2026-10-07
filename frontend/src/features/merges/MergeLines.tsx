@@ -33,7 +33,8 @@ export default function MergeLines({ group, lines, onPage }: { group: MergeGroup
           <td className="ck-merge-number">{formatQuantity(line.quantity, line.unit)}</td>
           <td className="ck-merge-number">{formatPrice(line.unit_price, line.currency)}</td>
           <td className="ck-merge-number">{formatAmount(line.amount, line.currency)}</td>
-          <td><Link to={{ kind: 'receipt', receiptId: line.receipt_id }}>Чек №{line.receipt_id}</Link><span className="ck-merge-subtext">позиция {line.position}</span></td>
+          <td>{line.receipt_id === null ? 'Чужая покупка'
+            : <><Link to={{ kind: 'receipt', receiptId: line.receipt_id }}>Чек №{line.receipt_id}</Link><span className="ck-merge-subtext">позиция {line.position}</span></>}</td>
         </tr>)}</tbody>
       </table>
     </div>

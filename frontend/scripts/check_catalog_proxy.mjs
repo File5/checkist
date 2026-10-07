@@ -120,8 +120,12 @@ async function main() {
   assert.equal(history.product.id, product.id)
   const nextHistoryParams = { ...historyParams, page: 2 }
   const nextHistory = await check(historyPath, nextHistoryParams, (options) => getProductPrices(product.id, nextHistoryParams, options))
-  twoPages(history, nextHistory, (point) => `${point.receipt_id}:${point.position}`, 'history')
-  assert.ok(Date.parse(history.results[0].observed_at) >= Date.parse(nextHistory.results[0].observed_at), 'History must show new purchases first')
+  // A foreign purchase hides its receipt and position, and two of them may match in every visible field:
+  // such a point gets a key of its own and cannot be told apart from a repeated row.
+  twoPages(history, nextHistory, (point) => point.own ? `${point.receipt_id}:${point.position}` : Symbol('foreign purchase'), 'history')
+  const [newer, older] = [history.results[0], nextHistory.results[0]]
+  // The moment of a foreign purchase is hidden; the server orders by the real one.
+  if (newer.own && older.own) assert.ok(Date.parse(newer.observed_at) >= Date.parse(older.observed_at), 'History must show new purchases first')
 
   const summaryPath = `products/${product.id}/prices/summary/`
   const summaryParams = { group_by: 'store', price: 'paid', interval: 'none' }

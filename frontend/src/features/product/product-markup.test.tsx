@@ -2,7 +2,8 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { isValidElement } from 'react'
 import type { ReactNode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { detail, history, pageOf, point, store, total } from '../../api/test-support'
+import { detail, foreignPoint, history, pageOf, point, store, total } from '../../api/test-support'
+import type { PriceHistory as HistoryData } from '../../api/types'
 import type { ApiFailure, ApiResult, Page, PriceSummary as SummaryData, Store, StoreEntry } from '../../api/types'
 import PriceHistory from './PriceHistory'
 import PriceSummary from './PriceSummary'
@@ -106,12 +107,8 @@ describe('store identities beyond the first 50 (SSR in Node)', () => {
 })
 
 describe('price content and semantic markup (SSR in Node, not browser acceptance)', () => {
-  it('renders position zero and gives every receipt/position pair a distinct React row key', () => {
-    const data = { ...history, ...pageOf([
-      { ...point, position: 0, paid_unit_price: '2.0000' },
-      { ...point, position: 1, paid_unit_price: '3.0000' },
-      { ...point, receipt_id: 13, position: 0, paid_unit_price: '4.0000' },
-    ], 200) }
+  /** Renders the block and returns its markup with the React keys of the body rows. */
+  function renderWithRowKeys(data: HistoryData) {
     let view: ReactNode = null
     function Capture() {
       view = PriceHistory({ state: { kind: 'ok', data }, query: { page: 1 }, stores: [],
@@ -119,8 +116,6 @@ describe('price content and semantic markup (SSR in Node, not browser acceptance
       return view
     }
     const html = renderToStaticMarkup(<Capture />)
-    expect(rowLabels(html)).toHaveLength(3)
-    for (const price of ['2', '3', '4']) expect(html).toContain(`${price}\u00a0EUR/шт`)
     const keys: string[] = []
     function collectRowKeys(node: ReactNode) {
       if (Array.isArray(node)) node.forEach(collectRowKeys)
@@ -130,13 +125,58 @@ describe('price content and semantic markup (SSR in Node, not browser acceptance
       }
     }
     collectRowKeys(view)
-    expect(keys).toEqual(['12:0', '12:1', '13:0'])
-    expect(new Set(keys).size).toBe(3)
+    return { html, keys }
+  }
+  it('keeps distinct row keys on a page of identical foreign purchases and between my and foreign ones', () => {
+    const { html, keys } = renderWithRowKeys({ ...history, ...pageOf([foreignPoint, foreignPoint, point, point], 200) })
+    expect(rowLabels(html)).toHaveLength(4)
+    expect(keys).toHaveLength(4)
+    expect(new Set(keys).size).toBe(4)
+    expect(keys.join()).not.toContain('null')
+  })
+  it('marks my purchase with a link to its receipt and shows its moment', () => {
+    const html = renderToStaticMarkup(<PriceHistory state={{ kind: 'ok', data: history }} query={{ page: 1 }} stores={[]} retry={noop} reset={noop} buildPageHref={buildPageHref} />)
+    expect(html).toContain('<th scope="col">Покупка</th>')
+    expect(html).toMatch(/<td>Моя · <a [^>]*href="\/receipts\/12"[^>]*>Чек №12<\/a><\/td>/)
+    expect(html).not.toContain('Чужая')
+    expect(html).toMatch(/<time dateTime="2026-10-04">04\.10\.2026<\/time><span class="product-subtext">[^<]*UTC<\/span>/)
+  })
+  it('marks a foreign purchase without a receipt link or a moment and keeps its date, store and prices', () => {
+    const foreign = { ...foreignPoint, list_unit_price: '1.1000', paid_unit_price: '1.2000',
+      normalized_price: '1.3000', normalized_unit: 'l' as const, comparable: true }
+    const html = renderToStaticMarkup(<PriceHistory state={{ kind: 'ok', data: { ...history, ...pageOf([foreign], 200) } }} query={{ page: 1 }} stores={[]} retry={noop} reset={noop} buildPageHref={buildPageHref} />)
+    expect(html).toContain('<td>Чужая</td>')
+    expect(html).not.toContain('Моя')
+    expect(html).not.toContain('/receipts/')
+    expect(html).not.toContain('Чек №')
+    expect(html).toContain('<td><time dateTime="2026-10-04">04.10.2026</time></td>')
+    expect(html).not.toContain('product-subtext')
+    expect(html).not.toContain('UTC')
+    expect(html).not.toContain('null')
+    expect(rowLabels(html)).toEqual(['ID 7 · Учебный магазин · DE · адрес неизвестен'])
+    for (const price of ['1,1', '1,2', '1,3']) expect(html).toContain(`<td class="product-number">${price}`)
+  })
+  it('renders my and foreign purchases side by side in the server order', () => {
+    const html = renderToStaticMarkup(<PriceHistory state={{ kind: 'ok', data: { ...history, ...pageOf([foreignPoint, point], 200) } }} query={{ page: 1 }} stores={[]} retry={noop} reset={noop} buildPageHref={buildPageHref} />)
+    expect(html.indexOf('<td>Чужая</td>')).toBeGreaterThan(-1)
+    expect(html.indexOf('<td>Чужая</td>')).toBeLessThan(html.indexOf('Чек №12'))
+    expect(html.match(/href="\/receipts\//g)).toHaveLength(1)
+    expect(html.match(/UTC/g)).toHaveLength(1)
+  })
+  it('renders position zero and gives every row a distinct React key that does not depend on the receipt', () => {
+    const { html, keys } = renderWithRowKeys({ ...history, ...pageOf([
+      { ...point, position: 0, paid_unit_price: '2.0000' },
+      { ...point, position: 1, paid_unit_price: '3.0000' },
+      { ...point, receipt_id: 13, position: 0, paid_unit_price: '4.0000' },
+    ], 200) })
+    expect(rowLabels(html)).toHaveLength(3)
+    for (const price of ['2', '3', '4']) expect(html).toContain(`${price}\u00a0EUR/шт`)
+    expect(keys).toEqual(['0', '1', '2'])
   })
   it('renders row prices, unknown normalization, UTC fallback and a keyboard scroll region', () => {
     const html = renderToStaticMarkup(<PriceHistory state={{ kind: 'ok', data: history }} query={{ page: 1 }} stores={[]} retry={noop} reset={noop} buildPageHref={buildPageHref} />)
     expect(html).toContain('<caption>Наблюдения покупок из чеков</caption>')
-    expect(html.match(/scope="col"/g)).toHaveLength(6)
+    expect(html.match(/scope="col"/g)).toHaveLength(7)
     expect(html).toContain('scope="row"')
     expect(html).toContain('role="region" aria-label="История цен по магазинам"')
     expect(html).toContain('tabindex="0"')

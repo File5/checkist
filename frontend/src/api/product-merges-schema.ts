@@ -58,7 +58,7 @@ export const isMergeGroup: Guard<MergeGroup> = (value): value is MergeGroup => {
 
 const storeBrief = object<StoreBrief>({ id: isId, name: text, city: text, country })
 export const isMergeLine = object<MergeLine>({
-  line_id: isId, receipt_id: isId, position: nonNegativeInteger, purchased_on: isISODate, store: storeBrief,
+  line_id: isId, receipt_id: nullable(isId), position: nonNegativeInteger, purchased_on: isISODate, store: storeBrief,
   name: text, quantity, unit, unit_price: price, amount, discount_amount: amount, currency, origin_product_id: nullable(isId),
 })
 const detectShape = object<MergeDetectResult>({ created: nonNegativeInteger, extended: nonNegativeInteger, group_ids: array(isId) })
