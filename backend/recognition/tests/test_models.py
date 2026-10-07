@@ -10,6 +10,7 @@ from django.utils import timezone
 
 from catalog.models import Category, GenericProduct, Product
 from receipts.models import Receipt, ReceiptLine
+from receipts.ownership import local_user
 from recognition.models import ProcessingJob, ReceiptImage, RecognitionAttempt, SourcePhoto
 from recognition.statuses import PROGRESS_FIELDS
 from stores.models import Country, Currency, Merchant, Store
@@ -17,8 +18,9 @@ from stores.models import Country, Currency, Merchant, Store
 BOX = {"x_min": 0.1, "y_min": 0.1, "x_max": 0.9, "y_max": 0.9}
 
 
-def make_photo(**fields):
-    defaults = dict(original_file=f"originals/{uuid.uuid4()}/source.png", sha256=uuid.uuid4().hex * 2,
+def make_photo(owner=None, **fields):
+    defaults = dict(owner=owner or local_user(), original_file=f"originals/{uuid.uuid4()}/source.png",
+                    sha256=uuid.uuid4().hex * 2,
                     content_type="image/png", bytes=100, raw_width=100, raw_height=200, width=100, height=200)
     defaults.update(fields)
     return SourcePhoto.objects.create(**defaults)
@@ -31,13 +33,13 @@ def make_image(job, **fields):
     return ReceiptImage.objects.create(**defaults)
 
 
-def make_receipt():
+def make_receipt(owner=None):
     country, _ = Country.objects.get_or_create(code="XA", defaults={"name": "Synthetic country"})
     currency, _ = Currency.objects.get_or_create(code="XTS", defaults={"name": "Synthetic currency"})
     merchant = Merchant.objects.create(country=country, legal_name="Synthetic merchant")
     store = Store.objects.create(merchant=merchant, country=country, address_raw="Synthetic street 1", timezone="UTC")
-    return Receipt.objects.create(store=store, currency=currency, operation="sale", purchased_at=timezone.now(),
-                                  purchased_on=date(2026, 10, 4), total="4.00")
+    return Receipt.objects.create(owner=owner or local_user(), store=store, currency=currency, operation="sale",
+                                  purchased_at=timezone.now(), purchased_on=date(2026, 10, 4), total="4.00")
 
 
 @tag("integration")
