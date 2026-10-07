@@ -395,6 +395,19 @@ def _resolve(group, status):
     group.save(update_fields=["status", "resolved_at", "version", "target_ref"])
 
 
+def _keep_classification_rejections(target_id, absorbed_ids):
+    """Rejection memory of the absorbed products goes to the survivor, in a savepoint; never fails the merge."""
+    try:
+        with transaction.atomic():
+            from classification import services as classification  # lazy: classification imports merges
+
+            classification.before_merge_confirmed(target_id=target_id, absorbed_ids=absorbed_ids)
+    except Exception as error:
+        logger.error(
+            "Classification rejections transfer before merge confirmation failed: %s", type(error).__name__,
+        )
+
+
 def _notify_classification(target_id, absorbed_ids, generic_before):
     """Classification records of the merged products, in a savepoint; never fails the merge.
 
@@ -648,6 +661,7 @@ def confirm(group_id, *, version, target_product_id, name_product_id=None, resol
             member.name, member.facts = products[member.product_ref].name, product_facts(products[member.product_ref])
             member.active_product = None
         ProductMergeMember.objects.bulk_update(members, ["name", "facts", "active_product"])
+        _keep_classification_rejections(target_product_id, absorbed)
         Product.objects.filter(pk__in=absorbed).delete()
         target.save()
         _resolve(group, Status.CONFIRMED)

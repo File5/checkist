@@ -1,13 +1,13 @@
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
-from django.db import connection, connections, transaction
-from django.test import TransactionTestCase, tag
+from django.db import DatabaseError, connection, connections, transaction
+from django.test import TransactionTestCase, override_settings, tag
 
 from catalog.admin import CATEGORY_TREE_LOCK
 from catalog.models import Category, GenericProduct, Product
-from classification import demo, services
-from classification.models import ClassificationRun, ProductClassification
+from classification import demo, queue, services
+from classification.models import ClassificationRejection, ClassificationRun, ProductClassification
 from classification.tests.factories import (
     CHEESE, JUICE, KEFIR_A, KEFIR_B, MILK, SAUSAGE_A, SAUSAGE_B, UNKNOWN, add_product, apply, existing, generic,
     generic_of, new, product, record, snapshot, suggest,
@@ -120,6 +120,26 @@ class ImportLockTests(ConcurrencyTestCase):
             merges.confirm(group.pk, version=group.version, target_product_id=third.pk)
         self.assertEqual(snapshot(), before)
 
+    def test_busy_merge_leaves_the_rejection_memory_of_the_duplicate_in_place(self):
+        twin = add_product(KEFIR_A + ".")
+        original = product(KEFIR_A)
+        apply(new(twin, "Сыр", ("Продукты питания", "Молочные продукты"), "kg"))
+        services.reject(record(KEFIR_A + ".").pk, version=1)
+        memory = list(ClassificationRejection.objects.order_by("pk").values())
+        self.assertEqual([row["product_id"] for row in memory], [twin.pk])
+        merges.detect()
+        group = ProductMerge.objects.get(status="pending")
+        before = snapshot()
+        with self.hold(import_lock), self.assertRaises(merges.MergeBusy):
+            merges.confirm(group.pk, version=group.version, target_product_id=original.pk)
+        self.assertEqual(snapshot(), before)
+        self.assertEqual(list(ClassificationRejection.objects.order_by("pk").values()), memory)
+        # The same call goes through once the mutex is free, and the transfer with it.
+        merges.confirm(group.pk, version=group.version, target_product_id=original.pk)
+        self.assertEqual(
+            list(ClassificationRejection.objects.order_by("pk").values()), [{**memory[0], "product_id": original.pk}],
+        )
+
 
 @tag("integration")
 class TreeLockTests(ConcurrencyTestCase):
@@ -212,3 +232,53 @@ class RowLockTests(ConcurrencyTestCase):
             self.assertEqual(
                 services.confirm(milk.pk, version=1, generic_id=milk.suggested_generic_ref).status, "confirmed",
             )
+
+
+@tag("integration")
+class QueuedRunOfAllCandidatesTests(ConcurrencyTestCase):
+    """An import and the worker meet at the single queued run of all candidates."""
+
+    def setUp(self):
+        super().setUp()
+        self.queued, created = services.request_run(trigger="manual")
+        self.assertTrue(created)
+        self.assertEqual((self.queued.scope, self.queued.product_ids), ("all", [product(UNKNOWN).pk]))
+        self.fresh = add_product("Demo Neu")
+
+    def run_row(self, cursor):
+        cursor.execute("SELECT 1 FROM classification_classificationrun WHERE id = %s FOR UPDATE", [self.queued.pk])
+
+    def state(self):
+        return ClassificationRun.objects.filter(pk=self.queued.pk).values().get()
+
+    def test_import_extends_the_run_while_another_session_holds_the_mutex(self):
+        with self.hold(import_lock):
+            run, created = services.request_run(trigger="import", product_ids=[self.fresh.pk])
+        self.assertEqual((run.pk, created, run.scope, run.version), (self.queued.pk, False, "all", 2))
+        self.assertEqual((run.product_ids, run.requested_count), ([product(UNKNOWN).pk, self.fresh.pk], 2))
+
+    @override_settings(PRODUCT_CLASSIFICATION_RUN_LIMIT=1)
+    def test_count_of_the_remaining_does_not_take_the_mutex_either(self):
+        with self.hold(import_lock):
+            run, created = services.request_run(trigger="import", product_ids=[self.fresh.pk])
+        self.assertEqual((run.pk, created, run.product_ids), (self.queued.pk, False, self.queued.product_ids))
+        self.assertEqual((run.requested_count, run.remaining_count, run.version), (1, 1, 2))
+
+    def test_worker_skips_the_run_an_import_holds_and_claims_it_extended(self):
+        with self.hold(self.run_row):
+            self.assertIsNone(queue.claim_run())
+        services.request_run(trigger="import", product_ids=[self.fresh.pk])
+        claimed = queue.claim_run()
+        self.assertEqual((claimed.pk, claimed.status, claimed.scope), (self.queued.pk, "running", "all"))
+        self.assertEqual(claimed.product_ids, [product(UNKNOWN).pk, self.fresh.pk])
+
+    def test_import_waiting_for_the_run_row_fails_after_the_statement_timeout_and_changes_nothing(self):
+        before = self.state()
+        with self.hold(self.run_row):
+            with self.assertRaises(DatabaseError) as caught:
+                services.request_run(trigger="import", product_ids=[self.fresh.pk])
+            self.assertIn(caught.exception.__cause__.sqlstate, services.BUSY_SQLSTATES)
+        self.assertEqual(self.state(), before)
+        # The product is not lost: the next import of it (or a manual run) adds it.
+        run, _created = services.request_run(trigger="import", product_ids=[self.fresh.pk])
+        self.assertEqual((run.pk, run.product_ids[-1], run.version), (self.queued.pk, self.fresh.pk, 2))

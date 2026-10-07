@@ -5,14 +5,16 @@ later by the worker. Fake payloads and the fake classifier only.
 """
 from unittest.mock import patch
 
-from django.db import IntegrityError
+from django.db import IntegrityError, OperationalError
 from django.test import TestCase, override_settings, tag
 
+from api.tests.classification_factories import local_client
 from catalog.models import Product
 from classification import queue as classification_queue
 from classification import services
 from classification.classifier import FakeClassifier
 from classification.models import ClassificationRun, ProductClassification
+from classification.runner import BatchResult
 from classification.worker import process_batch
 from merges.models import ProductMerge
 from receipts.models import Receipt, ReceiptLine
@@ -25,6 +27,8 @@ from .test_import_merges import FIRST, SECOND, ImportMergeTestCase, payload
 from .test_review import body_of, fixed_body, review_image, wrong_total
 
 LOG = "ERROR:recognition.importer:Product classification request after import failed: {}"
+STATUS = "/api/product-classifications/status/"
+NEW = "Demo Joghurt 3,5%"
 
 
 def product_ids(receipt):
@@ -238,3 +242,151 @@ class FlagOnTests(ImportClassificationTestCase):
         job = ProcessingJob.objects.get(pk=image.job_id)
         self.assertEqual((image.status, job.status, Receipt.objects.count()), ("imported", "succeeded", 1))
         self.assertEqual(ClassificationRun.objects.count(), 0)
+
+
+@tag("integration")
+@override_settings(PRODUCT_CLASSIFICATION_AUTO_SUGGEST=True, PRODUCT_MERGE_AUTO_DETECT=False, RECEIPT_OCR_PROVIDER="fake")
+class QueuedRunOfAllCandidatesTests(ImportClassificationTestCase):
+    """The button was pressed before the import: the queued run of all candidates takes the new products."""
+
+    def setUp(self):
+        super().setUp()
+        with override_settings(PRODUCT_CLASSIFICATION_AUTO_SUGGEST=False):
+            self.first = self.run_import(FIRST, 1)
+        self.run, created = services.request_run(trigger="manual")
+        self.assertTrue(created)
+        self.assertEqual((self.run.scope, self.run.product_ids), ("all", product_ids(self.first.receipt)))
+
+    def state(self):
+        return ClassificationRun.objects.filter(pk=self.run.pk).values().get()
+
+    def between_batches(self):
+        """The worker executed one batch of one product and put the run back in the queue."""
+        with override_settings(PRODUCT_CLASSIFICATION_BATCH_SIZE=1):
+            claimed = classification_queue.claim_run()
+            self.run = classification_queue.finish_batch(claimed, BatchResult(request=None, consumed=1, error_code=""))
+        self.assertEqual((self.run.status, self.run.cursor, self.run.started_at is not None), ("queued", 1, True))
+
+    def test_import_adds_the_new_product_of_the_receipt(self):
+        second = self.run_import(NEW, 2)
+        new = Product.objects.get(name=NEW)
+        run = ClassificationRun.objects.get()
+        self.assertEqual((run.pk, run.status, run.trigger, run.scope), (self.run.pk, "queued", "manual", "all"))
+        self.assertEqual(run.product_ids, self.run.product_ids + [new.pk])
+        self.assertEqual((run.requested_count, run.remaining_count, run.version), (4, 0, self.run.version + 1))
+        self.assertEqual(second.image.status, "imported")
+        # The worker then suggests for the product of the second receipt too.
+        after = self.suggest("new_category")
+        self.assertEqual((after.status, after.applied_count), ("succeeded", 4))
+        self.assertEqual(generics()[NEW], "Тестовый продукт")
+
+    def test_status_shows_the_same_run_with_more_requested(self):
+        with override_settings(DEBUG=True, ALLOW_LOCAL_RECOGNITION_API=True):
+            client = local_client()
+            before = client.get(STATUS).json()["run"]
+            self.assertEqual((before["id"], before["status"], before["scope"]), (self.run.pk, "queued", "all"))
+            self.assertEqual((before["progress"]["requested"], before["remaining"], before["version"]), (3, 0, 1))
+            self.run_import(NEW, 2)
+            after = client.get(STATUS).json()["run"]
+        self.assertEqual(after, {**before, "version": 2, "progress": {**before["progress"], "requested": 4}})
+
+    @override_settings(PRODUCT_CLASSIFICATION_RUN_LIMIT=3)
+    def test_status_shows_the_product_beyond_the_limit_as_remaining(self):
+        with override_settings(DEBUG=True, ALLOW_LOCAL_RECOGNITION_API=True):
+            client = local_client()
+            before = client.get(STATUS).json()["run"]
+            self.run_import(NEW, 2)
+            after = client.get(STATUS).json()["run"]
+        self.assertEqual(after, {**before, "version": 2, "remaining": 1})
+        self.assertEqual(ClassificationRun.objects.count(), 1)
+
+    def test_lost_race_against_the_requeued_run_is_repeated_and_extends_it(self):
+        self.between_batches()
+        original, calls = services.request_run, []
+
+        def racing(**kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                # The import did not see the run and queued its own; the worker's requeue won.
+                raise IntegrityError("classification_run_one_queued")
+            return original(**kwargs)
+
+        with patch.object(services, "request_run", racing):
+            second = self.run_import(NEW, 2)
+        self.assertEqual(calls, [{"trigger": "import", "product_ids": product_ids(second.receipt)}] * 2)
+        new = Product.objects.get(name=NEW)
+        run = ClassificationRun.objects.get()
+        self.assertEqual((run.pk, run.status, run.trigger, run.scope), (self.run.pk, "queued", "manual", "all"))
+        self.assertEqual((run.cursor, run.started_at), (1, self.run.started_at))
+        self.assertEqual(run.product_ids, self.run.product_ids + [new.pk])
+        self.assertEqual((run.requested_count, run.version), (4, self.run.version + 1))
+
+    def test_real_conflict_on_the_queued_place_is_repeated_and_extends_the_run(self):
+        """The first attempt really inserts a second queued run: the unique index refuses it."""
+        self.between_batches()
+        original, calls = services.request_run, []
+
+        def racing(**kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                ids = kwargs["product_ids"]
+                return services._new_run(trigger="import", scope="products", ids=ids, limit=len(ids)), True
+            return original(**kwargs)
+
+        with patch.object(services, "request_run", racing):
+            second = self.run_import(NEW, 2)
+        self.assertEqual(len(calls), 2)
+        run = ClassificationRun.objects.get()
+        self.assertEqual((run.pk, run.scope, run.cursor), (self.run.pk, "all", 1))
+        self.assertEqual(run.product_ids, self.run.product_ids + [Product.objects.get(name=NEW).pk])
+        self.assertEqual(second.image.status, "imported")
+
+    def test_failed_queueing_keeps_the_receipt_and_the_run(self):
+        before = self.state()
+        original, calls = services.request_run, []
+
+        def broken(**kwargs):
+            calls.append(kwargs)
+            run, _created = original(**kwargs)  # the run is already extended inside the savepoint
+            self.assertEqual(run.version, before["version"] + 1)
+            raise OperationalError("PRIVATE DETAIL")
+
+        with patch.object(services, "request_run", broken), \
+                self.assertLogs("recognition.importer", level="ERROR") as logs:
+            result = self.run_import(NEW, 2)
+        self.assertEqual(logs.output, [LOG.format("OperationalError")])
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(self.state(), before)
+        self.assertEqual(ClassificationRun.objects.count(), 1)
+        self.assertEqual((Receipt.objects.count(), result.receipt.lines.count()), (2, 4))
+        self.assertEqual((result.image.status, result.image.receipt_id), ("imported", result.receipt.pk))
+
+    @override_settings(PRODUCT_CLASSIFICATION_RUN_LIMIT=3)
+    def test_failed_count_of_the_remaining_keeps_the_receipt_and_the_run(self):
+        before = self.state()
+        original = services.candidates
+
+        def candidates(*, product_ids=None, auto=False):
+            if product_ids is None:  # the count of candidates outside the full list
+                raise OperationalError("PRIVATE DETAIL")
+            return original(product_ids=product_ids, auto=auto)
+
+        with patch.object(services, "candidates", candidates), \
+                self.assertLogs("recognition.importer", level="ERROR") as logs:
+            result = self.run_import(NEW, 2)
+        self.assertEqual(logs.output, [LOG.format("OperationalError")])
+        self.assertEqual(self.state(), before)
+        self.assertEqual((result.image.status, result.image.receipt_id), ("imported", result.receipt.pk))
+        self.assertEqual((Receipt.objects.count(), ClassificationRun.objects.count()), (2, 1))
+        # The product stays a candidate outside the full list: a manual run takes it later.
+        self.assertEqual(services.candidates().exclude(pk__in=before["product_ids"]).count(), 1)
+
+    def test_confirmation_of_a_crop_adds_its_products_to_the_run(self):
+        image = review_image()
+        review.confirm(image.pk, fixed_body())
+        receipt = Receipt.objects.exclude(pk=self.first.receipt.pk).get()
+        run = ClassificationRun.objects.get()
+        self.assertEqual((run.pk, run.trigger, run.scope), (self.run.pk, "manual", "all"))
+        self.assertEqual(run.product_ids, sorted(set(self.run.product_ids) | set(product_ids(receipt))))
+        self.assertEqual(run.requested_count, len(run.product_ids))
+        self.assertGreater(run.requested_count, self.run.requested_count)
