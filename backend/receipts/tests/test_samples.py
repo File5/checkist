@@ -103,13 +103,13 @@ class SavedSamplesTests(TestCase):
     def test_saving_a_sample_again_is_rejected_by_fiscal_key(self):
         for sample, receipt in self.saved:
             with self.subTest(receipt=str(receipt)):
-                self.assertRejected("receipts_receipt_fiscal_key_uniq", receipt.store, sample)
+                self.assertRejected("receipts_receipt_owner_fiscal_key_uniq", receipt.store, sample)
 
     def test_saving_a_sample_again_without_fiscal_data_is_rejected_by_store_number(self):
         for sample, receipt in self.saved:
             with self.subTest(receipt=str(receipt)):
                 copy = {**sample, "receipt": {**sample["receipt"], "fiscal": {}}}
-                self.assertRejected("receipts_receipt_store_number_uniq", receipt.store, copy)
+                self.assertRejected("receipts_receipt_owner_store_number_uniq", receipt.store, copy)
 
     def test_builders_reject_a_second_save(self):
         for builder in (samples.save_dns_kz, samples.save_shop_ru, samples.save_lidl_de):
