@@ -3,6 +3,8 @@ import { statsErrorFixtures, statsFixture } from '../../api/stats-test-support'
 import type { Spending } from '../../api/stats'
 import { parseSpendingQuery } from '../../navigation/routes'
 import type { SpendingQuery } from '../../navigation/routes'
+import { applyMe } from '../../session'
+import { resetSession } from '../../session/store'
 import {
   activePreset, applyFilters, breadcrumbs, failureView, filterDraft, filterMessages, formReducer, groupingHref, hasFilters,
   hasScopeFilters, initForm, itemHref, localToday, needsAddressReset, periodText, presetHref, presetPeriod, resetFiltersHref, resetHref,
@@ -195,6 +197,19 @@ describe('result block', () => {
     expect(shownResult({ kind: 'loading' }, {}, last)).toEqual({ ...last, stale: true })
     expect(shownResult({ kind: 'loading' }, {}, undefined)).toBeUndefined()
     expect(shownResult({ kind: 'error', reason: 'network' }, {}, last)).toBeUndefined()
+  })
+  it('names the missing right instead of the local mode to a user of accounts, still without a retry', () => {
+    const denied: SpendingFailure = { kind: 'error', reason: 'permission_denied', status: 403 }
+    const former = failureView(denied)
+    const me = (mode: 'accounts' | 'local_single') =>
+      ({ mode, user: { id: 3, username: 'anna', is_staff: false }, permissions: { moderate_catalog: mode === 'local_single' }, csrf_token: 'token' })
+    try {
+      applyMe(me('accounts'))
+      expect(failureView(denied)).toEqual({ retry: false, message: 'Нет права модератора каталога.' })
+      expect(failureView({ kind: 'error', reason: 'range_too_large', status: 400 }).message).toBe('Слишком большой период. Уменьшите его в фильтрах.')
+      for (const enter of [() => applyMe(me('local_single')), () => applyMe(null)]) { enter(); expect(failureView(denied)).toEqual(former) }
+    } finally { resetSession() }
+    expect(former).toEqual({ retry: false, message: expect.stringContaining('Локальный режим выключен') })
   })
   it('explains every refusal of the server examples locally, with a retry only where it can help', () => {
     const view = (reason: SpendingFailure['reason'], status?: number) => failureView({ kind: 'error', reason, status })

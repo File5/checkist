@@ -51,7 +51,7 @@
 .ck-merge .pagination button:hover:not(:disabled) { background: #edf5ee; }
 .ck-merge .pagination button[aria-current="page"] { color: #fff; background: #246044; border-color: #246044; }
 .ck-merge-badge { margin-top: 8px; }
-.ck-merge-badge a { display: inline-flex; align-items: center; min-height: 44px; padding: 6px 12px; border: 1px solid #dfcd9c; border-radius: 8px; background: #fff4dc; color: #604512; font-size: 0.9rem; font-weight: 600; text-underline-offset: 3px; }
+.ck-merge-badge a, .ck-merge-badge span { display: inline-flex; align-items: center; min-height: 44px; padding: 6px 12px; border: 1px solid #dfcd9c; border-radius: 8px; background: #fff4dc; color: #604512; font-size: 0.9rem; font-weight: 600; text-underline-offset: 3px; }
 @media (max-width: 540px) {
   .ck-merge-panel { padding: 16px; }
   .ck-merge-card { padding: 14px; }

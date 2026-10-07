@@ -5,6 +5,8 @@ import type { ReceiptSeries } from '../../api/stats'
 import type { LocalApiErrorReason } from '../../api/types'
 import { parseReceiptsStatsQuery } from '../../navigation'
 import type { ReceiptsStatsQuery } from '../../navigation'
+import { applyMe } from '../../session'
+import { resetSession } from '../../session/store'
 import { intervalName, trendCharts } from './receipts-series'
 import {
   appliedErrors, applyFilters, canRetry, coarserIntervals, comparePlan, failureMessage, filterDraft, filterMessages, formErrors, hasPeriods, hasScope,
@@ -159,6 +161,19 @@ describe('failures', () => {
   it.each([['network', 'связаться с сервером'], ['timeout', 'не ответил вовремя'], ['database_unavailable', 'временно недоступны'],
     ['server', 'ошибки сервера'], ['invalid_response', 'неожиданный ответ'], ['not_found', 'не знает такого адреса'], ['csrf_failed', 'неожиданный ответ']] as const)(
     'words %s without a server text', (reason, text) => expect(failureMessage(failure(reason))).toContain(text))
+  it('names the missing right instead of the local mode to a user of accounts', () => {
+    const denied = serverFailure('error-permission-denied.json')
+    const former = failureMessage(denied)
+    const me = (mode: 'accounts' | 'local_single') =>
+      ({ mode, user: { id: 3, username: 'anna', is_staff: false }, permissions: { moderate_catalog: mode === 'local_single' }, csrf_token: 'token' })
+    try {
+      applyMe(me('accounts'))
+      expect(failureMessage(denied)).toBe('Нет права модератора каталога.')
+      expect(failureMessage(failure('network'))).toContain('связаться с сервером')
+      for (const enter of [() => applyMe(me('local_single')), () => applyMe(null)]) { enter(); expect(failureMessage(denied)).toBe(former) }
+    } finally { resetSession() }
+    expect(former).toContain('только в локальном режиме сервера')
+  })
   it('offers a repeat only where the same request can succeed', () => {
     expect((['network', 'timeout', 'server', 'database_unavailable', 'invalid_response', 'permission_denied'] as const).map((reason) => canRetry(failure(reason)))).toEqual(Array(6).fill(true))
     expect([canRetry(failure('invalid_parameter', ['store'])), canRetry(failure('range_too_large'))]).toEqual([false, false])

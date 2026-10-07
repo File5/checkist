@@ -3,6 +3,7 @@ import type { Spending, SpendingItem, SpendingParams } from '../../api/stats'
 import type { LocalApiResult } from '../../api/types'
 import { buildSpendingQuery, maxStatsStores, parseSpendingQuery, spendingHref } from '../../navigation/routes'
 import type { SpendingGroupBy, SpendingQuery } from '../../navigation/routes'
+import { getSession, permissionDeniedText } from '../../session'
 
 export type SpendingFailure = Extract<LocalApiResult<never>, { kind: 'error' }>
 export type SpendingRequestState = { kind: 'loading' } | { kind: 'ok'; data: Spending } | SpendingFailure
@@ -262,11 +263,13 @@ export function shownResult(state: SpendingRequestState, query: SpendingQuery, l
 
 export type FailureView = { message: string; retry: boolean }
 
+/** With accounts a refused access is a missing right, not a switched off local mode. */
+const accountsSession = () => { const session = getSession(); return session.kind === 'user' && session.mode === 'accounts' }
 /** Local texts only: a server message never reaches the screen. Nothing is retried automatically. */
 export function failureView(failure: SpendingFailure): FailureView {
   switch (statsFailureKind(failure)) {
     case 'permission_denied': return { retry: false,
-      message: 'Локальный режим выключен: статистика трат недоступна. Она открывается только на сервере, запущенном локально с DEBUG и ALLOW_LOCAL_RECOGNITION_API=1. После включения режима обновите страницу.' }
+      message: accountsSession() ? permissionDeniedText(getSession()) : 'Локальный режим выключен: статистика трат недоступна. Она открывается только на сервере, запущенном локально с DEBUG и ALLOW_LOCAL_RECOGNITION_API=1. После включения режима обновите страницу.' }
     case 'invalid_parameter': return { retry: false,
       message: 'Сервер не принял параметры. Исправьте отмеченные фильтры или сбросьте их.' }
     case 'range_too_large': return { retry: false, message: 'Слишком большой период. Уменьшите его в фильтрах.' }
