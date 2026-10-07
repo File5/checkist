@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "invalid_credentials",
+    "message": "Неверный логин или пароль."
+  }
+}

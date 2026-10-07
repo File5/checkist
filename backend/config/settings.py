@@ -205,6 +205,8 @@ REST_FRAMEWORK = {
     "EXCEPTION_HANDLER": "config.exceptions.exception_handler",
     "URL_FORMAT_OVERRIDE": None,
 }
+# The only place failed sign-ins are counted, shared by /api/auth/login/ and /admin/login/.
+AUTHENTICATION_BACKENDS = ["accounts.backends.ThrottledModelBackend"]
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
@@ -233,6 +235,11 @@ def env_directory(name, default):
     return path.resolve()
 
 
+# Sign-in brute-force protection: failures per login + client address and per address
+# within one window; reaching a limit refuses sign-in until the window ends.
+AUTH_LOGIN_FAILURE_LIMIT = env_integer("AUTH_LOGIN_FAILURE_LIMIT", 5, 1, 1000)
+AUTH_LOGIN_IP_FAILURE_LIMIT = env_integer("AUTH_LOGIN_IP_FAILURE_LIMIT", 50, 1, 100000)
+AUTH_LOGIN_LOCK_SECONDS = env_integer("AUTH_LOGIN_LOCK_SECONDS", 900, 1, 86400)
 # Local recognition is opt-in. MEDIA and private provider scratch never overlap.
 recognition_flag = env_text("ALLOW_LOCAL_RECOGNITION_API", "0").lower()
 if recognition_flag not in {"0", "1", "true", "false"}:
