@@ -8,6 +8,8 @@
 
 Реализован `recognition`: фото/вырезки MEDIA, очередь PostgreSQL, host-worker, FakeProvider/Codex CLI, автоматический импорт, локальный HTTP upload/cancel/retry и чтение всех строк чеков. Новый сквозной набор — [ниже](#распознавание-сквозная-серверная-проверка). Предположения категорий новых товаров (`classification`, `/api/product-classifications/`, экран `/catalog/classification`) — [проверка и результаты](#предположения-категорий-http-без-браузера). Человек исправляет и подтверждает вырезку `needs_review` одним POST — [проверка и приёмка](#подтверждение-вырезки-needs_review-итог-интеграции). Пользовательского входа, HTTP правки сохранённого чека и дашборда пока нет. Каталог и цены SPA уже подключены к API ([frontend.md](frontend.md)); И4 не меняет клиентские экраны распознавания и не подтверждает их React/proxy/UI интеграцию. Админку проверяют отдельно [без браузера](#админка-проверки-без-браузера) и [человеком](#ручная-приёмка-админки-человеком).
 
+Реализовано разделение пользователей: владелец чеков и фото, режимы `accounts` / `local_single`, вход, право модератора каталога, проекция «своё / чужое» в ценах, серверные настройки. **Разработчиками ничего из этого не запускалось** — [команды для QA и место для результатов](#разделение-пользователей-проверки-qa).
+
 Ни сборка образа, ни `check`, ни mocked API tests не доказывают реальную HTTP/клиентскую интеграцию. Визуальную и интерактивную приёмку выполняет человек; автоматический обход browser UI запрещён. HTTP, CLI и unit tests можно автоматизировать.
 
 ## Изолированная QA-среда
@@ -26,7 +28,10 @@ $env:CELERY_RESULT_BACKEND = "redis://127.0.0.1:16379/1"
 $env:DJANGO_CACHE_URL = "redis://127.0.0.1:16379/2"
 $env:VITE_API_BASE_URL = "/api"
 $env:DEV_API_PROXY_TARGET = "http://127.0.0.1:18000"
+$env:CHECKIST_AUTH_MODE = "local_single"
 ```
+
+`CHECKIST_AUTH_MODE` задаётся явно: прежние проверки и шесть прежних proxy-скриптов рассчитаны на сервер без входа, а без переменной (и без строки в старом `.env`) действует `accounts`, где каждый их запрос получает `401`. Backend-тесты от неё не зависят — тестовый раннер сам ставит `local_single`. Проверки режима `accounts` — [отдельный раздел](#разделение-пользователей-проверки-qa) со своим окружением.
 
 Проверьте LISTEN на 25432, 16379, 18000 и 15173 командой `Get-NetTCPConnection` из development.md, заменив список портов. При конфликте выберите свободные и согласованно измените все URL/CLI ports. Compose project изолирует контейнеры, сеть и тома; одни только разные Redis DB номера QA не изолируют. Настройки DB/user/password должны соответствовать уже инициализированному QA-тому.
 
@@ -47,10 +52,12 @@ docker compose -p checkist_qa up -d --wait --wait-timeout 90 postgres redis
 ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py migrate --noinput
 docker compose -p checkist_qa up -d --build --wait --wait-timeout 120 worker
 ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py makemigrations --check --dry-run
-./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test catalog stores receipts health api recognition merges classification --exclude-tag=integration --verbosity=2
-./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test catalog stores receipts health api recognition merges classification --tag=integration --verbosity=2
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test catalog stores receipts health api recognition merges classification accounts --exclude-tag=integration --verbosity=2
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test catalog stores receipts health api recognition merges classification accounts --tag=integration --verbosity=2
 ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py check_services
 ```
+
+В список приложений добавлено `accounts` (разделение пользователей). **Числа тестов и миграций ниже относятся к состоянию до разделения пользователей**: после него наборы не запускались, новые числа впишет QA в [результаты](#фактические-результаты-разделение-пользователей). Ожидается рост числа тестов и 37 миграций на пустой базе (18 стандартных и 19 собственных — посчитано по файлам, не запуском).
 
 Перед тестами задайте `$env:RECEIPT_OCR_PROVIDER='fake'`, `$env:PRODUCT_MERGE_AUTO_DETECT='0'` и `$env:PRODUCT_CLASSIFICATION_AUTO_SUGGEST='0'`: корневой `.env` может включать автопоиск дублей и `codex_cli`. **Осторожно:** если `codex.exe` есть в PATH и вход выполнен, любой запуск с `RECEIPT_OCR_PROVIDER=codex_cli`, дошедший до провайдера, делает настоящий модельный запрос; тесты с `codex_cli` обязаны задавать `RECEIPT_OCR_CODEX_EXECUTABLE="nonexistent-checkist-codex"` и подменять запуск процесса. Два набора запускайте по очереди: одновременные прогоны на одном Postgres дают `statement timeout` при удалении тестовой базы.
 
@@ -79,6 +86,153 @@ Unit/contract tests health покрывают точный 200, комбинац
 Регрессии D1 и E1: `api.tests.test_request_errors` — 24 теста (17 без БД, 7 integration); два дополнительных теста в `test_errors` проверяют семейство Django request exceptions и безопасный 415. Граница 1000/1001 проверена на всех 13 маршрутах при обоих DEBUG, с точным JSON, без SQL при отказе. Проверяются percent-кодирование/UTF-8/суррогаты, Host, Accept/Content-Type, конструкторы настоящих WSGI/ASGI request, длинные значения, повторения/пустые имена/массивы, ID, отсутствие чтения body при GET/405, запись без слэша и редактирование access log. E1 проверяет однократное декодирование пути, регистр hex, начальные //, двойное кодирование, dot segments, absolute-form, пустые/битые targets и сохранение обычных путей вне API; нормализация сверена с настоящими парсером runserver и WSGIRequest. Неизвестные `RuntimeError`, `ValueError`, `LookupError`, `UnicodeDecodeError` из view остаются безопасным 500. Запуск: `manage.py test api.tests.test_request_errors api.tests.test_errors --noinput --verbosity=0` — 49 тестов. Полный WSGI-вызов с SQL использует `TransactionTestCase`: сигнал `request_started` закрывает соединение в атомарном обычном `TestCase`.
 
 Регрессии `api.tests.test_read_resilience`: точные значения обоих маршрутов сравнения на границах моделей и курсов, отрицательная оплаченная цена при большой скидке, среднее и процент динамики нормализованных цен. Конкурентное удаление проверяет `TransactionTestCase` с autocommit: `connection.execute_wrapper` перед чтением последних цен коммитит удаление строки и чека через отдельное psycopg-соединение в тестовую БД; результаты SQL не подменяются. Покрыты `price_summary`, карточка и список товаров, оба сравнения (сравнимые и несравнимые предложения), сводка истории, карточка и список обобщённых продуктов, удаление единственной группы и сохранение более раннего наблюдения. Runner очищает данные через flush. Запуск: `manage.py test api.tests.test_read_resilience --tag=integration --noinput --verbosity=2` — 19 тестов.
+
+## Разделение пользователей: проверки QA
+
+Что реализовано — [multi-user.md](multi-user.md#реализация-что-сделано-и-чем-отличается-от-проекта), контракт — [api-contract.md](api-contract.md#реализовано-пользователи-вход-и-доступ-по-владельцу), запуск — [development.md](development.md#режимы-доступа-и-учётные-записи).
+
+**Разработчиками не запускалось.** Ни один шаг этого раздела не выполнялся при разработке: backend- и frontend-тесты, lint, build, `makemigrations --check --dry-run`, `sqlmigrate`, `migrate`, откат, демо-команды, серверы, proxy-скрипты, `check --deploy`, `collectstatic`, `backup`. Исключение — проверки без серверов, перечисленные в [ACCEPTANCE.md клиента](../frontend/src/features/auth/ACCEPTANCE.md#проверено-без-браузера) (`node --check` скриптов и отказы до первого запроса). Ожидания ниже — из кода и тестов, а не из наблюдений; чисел тестов нет намеренно.
+
+### Окружение
+
+Два набора проверок требуют разных режимов.
+
+- **Тесты и прежние сценарии** — обычный [QA-блок](#изолированная-qa-среда) с `CHECKIST_AUTH_MODE=local_single`, плюс `RECEIPT_OCR_PROVIDER=fake`, `PRODUCT_MERGE_AUTO_DETECT=0`, `PRODUCT_CLASSIFICATION_AUTO_SUGGEST=0`. С `codex_cli` ничего не запускать: `codex.exe` в PATH со входом делает настоящий модельный запрос.
+- **Режим `accounts`** — отдельная пустая база: `seed_accounts_demo` отказывает на непустой. Полный блок переменных (Compose-проект `checkist_qa_accounts`, Postgres 25433, Redis 16380, API 18001, Vite 15174, `CHECKIST_AUTH_MODE=accounts`, пароли демо в `ACCOUNTS_DEMO_MODERATOR_PASSWORD` / `ACCOUNTS_DEMO_USER_PASSWORD`) — в [ACCEPTANCE.md клиента](../frontend/src/features/auth/ACCEPTANCE.md#запуск-qa-сервера-и-клиента). Пароли придумывает QA и не записывает в отчёт.
+
+### 1. Статические проверки и миграции
+
+```powershell
+./backend/.venv/Scripts/python.exe -X utf8 -m pip check
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py check
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py makemigrations --check --dry-run
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py sqlmigrate receipts 0003
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py sqlmigrate receipts 0005
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py sqlmigrate recognition 0002
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py sqlmigrate recognition 0004
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py sqlmigrate catalog 0002
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py sqlmigrate merges 0002
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py sqlmigrate classification 0002
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py sqlmigrate accounts 0001
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py migrate --noinput
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py showmigrations
+```
+
+Ожидается: `makemigrations` не находит изменений; в `receipts.0005` и `recognition.0004` создание ограничений с владельцем стоит раньше удаления прежних; `catalog.0002` не содержит SQL, меняющего таблицы; на пустой базе применяются 37 миграций (число — по файлам, проверить). После `migrate`: пользователь `local` существует, активен, без `is_staff`, `has_usable_password()` ложно.
+
+Отдельно — **на копии dev-базы** (`pg_dump` → восстановление в отдельную QA-базу): число чеков и фото до и после совпадает, у всех владелец `local`, время миграции записать. Миграции владельца снимают `statement_timeout` на время транзакции; на больших таблицах не замерялось.
+
+### 2. Backend-тесты
+
+Обе команды из [локальных Windows-команд](#локальные-windows-команды), с `accounts` в списке приложений, по очереди. Ни один прежний тест не должен исчезнуть; правки прежних тестов допустимы трёх видов — владелец в исходных данных, новое имя ограничения чека, число запросов списка чеков в админке.
+
+Новые наборы:
+
+| Что проверяет | Модули |
+| --- | --- |
+| Владелец, ограничения в пределах владельца, пользователь `local` | `receipts.tests.test_owner`, `recognition.tests.test_owner` |
+| Миграции владельца: данные до → всё у `local`, повторный прогон, откат с дублем двух владельцев | `receipts.tests.test_owner_migration`, `recognition.tests.test_owner_migration` |
+| `ownership check-rollback` | `recognition.tests.test_ownership_command` |
+| Один файл и один кассовый чек у двух владельцев, повтор своего, гонка, подтверждение `needs_review` | `recognition.tests.test_owner_isolation`, `api.tests.test_recognition_owner` |
+| Режим в настройках, матрица доступа «маршрут × аноним / владелец / другой / модератор / `local_single`», в том числе при `DEBUG=0`, право модератора, выключенный пользователь | `accounts.tests.test_settings`, `accounts.tests.test_access` |
+| Вход, выход, смена пароля, «Я», CSRF, общая с админкой сессия | `api.tests.test_auth_api` |
+| Счётчик неудач, блокировка в API и в `/admin/login/` | `accounts.tests.test_throttle`, `accounts.tests.test_admin_login` |
+| Чужие чеки, фото, задания, вырезки и статистика: `404` и пустые страницы, число запросов | `api.tests.test_owner_isolation` |
+| MEDIA: свой файл, чужой, аноним, обход каталога, `local_single` | `accounts.tests.test_media` |
+| `own` и `null` в точках цен, `receipts_count`, `last_observed_at`, покупки группы, отсутствие чужого `receipt_id` во всех ответах | `api.tests.test_projection` |
+| `seed_accounts_demo` | `accounts.tests.test_demo` |
+| Серверные настройки, запрет индексации, файлы `deploy/`, резервная копия | `health.tests.test_deploy_settings`, `test_noindex`, `test_deploy_files`, `test_backup` |
+
+Отдельно по регрессиям: F4/F6 (`ReceiptLineConcurrencyTests`, `ReceiptLineMoveTests`, `ReceiptInlineTransactionTests`, `ReceiptInlineUniqueTests` в `receipts.tests.test_admin`) и эталонные JSON (`*/tests/fixtures/`) — без изменения ожиданий; новые эталоны только добавлены (`api/tests/fixtures/auth/`, `merges/tests/fixtures/public/lines_foreign.json`).
+
+### 3. Откат миграций владельца
+
+```powershell
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py ownership check-rollback
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py migrate receipts 0002_alter_receipttax_options --noinput
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py migrate recognition 0001_initial --noinput
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py migrate --noinput
+```
+
+Ожидается: на базе одного владельца `check-rollback` — exit 0 и `"conflicts": 0`, откат и повторный `migrate` проходят. Затем создать одинаковый чек у двух владельцев (например, базой после `seed_accounts_demo`, продублировав чек через админку под вторым владельцем): `check-rollback` — exit 1 с группой, `migrate receipts 0002_…` падает, база после отказа цела (`showmigrations` — `receipts.0005` применена, чеки на месте).
+
+### 4. Пароль `local`
+
+```powershell
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py changepassword local
+```
+
+До команды вход под `local` в режиме `accounts` отвечает `401 invalid_credentials`, после — проходит, и `GET /api/receipts/` показывает прежние чеки. Команда интерактивная.
+
+### 5. Прежние сценарии в `local_single`
+
+Три seed-команды (`seed_stats_demo`, `seed_product_merge_demo`, `seed_product_classification_demo`) на свежих базах и шесть прежних proxy-скриптов через Vite dev и preview — по их разделам этого документа, без изменения ожиданий: `check_catalog_proxy.mjs`, `check_recognition_proxy.mjs`, `check_review_proxy.mjs`, `check_product_merges_proxy.mjs`, `check_product_classifications_proxy.mjs`, `check_stats_proxy.mjs`. Каждый требует `CHECKIST_AUTH_MODE=local_single` и в своём терминале, и в терминале API, иначе отказывается до первого запроса. `node backend/scripts/check_health_proxy.mjs healthy` и `check_services` — как раньше.
+
+### 6. Режим `accounts`: HTTP двух пользователей без браузера
+
+Окружение и запуск сервера — по [ACCEPTANCE.md клиента](../frontend/src/features/auth/ACCEPTANCE.md#запуск-qa-сервера-и-клиента); коротко:
+
+```powershell
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py migrate --noinput
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py seed_accounts_demo --moderator-password $env:ACCOUNTS_DEMO_MODERATOR_PASSWORD --user-password $env:ACCOUNTS_DEMO_USER_PASSWORD | Out-File -Encoding utf8 (Join-Path $env:TEMP "checkist-accounts-demo.json")
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py runserver 127.0.0.1:18001 --noreload
+# второй терминал, то же окружение, каталог frontend: npm.cmd run dev -- --port 15174
+# третий терминал, то же окружение, корень репозитория:
+node frontend/scripts/check_accounts_proxy.mjs dev http://127.0.0.1:15174 (Join-Path $env:TEMP "checkist-accounts-demo.json")
+# затем собранное приложение: npm.cmd run build; npm.cmd run preview -- --port 15174
+node frontend/scripts/check_accounts_proxy.mjs preview http://127.0.0.1:15174 (Join-Path $env:TEMP "checkist-accounts-demo.json")
+```
+
+Скрипт ведёт настоящие адаптеры клиента через Vite proxy с отдельным набором cookie на каждого человека: гость получает `401`, каждый видит только свои чеки, фото, задания и статистику, чужое отвечает `404`, MEDIA чужого фото — пустой `404`, точка чужой покупки приходит с `own: false` и пятью `null`, не модератор получает `403` на действия с каталогом, смена пароля завершает вторую сессию. Пароль `demo_user` меняется и возвращается: сценарий повторяем на той же базе. Точный состав проверок — в самом скрипте; ожидается exit 0 и итоговая строка JSON с `"result": "passed"`.
+
+Дополнительно `curl.exe` на сервере `accounts` без cookie: `GET /api/health/` — `200`; `GET /api/products/` — `401` с `WWW-Authenticate: Session` и телом `not_authenticated`; `GET /api/auth/csrf/` — `200`; `GET /media/originals/x` — пустой `404`; у каждого ответа заголовок `X-Robots-Tag: noindex, nofollow`; `GET /robots.txt` — `Disallow: /`.
+
+### 7. Frontend
+
+В `frontend/` с QA environment из PowerShell: `npm.cmd ci`, `npm.cmd run lint`, `npm.cmd run test`, `npm.cmd run build`. Состав новых тестов — [frontend.md](frontend.md#проверки-входа-и-разделения).
+
+### 8. Серверные настройки без сервера
+
+```powershell
+$env:DJANGO_DEBUG = "0"; $env:CHECKIST_AUTH_MODE = "local_single"
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py check
+```
+
+Ожидается отказ `ImproperlyConfigured: CHECKIST_AUTH_MODE: local_single requires DJANGO_DEBUG=1.` Затем `check --deploy`, `collectstatic` и `backup create / verify / restore` — по [deployment.md](deployment.md) с серверным набором переменных (`DJANGO_DEBUG=0`, свой `DJANGO_SECRET_KEY`, `CHECKIST_AUTH_MODE=accounts`); предупреждения `check --deploy` перечислить в отчёте. После шага верните переменные терминала.
+
+### Ручная приёмка человеком
+
+- **Интерфейс** — [frontend/src/features/auth/ACCEPTANCE.md](../frontend/src/features/auth/ACCEPTANCE.md): две учётные записи в двух профилях браузера, 15 шагов (гость, неверный пароль, задержка входа, возврат на адрес, «моя / чужая» покупка, свои чеки и статистика, чужое фото по прямой ссылке, разделы модератора, смена пароля, выход и вторая вкладка, вход через админку, отзыв права, режим без входа, клавиатура и адаптив).
+- **Сервер** — [deployment-acceptance.md](deployment-acceptance.md): HTTPS и заголовки, доступ без входа, cookie, две учётные записи с двух устройств, загрузка с телефона, защита от перебора, сеть, перезагрузка, резервная копия, распознавание. Автотестами не закрывается; сервера и домена на момент написания нет.
+- **Админка** — к [прежнему сценарию](#ручная-приёмка-админки-человеком): у чека колонка и фильтр `Owner`; при добавлении поле заполнено текущим пользователем, при изменении недоступно; одинаковый чек у другого владельца сохраняется, у того же — отклоняется формой; сценарии F4/F6 — с владельцем в данных; `Login failures` открывается только на чтение; шестой подряд неверный пароль на `/admin/login/` отклоняется и с верным паролем до конца срока.
+
+Автоматический обход UI в браузере запрещён.
+
+### Фактические результаты: разделение пользователей
+
+**Разработчиками не запускалось — раздел заполняет QA.** До заполнения ни одно утверждение о прохождении проверок разделения пользователей не действует; прежние числа этого документа (486 без БД / 1655 integration, 27 миграций, frontend 2741 тест / 72 файла) относятся к состоянию до него.
+
+Среда: дата, коммит, Windows / Node / Python, Compose-проект, база — вписать.
+
+**Проверено и прошло**
+
+| Шаг | Команда | Exit | Результат |
+| --- | --- | --- | --- |
+| | | | |
+
+**Проверено и не прошло**
+
+| Шаг | Команда | Ошибка, воспроизведение, причина (если установлена) |
+| --- | --- | --- |
+| | | |
+
+**Не проверено и почему**
+
+| Что | Причина | Шаги для человека |
+| --- | --- | --- |
+| Экраны входа, «Аккаунт», разделы модератора, «моя / чужая» покупка в браузере | Автоматический обход UI запрещён | [ACCEPTANCE.md клиента](../frontend/src/features/auth/ACCEPTANCE.md) |
+| Сервер, домен, сертификат, cookie `Secure`, HSTS, вход с другого устройства, Codex на сервере | Сервера нет; автотестами не закрывается | [deployment-acceptance.md](deployment-acceptance.md) |
+| Админка: поле и фильтр владельца, блокировка входа | Автоматический обход UI запрещён | Пункт «Админка» выше |
 
 ## Статистика: серверная часть (С5)
 
