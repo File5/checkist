@@ -8,6 +8,7 @@ from django.test import SimpleTestCase, TestCase, tag
 from catalog.models import Category, GenericProduct, Product
 from catalog.units import BaseUnit, Unit
 from receipts.models import ProductAlias, Receipt, ReceiptDiscount, ReceiptLine, ReceiptTax
+from receipts.ownership import local_user
 from stores.models import Country, Currency, Merchant, Store, TaxRate
 
 # Все названия, адреса и номера вымышленные.
@@ -16,12 +17,12 @@ PURCHASED_AT = datetime(2026, 3, 14, 11, 30, tzinfo=timezone.utc)  # 12:30 в Eu
 PURCHASED_ON = date(2026, 3, 14)
 
 
-def make_receipt(store, currency, **fields):
+def make_receipt(store, currency, owner=None, **fields):
     fields.setdefault("operation", Receipt.Operation.SALE)
     fields.setdefault("purchased_at", PURCHASED_AT)
     fields.setdefault("purchased_on", PURCHASED_ON)
     fields.setdefault("total", Decimal("10.00"))
-    return Receipt.objects.create(store=store, currency=currency, **fields)
+    return Receipt.objects.create(store=store, currency=currency, owner=owner or local_user(), **fields)
 
 
 def make_line(receipt, **fields):

@@ -7,6 +7,7 @@ from django.test import SimpleTestCase, TestCase, tag
 from catalog.models import Category, GenericProduct, Product
 from receipts import spending
 from receipts.models import Receipt
+from receipts.ownership import local_user
 from receipts.spending import Collected, Item, LineRow, ProductInfo, ReceiptRow
 from receipts.tests import samples
 from receipts.tests.test_models import make_line
@@ -305,7 +306,7 @@ class CollectTests(TestCase):
     @staticmethod
     def receipt(store, currency, number, total, operation=Receipt.Operation.SALE):
         return Receipt.objects.create(
-            store=store, currency_id=currency, operation=operation, total=D(total),
+            owner=local_user(), store=store, currency_id=currency, operation=operation, total=D(total),
             purchased_on=date(2026, 3, 14), purchased_at=datetime(2026, 3, 14, 11, 30, tzinfo=timezone.utc),
             receipt_number=f"spending-{number}",
         )

@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 from catalog.models import Category, Product
 from catalog.units import Unit
 from receipts.models import Receipt
+from receipts.ownership import local_user
 from receipts.tests import samples
 from receipts.tests.test_models import make_line
 
@@ -50,7 +51,7 @@ def make_product(generic, name, *, package=None, **fields):
     )
 
 
-def make_receipt(store, currency, on, *, at=time(12, 0), **fields):
+def make_receipt(store, currency, on, *, at=time(12, 0), owner=None, **fields):
     """Чек продажи в магазине: ``on`` — локальная дата, ``at`` — локальное время.
 
     ``currency`` — код валюты; она не обязана совпадать с обычной валютой страны.
@@ -61,7 +62,7 @@ def make_receipt(store, currency, on, *, at=time(12, 0), **fields):
     fields.setdefault("receipt_number", f"factory-{next(_numbers)}")
     purchased_at = datetime.combine(on, at, tzinfo=ZoneInfo(store.timezone))
     return Receipt.objects.create(
-        store=store, currency_id=currency, purchased_at=purchased_at, purchased_on=on, **fields,
+        store=store, currency_id=currency, owner=owner or local_user(), purchased_at=purchased_at, purchased_on=on, **fields,
     )
 
 

@@ -5,6 +5,7 @@ from django.test import SimpleTestCase, tag
 
 from receipts.dedup import FISCAL_KEY_MAX_LENGTH, NAME_KEY_MAX_LENGTH, build_fiscal_key, find_alias, find_duplicates, name_key
 from receipts.models import ProductAlias, Receipt
+from receipts.ownership import local_user
 from receipts.tests.test_models import PURCHASED_AT, PURCHASED_ON, ReceiptTestCase
 from stores.models import Country, Merchant, Store
 
@@ -83,7 +84,7 @@ class FiscalKeyUniquenessTests(ReceiptTestCase):
         self.make_receipt(fiscal_key=self.KEY)
         # Остальные поля другие: магазин, время, номер, сумма.
         self.assertRejected(
-            "receipts_receipt_fiscal_key_uniq",
+            "receipts_receipt_owner_fiscal_key_uniq",
             lambda: self.make_receipt(
                 store=self.other_store, fiscal_key=self.KEY, receipt_number="77",
                 purchased_at=PURCHASED_AT + timedelta(days=1), purchased_on=PURCHASED_ON + timedelta(days=1),
@@ -115,7 +116,7 @@ class StoreNumberUniquenessTests(ReceiptTestCase):
         self.numbered()
         # Время, сумма и фискальный ключ другие — номер всё равно занят.
         self.assertRejected(
-            "receipts_receipt_store_number_uniq",
+            "receipts_receipt_owner_store_number_uniq",
             lambda: self.numbered(
                 purchased_at=PURCHASED_AT + timedelta(hours=2), total=Decimal("99.00"),
                 fiscal_key="kz:000000000001:1",
@@ -125,7 +126,7 @@ class StoreNumberUniquenessTests(ReceiptTestCase):
     def test_repeated_number_without_shift_and_register_is_rejected(self):
         self.make_receipt(receipt_number="2968")
         self.assertRejected(
-            "receipts_receipt_store_number_uniq",
+            "receipts_receipt_owner_store_number_uniq",
             lambda: self.make_receipt(receipt_number="2968", total=Decimal("99.00")),
         )
 
@@ -154,7 +155,7 @@ class StoreTimeTotalUniquenessTests(ReceiptTestCase):
     def test_repeated_store_time_total_without_number_and_key_is_rejected(self):
         self.make_receipt()
         self.assertRejected(
-            "receipts_receipt_store_time_total_uniq",
+            "receipts_receipt_owner_store_time_total_uniq",
             lambda: self.make_receipt(purchased_on=PURCHASED_ON + timedelta(days=1), shift_number="7"),
         )
 
@@ -184,15 +185,16 @@ class FindDuplicatesTests(ReceiptTestCase):
             country=cls.country_ru, address_raw="г. Тестовск, ул. Примерная, 3", timezone="Asia/Novokuznetsk",
         )
         cls.fiscal = {"fn": "0000000000000001", "fd": "101"}
+        cls.owner = local_user()
         cls.saved = Receipt.objects.create(
-            store=cls.store_ru, currency=cls.currency, operation="sale",
+            owner=cls.owner, store=cls.store_ru, currency=cls.currency, operation="sale",
             purchased_at=PURCHASED_AT, purchased_on=PURCHASED_ON, total=Decimal("130.59"),
             receipt_number="5", shift_number="139", register_code="1",
             fiscal=cls.fiscal, fiscal_key=build_fiscal_key("RU", cls.fiscal),
         )
         # Соседние чеки, которые дубликатами не являются.
         cls.neighbour = Receipt.objects.create(
-            store=cls.store_ru, currency=cls.currency, operation="sale",
+            owner=cls.owner, store=cls.store_ru, currency=cls.currency, operation="sale",
             purchased_at=PURCHASED_AT + timedelta(minutes=5), purchased_on=PURCHASED_ON, total=Decimal("45.00"),
             receipt_number="6", shift_number="139", register_code="1", fiscal_key="ru:0000000000000001:102",
         )
@@ -217,7 +219,7 @@ class FindDuplicatesTests(ReceiptTestCase):
         # БД такой повтор не ловит: у сохранённого чека есть ключ и номер, у ввода — нет.
         data = {"store": self.store_ru, "purchased_at": PURCHASED_AT, "purchased_on": PURCHASED_ON, "total": Decimal("130.59")}
         self.assertEqual(find_duplicates(data), [self.saved])
-        Receipt.objects.create(currency=self.currency, operation="sale", **data)
+        Receipt.objects.create(owner=self.owner, currency=self.currency, operation="sale", **data)
         self.assertEqual(Receipt.objects.filter(store=self.store_ru, purchased_at=PURCHASED_AT).count(), 2)
 
     def test_finds_receipt_saved_without_shift_by_input_with_shift(self):
@@ -247,7 +249,7 @@ class FindDuplicatesTests(ReceiptTestCase):
 
     def test_results_go_from_stronger_level_to_weaker_without_repeats(self):
         by_time = Receipt.objects.create(
-            store=self.store_ru, currency=self.currency, operation="sale",
+            owner=self.owner, store=self.store_ru, currency=self.currency, operation="sale",
             purchased_at=PURCHASED_AT, purchased_on=PURCHASED_ON, total=Decimal("45.00"),
         )
         data = {
@@ -262,7 +264,7 @@ class FindDuplicatesTests(ReceiptTestCase):
     def test_accepts_receipt_instance_and_excludes_itself(self):
         self.assertEqual(find_duplicates(self.saved), [])
         unsaved = Receipt(
-            store=self.store_ru, currency=self.currency, operation="sale",
+            owner=self.owner, store=self.store_ru, currency=self.currency, operation="sale",
             purchased_at=datetime(2026, 3, 14, 18, 0, tzinfo=timezone.utc), purchased_on=date(2026, 3, 14),
             total=Decimal("1.00"), receipt_number="5", shift_number="139", register_code="1",
         )

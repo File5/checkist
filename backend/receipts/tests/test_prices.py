@@ -6,6 +6,7 @@ from django.test import TestCase, tag
 from catalog.models import Product
 from catalog.units import Unit
 from receipts.models import Receipt, ReceiptDiscount, ReceiptLine
+from receipts.ownership import local_user
 from receipts.prices import price_history
 from receipts.tests import samples
 from receipts.tests.test_models import make_line
@@ -42,7 +43,7 @@ class PriceHistoryTests(TestCase):
         fields.setdefault("purchased_on", fields["purchased_at"].date())
         fields.setdefault("operation", Receipt.Operation.SALE)
         fields.setdefault("total", D("0.00"))
-        return Receipt.objects.create(store=self.lidl_store, currency_id="EUR", **fields)
+        return Receipt.objects.create(owner=local_user(), store=self.lidl_store, currency_id="EUR", **fields)
 
     # --- ряд цен ---
 
