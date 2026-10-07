@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from django.contrib import admin
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Permission
 from django.db import IntegrityError, connection, connections, transaction
 from django.test import Client, TransactionTestCase, tag
 from django.test.utils import CaptureQueriesContext
@@ -16,6 +17,7 @@ from catalog.models import Product
 from receipts.admin import ReceiptDiscountAdminForm, ReceiptInlineFormSet, ReceiptLineAdminForm
 from receipts.dedup import build_fiscal_key, name_key
 from receipts.models import ProductAlias, Receipt, ReceiptDiscount, ReceiptLine, ReceiptTax
+from receipts.ownership import local_user
 from receipts.tests.test_models import PURCHASED_AT, ReceiptTestCase, make_line, make_receipt
 from stores.models import Country, Currency, Merchant, Store, TaxRate
 
@@ -101,6 +103,8 @@ class ReceiptsAdminTestCase(ReceiptTestCase):
 
     def receipt_data(self, lines=(), discounts=(), taxes=(), initial=(0, 0, 0), **fields):
         data = {
+            # Владелец тот же, что у чеков из make_receipt: на изменении поле отключено и из POST не читается.
+            "owner": local_user().pk,
             "store": self.store.pk, "currency": "XTS", "operation": "sale",
             "purchased_at_0": "2026-03-14", "purchased_at_1": "11:30:00", "purchased_on": "2026-03-14",
             "receipt_number": "", "shift_number": "", "register_code": "", "fiscal_key": "",
@@ -168,7 +172,7 @@ class RegistrationTests(ReceiptsAdminTestCase):
 
     def test_list_options_are_explicit(self):
         expected = {
-            Receipt: (("-purchased_at", "-id"), ("store", "currency")),
+            Receipt: (("-purchased_at", "-id"), ("store", "currency", "owner")),
             ReceiptLine: (("-receipt", "position"), ("receipt", "product")),
             ProductAlias: (("merchant", "name_key"), ("merchant", "product")),
         }
@@ -539,27 +543,27 @@ class FiscalKeyTests(ReceiptsAdminTestCase):
         response = self.client.post(admin_url(Receipt, "add"), self.de_data(
             receipt_number="2", purchased_at_1="15:00:00", total="77.00",
         ))
-        self.assertFormError(response, "__all__", "receipts_receipt_fiscal_key_uniq")
+        self.assertFormError(response, "__all__", "receipts_receipt_owner_fiscal_key_uniq")
         self.assertEqual(Receipt.objects.filter(store=self.de_store).count(), 1)
 
     def test_duplicate_by_entered_fiscal_key_is_form_error(self):
         response = self.client.post(
             admin_url(Receipt, "add"), self.receipt_data(store=self.other_store.pk, fiscal_key="test:fiscal:1"),
         )
-        self.assertFormError(response, "__all__", "receipts_receipt_fiscal_key_uniq")
+        self.assertFormError(response, "__all__", "receipts_receipt_owner_fiscal_key_uniq")
         self.assertEqual(Receipt.objects.count(), 1)
 
     def test_duplicate_by_store_number_is_form_error(self):
         response = self.client.post(
             admin_url(Receipt, "add"), self.receipt_data(receipt_number="100", total="55.00"),
         )
-        self.assertFormError(response, "__all__", "receipts_receipt_store_number_uniq")
+        self.assertFormError(response, "__all__", "receipts_receipt_owner_store_number_uniq")
         self.assertEqual(Receipt.objects.count(), 1)
 
     def test_duplicate_by_store_time_total_is_form_error(self):
         self.make_receipt(store=self.other_store)
         response = self.client.post(admin_url(Receipt, "add"), self.receipt_data(store=self.other_store.pk))
-        self.assertFormError(response, "__all__", "receipts_receipt_store_time_total_uniq")
+        self.assertFormError(response, "__all__", "receipts_receipt_owner_store_time_total_uniq")
         self.assertEqual(Receipt.objects.filter(store=self.other_store).count(), 1)
 
     def test_saving_receipt_again_is_not_its_own_duplicate(self):
@@ -568,6 +572,149 @@ class FiscalKeyTests(ReceiptsAdminTestCase):
             lines=[line_row(id=self.line.pk, receipt=self.receipt.pk, product=self.product.pk)],
         ))
         self.assertSaved(response, Receipt)
+
+
+@tag("integration")
+class ReceiptOwnerAdminTests(ReceiptsAdminTestCase):
+    """Владелец чека: обязателен, по умолчанию текущий пользователь, после сохранения не меняется."""
+
+    def form(self, url):
+        return self.client.get(url).context["adminform"].form
+
+    def changelist(self, query=None):
+        response = self.client.get(admin_url(Receipt, "changelist"), query or {})
+        self.assertEqual(response.status_code, 200)
+        return response.context["cl"]
+
+    def test_owner_is_required_on_add(self):
+        response = self.client.post(admin_url(Receipt, "add"), self.receipt_data(receipt_number="800", owner=""))
+        self.assertFormError(response, "owner")
+        self.assertFalse(Receipt.objects.filter(receipt_number="800").exists())
+
+    def test_add_form_starts_with_current_user(self):
+        form = self.form(admin_url(Receipt, "add"))
+        self.assertFalse(form.fields["owner"].disabled)
+        self.assertEqual(form["owner"].value(), self.superuser.pk)
+        self.staff_user.user_permissions.add(*Permission.objects.filter(
+            content_type__app_label="receipts", codename__in=("add_receipt", "view_receipt"),
+        ))
+        self.client.force_login(self.staff_user)
+        self.assertEqual(self.form(admin_url(Receipt, "add"))["owner"].value(), self.staff_user.pk)
+
+    def test_add_saves_chosen_owner(self):
+        response = self.client.post(
+            admin_url(Receipt, "add"), self.receipt_data(receipt_number="801", owner=self.plain_user.pk),
+        )
+        self.assertSaved(response, Receipt)
+        self.assertEqual(Receipt.objects.get(receipt_number="801").owner, self.plain_user)
+
+    def test_owner_is_disabled_on_change(self):
+        form = self.form(admin_url(Receipt, "change", self.receipt.pk))
+        self.assertTrue(form.fields["owner"].disabled)
+        self.assertEqual(form["owner"].value(), self.receipt.owner_id)
+        # Поле остаётся в форме: иначе ограничения с owner выпали бы из проверки.
+        self.assertNotIn("owner", admin.site.get_model_admin(Receipt).readonly_fields)
+
+    def test_change_ignores_posted_owner(self):
+        owner = self.receipt.owner
+        response = self.client.post(admin_url(Receipt, "change", self.receipt.pk), self.receipt_data(
+            owner=self.plain_user.pk, receipt_number="100", fiscal_key="test:fiscal:1", total="12.00",
+            initial=(1, 0, 0),
+            lines=[line_row(id=self.line.pk, receipt=self.receipt.pk, product=self.product.pk)],
+        ))
+        self.assertSaved(response, Receipt)
+        self.receipt.refresh_from_db()
+        self.assertEqual((self.receipt.owner, self.receipt.total), (owner, Decimal("12.00")))
+
+    def test_same_receipt_of_other_owner_is_saved(self):
+        cases = (
+            {"receipt_number": "100", "fiscal_key": "test:fiscal:1"},  # ключ и номер заняты у первого владельца
+            {"receipt_number": "100"},
+            {"fiscal_key": "test:fiscal:1", "store": self.other_store.pk},
+        )
+        for number, case in enumerate(cases):
+            with self.subTest(**case):
+                owner = get_user_model().objects.create_user(f"owner-{number}")
+                response = self.client.post(
+                    admin_url(Receipt, "add"), self.receipt_data(owner=owner.pk, **case),
+                )
+                self.assertSaved(response, Receipt)
+                self.assertEqual(Receipt.objects.filter(owner=owner).count(), 1)
+        self.assertEqual(Receipt.objects.filter(owner=self.receipt.owner).count(), 1)
+
+    def test_same_time_and_total_of_other_owner_is_saved(self):
+        # Третий уровень: без номера и ключа совпадают магазин, время и сумма.
+        self.make_receipt(store=self.other_store)
+        response = self.client.post(
+            admin_url(Receipt, "add"), self.receipt_data(store=self.other_store.pk, owner=self.plain_user.pk),
+        )
+        self.assertSaved(response, Receipt)
+        self.assertEqual(Receipt.objects.filter(store=self.other_store).count(), 2)
+
+    def test_same_owner_duplicate_is_still_form_error(self):
+        make_receipt(self.store, self.currency, owner=self.plain_user, receipt_number="100")
+        response = self.client.post(
+            admin_url(Receipt, "add"), self.receipt_data(owner=self.plain_user.pk, receipt_number="100"),
+        )
+        self.assertFormError(response, "__all__", "receipts_receipt_owner_store_number_uniq")
+        self.assertEqual(Receipt.objects.filter(owner=self.plain_user).count(), 1)
+
+    def test_change_into_own_duplicate_is_form_error(self):
+        # Отключённое поле владельца участвует в проверке: отказ формой, а не IntegrityError.
+        second = make_receipt(self.store, self.currency, owner=self.receipt.owner, receipt_number="101")
+        response = self.client.post(
+            admin_url(Receipt, "change", second.pk), self.receipt_data(receipt_number="100"),
+        )
+        self.assertFormError(response, "__all__", "receipts_receipt_owner_store_number_uniq")
+        second.refresh_from_db()
+        self.assertEqual(second.receipt_number, "101")
+
+    def test_change_into_duplicate_of_other_owner_is_saved(self):
+        second = make_receipt(self.store, self.currency, owner=self.plain_user, receipt_number="101")
+        response = self.client.post(
+            # В POST — владелец первого чека: решает сохранённый, а не присланный.
+            admin_url(Receipt, "change", second.pk), self.receipt_data(receipt_number="100"),
+        )
+        self.assertSaved(response, Receipt)
+        second.refresh_from_db()
+        self.assertEqual((second.receipt_number, second.owner), ("100", self.plain_user))
+
+    def test_owner_column_and_filter(self):
+        other = make_receipt(self.store, self.currency, owner=self.plain_user, receipt_number="200")
+        model_admin = admin.site.get_model_admin(Receipt)
+        self.assertIn("owner", model_admin.list_display)
+        self.assertIn(("owner", admin.RelatedOnlyFieldListFilter), model_admin.list_filter)
+        self.assertEqual(list(self.changelist({"owner__id__exact": self.plain_user.pk}).result_list), [other])
+        self.assertEqual(
+            list(self.changelist({"owner__id__exact": self.receipt.owner_id}).result_list), [self.receipt],
+        )
+        self.assertEqual(len(self.changelist().result_list), 2)
+
+    def test_owner_filter_offers_only_users_with_receipts(self):
+        make_receipt(self.store, self.currency, owner=self.plain_user, receipt_number="200")
+        spec = next(
+            spec for spec in self.changelist().filter_specs
+            if isinstance(spec, admin.RelatedOnlyFieldListFilter)
+        )
+        self.assertEqual(
+            sorted(pk for pk, _ in spec.lookup_choices), sorted([self.receipt.owner_id, self.plain_user.pk]),
+        )
+
+    def test_changelist_queries_do_not_grow_with_owners(self):
+        url = admin_url(Receipt, "changelist")
+
+        def count(expected_rows):
+            self.client.get(url)
+            with CaptureQueriesContext(connection) as queries:
+                response = self.client.get(url)
+            self.assertEqual(len(response.context["cl"].result_list), expected_rows)
+            return len(queries)
+
+        single = count(1)
+        for number in range(5):
+            owner = get_user_model().objects.create_user(f"owner-{number}")
+            make_receipt(self.store, self.currency, owner=owner, receipt_number=str(number))
+        self.assertEqual(count(6), single)
 
 
 @tag("integration")

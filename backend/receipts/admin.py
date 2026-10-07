@@ -396,16 +396,35 @@ class ReceiptTaxInline(admin.TabularInline):
 @admin.register(Receipt)
 class ReceiptAdmin(admin.ModelAdmin):
     form = ReceiptAdminForm
-    list_display = ("id", "purchased_on", "store", "operation", "total", "currency", "receipt_number")
-    list_filter = ("operation", "currency", "store__country")
+    list_display = ("id", "purchased_on", "store", "operation", "total", "currency", "receipt_number", "owner")
+    # Только владельцы, у которых есть чеки: остальные пользователи список не засоряют.
+    list_filter = ("operation", "currency", "store__country", ("owner", admin.RelatedOnlyFieldListFilter))
     # raw_text в поиск не входит: ILIKE по тексту чеков упрётся в statement_timeout.
     search_fields = ("receipt_number", "fiscal_key", "store__name", "store__address_raw")
     ordering = ("-purchased_at", "-id")
     date_hierarchy = "purchased_on"
-    list_select_related = ("store", "currency")
+    list_select_related = ("store", "currency", "owner")
     autocomplete_fields = ("store",)
     readonly_fields = ("created_at", "updated_at", "validation_warnings")
     inlines = (ReceiptLineInline, ReceiptDiscountInline, ReceiptTaxInline)
+
+    def get_form(self, request, obj=None, change=False, **kwargs):
+        form = super().get_form(request, obj, change=change, **kwargs)
+        owner = form.base_fields.get("owner")
+        if owner is not None and obj is not None and obj.pk is not None:
+            # Владелец сохранённого чека не меняется: вырезки и фото привязаны к тому же
+            # владельцу. Поле отключено, а не вынесено в readonly_fields: иначе Django
+            # исключит его из проверки, и дубль в пределах владельца дойдёт до БД.
+            owner.disabled = True
+            owner.widget.can_add_related = False
+            owner.widget.can_change_related = False
+            owner.widget.can_delete_related = False
+        return form
+
+    def get_changeform_initial_data(self, request):
+        initial = super().get_changeform_initial_data(request)
+        initial.setdefault("owner", request.user.pk)
+        return initial
 
     def _changeform_view(self, request, object_id, form_url, extra_context):
         if request.method != "POST":
