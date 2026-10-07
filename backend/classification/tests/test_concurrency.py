@@ -7,7 +7,7 @@ from django.test import TransactionTestCase, tag
 from catalog.admin import CATEGORY_TREE_LOCK
 from catalog.models import Category, GenericProduct, Product
 from classification import demo, services
-from classification.models import ClassificationRun, ProductClassification
+from classification.models import ClassificationRejection, ClassificationRun, ProductClassification
 from classification.tests.factories import (
     CHEESE, JUICE, KEFIR_A, KEFIR_B, MILK, SAUSAGE_A, SAUSAGE_B, UNKNOWN, add_product, apply, existing, generic,
     generic_of, new, product, record, snapshot, suggest,
@@ -119,6 +119,26 @@ class ImportLockTests(ConcurrencyTestCase):
         with self.hold(import_lock), self.assertRaises(merges.MergeBusy):
             merges.confirm(group.pk, version=group.version, target_product_id=third.pk)
         self.assertEqual(snapshot(), before)
+
+    def test_busy_merge_leaves_the_rejection_memory_of_the_duplicate_in_place(self):
+        twin = add_product(KEFIR_A + ".")
+        original = product(KEFIR_A)
+        apply(new(twin, "Сыр", ("Продукты питания", "Молочные продукты"), "kg"))
+        services.reject(record(KEFIR_A + ".").pk, version=1)
+        memory = list(ClassificationRejection.objects.order_by("pk").values())
+        self.assertEqual([row["product_id"] for row in memory], [twin.pk])
+        merges.detect()
+        group = ProductMerge.objects.get(status="pending")
+        before = snapshot()
+        with self.hold(import_lock), self.assertRaises(merges.MergeBusy):
+            merges.confirm(group.pk, version=group.version, target_product_id=original.pk)
+        self.assertEqual(snapshot(), before)
+        self.assertEqual(list(ClassificationRejection.objects.order_by("pk").values()), memory)
+        # The same call goes through once the mutex is free, and the transfer with it.
+        merges.confirm(group.pk, version=group.version, target_product_id=original.pk)
+        self.assertEqual(
+            list(ClassificationRejection.objects.order_by("pk").values()), [{**memory[0], "product_id": original.pk}],
+        )
 
 
 @tag("integration")
