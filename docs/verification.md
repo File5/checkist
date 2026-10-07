@@ -54,7 +54,7 @@ docker compose -p checkist_qa up -d --build --wait --wait-timeout 120 worker
 
 Перед тестами задайте `$env:RECEIPT_OCR_PROVIDER='fake'`, `$env:PRODUCT_MERGE_AUTO_DETECT='0'` и `$env:PRODUCT_CLASSIFICATION_AUTO_SUGGEST='0'`: корневой `.env` может включать автопоиск дублей и `codex_cli`. **Осторожно:** если `codex.exe` есть в PATH и вход выполнен, любой запуск с `RECEIPT_OCR_PROVIDER=codex_cli`, дошедший до провайдера, делает настоящий модельный запрос; тесты с `codex_cli` обязаны задавать `RECEIPT_OCR_CODEX_EXECUTABLE="nonexistent-checkist-codex"` и подменять запуск процесса. Два набора запускайте по очереди: одновременные прогоны на одном Postgres дают `statement timeout` при удалении тестовой базы.
 
-Ожидается exit 0, отсутствие новых миграций, 486 тестов без БД и 1655 integration, затем JSON с `celery_task.result={"message":"pong"}`. На пустой БД `migrate` применяет 25 миграций: 18 стандартных и 7 собственных, включая recognition.0001_initial, merges.0001_initial и classification.0001_initial. Числа соответствуют текущему коду и могут измениться вместе с тестами. Команда без тега БД не использует; integration нельзя заменять skip/eager. Runner создаёт и удаляет **`test_checkist_qa`**; Redis tests используют QA Redis DB 2 и уникальные ключи. Recognition tests используют временный MEDIA и fake/mock, настоящий Codex не вызывают. Не запускайте два DB-runner одновременно с одним именем test DB: --noinput может пересоздать БД другого своего прогона.
+Ожидается exit 0, отсутствие новых миграций, 486 тестов без БД и 1655 integration, затем JSON с `celery_task.result={"message":"pong"}`. На пустой БД `migrate` применяет 27 миграций: 18 стандартных и 9 собственных, включая recognition.0001_initial, merges.0001_initial, classification.0001_initial и две миграции названий без SQL — stores.0003_alter_country_options_alter_currency_options и receipts.0002_alter_receipttax_options (откат: `migrate stores 0002_seed_reference`, `migrate receipts 0001_initial`; схема и данные не меняются). Числа соответствуют текущему коду и могут измениться вместе с тестами. Команда без тега БД не использует; integration нельзя заменять skip/eager. Runner создаёт и удаляет **`test_checkist_qa`**; Redis tests используют QA Redis DB 2 и уникальные ключи. Recognition tests используют временный MEDIA и fake/mock, настоящий Codex не вызывают. Не запускайте два DB-runner одновременно с одним именем test DB: --noinput может пересоздать БД другого своего прогона.
 
 | Приложение | Без БД (`--exclude-tag=integration`) | С БД (`--tag=integration`) |
 | --- | --- | --- |
@@ -995,6 +995,33 @@ curl.exe -s http://127.0.0.1:18000/api/product-classifications/status/
 **Ручная проверка дополнения запуска** (так же не прогонялась; тот же сервер с демо без `suggest`, воркер не запущен; шаг импорта заменён прямым вызовом той же функции, которую вызывает импортёр): на `/catalog/classification` нажать «Предложить категории» — `GET /api/product-classifications/status/` показывает запуск `queued`, `trigger: "manual"`, `scope: "all"`, `progress.requested: 10`, `version: 1`; в админке создать товар с обобщённым продуктом «Не разобрано»; `manage.py shell -c "from classification import services; print(services.request_run(trigger='import', product_ids=[<id нового товара>]))"`. Ожидается: `status/` показывает **тот же** запуск (`id`, `trigger`, `scope`, `status` прежние) с `progress.requested: 11` и `version: 2`; второго запуска в `GET /api/product-classifications/runs/` нет; повтор той же команды ничего не меняет. Через настоящий импорт то же проверяется загрузкой фото при `PRODUCT_CLASSIFICATION_AUTO_SUGGEST=1` у сервера и воркера, пока запуск от кнопки ждёт в очереди.
 
 После прогона свои `runserver` и Vite остановлены (слушателей на 18201 и 15301 нет), `docker compose -p checkist_qa_muya2se down` — exit 0; тома `checkist_qa_muya2se_postgres_data` / `checkist_qa_muya2se_redis_data` сохранены, в базах `checkist_qa_muya2se_kd` и `checkist_qa_muya2se_md` осталось состояние после proxy-скриптов.
+
+### Фактические результаты: читаемая активная кнопка фильтра предположений, 2026-10-07
+
+Ветка `orca/task_muy9r8uhu3` от main после слияния статистики и категорий. Windows 11, Node v24.18.0, npm 11.16.0. Исправление только в `frontend/src/features/classification/Classification.css`: общее правило цвета ссылок экрана `/catalog/classification` перекрашивало текст активной кнопки фильтра в цвет её фона (`#246044` на `#246044`); селектор теперь `.ck-class a:not(.action-link):not([aria-current])`. Разметка, сервер, контракт и адаптеры не менялись.
+
+#### Проверено и прошло
+
+PowerShell, из `frontend/`, `VITE_API_BASE_URL=/api`, на окончательном состоянии ветки:
+
+| Команда | Exit | Результат |
+| --- | --- | --- |
+| `npm.cmd ci` | 0 | 0 vulnerabilities |
+| `npm.cmd run lint` | 0 | без ошибок и предупреждений |
+| `npm.cmd run test` | 0 | 73 файла, 2743 теста (было 72 / 2741) |
+| `npm.cmd run build` | 0 | `tsc -b` и Vite build, 164 модуля |
+
+Новый `features/classification/classification-css.test.ts` (2 теста) читает текст `Classification.css`: у `.ck-class-filter a[aria-current]` есть `color: #fff` и `background: #246044`; единственное правило с цветом, чей селектор начинается с `.ck-class a`, исключает `[aria-current]`. До правки CSS: `npm.cmd run test -- src/features/classification/classification-css.test.ts` — exit 1, 1 отказ из 2 (второй тест), как и должно быть. Ожидания прежних тестов не менялись.
+
+#### Проверено и не прошло
+
+На окончательном состоянии — ничего.
+
+#### Не проверено и почему
+
+- **Вид в браузере**: цвет активной и неактивных кнопок фильтра, обводка фокуса, текущая страница пагинации, ширина 360 px — browser automation запрещён; шаги — [ACCEPTANCE.md](../frontend/src/features/classification/ACCEPTANCE.md#читаемая-активная-кнопка-фильтра-2026-10-07). Тест проверяет текст правил, а не отрисовку и не каскад с другими файлами стилей.
+- Статические страницы `frontend/src/features/classification/preview/`: не пересоздавались и показывают прежний дефект — `render.mjs` требует QA-сервера с демо, Vite и proxy-сценария.
+- Backend, `check_services` и proxy-скрипты: не запускались — затронут один CSS-файл клиента; их результаты — прежних разделов.
 
 ## Распознавание: сквозная серверная проверка
 
@@ -2375,7 +2402,7 @@ for name in ('POSTGRES_PASSWORD', 'DJANGO_SECRET_KEY'):
 ```
 
 1. **Вход и стили.** Открыть `/admin/`: перенаправление на форму входа. Войти. Страница оформлена (стили загружены, не «голый» HTML), заголовок «Checkist — администрирование», на главной — группы `Catalog`, `Receipts`, `Stores` и «Пользователи и группы». Неверный пароль даёт сообщение об ошибке, а не вход.
-2. **Списки 12 моделей.** Открыть по очереди (названия английские и образованы автоматически, отсюда `Countrys` и `Currencys`): `Countrys`, `Currencys`, `Tax rates`, `Merchants`, `Stores`, `Categories`, `Generic products`, `Brands`, `Products`, `Receipts`, `Receipt lines`, `Product aliases`. У каждого проверить колонки, поиск и фильтры в правой панели (где они есть — см. [таблицу](data-model.md#какие-модели-доступны)). У `Receipts` — иерархию дат над списком. Отдельных списков скидок и итогов по налогам быть не должно; у `Receipt lines` нет кнопки добавления. В справочниках после `migrate` уже есть 3 страны, 3 валюты и 4 ставки.
+2. **Списки 12 моделей.** Открыть по очереди (названия английские): `Countries`, `Currencies`, `Tax rates`, `Merchants`, `Stores`, `Categories`, `Generic products`, `Brands`, `Products`, `Receipts`, `Receipt lines`, `Product aliases`. У каждого проверить колонки, поиск и фильтры в правой панели (где они есть — см. [таблицу](data-model.md#какие-модели-доступны)). У `Receipts` — иерархию дат над списком. Отдельных списков скидок и итогов по налогам быть не должно; у `Receipt lines` нет кнопки добавления. В справочниках после `migrate` уже есть 3 страны, 3 валюты и 4 ставки.
 3. **Ввод чека.** Создать продавца (`Merchants`) и магазин (`Stores`): поле `Address key` недоступно для ввода и заполняется после сохранения. Создать категорию, обобщённый продукт и товар. В `Receipts` добавить чек: магазин, валюта, `purchased_at` в UTC, `purchased_on` — локальная дата, `receipt_number`, `total`; в inline — две позиции, скидку (без привязки к строке) и итог по ставке, у которого `gross = net + tax`. Сохранить. Открыть чек: блок «Предупреждения проверки» показывает «Нарушений не найдено.» либо список расхождений — намеренно ошибиться в `total` и убедиться, что предупреждение появилось, а чек всё равно сохраняется. Ввести тот же чек ещё раз (те же магазин, `purchased_on`, `shift_number`, `register_code` и `receipt_number`): ошибка формы на странице, а не страница сбоя сервера. Итог с `gross`, не равным `net + tax`, — тоже ошибка формы.
 4. **Автодополнение и сопоставление.** В форме чека поля магазина, товара и ставки ищут по вводу и подставляют значение. После сохранения чека в позиции-залоге поле `parent` и в скидке поле `line` предлагают только строки этого чека. Открыть `Receipt lines`, в фильтре по `product` выбрать «Пусто» (товар не задан), открыть строку, выбрать товар, сохранить: строка исчезает из отфильтрованного списка. В `Product aliases` добавить сопоставление: `Name key` заполняется сам; повтор того же названия у того же продавца — ошибка формы.
 5. **Удаление.** Удалить страну, в которой есть продавец: админка отказывает и перечисляет защищённые объекты. Удалить чек: страница подтверждения перечисляет его позиции, скидки и итоги по налогам; после подтверждения чек и они удалены, магазин и товары на месте.

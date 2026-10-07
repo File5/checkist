@@ -31,7 +31,7 @@
 .ck-class-record-main { display: grid; gap: 8px; }
 .ck-class-record > .ck-class-area, .ck-class-flat > p { grid-column: 1 / -1; }
 .ck-class-product { font-weight: 600; }
-.ck-class a:not(.action-link) { color: #246044; text-underline-offset: 3px; }
+.ck-class a:not(.action-link):not([aria-current]) { color: #246044; text-underline-offset: 3px; }
 .ck-class-record a { display: inline-flex; align-items: center; min-height: 44px; }
 .ck-class-aliases { gap: 6px; font-size: 0.95rem; }
 .ck-class-state { justify-self: start; padding: 8px 12px; border-radius: 8px; background: #fff4dc; color: #604512; font-weight: 600; }

@@ -8,6 +8,9 @@ class Country(models.Model):
     code = models.CharField(max_length=2, primary_key=True)  # ISO 3166-1 alpha-2
     name = models.CharField(max_length=100)
 
+    class Meta:
+        verbose_name_plural = "countries"
+
     def __str__(self):
         return self.code
 
@@ -15,6 +18,9 @@ class Country(models.Model):
 class Currency(models.Model):
     code = models.CharField(max_length=3, primary_key=True)  # ISO 4217
     name = models.CharField(max_length=100)
+
+    class Meta:
+        verbose_name_plural = "currencies"
 
     def __str__(self):
         return self.code
