@@ -21,8 +21,9 @@ REPORTED = (
 )
 # Fictional key: 50+ characters, so `check --deploy` does not report security.W009.
 SERVER_KEY = "test-only-9f3b7c1e5a2d8046bd17c93e60fa4852-Qx7Lm2Zr8Vt5Hn"
-# The auth mode is not read yet. Once it is, a QA environment carries `local_single`,
-# which is refused with DEBUG=0: the server configurations name the server mode themselves.
+# The settings read the auth mode (default `accounts`) and refuse `local_single` with DEBUG=0.
+# A QA environment carries `local_single`, and it is not among NAMES, so it would leak into
+# the subprocess: the server configurations name the server mode themselves.
 SERVER = {"DJANGO_DEBUG": "0", "DJANGO_SECRET_KEY": SERVER_KEY, "CHECKIST_AUTH_MODE": "accounts"}
 LOCAL_DEFAULTS = {
     "DEBUG": True, "TRUST_PROXY": False, "SECURE_PROXY_SSL_HEADER": None, "SECURE_SSL_REDIRECT": False,
