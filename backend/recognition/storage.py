@@ -12,6 +12,8 @@ from pathlib import Path
 from django.conf import settings
 from django.db import transaction
 
+from receipts.ownership import local_user
+
 from .images import ImageError, crop_receipt, inspect_image, prepare_upright
 from .models import ReceiptImage, SourcePhoto
 from .queue import QueueError, fenced_job
@@ -112,6 +114,7 @@ def accept_upload(upload):
                     "storage_uuid": storage_uuid, "original_file": name, "content_type": info.content_type,
                     "bytes": info.bytes, "raw_width": info.raw_width, "raw_height": info.raw_height,
                     "width": info.width, "height": info.height, "exif_orientation": info.exif_orientation,
+                    "owner": local_user(),  # temporary shim until accept_upload takes the owner
                 })
                 if not created:
                     media_path(photo.original_file.name)
