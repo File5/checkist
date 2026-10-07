@@ -22,6 +22,16 @@ describe('route parsing', () => {
     expect(parseRoute(href)).toEqual({ kind: 'not-found', path: href })
   })
 
+  it('opens the account page and ignores its query, like health', () => {
+    expect(parseRoute('/account')).toEqual({ kind: 'account' })
+    expect(parseRoute('/account/?next=https://example.test/')).toEqual({ kind: 'account' })
+    expect(buildRoute({ kind: 'account' })).toBe('/account')
+  })
+
+  it.each(['/login', '/account/password', '/Account', '/accounts'])('has no separate sign-in route: %s is unknown', (href) => {
+    expect(parseRoute(href)).toEqual({ kind: 'not-found', path: href })
+  })
+
   it('accepts the largest safe ID', () => {
     expect(parseRoute('/catalog/products/9007199254740991')).toEqual({ kind: 'product', productId: Number.MAX_SAFE_INTEGER, query: { page: 1 } })
   })
@@ -94,6 +104,7 @@ describe('query parsing and building', () => {
     { kind: 'category', categoryId: 9, query: { page: 1 } },
     { kind: 'product', productId: 5, query: { store: 4, date_to: '2026-10-04', page: 2 } },
     { kind: 'health' },
+    { kind: 'account' },
   ])('round trips $kind', (route) => {
     expect(parseRoute(buildRoute(route))).toEqual(route)
   })
