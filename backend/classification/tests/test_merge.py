@@ -1,7 +1,8 @@
 """Suggestions and duplicate merges: the step after a merge confirmation (``after_merge_confirmed``).
 
 ``HumanValueTests`` — no path of the mechanism undoes a value the product had
-before the suggestion or got from a human.
+before the suggestion or got from a human. ``SurvivorRecordTests`` — the same
+for the pending record of the survivor itself, by the kind of absorbed duplicate.
 """
 from unittest.mock import patch
 
@@ -283,9 +284,8 @@ class MergeStepTests(TestCase):
         self.assertEqual(snapshot(), before)
 
 
-@tag("integration")
-class HumanValueTests(TestCase):
-    """A value the product had before the suggestion, or got from a human, survives every undo."""
+class HumanValueCase(TestCase):
+    """Helpers of the tests about the values of a human."""
 
     @classmethod
     def setUpTestData(cls):
@@ -319,6 +319,11 @@ class HumanValueTests(TestCase):
         self.assertEqual((generics(), generic_of(name)), (before, value))
         self.assertFalse(ProductClassification.objects.filter(status="pending").exists())
         self.assertFalse(ClassificationRejection.objects.exists())
+
+
+@tag("integration")
+class HumanValueTests(HumanValueCase):
+    """A value the product had before the suggestion, or got from a human, survives every undo."""
 
     # --- The review scenario: the survivor had the suggested value before the merge ---------------
 
@@ -648,3 +653,360 @@ class HumanValueTests(TestCase):
         entry.refresh_from_db()
         self.assertEqual((entry.status, entry.resolution), ("superseded", "product_removed"))
         self.assertEqual(generic_of(TWIN), "Молоко")
+
+
+@tag("integration")
+class SurvivorRecordTests(HumanValueCase):
+    """The survivor has a pending record of its own; the absorbed duplicates differ.
+
+    A duplicate that had the suggested value from a human settles the record:
+    without the suggestion the merge would have given the survivor that value.
+    """
+
+    def suggested(self, *others):
+        """«Кефир», created by the mechanism, is suggested to the survivor and to ``others``."""
+        apply(new(KEFIR_A, "Кефир", DAIRY, "l"), *(new(other, "кефир") for other in others))
+        return record(KEFIR_A)
+
+    def human(self, name):
+        """A duplicate a human put into the suggested generic product."""
+        return add_product(name, generic=generic("Кефир"))
+
+    def assertPending(self, entry, target=None):
+        entry.refresh_from_db()
+        self.assertEqual((entry.status, entry.active_product_id), ("pending", (target or self.original).pk))
+
+    def assertSuggestionUndone(self, entry, name=KEFIR_A):
+        """Nobody but the mechanism gave the product the value: undoing returns its own «Не разобрано»."""
+        self.assertEqual(services.cancel_pending(), {
+            **NOTHING_CANCELLED, "cancelled": [entry.pk], "removed_generics": 1,
+        })
+        self.assertEqual(generic_of(name), "Не разобрано")
+        self.assertFalse(GenericProduct.objects.filter(name="Кефир").exists())
+
+    # --- One absorbed duplicate -------------------------------------------------------------------
+
+    def test_duplicate_with_the_same_value_of_a_human_settles_the_record(self):
+        entry = self.suggested()
+        twin = self.human(TWIN)
+        self.confirm(self.original)
+        self.assertFalse(Product.objects.filter(pk=twin.pk).exists())
+        self.assertClosed(entry, "Кефир")
+        self.assertEqual((entry.version, entry.product_ref, entry.origin_product_ref), (2, self.original.pk, None))
+        self.assertEqual((entry.final_generic_ref, entry.final_base_unit), (generic("Кефир").pk, "l"))
+        self.assertEqual(entry.previous_generic_name, "Не разобрано")
+        # The value is a human's now: the created generic product becomes an ordinary one.
+        self.assertEqual(states(CreatedGenericProduct), {"Кефир": "kept"})
+        # The product is still there, but nothing is left to decide.
+        info = services.describe([entry])[0]
+        self.assertEqual((info.product, info.can_act), (self.original, False))
+        self.assertNothingToUndo(entry, KEFIR_A, "Кефир")
+        self.assertTrue(GenericProduct.objects.filter(name="Кефир").exists())
+
+    def test_reject_after_a_duplicate_of_a_human_keeps_the_value(self):
+        entry = self.suggested()
+        self.human(TWIN)
+        self.confirm(self.original)
+        for version in (1, 2):
+            with self.subTest(version=version), self.assertRaises(services.ClassificationResolved):
+                services.reject(entry.pk, version=version)
+        self.assertEqual(generic_of(KEFIR_A), "Кефир")
+        self.assertFalse(ClassificationRejection.objects.exists())
+
+    def test_duplicate_with_an_existing_value_of_a_human_settles_the_record(self):
+        apply(existing(KEFIR_A, self.milk))
+        entry = record(KEFIR_A)
+        add_product(TWIN, generic=self.milk)
+        self.confirm(self.original)
+        self.assertClosed(entry, "Молоко")
+        self.assertNothingToUndo(entry, KEFIR_A, "Молоко")
+
+    def test_duplicate_without_a_value_leaves_the_record_pending(self):
+        entry = self.suggested()
+        add_product(TWIN)
+        self.confirm(self.original)
+        self.assertPending(entry)
+        self.assertEqual((entry.version, generic_of(KEFIR_A)), (1, "Кефир"))
+        self.assertEqual(states(CreatedGenericProduct), {"Кефир": "provisional"})
+        self.assertSuggestionUndone(entry)
+
+    def test_duplicate_without_a_value_and_reject(self):
+        entry = self.suggested()
+        add_product(TWIN)
+        self.confirm(self.original)
+        rejected = services.reject(entry.pk, version=1)
+        self.assertEqual((rejected.status, rejected.resolution, generic_of(KEFIR_A)), (
+            "rejected", "rejected", "Не разобрано"))
+
+    def test_duplicate_with_the_same_pending_suggestion_leaves_the_record_pending(self):
+        twin = add_product(TWIN)
+        entry = self.suggested(twin)
+        other = record(TWIN)
+        self.confirm(self.original)
+        self.assertClosed(other, "Кефир")
+        self.assertPending(entry)
+        # Both values were unconfirmed suggestions.
+        self.assertSuggestionUndone(entry)
+
+    def test_duplicate_with_a_confirmed_record_on_the_same_value_settles_the_record(self):
+        twin = add_product(TWIN)
+        entry = self.suggested(twin)
+        confirmed = record(TWIN)
+        services.confirm(confirmed.pk, version=1, generic_id=confirmed.suggested_generic_ref)
+        self.confirm(self.original)
+        self.assertClosed(entry, "Кефир")
+        confirmed.refresh_from_db()
+        self.assertEqual((confirmed.status, confirmed.resolution), ("confirmed", "confirmed"))
+        self.assertNothingToUndo(entry, KEFIR_A, "Кефир")
+
+    def test_duplicate_given_the_same_value_by_choosing_another_settles_the_record(self):
+        twin = add_product(TWIN)
+        apply(existing(KEFIR_A, self.milk), new(twin, "Сыр", DAIRY, "kg"))
+        entry, chosen = record(KEFIR_A), record(TWIN)
+        services.confirm(chosen.pk, version=1, generic_id=self.milk.pk)
+        self.confirm(self.original)
+        self.assertClosed(entry, "Молоко")
+        self.assertEqual(services.cancel_pending(), NOTHING_CANCELLED)
+        self.assertEqual(generic_of(KEFIR_A), "Молоко")
+
+    def test_duplicate_whose_suggestion_a_human_replaced_with_the_same_value_settles_the_record(self):
+        """The duplicate has a pending record on another value; in the admin it got the survivor's one."""
+        twin = add_product(TWIN)
+        apply(existing(KEFIR_A, self.milk), new(twin, "Сыр", DAIRY, "kg"))
+        entry, stale = record(KEFIR_A), record(TWIN)
+        Product.objects.filter(pk=twin.pk).update(generic=self.milk)
+        self.confirm(self.original)
+        self.assertClosed(stale, "Молоко")
+        self.assertClosed(entry, "Молоко")
+        self.assertFalse(GenericProduct.objects.filter(name="Сыр").exists())
+        self.assertNothingToUndo(entry, KEFIR_A, "Молоко")
+
+    # --- A conflict resolved by the human ---------------------------------------------------------
+
+    def test_conflict_with_a_value_of_a_human_resolved_for_the_suggestion(self):
+        """К1 §5.1: the human chose the unconfirmed suggestion and gave up the other value; the mark stays."""
+        entry = self.suggested()
+        twin = add_product(TWIN, generic=self.milk)
+        with self.assertRaises(merges.MergeConflict):
+            self.confirm(self.original)
+        self.confirm(self.original, resolutions={"generic": self.original.pk})
+        self.assertPending(entry)
+        self.assertEqual((entry.version, generic_of(KEFIR_A)), (1, "Кефир"))
+        self.assertFalse(Product.objects.filter(pk=twin.pk).exists())
+        self.assertSuggestionUndone(entry)
+
+    def test_conflict_with_a_value_of_a_human_resolved_for_that_value(self):
+        entry = self.suggested()
+        twin = add_product(TWIN, generic=self.milk)
+        self.confirm(self.original, resolutions={"generic": twin.pk})
+        self.assertClosed(entry, "Молоко", "changed")
+        self.assertEqual(states(CreatedGenericProduct), {"Кефир": "removed"})
+        self.assertNothingToUndo(entry, KEFIR_A, "Молоко")
+
+    # --- Several absorbed duplicates --------------------------------------------------------------
+
+    def test_empty_duplicate_and_a_duplicate_of_a_human(self):
+        entry = self.suggested()
+        add_product(TWIN)
+        self.human(THIRD)
+        self.confirm(self.original)
+        self.assertClosed(entry, "Кефир")
+        self.assertNothingToUndo(entry, KEFIR_A, "Кефир")
+
+    def test_pending_duplicate_and_a_duplicate_of_a_human(self):
+        twin = add_product(TWIN)
+        entry = self.suggested(twin)
+        other = record(TWIN)
+        self.human(THIRD)
+        self.confirm(self.original)
+        self.assertClosed(other, "Кефир")
+        self.assertClosed(entry, "Кефир")
+        self.assertEqual(states(CreatedGenericProduct), {"Кефир": "kept"})
+        self.assertNothingToUndo(entry, KEFIR_A, "Кефир")
+
+    def test_pending_duplicate_and_an_empty_duplicate(self):
+        twin = add_product(TWIN)
+        entry = self.suggested(twin)
+        add_product(THIRD)
+        self.confirm(self.original)
+        self.assertClosed(record(TWIN), "Кефир")
+        self.assertPending(entry)
+        self.assertSuggestionUndone(entry)
+
+    def test_two_duplicates_of_a_human_with_different_values(self):
+        entry = self.suggested()
+        self.human(TWIN)
+        third = add_product(THIRD, generic=self.milk)
+        self.confirm(self.original, resolutions={"generic": self.original.pk})
+        # One of the duplicates had «Кефир» from a human: the survivor's value is not only a suggestion.
+        self.assertClosed(entry, "Кефир")
+        self.assertFalse(Product.objects.filter(pk=third.pk).exists())
+        self.assertNothingToUndo(entry, KEFIR_A, "Кефир")
+
+    # --- A chain of two merges --------------------------------------------------------------------
+
+    def test_second_merge_absorbs_a_duplicate_of_a_human(self):
+        entry = self.suggested()
+        add_product(TWIN)
+        self.confirm(self.original)
+        self.assertPending(entry)
+        self.human(THIRD)
+        self.confirm(self.original)
+        self.assertClosed(entry, "Кефир")
+        self.assertNothingToUndo(entry, KEFIR_A, "Кефир")
+
+    def test_second_merge_absorbs_an_empty_duplicate(self):
+        entry = self.suggested()
+        add_product(TWIN)
+        self.confirm(self.original)
+        add_product(THIRD)
+        self.confirm(self.original)
+        self.assertPending(entry)
+        self.assertSuggestionUndone(entry)
+
+    def test_moved_record_and_a_second_merge_that_absorbs_a_duplicate_of_a_human(self):
+        entry = self.suggested()
+        twin = add_product(TWIN)
+        self.confirm(twin)
+        self.assertPending(entry, twin)
+        self.assertEqual(entry.origin_product_ref, self.original.pk)
+        self.human(THIRD)
+        self.confirm(twin)
+        self.assertClosed(entry, "Кефир")
+        self.assertEqual((entry.product_ref, entry.origin_product_ref), (twin.pk, self.original.pk))
+        self.assertNothingToUndo(entry, TWIN, "Кефир")
+
+    def test_moved_record_stays_pending_through_reconciliations(self):
+        entry = self.suggested()
+        twin = add_product(TWIN)
+        self.confirm(twin)
+        third = add_product(THIRD)
+        self.confirm(third)
+        # The duplicates the record came through had the value only from this suggestion.
+        self.assertEqual(services.reconcile(), 0)
+        self.assertPending(entry, third)
+        self.assertSuggestionUndone(entry, THIRD)
+
+    def test_settled_survivor_absorbed_by_a_product_with_its_own_pending_record(self):
+        """A record closed by a duplicate of a human is not a pending suggestion of its product."""
+        settled = self.suggested()
+        self.human(TWIN)
+        self.confirm(self.original)
+        self.assertClosed(settled, "Кефир")
+        third = add_product(THIRD)
+        apply(existing(third, generic("Кефир")))
+        entry = record(THIRD)
+        self.confirm(third)
+        self.assertFalse(Product.objects.filter(pk=self.original.pk).exists())
+        self.assertClosed(entry, "Кефир")
+        self.assertNothingToUndo(entry, THIRD, "Кефир")
+
+    def test_moved_record_absorbed_by_a_product_with_its_own_pending_record(self):
+        moved = self.suggested()
+        twin = add_product(TWIN)
+        self.confirm(twin)
+        third = add_product(THIRD)
+        apply(existing(third, generic("Кефир")))
+        entry = record(THIRD)
+        self.confirm(third)
+        # The absorbed product had «Кефир» only from the record that moved to it.
+        self.assertClosed(moved, "Кефир")
+        self.assertPending(entry, third)
+        self.assertSuggestionUndone(entry, THIRD)
+
+    # --- The step did not run: the reconciliation decides the same --------------------------------
+
+    def without_step(self):
+        entry = self.suggested()
+        self.human(TWIN)
+        with patch.object(services, "after_merge_confirmed"):
+            self.confirm(self.original)
+        self.assertPending(entry)
+        self.assertEqual(entry.version, 1)
+        return entry
+
+    def test_reconciliation_without_the_step_settles_the_record(self):
+        entry = self.without_step()
+        self.assertEqual(services.reconcile(), 1)
+        self.assertClosed(entry, "Кефир")
+        self.assertEqual((entry.version, states(CreatedGenericProduct)), (2, {"Кефир": "kept"}))
+        self.assertNothingToUndo(entry, KEFIR_A, "Кефир")
+
+    def test_cancel_pending_without_the_step_keeps_the_value(self):
+        entry = self.without_step()
+        self.assertEqual(services.cancel_pending(), {**NOTHING_CANCELLED, "superseded": [entry.pk]})
+        self.assertClosed(entry, "Кефир")
+        self.assertEqual(generic_of(KEFIR_A), "Кефир")
+
+    def test_decisions_without_the_step_keep_the_value(self):
+        decisions = {
+            "reject": lambda entry: services.reject(entry.pk, version=1),
+            "choose another": lambda entry: services.confirm(entry.pk, version=1, generic_id=self.milk.pk),
+            "confirm many": lambda entry: services.confirm_many([(entry.pk, 1)]),
+        }
+        entry = self.without_step()
+        for name, decide in decisions.items():
+            with self.subTest(decision=name), self.assertRaises(services.ClassificationResolved):
+                decide(entry)
+        self.assertClosed(entry, "Кефир")
+        self.assertEqual(generic_of(KEFIR_A), "Кефир")
+        self.assertFalse(ClassificationRejection.objects.exists())
+
+    def test_reconciliation_without_the_step_tells_a_suggestion_from_a_value_of_a_human(self):
+        twin = add_product(TWIN)
+        entry = self.suggested(twin)
+        other = record(TWIN)
+        with patch.object(services, "after_merge_confirmed"):
+            self.confirm(self.original)
+        self.assertEqual(services.reconcile(), 1)
+        self.assertClosed(other, "Кефир")
+        self.assertPending(entry)
+        self.assertSuggestionUndone(entry)
+
+    def test_second_merge_right_after_a_merge_without_the_step(self):
+        """The record a duplicate of a human settled is still pending when its product is absorbed."""
+        entry = self.without_step()
+        third = add_product(THIRD)
+        self.confirm(third)
+        # It does not move to the empty survivor: the value came from a human through the first duplicate.
+        self.assertClosed(entry, "Кефир")
+        self.assertEqual((entry.product_ref, entry.origin_product_ref), (self.original.pk, None))
+        self.assertEqual(list(services.records(product=third.pk)), [])
+        self.assertNothingToUndo(entry, THIRD, "Кефир")
+
+    # --- What does not settle the record ----------------------------------------------------------
+
+    def test_merge_older_than_the_record_says_nothing_about_its_value(self):
+        add_product(TWIN, generic=self.milk)
+        self.confirm(self.original)
+        self.assertEqual(generic_of(KEFIR_A), "Молоко")
+        # A human emptied the fact again; the suggestion made afterwards is only a suggestion.
+        Product.objects.filter(pk=self.original.pk).update(generic=service())
+        apply(existing(KEFIR_A, self.milk))
+        entry = record(KEFIR_A)
+        self.assertEqual(services.reconcile(), 0)
+        self.assertPending(entry)
+        self.assertEqual(services.cancel_pending()["cancelled"], [entry.pk])
+        self.assertEqual(generic_of(KEFIR_A), "Не разобрано")
+
+    def test_duplicate_of_a_human_with_another_value_does_not_settle_later(self):
+        entry = self.suggested()
+        add_product(TWIN, generic=self.milk)
+        self.confirm(self.original, resolutions={"generic": self.original.pk})
+        add_product(THIRD)
+        self.confirm(self.original)
+        self.assertEqual(services.reconcile(), 0)
+        self.assertPending(entry)
+
+    def test_cancelled_merge_with_a_duplicate_of_a_human_changes_nothing(self):
+        entry = self.suggested()
+        twin = self.human(TWIN)
+        merges.detect()
+        merges.cancel(ProductMerge.objects.get(status="pending").pk)
+        self.assertEqual(services.reconcile(), 0)
+        self.assertPending(entry)
+        # The suggestion is undone for its own product only; the duplicate keeps the value of the human.
+        self.assertEqual(services.cancel_pending()["cancelled"], [entry.pk])
+        self.assertEqual((generic_of(KEFIR_A), generic_of(TWIN)), ("Не разобрано", "Кефир"))
+        self.assertEqual(states(CreatedGenericProduct), {"Кефир": "kept"})
+        self.assertTrue(Product.objects.filter(pk=twin.pk).exists())
