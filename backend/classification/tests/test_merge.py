@@ -3,6 +3,8 @@
 ``HumanValueTests`` — no path of the mechanism undoes a value the product had
 before the suggestion or got from a human. ``SurvivorRecordTests`` — the same
 for the pending record of the survivor itself, by the kind of absorbed duplicate.
+``RejectionMemoryTests`` — what a human refused for a duplicate stays refused
+for the merged product: the transfer before the merge and its safety net.
 """
 from unittest.mock import patch
 
@@ -20,6 +22,7 @@ from classification.tests.factories import (
 from merges import services as merges
 from merges.models import ProductMerge
 from merges.visibility import is_absorbed
+from receipts.models import ReceiptLine
 
 DAIRY = ("Продукты питания", "Молочные продукты")
 TWIN = KEFIR_A + "."
@@ -203,7 +206,7 @@ class MergeStepTests(TestCase):
         self.assertEqual(snapshot(*CLASSIFICATION_MODELS), before)
         self.assertFalse(Product.objects.filter(pk=twin.pk).exists())
 
-    def test_rejection_memory_of_the_absorbed_product_goes_with_it(self):
+    def test_rejection_memory_of_the_absorbed_product_moves_to_the_survivor(self):
         twin = add_product(TWIN)
         apply(new(KEFIR_A, "Сыр", DAIRY, "kg"), existing(twin, generic("Молоко")))
         services.reject(record(KEFIR_A).pk, version=1)
@@ -211,7 +214,8 @@ class MergeStepTests(TestCase):
         self.assertEqual(ClassificationRejection.objects.count(), 2)
         self.confirm(self.original)
         self.assertEqual(
-            list(ClassificationRejection.objects.values_list("product__name", "generic_name")), [(KEFIR_A, "Сыр")],
+            list(ClassificationRejection.objects.order_by("pk").values_list("product__name", "generic_name")),
+            [(KEFIR_A, "Сыр"), (KEFIR_A, "Молоко")],
         )
 
     def test_failed_step_does_not_cancel_the_merge(self):
@@ -1010,3 +1014,275 @@ class SurvivorRecordTests(HumanValueCase):
         self.assertEqual((generic_of(KEFIR_A), generic_of(TWIN)), ("Не разобрано", "Кефир"))
         self.assertEqual(states(CreatedGenericProduct), {"Кефир": "kept"})
         self.assertTrue(Product.objects.filter(pk=twin.pk).exists())
+
+
+TRANSFER_FAILED = "ERROR:merges.services:Classification rejections transfer before merge confirmation failed: {}"
+STEP_FAILED = "ERROR:merges.services:Classification step after merge confirmation failed: {}"
+
+
+@tag("integration")
+class RejectionMemoryTests(HumanValueCase):
+    """A name refused for a duplicate is never suggested to the product the duplicate was merged into."""
+
+    def rows(self):
+        return list(ClassificationRejection.objects.order_by("pk").values())
+
+    def rejected(self, target, name="Сыр"):
+        """A human refuses the suggested name for the product; the row of the rejection memory."""
+        apply(new(target, name, DAIRY, "kg"))
+        entry = ProductClassification.objects.filter(product_ref=target.pk).latest("pk")
+        services.reject(entry.pk, version=entry.version)
+        return ClassificationRejection.objects.filter(product=target).values().latest("pk")
+
+    def moved(self, row, target):
+        return {**row, "product_id": target.pk}
+
+    def without_steps(self, target, *, transfer=True, step=True):
+        """Confirm the merge with the named steps failing; the log lines of the merge."""
+        patches = []
+        if transfer:
+            patches.append(patch.object(services, "before_merge_confirmed", side_effect=RuntimeError("secret detail")))
+        if step:
+            patches.append(patch.object(services, "after_merge_confirmed", side_effect=KeyError("secret detail")))
+        for patcher in patches:
+            patcher.start()
+        try:
+            with self.assertLogs("merges.services", level="ERROR") as logs:
+                self.assertEqual(self.confirm(target).status, "confirmed")
+        finally:
+            for patcher in patches:
+                patcher.stop()
+        return logs.output
+
+    def assertRefusedAgain(self, target, records):
+        """The fake repeats the first refused name: the run ends well and suggests nothing."""
+        run = suggest("rejected_again", product_ids=[target.pk])
+        self.assertEqual((run.status, run.applied_count, run.stats), ("succeeded", 0, {"rejected_before": 1}))
+        self.assertEqual(generic_of(target.name), "Не разобрано")
+        self.assertEqual(ProductClassification.objects.count(), records)
+        self.assertFalse(ProductClassification.objects.filter(status="pending").exists())
+
+    # --- The transfer before the merge ------------------------------------------------------------
+
+    def test_row_of_the_absorbed_product_moves_as_it_is(self):
+        twin = add_product(TWIN)
+        row = self.rejected(twin)
+        self.assertEqual((row["product_id"], row["generic_key"], row["generic_name"]), (twin.pk, "сыр", "Сыр"))
+        self.assertIsNotNone(row["classification_id"])
+        with self.assertNoLogs("merges.services", level="ERROR"):
+            self.confirm(self.original)
+        self.assertFalse(Product.objects.filter(pk=twin.pk).exists())
+        # The same row: pk, created_at, the name and the record are the ones of the refusal.
+        self.assertEqual(self.rows(), [self.moved(row, self.original)])
+
+    def test_fake_run_does_not_suggest_the_refused_name_to_the_survivor(self):
+        twin = add_product(TWIN)
+        self.rejected(twin)
+        self.confirm(self.original)
+        self.assertRefusedAgain(self.original, records=1)
+
+    def test_apply_skips_the_name_refused_for_the_duplicate(self):
+        twin = add_product(TWIN)
+        self.rejected(twin)
+        self.confirm(self.original)
+        result = apply(new(self.original, " СЫР ", DAIRY, "kg"))
+        self.assertEqual((result.applied, result.unknown, result.skipped), (0, 0, {"rejected_before": 1}))
+        self.assertEqual(generic_of(KEFIR_A), "Не разобрано")
+        # Another name is welcome.
+        self.assertEqual(apply(new(self.original, "Творог", DAIRY, "kg")).applied, 1)
+
+    def test_name_refused_for_both_keeps_the_row_of_the_survivor(self):
+        twin = add_product(TWIN)
+        own = self.rejected(self.original)
+        other = self.rejected(twin)
+        self.assertEqual(own["generic_key"], other["generic_key"])
+        self.confirm(self.original)
+        self.assertEqual(self.rows(), [own])
+
+    def test_name_refused_for_two_absorbed_products_keeps_the_earlier_row(self):
+        twin, third = add_product(TWIN), add_product(THIRD)
+        # The later product refuses first: the earlier row wins, not the smaller product id.
+        first = self.rejected(third)
+        second = self.rejected(twin)
+        milk = self.rejected(twin, "Молоко")
+        self.assertLess(first["id"], second["id"])
+        self.confirm(self.original)
+        self.assertEqual(self.rows(), [self.moved(first, self.original), self.moved(milk, self.original)])
+
+    def test_chain_of_merges_carries_the_row_to_the_last_survivor(self):
+        row = self.rejected(self.original)
+        twin = add_product(TWIN)
+        self.confirm(twin)
+        self.assertEqual(self.rows(), [self.moved(row, twin)])
+        third = add_product(THIRD)
+        self.confirm(third)
+        self.assertEqual(self.rows(), [self.moved(row, third)])
+        self.assertRefusedAgain(third, records=1)
+
+    def test_cancel_and_exclude_leave_the_memory_alone(self):
+        twin, third = add_product(TWIN), add_product(THIRD)
+        self.rejected(self.original)
+        self.rejected(twin, "Молоко")
+        self.rejected(third, "Кефир")
+        before = self.rows()
+        self.assertEqual([row["product_id"] for row in before], [self.original.pk, twin.pk, third.pk])
+        merges.detect()
+        group = ProductMerge.objects.get(status="pending")
+        self.assertEqual(group.members.count(), 3)
+        self.assertEqual(self.rows(), before)
+        group = merges.exclude(group.pk, version=group.version, product_id=third.pk)
+        self.assertEqual(self.rows(), before)
+        merges.cancel(group.pk)
+        self.assertEqual(self.rows(), before)
+        self.assertEqual(Product.objects.filter(pk__in=[self.original.pk, twin.pk, third.pk]).count(), 3)
+
+    def test_pending_record_of_the_survivor_on_the_refused_name_stays_pending(self):
+        """Accepted: the record waits for the human; only new suggestions of the name are dropped."""
+        twin = add_product(TWIN)
+        self.rejected(twin)
+        apply(new(self.original, "Сыр", DAIRY, "kg"))
+        entry = record(KEFIR_A)
+        self.confirm(self.original)
+        self.assertEqual(services.reconcile(), 0)
+        entry.refresh_from_db()
+        self.assertEqual((entry.status, entry.version, generic_of(KEFIR_A)), ("pending", 1, "Сыр"))
+        self.assertEqual(ClassificationRejection.objects.get().product_id, self.original.pk)
+
+    # --- A failed step and the safety net ---------------------------------------------------------
+
+    def test_failed_transfer_is_rolled_back_and_the_step_restores_the_memory(self):
+        twin = add_product(TWIN)
+        row = self.rejected(twin)
+
+        def broken(**arguments):
+            # A partial write of the transfer must not survive.
+            ClassificationRejection.objects.create(
+                product_id=arguments["target_id"], generic_key="half", generic_name="half written",
+            )
+            raise RuntimeError("secret detail")
+
+        with patch.object(services, "before_merge_confirmed", side_effect=broken) as transfer, \
+                self.assertLogs("merges.services", level="ERROR") as logs:
+            confirmed = self.confirm(self.original)
+        transfer.assert_called_once_with(target_id=self.original.pk, absorbed_ids=[twin.pk])
+        # Only the error class is logged.
+        self.assertEqual(logs.output, [TRANSFER_FAILED.format("RuntimeError")])
+        self.assertEqual(confirmed.status, "confirmed")
+        self.assertFalse(Product.objects.filter(pk=twin.pk).exists())
+        # The row went with the absorbed product; the step after the merge wrote it again from the record.
+        restored = ClassificationRejection.objects.values().get()
+        self.assertNotEqual(restored["id"], row["id"])
+        self.assertGreater(restored["created_at"], row["created_at"])
+        self.assertEqual(
+            {name: restored[name] for name in ("product_id", "generic_key", "generic_name", "classification_id")},
+            {"product_id": self.original.pk, "generic_key": row["generic_key"], "generic_name": "Сыр",
+             "classification_id": row["classification_id"]},
+        )
+        self.assertRefusedAgain(self.original, records=1)
+
+    def test_both_steps_failed_and_the_reconciliation_restores_the_memory(self):
+        twin = add_product(TWIN)
+        row = self.rejected(twin)
+        self.assertEqual(self.without_steps(self.original), [
+            TRANSFER_FAILED.format("RuntimeError"), STEP_FAILED.format("KeyError"),
+        ])
+        self.assertEqual(self.rows(), [])
+        # Restored rows are not records changed: the number of the command stays.
+        self.assertEqual(services.reconcile(), 0)
+        restored = self.rows()
+        self.assertEqual(
+            [(found["product_id"], found["generic_key"], found["generic_name"], found["classification_id"])
+             for found in restored],
+            [(self.original.pk, row["generic_key"], "Сыр", row["classification_id"])],
+        )
+        self.assertEqual(services.reconcile(), 0)
+        self.assertEqual(self.rows(), restored)
+        self.assertRefusedAgain(self.original, records=1)
+        self.assertEqual(self.rows(), restored)
+
+    def test_apply_restores_the_memory_before_it_reads_it(self):
+        twin = add_product(TWIN)
+        self.rejected(twin)
+        self.without_steps(self.original)
+        self.assertEqual(self.rows(), [])
+        self.assertEqual(apply(new(self.original, "Сыр", DAIRY, "kg")).skipped, {"rejected_before": 1})
+        self.assertEqual(ClassificationRejection.objects.get().product_id, self.original.pk)
+
+    def test_manual_run_request_restores_the_memory(self):
+        twin = add_product(TWIN)
+        self.rejected(twin)
+        self.without_steps(self.original)
+        run, created = services.request_run(trigger="manual", product_ids=[self.original.pk])
+        self.assertEqual((created, run.product_ids), (True, [self.original.pk]))
+        self.assertEqual(ClassificationRejection.objects.get().product_id, self.original.pk)
+
+    def test_failed_step_after_the_merge_keeps_the_transferred_row(self):
+        twin = add_product(TWIN)
+        row = self.rejected(twin)
+        self.assertEqual(self.without_steps(self.original, transfer=False), [STEP_FAILED.format("KeyError")])
+        self.assertEqual(self.rows(), [self.moved(row, self.original)])
+
+    def test_name_another_generic_product_was_chosen_instead_of_is_restored_too(self):
+        twin = add_product(TWIN)
+        apply(new(twin, "Сыр", DAIRY, "kg"))
+        entry = record(TWIN)
+        services.confirm(entry.pk, version=1, generic_id=self.milk.pk)
+        self.assertEqual(record(TWIN).resolution, "other")
+        self.without_steps(self.original)
+        self.assertEqual(self.rows(), [])
+        services.reconcile()
+        self.assertEqual(
+            list(ClassificationRejection.objects.values_list("product_id", "generic_name", "classification_id")),
+            [(self.original.pk, "Сыр", entry.pk)],
+        )
+        # The merge gave the survivor the value of the human; the memory is about suggestions only.
+        self.assertEqual(generic_of(KEFIR_A), "Молоко")
+
+    def test_chain_of_merges_without_the_steps_is_restored_for_the_last_survivor(self):
+        row = self.rejected(self.original)
+        twin = add_product(TWIN)
+        self.without_steps(twin)
+        third = add_product(THIRD)
+        self.without_steps(third)
+        self.assertEqual(self.rows(), [])
+        services.reconcile()
+        self.assertEqual(
+            list(ClassificationRejection.objects.values_list("product_id", "generic_key", "classification_id")),
+            [(third.pk, row["generic_key"], row["classification_id"])],
+        )
+
+    def test_step_restores_the_memory_of_its_own_survivor_only(self):
+        twin = add_product(TWIN)
+        self.rejected(twin)
+        self.without_steps(self.original)
+        services.after_merge_confirmed(target_id=10**9, absorbed_ids=[], target_generic_before=service().pk)
+        self.assertEqual(self.rows(), [])
+        services.after_merge_confirmed(
+            target_id=self.original.pk, absorbed_ids=[twin.pk], target_generic_before=service().pk,
+        )
+        self.assertEqual(ClassificationRejection.objects.get().product_id, self.original.pk)
+
+    def test_survivor_deleted_since_has_no_memory_to_restore(self):
+        self.rejected(self.original)
+        twin = add_product(TWIN)
+        self.without_steps(twin)
+        ReceiptLine.objects.filter(product=twin).update(product=None)
+        twin.delete()
+        self.assertEqual(services.reconcile(), 0)
+        self.assertEqual(self.rows(), [])
+
+    def test_memory_deleted_for_a_live_product_is_not_restored(self):
+        twin = add_product(TWIN)
+        self.rejected(self.original)
+        self.rejected(twin, "Молоко")
+        ClassificationRejection.objects.all().delete()
+        # Nothing was merged: one query, no writes.
+        with self.assertNumQueries(1):
+            services._inherit_rejections()
+        self.assertEqual(services.reconcile(), 0)
+        self.assertEqual(self.rows(), [])
+        # A cancelled merge is not a merge either.
+        merges.detect()
+        merges.cancel(ProductMerge.objects.get(status="pending").pk)
+        self.assertEqual(services.reconcile(), 0)
+        self.assertEqual(self.rows(), [])

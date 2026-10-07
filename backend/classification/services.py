@@ -22,8 +22,13 @@ operation raises ``ClassificationResolved`` / ``ClassificationChanged``.
 ``Product.generic`` is written in four places only: ``apply`` (the product has
 the service generic product), ``confirm`` with another generic product (the
 decision of a human), and ``reject`` / ``cancel_pending`` through
-``_return_product``. The reconciliation, the cleanup and the merge step never
+``_return_product``. The reconciliation, the cleanup and the merge steps never
 write it.
+
+The rejection memory of a product absorbed by a confirmed merge belongs to the
+survivor: ``before_merge_confirmed`` moves the rows before the absorbed
+products are deleted, and the reconciliation restores what a failed transfer
+or an earlier merge lost (``_inherit_rejections``).
 """
 import uuid
 from collections import Counter, defaultdict
@@ -573,7 +578,52 @@ def _reconcile(records, session):
     return outcomes
 
 
+def _inherit_rejections(target_ids=None):
+    """Safety net of ``before_merge_confirmed``: rejections lost with absorbed products return to the survivors.
+
+    Read from what outlives a deleted product: a closed record ``rejected`` /
+    ``other`` is what ``_remember`` wrote the row from, and the journal of
+    confirmed merges names the survivor. A survivor that lacks the row gets it
+    again, with the name and the record of the lost one. ``target_ids`` limits
+    the survivors. A merge confirmed before the transfer existed is restored
+    the same way. Nothing to restore — one query and no writes.
+    """
+    absorbed = ProductMergeMember.objects.filter(
+        ~Q(group__target_ref=OuterRef("product_ref")), product_ref=OuterRef("product_ref"),
+        state=ProductMergeMember.State.ACTIVE, group__status=ProductMerge.Status.CONFIRMED,
+    )
+    successors, wanted = {}, {}
+    for record_id, product_ref, name in ProductClassification.objects.filter(
+        Exists(absorbed), resolution__in=[Resolution.REJECTED, Resolution.OTHER],
+    ).order_by("pk").values_list("pk", "product_ref", "suggested_generic_name"):
+        if product_ref not in successors:
+            successors[product_ref] = _successor(product_ref)
+        successor = successors[product_ref]
+        if successor is not None and (target_ids is None or successor in target_ids):
+            # The earliest record of a name wins, as the earliest row does in the transfer.
+            wanted.setdefault((successor, _rejection_key(name)), (name, record_id))
+    if not wanted:
+        return
+    known = set(
+        ClassificationRejection.objects.filter(product_id__in={successor for successor, _key in wanted})
+        .values_list("product_id", "generic_key")
+    )
+    missing = {pair: source for pair, source in wanted.items() if pair not in known}
+    if not missing:
+        return
+    # A survivor deleted since (admin) has no memory to restore.
+    alive = set(
+        Product.objects.select_for_update(of=("self",)).filter(pk__in={successor for successor, _key in missing})
+        .order_by("pk").values_list("pk", flat=True)
+    )
+    ClassificationRejection.objects.bulk_create([
+        ClassificationRejection(product_id=successor, generic_key=key, generic_name=name, classification_id=record_id)
+        for (successor, key), (name, record_id) in missing.items() if successor in alive
+    ])
+
+
 def _reconcile_pending(session):
+    _inherit_rejections()
     records = list(
         ProductClassification.objects.select_for_update(of=("self",)).filter(status=Status.PENDING).order_by("pk")
     )
@@ -581,7 +631,10 @@ def _reconcile_pending(session):
 
 
 def reconcile():
-    """Reconcile every pending record in one transaction; the number of records changed."""
+    """Reconcile every pending record in one transaction; the number of records changed.
+
+    Rejections restored for merge survivors (``_inherit_rejections``) are not counted.
+    """
     with _mutation() as session:
         return _reconcile_pending(session)
 
@@ -956,6 +1009,28 @@ def _move(record, target, previous, session):
     record.save()
 
 
+def before_merge_confirmed(*, target_id, absorbed_ids):
+    """Step of ``merges.services.confirm`` right before the absorbed products are deleted.
+
+    Their rejection memory goes to the survivor: what a human refused for a
+    duplicate is never suggested to the merged product. The rows themselves
+    move, so ``pk``, ``created_at``, the name and the record stay. A name the
+    survivor already has, or an earlier row has brought, is left behind and
+    deleted with its product. Runs inside the merge transaction, which already
+    holds the mutex.
+    """
+    with _mutation():
+        kept = set(
+            ClassificationRejection.objects.filter(product_id=target_id).values_list("generic_key", flat=True)
+        )
+        for rejection in ClassificationRejection.objects.select_for_update(of=("self",)).filter(
+                product_id__in=list(absorbed_ids)).order_by("pk"):
+            if rejection.generic_key not in kept:
+                kept.add(rejection.generic_key)
+                rejection.product_id = target_id
+                rejection.save(update_fields=["product"])
+
+
 def after_merge_confirmed(*, target_id, absorbed_ids, target_generic_before):
     """Step of ``merges.services.confirm``: records of the absorbed products follow the merge.
 
@@ -970,10 +1045,13 @@ def after_merge_confirmed(*, target_id, absorbed_ids, target_generic_before):
     Then the survivor's own pending record is reconciled: ``changed`` when the
     human chose another value, ``merged`` when an absorbed product had the
     suggested value on its own — the survivor keeps it, nothing is left to
-    reject. Runs inside the merge transaction, which already holds the mutex.
+    reject. First the rejection memory a failed ``before_merge_confirmed`` lost
+    is restored for the survivor. Runs inside the merge transaction, which
+    already holds the mutex.
     """
     absorbed_ids = list(absorbed_ids)
     with _mutation() as session:
+        _inherit_rejections([target_id])
         records = _lock_records(list(
             ProductClassification.objects.filter(status=Status.PENDING, product_ref__in=absorbed_ids)
             .values_list("pk", flat=True)
