@@ -2,6 +2,7 @@
 
 Same access as the recognition API (``LocalAPIView``). Every mutation is one
 call of ``merges.services``; its errors are mapped to the contract codes here.
+A decision is recorded with the user of the request (``local`` in ``local_single``).
 """
 import json
 
@@ -10,7 +11,7 @@ from rest_framework.parsers import BaseParser
 from rest_framework.response import Response
 from rest_framework import status
 
-from accounts.access import Moderator
+from accounts.access import Moderator, request_user
 from api.pagination import paginate
 from api.params import MAX_ID, Params
 from api.product_merge_serialization import group_briefs, group_object, line_object
@@ -181,7 +182,7 @@ class ConfirmView(MergeMutationView):
             raise InvalidParameter(errors)
         group = services.confirm(
             path_id(pk), version=data["version"], target_product_id=data["target_product_id"],
-            name_product_id=data.get("name_product_id"), resolutions=resolutions,
+            name_product_id=data.get("name_product_id"), resolutions=resolutions, actor=request_user(request),
         )
         return Response(group_object(group))
 
@@ -189,7 +190,7 @@ class ConfirmView(MergeMutationView):
 class CancelView(MergeMutationView):
     def post(self, request, pk):
         self.body(request)
-        return Response(group_object(services.cancel(path_id(pk))))
+        return Response(group_object(services.cancel(path_id(pk), actor=request_user(request))))
 
 
 class ExcludeView(MergeMutationView):
@@ -198,5 +199,7 @@ class ExcludeView(MergeMutationView):
         errors = {name: [EXPECTED_ID] for name in ("version", "product_id") if not _is_id(data[name])}
         if errors:
             raise InvalidParameter(errors)
-        group = services.exclude(path_id(pk), version=data["version"], product_id=data["product_id"])
+        group = services.exclude(
+            path_id(pk), version=data["version"], product_id=data["product_id"], actor=request_user(request),
+        )
         return Response(group_object(group))

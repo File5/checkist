@@ -379,20 +379,21 @@ def _drop_journal(group):
     ProductMergeAlias.objects.filter(member__group=group).delete()
 
 
-def _reject(group, pairs):
+def _reject(group, pairs, actor=None):
+    # A pair refused before keeps its first author: existing rows are not rewritten.
     ProductMergeRejection.objects.bulk_create(
         [
-            ProductMergeRejection(product_low_id=low, product_high_id=high, group=group)
+            ProductMergeRejection(product_low_id=low, product_high_id=high, group=group, created_by=actor)
             for low, high in sorted({detection.pair_key(first, second) for first, second in pairs})
         ],
         ignore_conflicts=True,
     )
 
 
-def _resolve(group, status):
+def _resolve(group, status, actor=None):
     ProductMergeMember.objects.filter(group=group).update(active_product=None)
-    group.status, group.resolved_at = status, timezone.now()
-    group.save(update_fields=["status", "resolved_at", "version", "target_ref"])
+    group.status, group.resolved_at, group.resolved_by = status, timezone.now(), actor
+    group.save(update_fields=["status", "resolved_at", "resolved_by", "version", "target_ref"])
 
 
 def _keep_classification_rejections(target_id, absorbed_ids):
@@ -514,11 +515,13 @@ def detect(*, dry_run=False, product_ids=None):
         return DetectResult(created, extended, group_ids, payloads)
 
 
-def cancel(group_id):
+def cancel(group_id, *, actor=None):
     """Undo a pending group: every product gets its lines and aliases back.
 
     All member pairs are recorded as rejected. Repeating on a cancelled group
     returns it unchanged; a confirmed group raises ``MergeResolved``.
+    ``actor`` — the user who decided, kept in the group and the rejections;
+    ``None`` for a command.
     """
     with _mutation():
         group = _lock_group(group_id)
@@ -532,16 +535,18 @@ def cancel(group_id):
         _absorb(group, members, group.target_ref, journal_target=False)
         _restore(group, members, group.target_ref)
         _drop_journal(group)
-        _reject(group, combinations(ids, 2))
-        _resolve(group, Status.CANCELLED)
+        _reject(group, combinations(ids, 2), actor)
+        _resolve(group, Status.CANCELLED, actor)
     return _fresh(group_id)
 
 
-def exclude(group_id, *, version, product_id):
+def exclude(group_id, *, version, product_id, actor=None):
     """Take one record out of a pending group and restore it.
 
     Any record may be excluded, the surviving one too: the rest merge again
     onto the default survivor. Fewer than two records left cancel the group.
+    ``actor`` — the user who decided, kept in the rejections and in the group
+    this call cancels; ``None`` for a command.
     """
     with _mutation():
         group = _lock_group(group_id)
@@ -561,12 +566,12 @@ def exclude(group_id, *, version, product_id):
         _restore(group, members, group.target_ref)
         _drop_journal(group)
         remaining = [item for item in members if item.pk != member.pk]
-        _reject(group, ((member.product_ref, item.product_ref) for item in remaining))
+        _reject(group, ((member.product_ref, item.product_ref) for item in remaining), actor)
         member.state, member.active_product = State.EXCLUDED, None
         member.save(update_fields=["state", "active_product"])
         group.version += 1
         if len(remaining) < 2:
-            _resolve(group, Status.CANCELLED)
+            _resolve(group, Status.CANCELLED, actor)
         else:
             if member.role == Role.TARGET:
                 merchants = frozenset()
@@ -582,7 +587,7 @@ def exclude(group_id, *, version, product_id):
     return _fresh(group_id)
 
 
-def confirm(group_id, *, version, target_product_id, name_product_id=None, resolutions=None):
+def confirm(group_id, *, version, target_product_id, name_product_id=None, resolutions=None, actor=None):
     """Make a pending merge final: absorbed products are deleted, facts completed.
 
     ``target_product_id`` — any active record; choosing another one moves all
@@ -590,7 +595,8 @@ def confirm(group_id, *, version, target_product_id, name_product_id=None, resol
     of that record). An empty fact of the survivor is filled from the single
     value found in the group; a filled one is never overwritten. Two or more
     different values are a conflict a human resolves with ``resolutions``
-    (``{field: product_id}``); without it nothing is saved.
+    (``{field: product_id}``); without it nothing is saved. ``actor`` — the
+    user who decided, kept in the group; ``None`` for a command.
     """
     with _mutation():
         group = _lock_group(group_id)
@@ -664,7 +670,7 @@ def confirm(group_id, *, version, target_product_id, name_product_id=None, resol
         _keep_classification_rejections(target_product_id, absorbed)
         Product.objects.filter(pk__in=absorbed).delete()
         target.save()
-        _resolve(group, Status.CONFIRMED)
+        _resolve(group, Status.CONFIRMED, actor)
         _notify_classification(target_product_id, absorbed, generic_before)
     return _fresh(group_id)
 

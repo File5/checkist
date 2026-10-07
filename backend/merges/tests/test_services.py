@@ -815,6 +815,113 @@ class ExcludeTests(MergeTestCase):
 
 
 @tag("integration")
+class ActorTests(MergeTestCase):
+    """Who decided: the user given by the caller; nobody for a command and the detector."""
+
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        cls.actor = get_user_model().objects.create_user("synthetic-decider")
+        cls.other = get_user_model().objects.create_user("synthetic-other-decider")
+
+    def setUp(self):
+        self.detect()
+
+    def authors(self, group):
+        return set(ProductMergeRejection.objects.filter(group=group).values_list("created_by_id", flat=True))
+
+    def test_detector_leaves_the_group_without_an_author(self):
+        self.assertEqual(set(ProductMerge.objects.values_list("resolved_by_id", flat=True)), {None})
+        self.assertFalse(ProductMergeRejection.objects.exists())
+
+    def test_cancel_records_the_actor_in_the_group_and_every_rejection(self):
+        group = pending_group(PIZZA[0])
+        result = services.cancel(group.pk, actor=self.actor)
+        self.assertEqual((result.status, result.resolved_by_id), ("cancelled", self.actor.pk))
+        self.assertEqual(ProductMergeRejection.objects.filter(group=group).count(), 3)
+        self.assertEqual(self.authors(group), {self.actor.pk})
+        # A repeat by another user returns the group as it is: the first author stays.
+        before = snapshot()
+        self.assertEqual(services.cancel(group.pk, actor=self.other).resolved_by_id, self.actor.pk)
+        self.assertEqual(services.cancel(group.pk).resolved_by_id, self.actor.pk)
+        self.assertEqual(snapshot(), before)
+        # The other groups are untouched.
+        self.assertEqual(
+            set(ProductMerge.objects.exclude(pk=group.pk).values_list("status", "resolved_by_id")), {("pending", None)},
+        )
+
+    def test_confirm_records_the_actor_and_a_repeat_keeps_the_author(self):
+        group = pending_group(PIZZA[0])
+        result = services.confirm(group.pk, version=1, target_product_id=group.target_ref, actor=self.actor)
+        self.assertEqual((result.status, result.resolved_by_id), ("confirmed", self.actor.pk))
+        before = snapshot()
+        repeat = services.confirm(group.pk, version=1, target_product_id=group.target_ref, actor=self.other)
+        self.assertEqual(repeat.resolved_by_id, self.actor.pk)
+        self.assertEqual(snapshot(), before)
+
+    def test_refused_confirm_and_exclude_record_nobody(self):
+        group = pending_group(PIZZA[0])
+        before = snapshot()
+        with self.assertRaises(services.MergeChanged):
+            services.confirm(group.pk, version=9, target_product_id=group.target_ref, actor=self.actor)
+        with self.assertRaises(services.MergeChanged):
+            services.exclude(group.pk, version=9, product_id=group.target_ref, actor=self.actor)
+        self.assertEqual(snapshot(), before)
+
+    def test_exclude_records_the_actor_in_the_rejections_only_while_the_group_stays_pending(self):
+        group = pending_group(MAULTASCHEN[0])
+        excluded = product(MAULTASCHEN[2])
+        result = services.exclude(group.pk, version=1, product_id=excluded.pk, actor=self.actor)
+        self.assertEqual((result.status, result.resolved_by_id), ("pending", None))
+        self.assertEqual(ProductMergeRejection.objects.filter(group=group).count(), 2)
+        self.assertEqual(self.authors(group), {self.actor.pk})
+        # The decision about the rest belongs to whoever makes it.
+        confirmed = services.confirm(group.pk, version=2, target_product_id=result.target_ref, actor=self.other)
+        self.assertEqual(confirmed.resolved_by_id, self.other.pk)
+        self.assertEqual(self.authors(group), {self.actor.pk})
+
+    def test_exclude_that_cancels_the_group_records_the_actor_in_the_group(self):
+        group = pending_group(EGGS[0])
+        result = services.exclude(group.pk, version=1, product_id=product(EGGS[1]).pk, actor=self.actor)
+        self.assertEqual((result.status, result.resolved_by_id), ("cancelled", self.actor.pk))
+        self.assertEqual(self.authors(group), {self.actor.pk})
+
+    def test_a_pair_refused_before_keeps_its_first_author(self):
+        group = pending_group(MAULTASCHEN[0])
+        services.exclude(group.pk, version=1, product_id=product(MAULTASCHEN[2]).pk, actor=self.actor)
+        services.cancel(group.pk, actor=self.other)
+        pairs = {
+            (low, high): author for low, high, author in ProductMergeRejection.objects.filter(group=group).values_list(
+                "product_low_id", "product_high_id", "created_by_id")
+        }
+        excluded = product(MAULTASCHEN[2]).pk
+        self.assertEqual(len(pairs), 3)
+        for pair, author in pairs.items():
+            with self.subTest(pair=pair):
+                self.assertEqual(author, self.actor.pk if excluded in pair else self.other.pk)
+        self.assertEqual(ProductMerge.objects.get(pk=group.pk).resolved_by_id, self.other.pk)
+
+    def test_calls_without_an_actor_and_cancel_pending_record_nobody(self):
+        pizza, eggs, three = pending_group(PIZZA[0]), pending_group(EGGS[0]), pending_group(MAULTASCHEN[0])
+        services.confirm(pizza.pk, version=1, target_product_id=pizza.target_ref)
+        services.exclude(three.pk, version=1, product_id=product(MAULTASCHEN[2]).pk)
+        services.cancel(eggs.pk)
+        self.assertEqual(len(services.cancel_pending()), 5)
+        self.assertFalse(ProductMerge.objects.filter(status="pending").exists())
+        self.assertEqual(set(ProductMerge.objects.values_list("resolved_by_id", flat=True)), {None})
+        self.assertTrue(ProductMergeRejection.objects.exists())
+        self.assertEqual(set(ProductMergeRejection.objects.values_list("created_by_id", flat=True)), {None})
+
+    def test_deleting_the_user_empties_the_reference_and_keeps_the_journal(self):
+        group = pending_group(PIZZA[0])
+        services.cancel(group.pk, actor=self.actor)
+        get_user_model().objects.filter(pk=self.actor.pk).delete()
+        self.assertEqual(ProductMerge.objects.get(pk=group.pk).resolved_by_id, None)
+        self.assertEqual(ProductMergeRejection.objects.filter(group=group).count(), 3)
+        self.assertEqual(self.authors(group), {None})
+
+
+@tag("integration")
 class ProtectTests(MergeTestCase):
     def test_product_of_a_pending_group_cannot_be_deleted(self):
         self.detect()
@@ -975,6 +1082,9 @@ class CommandTests(TestCase):
 
         cancelled = self.run_command("product_merges", "cancel-pending")
         self.assertEqual(sorted(cancelled["cancelled"]), sorted(done["group_ids"]))
+        # A command decides for nobody.
+        self.assertEqual(set(ProductMerge.objects.values_list("status", "resolved_by_id")), {("cancelled", None)})
+        self.assertEqual(set(ProductMergeRejection.objects.values_list("created_by_id", flat=True)), {None})
         self.assertEqual(snapshot(*DOMAIN_MODELS), seeded)
         self.assertEqual(self.run_command("product_merges", "cancel-pending"), {"cancelled": []})
         self.assertEqual(self.run_command("product_merges", "detect")["created"], 0)
