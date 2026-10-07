@@ -10,6 +10,7 @@ from rest_framework.parsers import BaseParser
 from rest_framework.response import Response
 from rest_framework import status
 
+from accounts.access import Moderator
 from api.pagination import paginate
 from api.params import MAX_ID, Params
 from api.product_merge_serialization import group_briefs, group_object, line_object
@@ -102,6 +103,7 @@ class MergeAPIView(LocalAPIView):
 
 
 class MergeMutationView(MergeAPIView):
+    permission_classes = [Moderator]
     http_method_names = ["post", "options"]
     parser_classes = [JsonObjectParser]
 

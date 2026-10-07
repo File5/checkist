@@ -9,6 +9,7 @@ from rest_framework import status
 from rest_framework.exceptions import ParseError, UnsupportedMediaType
 from rest_framework.response import Response
 
+from accounts.access import Moderator
 from api.pagination import paginate
 from api.params import MAX_ID, Params
 from api.product_classification_serialization import record_object, record_objects, run_object, status_object
@@ -110,6 +111,7 @@ def _ids(request, *names):
 
 
 class ClassificationMutationView(ClassificationAPIView):
+    permission_classes = [Moderator]
     http_method_names = ["post", "options"]
     parser_classes = [JsonObjectParser]
 
@@ -190,6 +192,10 @@ class StatusView(ClassificationAPIView):
 class RunsView(ClassificationAPIView):
     http_method_names = ["get", "head", "options", "post"]
     parser_classes = [JsonObjectParser]
+
+    def get_permissions(self):
+        # Reading the runs is open like the other GET; queueing one is a moderator's decision.
+        return [Moderator()] if self.request.method == "POST" else super().get_permissions()
 
     def get(self, request):
         params = Params(request.query_params)
