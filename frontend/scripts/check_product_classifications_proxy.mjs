@@ -1,7 +1,8 @@
 // Mutating QA acceptance of the product-classification client through a running Vite dev/preview proxy.
 // Node 24 strips the real adapters' TypeScript. No browser, no mocked fetch. Run on a fresh
 // seed_product_classification_demo + `product_classifications suggest --fake-scenario mixed` database only:
-// the scenario decides records, queues a run and executes it with its own fake worker, one batch of one product per pass.
+// the scenario decides records, queues a run and executes it with its own fake worker, one batch of one product per pass;
+// after the pass that suggests something it reads the list of the screen while the run is still active.
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
@@ -14,6 +15,7 @@ import {
   getProductClassificationRuns, getProductClassifications, getProductClassificationState, rejectProductClassification,
   requestProductClassificationRun,
 } from '../src/api/product-classifications.ts'
+import { countsAgree, listOutdated, stateActive, syncReads } from '../src/features/classification/list-sync.ts'
 
 const usage = 'Usage: node frontend/scripts/check_product_classifications_proxy.mjs <vite-origin, e.g. http://127.0.0.1:15173>'
 const root = fileURLToPath(new URL('../../', import.meta.url))
@@ -37,9 +39,9 @@ function ok(result, status = 200) {
   return result.data
 }
 /** One pass of the real host worker with the fake provider: at most one batch of one product, then it exits. */
-function workerPass() {
+function workerPass(scenario = 'mixed') {
   const child = spawn(python, [
-    '-X', 'utf8', join(root, 'backend/manage.py'), 'recognition_worker', '--once', '--classification-fake-scenario', 'mixed',
+    '-X', 'utf8', join(root, 'backend/manage.py'), 'recognition_worker', '--once', '--classification-fake-scenario', scenario,
   ], { cwd: root, env: { ...process.env, PRODUCT_CLASSIFICATION_BATCH_SIZE: '1' }, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
   workers.add(child)
   let output = ''
@@ -248,7 +250,13 @@ try {
     assert.deepEqual([run.progress.requested, run.progress.processed], [3, processed])
   }
   assert.deepEqual([queued.run.started_at, queued.run.progress.requested, queued.run.progress.processed], [null, 3, 0], fresh)
-  const firstPass = await workerPass()
+  // What the screen holds before the pass: its state and its list of pending records.
+  const listBefore = ok(await getProductClassifications(screen, options))
+  assert.equal(listBefore.count, 3)
+  const idle = (data) => ({ data, refreshing: false })
+  assert.equal(syncReads({}, idle(after), idle(listBefore), {}).reread, undefined, 'The state and the list agree before the pass')
+  // «Колбаса» was rejected for both products and `mixed` would only repeat it: this pass suggests another generic product.
+  const firstPass = await workerPass('new_category')
   assert.match(firstPass, new RegExp(`Classification run ${queued.run.id}: queued`), 'No recognition job may wait in this QA database: the pass must take the batch')
   const between = ok(await getProductClassificationState(options))
   assert.equal(between.run.status, 'queued', 'A run between its batches is queued')
@@ -263,30 +271,61 @@ try {
   assert.deepEqual(pressed, { created: false, run: between.run, executor: between.executor }, 'The button returns the run between its batches as it is')
   console.log(`run ${queued.run.id} between batches: worker pass → queued, started_at ${between.run.started_at}, processed 1 of 3, version ${between.run.version}; POST runs/ → 200 created=false, the same run`)
 
+  // The batch is applied at once: the list of the screen holds its record while the run is still active.
+  assert.deepEqual([between.run.progress.applied, between.pending_count, between.unclassified_count], [1, 4, 2])
+  assert.equal(stateActive(between), true)
+  assert.equal(listOutdated(after, between), true, 'The client must read the list again after this read of the state')
+  assert.equal(syncReads({ state: after, list: listBefore }, idle(between), idle(listBefore), {}).reread, 'list')
+  const listBetween = ok(await getProductClassifications(screen, options))
+  assert.equal(requests.at(-1).path, '/api/product-classifications/?status=pending&ordering=generic&page_size=200')
+  assert.equal(countsAgree(between, listBetween.count, {}), true, '«Ожидают подтверждения» and the list say the same')
+  const known = new Set(listBefore.results.map((record) => record.id))
+  const added = listBetween.results.filter((record) => !known.has(record.id))
+  assert.deepEqual([listBetween.count, added.length], [4, 1], 'The record of the first batch is in the list before the run ends')
+  const [suggested] = added
+  assert.deepEqual([suggested.status, suggested.source.run_id, suggested.source.trigger, suggested.source.provider], ['pending', queued.run.id, 'manual', 'fake'])
+  assert.deepEqual(suggested.actions, { can_confirm: true, can_choose: true, can_reject: true })
+  assert.deepEqual([suggested.suggested.generic.name, suggested.suggested.generic.is_new, suggested.suggested.pending_count], ['Тестовый продукт', true, 1])
+  assert.ok(sausage.some((record) => record.product.id === suggested.product.id), 'The batch takes a product returned to «Не разобрано» by the rejection')
+  assert.deepEqual(suggested.product.generic, { id: suggested.suggested.generic.id, name: 'Тестовый продукт', base_unit: suggested.suggested.generic.base_unit })
+  assert.deepEqual(listBetween.results.filter((record) => known.has(record.id)), listBefore.results, 'Records the screen already showed are the same: an open area stays')
+  assert.deepEqual(ok(await getProductClassifications({ product: suggested.product.id, status: 'pending' }, options)).results, [suggested])
+  assert.equal(syncReads({ state: between, list: listBetween }, idle(structuredClone(between)), idle(listBetween), {}).reread, undefined, 'The next poll without a change reads nothing')
+  console.log(`list between batches: run ${queued.run.id} is queued, GET ?status=pending → 4 records, new record ${suggested.id} «${suggested.suggested.generic.name}» for product ${suggested.product.id}; the client decision: read the list again, then nothing until the next change`)
+
   // The second pass leaves it between batches again, the third one closes it.
   await workerPass()
   const nextPass = ok(await getProductClassificationState(options))
   assert.deepEqual([nextPass.run.status, nextPass.run.started_at, nextPass.run.finished_at], ['queued', between.run.started_at, null])
   sameRun(nextPass.run, 2)
+  // Nothing is added by this pass: the list is only read again and says the same.
+  assert.deepEqual([nextPass.run.progress.applied, nextPass.pending_count], [1, 4])
+  assert.equal(listOutdated(between, nextPass), true)
+  assert.deepEqual(ok(await getProductClassifications(screen, options)), listBetween)
   assert.match(await workerPass(), new RegExp(`Classification run ${queued.run.id}: succeeded`))
   const finished = ok(await getProductClassificationState(options))
   assert.deepEqual([finished.run.status, finished.run.started_at, finished.executor.state], ['succeeded', between.run.started_at, 'absent'])
   assert.ok(finished.run.finished_at !== null)
   sameRun(finished.run, 3)
-  // Both «Колбаса» variants were rejected and the model does not know «Demo Art. 4711»: nothing new is suggested.
-  assert.deepEqual([finished.run.progress.applied, finished.pending_count, finished.unclassified_count], [0, 3, 3])
+  // The rejected «Колбаса» is not offered again and the model does not know «Demo Art. 4711»: only the first pass suggested.
+  assert.deepEqual(finished.run.progress, { requested: 3, processed: 3, applied: 1, unknown: 1, skipped: 1 })
+  assert.deepEqual([finished.pending_count, finished.unclassified_count], [4, 2])
+  assert.equal(listOutdated(nextPass, finished), true)
+  assert.deepEqual(ok(await getProductClassifications(screen, options)), listBetween)
+  assert.equal(listOutdated(finished, ok(await getProductClassificationState(options))), false, 'A finished run asks for no more reads')
   assert.deepEqual(ok(await getProductClassificationRun(queued.run.id, options)), finished.run)
   assert.equal(ok(await getProductClassificationRuns({ status: 'queued' }, options)).count, 0)
   assert.deepEqual(ok(await getProductClassificationRuns({}, options)).results.map((run) => [run.id, run.status]), [[queued.run.id, 'succeeded'], [state.run.id, 'succeeded']])
-  console.log(`run ${queued.run.id}: second pass → queued 2 of 3, third pass → succeeded 3 of 3, applied 0 (rejected variants are not offered again)`)
+  console.log(`run ${queued.run.id}: second pass → queued 2 of 3, third pass → succeeded 3 of 3, applied 1 (the rejected variant is not offered again)`)
 
   const counts = {}
   for (const status of ['pending', 'confirmed', 'rejected', 'superseded']) counts[status] = ok(await getProductClassifications({ status }, options)).count
-  assert.deepEqual(counts, { pending: 3, confirmed: 4, rejected: 2, superseded: 0 })
+  assert.deepEqual(counts, { pending: 4, confirmed: 4, rejected: 2, superseded: 0 })
   const posts = requests.filter((request) => request.method === 'POST')
   console.log(JSON.stringify({ result: 'passed', origin: origin.origin, database: process.env.POSTGRES_DB,
     records: { pending: counts.pending, confirmed: counts.confirmed, rejected: counts.rejected }, unclassified: finished.unclassified_count,
     run: { status: finished.run.status, between_batches: [between.run.progress.processed, nextPass.run.progress.processed], progress: finished.run.progress },
+    list_while_run_active: { before: listBefore.count, after_first_batch: listBetween.count, run_status: between.run.status, reread: 'list' },
     requests: requests.length, posts: posts.length, statuses: [...new Set(requests.map((request) => request.status))].sort(), browser_ui: 'not tested' }))
 } catch (error) {
   console.error(`Product classification check FAILED: ${error.message}`)
