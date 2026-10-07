@@ -6,7 +6,8 @@ import {
 import { createClassificationActions } from './actions'
 import type { ActionLifecycle, ActionState, ClassificationApi } from './actions'
 
-const api: ClassificationApi = {
+/** The adapters behind the actions of the screen. */
+export const classificationApi: ClassificationApi = {
   confirm: (id, input, signal) => confirmProductClassification(id, input, { signal }),
   reject: (id, input, signal) => rejectProductClassification(id, input, { signal }),
   confirmMany: (items, signal) => confirmProductClassifications(items, { signal }),
@@ -15,7 +16,7 @@ const api: ClassificationApi = {
 }
 
 export function useClassificationActions(lifecycle: ActionLifecycle) {
-  const actions = useMemo(() => createClassificationActions(api, lifecycle), [lifecycle])
+  const actions = useMemo(() => createClassificationActions(classificationApi, lifecycle), [lifecycle])
   const state = useSyncExternalStore(actions.subscribe, actions.getSnapshot, actions.getServerSnapshot)
   useEffect(() => actions.dispose, [actions])
   return { state, run: actions.run }

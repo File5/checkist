@@ -34,6 +34,13 @@ export interface ActionLifecycle {
   failure: (error: LocalApiFailure, action: ClassificationAction, records: Classification[]) => void
   /** Reads the state the action may have changed; awaited before a new attempt is offered. */
   reread: (action: ClassificationAction, signal: AbortSignal) => Promise<void>
+  /**
+   * The action ended with nothing to show — its owner is gone or the request was cancelled: reads go on at once.
+   * Every `pause` is followed by exactly one of `success`, `failure` and `release`.
+   */
+  release: () => void
+  /** A request its owner left in flight has answered: what it may have saved is read again. */
+  settled: () => void
 }
 
 /** «Повторить» is offered only where nothing was saved for sure: a busy catalog. */
@@ -65,14 +72,15 @@ type Sent = { records: Classification[]; run?: ClassificationRunRequest; stopped
 export function createClassificationActions(api: ClassificationApi, lifecycle: ActionLifecycle) {
   const initial: ActionState = { kind: 'idle' }
   let state: ActionState = initial
-  let controller: AbortController | undefined
+  /** The action being saved; `sending` — its POST is in flight, afterwards only reads are. */
+  let current: { controller: AbortController; sending: boolean } | undefined
   let generation = 0
   const listeners = new Set<() => void>()
   const publish = (next: ActionState) => { state = next; listeners.forEach((listener) => listener()) }
   const guarded = async <T,>(call: () => Promise<LocalApiResult<T>>): Promise<LocalApiResult<T>> => {
     try { return await call() } catch { return { kind: 'error', reason: 'network' } }
   }
-  const send = async (action: ClassificationAction, signal: AbortSignal): Promise<Sent> => {
+  const send = async (action: ClassificationAction, signal: AbortSignal, left: () => boolean): Promise<Sent> => {
     if (action.type === 'run') {
       const result = await guarded(() => api.requestRun(signal))
       return result.kind === 'ok' ? { records: [], run: result.data } : { records: [], stopped: result }
@@ -84,7 +92,8 @@ export function createClassificationActions(api: ClassificationApi, lifecycle: A
         const result = await guarded(() => api.confirmMany(items, signal))
         if (result.kind !== 'ok') return { records, stopped: result }
         records.push(...result.data.results)
-        if (signal.aborted) return { records, stopped: { kind: 'aborted' } }
+        // The owner is gone: the batch in flight was left to answer, the next ones are not sent.
+        if (left()) return { records, stopped: { kind: 'aborted' } }
       }
       return { records }
     }
@@ -95,31 +104,46 @@ export function createClassificationActions(api: ClassificationApi, lifecycle: A
     getSnapshot: () => state,
     getServerSnapshot: () => initial,
     subscribe: (callback: () => void) => { listeners.add(callback); return () => { listeners.delete(callback) } },
-    dispose: () => { generation++; controller?.abort(); controller = undefined },
+    /**
+     * The owner is gone: another filter, product or page, or the screen itself. A POST in flight is not aborted —
+     * that would not undo it on the server, only hide when it was saved; its answer is dropped and `settled` follows it.
+     */
+    dispose: () => {
+      generation++
+      const left = current
+      current = undefined
+      if (!left) return
+      if (!left.sending) left.controller.abort()
+      publish(initial)
+      lifecycle.release()
+    },
     run: async (action: ClassificationAction) => {
-      if (controller) return
+      if (current) return
       const stamp = ++generation
-      const current = new AbortController()
-      controller = current
-      const stale = () => stamp !== generation || current.signal.aborted
+      const own = { controller: new AbortController(), sending: true }
+      current = own
+      const { signal } = own.controller
+      const stale = () => stamp !== generation
       lifecycle.pause()
       publish({ kind: 'pending', action })
-      const { records, run, stopped } = await send(action, current.signal)
-      if (stale()) return
+      const { records, run, stopped } = await send(action, signal, stale)
+      own.sending = false
+      if (stale()) { lifecycle.settled(); return }
       if (!stopped) {
-        controller = undefined
+        current = undefined
         const outcome: ClassificationOutcome = { action, records, ...(run && { run }) }
         lifecycle.success(outcome)
         publish({ kind: 'done', action, message: doneText(outcome) })
         return
       }
-      if (stopped.kind !== 'error') { controller = undefined; publish(initial); return }
+      if (stopped.kind !== 'error') { current = undefined; lifecycle.release(); publish(initial); return }
       // The token is renewed for the next press; the refused request itself is never sent again.
-      if (stopped.reason === 'csrf_failed') await guarded(() => api.refreshCsrf(current.signal))
+      if (stopped.reason === 'csrf_failed') await guarded(() => api.refreshCsrf(signal))
       // The action may have been saved: its state is read before the person can try again.
-      else if (uncertain(stopped)) await lifecycle.reread(action, current.signal).catch(() => {})
+      else if (uncertain(stopped)) await lifecycle.reread(action, signal).catch(() => {})
+      // `dispose` aborted these reads and released the pause itself.
       if (stale()) return
-      controller = undefined
+      current = undefined
       const text = errorText(stopped, action.type === 'choose' ? 'choose' : 'action')
       lifecycle.failure(stopped, action, records)
       publish({ kind: 'failed', action, error: stopped, message: action.type === 'confirmAll' ? `${bulkText(records.length, action.items.length)}. ${text}` : text })

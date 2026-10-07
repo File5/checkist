@@ -221,7 +221,7 @@ describe('«Предложить категории» pressed while the run wait
     const success = vi.fn()
     const reread = vi.fn(async () => {})
     const failure = vi.fn()
-    const actions = createClassificationActions(api, { pause: noop, success, failure, reread })
+    const actions = createClassificationActions(api, { pause: noop, success, failure, reread, release: noop, settled: noop })
     await actions.run({ type: 'run' })
     expect(fetchMock.mock.calls[1][0]).toBe('/api/product-classifications/runs/')
     expect(fetchMock.mock.calls[1][1]).toMatchObject({ method: 'POST', body: '{}' })

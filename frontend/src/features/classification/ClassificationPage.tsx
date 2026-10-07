@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Ref } from 'react'
-import { getProductClassification, getProductClassifications, getProductClassificationState } from '../../api/product-classifications'
+import { getProductClassifications, getProductClassificationState } from '../../api/product-classifications'
 import type { Classification, ClassificationState } from '../../api/product-classifications'
-import type { LocalApiFailure, Page } from '../../api/types'
+import type { Page } from '../../api/types'
 import { focusOwnerAttribute } from '../../components/local-request-focus'
 import Pagination from '../../components/Pagination'
 import RequestState from '../../components/RequestState'
@@ -12,15 +12,17 @@ import type { ClassificationPageProps } from '../../pages/types'
 import { counted } from '../merges/labels'
 import type { RequestState as State } from '../recognition/polling'
 import { useRequest } from '../recognition/useRequest'
-import { keepsArea, retryable } from './actions'
-import type { ActionLifecycle, ActionState, ClassificationAction } from './actions'
+import { retryable } from './actions'
+import type { ActionState, ClassificationAction } from './actions'
 import ClassificationBlock from './ClassificationBlock'
 import { areaNotice, filters } from './labels'
 import { FlatList, GroupList } from './RecordList'
 import type { RecordHandlers } from './RecordList'
 import StatePanel, { RunButton } from './StatePanel'
 import { createReadSync } from './list-sync'
-import { applyRunRequest, areaFate, areaKey, listParams, openArea, openedArea, replaceRecords, stateActive } from './state'
+import { createPageLifecycle } from './page-lifecycle'
+import type { ListReads } from './page-lifecycle'
+import { areaFate, areaKey, listParams, openArea, openedArea, stateActive } from './state'
 import type { OpenArea, Opened } from './state'
 import { useActionFocus, useAreaFocus, useClassificationActions, useNoticeFocus } from './useClassificationActions'
 import './Classification.css'
@@ -109,53 +111,20 @@ export default function ClassificationPage({ query }: ClassificationPageProps) {
   const reads = useMemo(() => createReadSync(states, lists, { status, product }), [states, lists, status, product])
   useEffect(() => reads.start(), [reads])
 
-  const lifecycle = useMemo<ActionLifecycle>(() => {
-    const replace = (records: Classification[]) => {
-      const current = lists.getSnapshot()
-      if (records.length && current.kind === 'ok') lists.setData(replaceRecords(current.data, records))
-    }
-    return {
-      pause: () => { states.pause(); lists.pause() },
-      // The answered records are shown at once; the counters, the groups and the list are then read again.
-      success: (outcome) => {
-        replace(outcome.records)
-        const current = states.getSnapshot()
-        if (outcome.run && current.kind === 'ok') states.setData(applyRunRequest(current.data, outcome.run))
-        setOpened(undefined)
-        reads.afterAction()
-        states.resume()
-        lists.resume()
-      },
-      failure: (error: LocalApiFailure, action: ClassificationAction, records: Classification[]) => {
-        replace(records)
-        if (!keepsArea(error, action)) setOpened(undefined)
-        else {
-          // The kept area goes on from the records as the action left them.
-          const current = lists.getSnapshot()
-          if (current.kind === 'ok') setOpened((area) => {
-            const kept = area && openedArea(area.area, current.data.results)
-            return kept && { ...kept, place: area.place }
-          })
-          if (action.type === 'choose' && error.reason !== 'classification_busy' && error.reason !== 'csrf_failed') setOptionsReload((count) => count + 1)
-        }
-        reads.afterAction()
-        states.resume()
-        lists.resume()
-      },
-      reread: async (action, signal) => {
-        if (action.type === 'run') {
-          const result = await loadState(signal)
-          if (result.kind === 'ok') states.setData(result.data)
-        } else if (action.type === 'confirmAll') {
-          const result = await loadList(signal)
-          if (result.kind === 'ok') lists.setData(result.data)
-        } else {
-          const result = await getProductClassification(action.id, { signal })
-          if (result.kind === 'ok') replace([result.data])
-        }
-      },
-    }
-  }, [states, lists, reads, loadState, loadList])
+  // An action outlives its list when the person goes on during its POST: the answer then concerns the list shown now.
+  const shown = useRef<ListReads>({ lists, reads })
+  useEffect(() => { shown.current = { lists, reads } }, [lists, reads])
+  const lifecycle = useMemo(() => createPageLifecycle({
+    states, own: { lists, reads }, shown: () => shown.current, loadState, loadList,
+    area: {
+      close: () => setOpened(undefined),
+      keep: (records) => setOpened((area) => {
+        const kept = area && openedArea(area.area, records)
+        return kept && { ...kept, place: area.place }
+      }),
+      reloadOptions: () => setOptionsReload((count) => count + 1),
+    },
+  }), [states, lists, reads, loadState, loadList])
   const actions = useClassificationActions(lifecycle)
   const focus = useActionFocus<HTMLParagraphElement>(actions.state)
   const areas = useAreaFocus<HTMLDivElement>()
