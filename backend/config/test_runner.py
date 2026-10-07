@@ -1,4 +1,8 @@
-"""Test runner: планы запросов в тестовой БД не зависят от фоновой очистки Postgres."""
+"""Test runner: планы запросов в тестовой БД не зависят от фоновой очистки Postgres.
+
+Тесты идут в режиме ``local_single`` независимо от окружения.
+"""
+from django.conf import settings
 from django.test.runner import DiscoverRunner
 
 DISABLE_AUTOVACUUM = """
@@ -25,7 +29,21 @@ class Runner(DiscoverRunner):
 
     Рабочую БД это не затрагивает: параметр ставится только на таблицы созданной
     тестовой базы.
+
+    Режим доступа — ``local_single`` при любом окружении, как Django ставит ``DEBUG=False``:
+    прежние тесты ходят анонимным клиентом. Тесты режима ``accounts`` включают его сами
+    через ``override_settings(CHECKIST_AUTH_MODE="accounts")``. Рабочие процессы
+    ``--parallel`` под Windows этот метод не вызывают и берут режим из окружения.
     """
+
+    def setup_test_environment(self, **kwargs):
+        super().setup_test_environment(**kwargs)
+        self._auth_mode = settings.CHECKIST_AUTH_MODE
+        settings.CHECKIST_AUTH_MODE = "local_single"
+
+    def teardown_test_environment(self, **kwargs):
+        settings.CHECKIST_AUTH_MODE = self._auth_mode
+        super().teardown_test_environment(**kwargs)
 
     def setup_databases(self, **kwargs):
         old_config = super().setup_databases(**kwargs)

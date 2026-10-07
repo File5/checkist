@@ -71,6 +71,13 @@ debug_value = env_text("DJANGO_DEBUG", "1").lower()
 if debug_value not in {"0", "1", "true", "false"}:
     raise ImproperlyConfigured("DJANGO_DEBUG: expected 0, 1, true or false.")
 DEBUG = debug_value in {"1", "true"}
+# Whose data a request works with: accounts — the signed-in user; local_single — the single
+# user `local` of a dev/QA machine, no sign-in. The latter never runs on a server.
+CHECKIST_AUTH_MODE = env_text("CHECKIST_AUTH_MODE", "accounts")
+if CHECKIST_AUTH_MODE not in {"accounts", "local_single"}:
+    raise ImproperlyConfigured("CHECKIST_AUTH_MODE: expected accounts or local_single.")
+if CHECKIST_AUTH_MODE == "local_single" and not DEBUG:
+    raise ImproperlyConfigured("CHECKIST_AUTH_MODE: local_single requires DJANGO_DEBUG=1.")
 DEV_SECRET_KEY = "dev-only-checkist-key-change-before-deployment"
 SECRET_KEY = env_text("DJANGO_SECRET_KEY", DEV_SECRET_KEY)
 if not DEBUG and SECRET_KEY == DEV_SECRET_KEY:
@@ -103,6 +110,7 @@ INSTALLED_APPS = [
     "merges.apps.MergesConfig",
     "classification.apps.ClassificationConfig",
     "api.apps.ApiConfig",
+    "accounts.apps.AccountsConfig",
 ]
 MIDDLEWARE = [
     "config.robots.NoIndexMiddleware",

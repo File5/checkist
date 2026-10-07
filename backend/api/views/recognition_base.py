@@ -7,17 +7,17 @@ from rest_framework.parsers import BaseParser, MultiPartParser
 from rest_framework.renderers import JSONRenderer
 from rest_framework.views import APIView
 
+from accounts.access import LocalOrSignedIn, SessionUserAuthentication, request_user
 from config.exceptions import InvalidRequest, RecognitionApiError
-from receipts.ownership import local_user
-from recognition.auth import LocalRecognitionPermission
 
 
 def request_owner(request):
     """request_owner(request) -> User; whose receipts and photos the request works with.
 
-    Views take the owner only from here. Without sign-in every request belongs to ``local``.
+    The former name of ``accounts.access.request_user``: the signed-in user, in
+    ``local_single`` — ``local``.
     """
-    return local_user()
+    return request_user(request)
 
 
 class LimitedStream:
@@ -113,8 +113,8 @@ class JsonObjectParser(BaseParser):
 
 
 class LocalAPIView(APIView):
-    authentication_classes = []
-    permission_classes = [LocalRecognitionPermission]
+    authentication_classes = [SessionUserAuthentication]
+    permission_classes = [LocalOrSignedIn]
     renderer_classes = [JSONRenderer]
     parser_classes = []
     http_method_names = ["get", "head", "options"]
