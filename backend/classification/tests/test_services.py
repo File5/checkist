@@ -644,12 +644,61 @@ class RunTests(TestCase):
         self.assertEqual((run.version, created), (2, False))
         self.assertEqual(ClassificationRun.objects.count(), 1)
 
-    def test_import_does_not_change_a_queued_run_of_all_candidates(self):
+    def test_import_adds_products_to_a_queued_run_of_all_candidates(self):
         queued, _created = services.request_run(trigger="manual")
-        add_product("Demo Neu")
-        run, created = services.request_run(trigger="import", product_ids=self.ids("Demo Neu"))
-        self.assertEqual((run.pk, created, run.version, run.scope), (queued.pk, False, 1, "all"))
-        self.assertNotIn(product("Demo Neu").pk, run.product_ids)
+        fresh = add_product("Demo Neu")
+        run, created = services.request_run(trigger="import", product_ids=[fresh.pk])
+        self.assertEqual((run.pk, created, run.version), (queued.pk, False, 2))
+        self.assertEqual((run.scope, run.trigger, run.status, run.started_at), ("all", "manual", "queued", None))
+        self.assertEqual(run.product_ids, queued.product_ids + [fresh.pk])
+        self.assertEqual(run.product_ids, sorted(run.product_ids))
+        self.assertEqual((run.requested_count, run.remaining_count), (11, 0))
+        # The same receipt again: the run is returned untouched.
+        before = snapshot(ClassificationRun)
+        self.assertEqual(services.request_run(trigger="import", product_ids=[fresh.pk]), (run, False))
+        self.assertEqual(snapshot(ClassificationRun), before)
+
+    @override_settings(PRODUCT_CLASSIFICATION_RUN_LIMIT=4)
+    def test_import_beyond_the_limit_of_a_queued_run_of_all_candidates_is_counted_as_remaining(self):
+        queued, _created = services.request_run(trigger="manual")
+        self.assertEqual((queued.requested_count, queued.remaining_count), (4, 6))
+        fresh = add_product("Demo Neu")  # the highest id: the full list has no place for it
+        run, created = services.request_run(trigger="import", product_ids=[fresh.pk])
+        self.assertEqual((run.pk, created, run.scope, run.trigger), (queued.pk, False, "all", "manual"))
+        self.assertEqual((run.product_ids, run.requested_count), (queued.product_ids, 4))
+        self.assertEqual((run.remaining_count, run.version), (7, 2))
+        # No run of its own is queued for the postponed product, and a repeat counts it once.
+        before = snapshot(ClassificationRun)
+        self.assertEqual(services.request_run(trigger="import", product_ids=[fresh.pk]), (run, False))
+        self.assertEqual(snapshot(ClassificationRun), before)
+        self.assertEqual(ClassificationRun.objects.count(), 1)
+
+    @override_settings(PRODUCT_CLASSIFICATION_RUN_LIMIT=4)
+    def test_import_of_a_lower_id_pushes_the_highest_one_out_of_a_full_run_of_all_candidates(self):
+        low = product(MILK)  # the lowest candidate id; not a candidate while the run is queued
+        Product.objects.filter(pk=low.pk).update(generic=generic("Молоко"))
+        queued, _created = services.request_run(trigger="manual")
+        self.assertEqual((queued.product_ids, queued.remaining_count), (
+            self.ids(KEFIR_A, KEFIR_B, CHEESE, SAUSAGE_A), 5))
+        Product.objects.filter(pk=low.pk).update(generic=service())
+        run, created = services.request_run(trigger="import", product_ids=[low.pk])
+        self.assertEqual((run.pk, created, run.scope), (queued.pk, False, "all"))
+        self.assertEqual(run.product_ids, self.ids(MILK, KEFIR_A, KEFIR_B, CHEESE))
+        self.assertEqual((run.requested_count, run.remaining_count, run.version), (4, 6, 2))
+        self.assertEqual(run.remaining_count, services.candidates().exclude(pk__in=run.product_ids).count())
+
+    def test_import_does_not_add_a_product_with_a_rejected_record_to_a_run_of_all_candidates(self):
+        queued, _created = services.request_run(trigger="manual")
+        rejected, fresh = add_product("Demo Alt"), add_product("Demo Neu")
+        apply(new(rejected, "Напиток"))
+        services.reject(record("Demo Alt").pk, version=1)
+        self.assertIn(rejected.pk, services.candidates().values_list("pk", flat=True))  # a manual run would take it
+        before = snapshot(ClassificationRun)
+        self.assertEqual(services.request_run(trigger="import", product_ids=[rejected.pk]), (None, False))
+        self.assertEqual(snapshot(ClassificationRun), before)
+        run, created = services.request_run(trigger="import", product_ids=[rejected.pk, fresh.pk])
+        self.assertEqual((run.pk, created, run.version), (queued.pk, False, 2))
+        self.assertEqual(run.product_ids, queued.product_ids + [fresh.pk])
 
     def test_import_queues_next_to_a_running_run(self):
         running = self.start()
