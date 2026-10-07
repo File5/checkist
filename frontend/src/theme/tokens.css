@@ -72,7 +72,8 @@
      --ck-header-border    нижняя линия полосы (красная, декор)
      --ck-header-focus     кольцо фокуса на полосе (обычное --ck-focus в
                            светлой теме синее и на тёмной полосе не видно)
-     --ck-logo-bg          подложка логотипа, тёмная в обеих темах
+     --ck-logo-bg          подложка логотипа, тёмная в обеих темах; равна фону
+                           файлов логотипа (assets/brand/README.md)
    Геометрия и шрифты
      --ck-radius-sm        4px: кнопка, поле, плашка
      --ck-radius           6px: панель, карточка
@@ -260,7 +261,7 @@
   --ck-header-hover-bg: #33201b;
   --ck-header-border: #b01212;
   --ck-header-focus: #ffd45e;
-  --ck-logo-bg: #111111;
+  --ck-logo-bg: #0f0f0e;
 
   --ck-radius-sm: 4px;
   --ck-radius: 6px;

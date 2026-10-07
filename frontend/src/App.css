@@ -49,8 +49,10 @@ h2 { font-size: 1.35rem; letter-spacing: 0.01em; }
 .panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 22px; }
 .panel-heading .eyebrow { margin-bottom: 5px; }
 button { border: 1px solid var(--ck-brand); border-radius: var(--ck-radius-sm); background: var(--ck-brand); color: var(--ck-on-brand); padding: 10px 20px; cursor: pointer; min-height: 44px; }
-button:hover:not(:disabled) { border-color: var(--ck-brand-hover); background: var(--ck-brand-hover); }
-button:active:not(:disabled) { border-color: var(--ck-brand-active); background: var(--ck-brand-active); }
+/* :where keeps these two as weak as `button`: an outline button of a screen (its class sets surface and border)
+   stays an outline button while hovered or pressed instead of turning into the brand fill. */
+button:where(:hover:not(:disabled)) { border-color: var(--ck-brand-hover); background: var(--ck-brand-hover); }
+button:where(:active:not(:disabled)) { border-color: var(--ck-brand-active); background: var(--ck-brand-active); }
 button:disabled { background: var(--ck-disabled-bg); border-color: var(--ck-disabled-border); color: var(--ck-disabled-text); cursor: default; }
 input, select { min-height: 44px; max-width: 100%; }
 .action-link { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 10px 16px; border: 1px solid var(--ck-link); border-radius: var(--ck-radius-sm); color: var(--ck-link); text-underline-offset: 3px; }

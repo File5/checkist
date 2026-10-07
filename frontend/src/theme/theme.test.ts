@@ -200,7 +200,7 @@ describe('theme contract in the files', () => {
     expect(required.filter((name) => !names(dark).includes(`--ck-${name}`))).toEqual([])
     expect(dark).toContain('--ck-radius-sm: 4px;')
     expect(dark).toContain('--ck-radius: 6px;')
-    expect(dark).toContain('--ck-logo-bg: #111111;')
+    expect(dark).toContain('--ck-logo-bg: #0f0f0e;')
     expect(dark).toContain('--ck-font-display: "Oswald", "Arial Narrow", "Roboto Condensed", "Segoe UI", sans-serif;')
     // Names kept by Charts.css must not be defined here: it points them at these tokens.
     expect(tokens).not.toMatch(/^\s*--ck-chart-/m)
