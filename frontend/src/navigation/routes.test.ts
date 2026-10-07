@@ -22,6 +22,16 @@ describe('route parsing', () => {
     expect(parseRoute(href)).toEqual({ kind: 'not-found', path: href })
   })
 
+  it('opens the login screen at /login and leaves the neighbouring addresses alone', () => {
+    expect(parseRoute('/login')).toEqual({ kind: 'login' })
+    expect(parseRoute('/login/')).toEqual({ kind: 'login' })
+    expect(parseRoute('http://localhost/login?next=%2Freceipts#form')).toEqual({ kind: 'login' })
+    expect(buildRoute({ kind: 'login' })).toBe('/login')
+    for (const href of ['/Login', '/login/reset', '/logins', '/catalog/login']) expect(parseRoute(href)).toEqual({ kind: 'not-found', path: href })
+    expect(parseRoute('/')).toEqual({ kind: 'catalog', query: { page: 1 } })
+    expect(parseRoute('/catalog')).toEqual({ kind: 'catalog', query: { page: 1 } })
+  })
+
   it('accepts the largest safe ID', () => {
     expect(parseRoute('/catalog/products/9007199254740991')).toEqual({ kind: 'product', productId: Number.MAX_SAFE_INTEGER, query: { page: 1 } })
   })
