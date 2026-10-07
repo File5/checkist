@@ -1,5 +1,6 @@
 import io
 
+from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.db import IntegrityError, connection, transaction
 from django.db.migrations.executor import MigrationExecutor
@@ -15,6 +16,7 @@ from merges.tests.factories import DOMAIN_MODELS, MERGE_MODELS, PIZZA, ZIMBO, id
 from receipts.models import ProductAlias, ReceiptLine
 
 MERGE_TABLES = {model._meta.db_table for model in MERGE_MODELS}
+LATEST = [("merges", "0002_actor_fields")]
 
 
 @tag("integration")
@@ -110,6 +112,45 @@ class ConstraintTests(TestCase):
             if type(operation).__name__ == "AddConstraint":
                 self.assertIn(operation.model_name, created)
 
+    def test_actor_is_empty_by_default_and_a_deleted_user_clears_it(self):
+        group = pending_group(PIZZA[0])
+        low, high = sorted(ids(demo.FALSE_PAIR))
+        rejection = ProductMergeRejection.objects.create(product_low_id=low, product_high_id=high)
+        self.assertFalse(ProductMerge.objects.filter(resolved_by__isnull=False).exists())
+        self.assertEqual((group.resolved_by_id, rejection.created_by_id), (None, None))
+        actor = get_user_model().objects.create_user("journal-actor")
+        ProductMerge.objects.filter(pk=group.pk).update(resolved_by=actor)
+        ProductMergeRejection.objects.filter(pk=rejection.pk).update(created_by=actor)
+        before = snapshot(*MERGE_MODELS)
+        self.assertEqual(
+            [row["resolved_by_id"] for row in before["ProductMerge"] if row["id"] == group.pk], [actor.pk],
+        )
+        actor.delete()
+        cleared = {"ProductMerge": "resolved_by_id", "ProductMergeRejection": "created_by_id"}
+        # Nothing but the reference changes: the journal outlives the account.
+        self.assertEqual(snapshot(*MERGE_MODELS), {
+            name: [row | {cleared[name]: None} if name in cleared else row for row in rows]
+            for name, rows in before.items()
+        })
+
+    def test_actor_migration_only_adds_empty_references(self):
+        migration = MigrationLoader(connection).get_migration(*LATEST[0])
+        self.assertEqual(migration.dependencies[0], ("merges", "0001_initial"))
+        self.assertEqual(len(migration.dependencies), 2)
+        self.assertEqual({type(operation).__name__ for operation in migration.operations}, {"AddField"})
+        self.assertEqual(
+            [(operation.model_name, operation.name) for operation in migration.operations],
+            [("productmerge", "resolved_by"), ("productmergerejection", "created_by")],
+        )
+        for operation in migration.operations:
+            self.assertTrue(operation.field.null)
+            self.assertEqual(operation.field.remote_field.on_delete.__name__, "SET_NULL")
+            self.assertEqual(operation.field.remote_field.related_name, "+")
+        self.assertEqual(
+            sorted(name for app, name in MigrationLoader(connection).disk_migrations if app == "merges"),
+            ["0001_initial", LATEST[0][1]],
+        )
+
 
 @tag("integration")
 class MergesMigrationTests(TransactionTestCase):
@@ -129,7 +170,7 @@ class MergesMigrationTests(TransactionTestCase):
             self.assertEqual(self.tables(), set())
             self.assertEqual(snapshot(*DOMAIN_MODELS), before)
         finally:
-            MigrationExecutor(connection).migrate([("merges", "0001_initial")])
+            MigrationExecutor(connection).migrate(LATEST)
         self.assertEqual(self.tables(), MERGE_TABLES)
         self.assertTrue(all(not model.objects.exists() for model in MERGE_MODELS))
         self.assertEqual(snapshot(*DOMAIN_MODELS), before)
@@ -148,7 +189,7 @@ class MergesMigrationTests(TransactionTestCase):
             self.assertEqual(snapshot(*DOMAIN_MODELS), merged)
             self.assertFalse(ReceiptLine.objects.filter(product__name__in=PIZZA[1:]).exists())
         finally:
-            MigrationExecutor(connection).migrate([("merges", "0001_initial")])
+            MigrationExecutor(connection).migrate(LATEST)
         self.assertEqual(snapshot(*DOMAIN_MODELS), merged)
         self.assertFalse(ProductMerge.objects.exists())
 
