@@ -145,6 +145,7 @@ def seed_demo():
     from catalog.models import Brand, Category, GenericProduct, Product
     from receipts.dedup import name_key
     from receipts.models import ProductAlias, Receipt, ReceiptLine
+    from receipts.ownership import local_user
     from stores.models import Country, Currency, Merchant, Store
 
     if not allowed_database(settings.DATABASES["default"]["NAME"]):
@@ -158,6 +159,8 @@ def seed_demo():
             )
             if existing.exists():
                 return {"created": False}
+            # Owner of every demo receipt; a refusal and a repeated call never get here.
+            owner = local_user()
             stores = {}
             for key, fields in MERCHANTS.items():
                 merchant = Merchant.objects.create(
@@ -194,7 +197,7 @@ def seed_demo():
             for number, key, on, rows in RECEIPTS:
                 store = stores[key]
                 receipt = Receipt.objects.create(
-                    store=store, currency=currency, operation=Receipt.Operation.SALE, purchased_on=on,
+                    owner=owner, store=store, currency=currency, operation=Receipt.Operation.SALE, purchased_on=on,
                     purchased_at=datetime.combine(on, time(12, 0), tzinfo=ZoneInfo(store.timezone)),
                     receipt_number=number, total=sum(Decimal(price) for _, price in rows),
                 )

@@ -11,6 +11,7 @@ from decimal import Decimal
 from unittest.mock import patch
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.core.management import CommandError, call_command
 from django.test import SimpleTestCase, TestCase, override_settings, tag
 from rest_framework.test import APIClient
@@ -19,6 +20,7 @@ from catalog.models import Brand, Category, GenericProduct, Product
 from merges.models import ProductMerge
 from receipts import demo
 from receipts.models import ProductAlias, Receipt, ReceiptDiscount, ReceiptLine, ReceiptTax
+from receipts.ownership import LOCAL_USERNAME
 from receipts.validation import validate_receipt
 from stores.models import Merchant, Store
 
@@ -31,6 +33,7 @@ SEEDED = {"created": True, "merchants": 3, "products": 39, "receipts": 466, "lin
 SPENDING = "/api/stats/spending/"
 SERIES = "/api/stats/receipts/series/"
 COMPARE = "/api/stats/receipts/compare/"
+User = get_user_model()
 # Главный вопрос демо: 2020 год против января — сентября 2026.
 PERIODS = "base_from=2020-01-01&base_to=2020-12-31&current_from=2026-01-01&current_to=2026-09-30"
 KIND = ReceiptLine.Kind
@@ -38,6 +41,10 @@ KIND = ReceiptLine.Kind
 
 def snapshot():
     return {model.__name__: list(model.objects.order_by("pk").values()) for model in MODELS}
+
+
+def users():
+    return list(User.objects.order_by("pk").values())
 
 
 def run_command(name, *args):
@@ -101,8 +108,30 @@ class CommandTests(TestCase):
         self.assertEqual(demo.seed_demo(), {"created": False})
         self.assertEqual(snapshot(), seeded)
 
+    def test_every_demo_receipt_belongs_to_local(self):
+        # Запись могла остаться от миграции: демо обязано создать её само и ровно одну.
+        User.objects.filter(username=LOCAL_USERNAME).delete()
+        self.assertEqual(run_command("seed_stats_demo"), SEEDED)
+        local = User.objects.get(username=LOCAL_USERNAME)
+        self.assertEqual((local.is_active, local.is_staff, local.is_superuser), (True, False, False))
+        self.assertFalse(local.has_usable_password())
+        self.assertEqual(Receipt.objects.count(), SEEDED["receipts"])
+        self.assertEqual(set(Receipt.objects.values_list("owner_id", flat=True)), {local.pk})
+        people = users()
+        self.assertEqual(run_command("seed_stats_demo"), {"created": False})
+        self.assertEqual(users(), people)
+
+    def test_seed_keeps_an_existing_local_user(self):
+        User.objects.filter(username=LOCAL_USERNAME).delete()
+        local = User.objects.create_user(LOCAL_USERNAME, password="demo-local-password-1", is_staff=True)
+        people = users()
+        self.assertEqual(demo.seed_demo(), SEEDED)
+        self.assertEqual(users(), people)
+        self.assertEqual(set(Receipt.objects.values_list("owner_id", flat=True)), {local.pk})
+
     def test_seed_refuses_a_non_test_database(self):
         before = snapshot()
+        User.objects.filter(username=LOCAL_USERNAME).delete()
         for name in ("checkist_dev", "checkist"):
             with patch.dict(settings.DATABASES["default"], {"NAME": name}), self.assertRaises(CommandError):
                 call_command("seed_stats_demo", stdout=io.StringIO())
@@ -110,6 +139,8 @@ class CommandTests(TestCase):
                 demo.seed_demo()
         self.assertEqual(snapshot(), before)
         self.assertFalse(Merchant.objects.filter(tax_id__startswith="DEMOSTATS").exists())
+        # Отказ не заводит и владельца.
+        self.assertFalse(User.objects.filter(username=LOCAL_USERNAME).exists())
 
     def test_merge_demo_after_stats_demo(self):
         demo.seed_demo()
@@ -127,6 +158,9 @@ class CommandTests(TestCase):
         self.assertEqual(Product.objects.count(), merged + SEEDED["products"])
         self.assertEqual(run_command("product_merges", "detect", "--dry-run")["created"], 7)
         self.assertEqual(run_command("seed_product_merge_demo"), {"created": False})
+        # Оба демо отдают чеки одной записи ``local``.
+        local = User.objects.get(username=LOCAL_USERNAME)
+        self.assertEqual(set(Receipt.objects.values_list("owner_id", flat=True)), {local.pk})
 
 
 @tag("integration")
