@@ -1,0 +1,88 @@
+{
+  "count": 4,
+  "page": 1,
+  "page_size": 50,
+  "pages": 1,
+  "results": [
+    {
+      "line_id": 101,
+      "receipt_id": 9,
+      "position": 1,
+      "purchased_on": "2026-06-09",
+      "store": {
+        "id": 51,
+        "name": "Demomarkt",
+        "city": "Musterstadt",
+        "country": "DE"
+      },
+      "name": "Steinof.PizzaSpezial",
+      "quantity": "1.000",
+      "unit": "pcs",
+      "unit_price": "3.4900",
+      "amount": "3.49",
+      "discount_amount": "0.00",
+      "currency": "EUR",
+      "origin_product_id": 43
+    },
+    {
+      "line_id": 104,
+      "receipt_id": null,
+      "position": 2,
+      "purchased_on": "2026-06-29",
+      "store": {
+        "id": 51,
+        "name": "Demomarkt",
+        "city": "Musterstadt",
+        "country": "DE"
+      },
+      "name": "Steinhof.PizzaSpezial",
+      "quantity": "1.000",
+      "unit": "pcs",
+      "unit_price": "3.4900",
+      "amount": "3.49",
+      "discount_amount": "0.00",
+      "currency": "EUR",
+      "origin_product_id": 5
+    },
+    {
+      "line_id": 107,
+      "receipt_id": 11,
+      "position": 1,
+      "purchased_on": "2026-07-06",
+      "store": {
+        "id": 51,
+        "name": "Demomarkt",
+        "city": "Musterstadt",
+        "country": "DE"
+      },
+      "name": "Steinof.PizzaSpezial",
+      "quantity": "1.000",
+      "unit": "pcs",
+      "unit_price": "3.4900",
+      "amount": "3.49",
+      "discount_amount": "0.00",
+      "currency": "EUR",
+      "origin_product_id": 43
+    },
+    {
+      "line_id": 108,
+      "receipt_id": null,
+      "position": 1,
+      "purchased_on": "2026-10-01",
+      "store": {
+        "id": 51,
+        "name": "Demomarkt",
+        "city": "Musterstadt",
+        "country": "DE"
+      },
+      "name": "Steinhof PizzaSpezial",
+      "quantity": "1.000",
+      "unit": "pcs",
+      "unit_price": "3.4900",
+      "amount": "3.49",
+      "discount_amount": "0.00",
+      "currency": "EUR",
+      "origin_product_id": 26
+    }
+  ]
+}

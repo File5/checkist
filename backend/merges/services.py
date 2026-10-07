@@ -701,11 +701,14 @@ def groups(*, status=None, product=None):
     return queryset
 
 
-def group_lines(group):
+def group_lines(group, owner_q=None):
     """Purchases of the group with ``origin_product_id`` (``None`` — the line came after the merge).
 
     Pending: every line of the surviving product. Confirmed: the journaled
     lines. Cancelled: nothing, the journal is gone.
+
+    ``owner_q`` — a ``Q`` over ``ReceiptLine`` that keeps the lines of one owner's
+    receipts (the API passes it for a reader who is not a moderator); ``None`` — all lines.
     """
     origin = ProductMergeLine.objects.filter(member__group=group, line=OuterRef("pk")).values("member__product_ref")
     if group.status == Status.PENDING:
@@ -716,6 +719,8 @@ def group_lines(group):
         )
     else:
         queryset = ReceiptLine.objects.none()
+    if owner_q is not None:
+        queryset = queryset.filter(owner_q)
     return queryset.annotate(origin_product_id=Subquery(origin[:1])).select_related(
         "receipt__store__country", "receipt__store__merchant", "receipt__currency",
     ).order_by("receipt__purchased_at", "receipt_id", "position")

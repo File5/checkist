@@ -77,12 +77,16 @@ def group_briefs(groups):
     return [_group_object(info, brief=True) for info in services.describe(groups, with_aliases=False)]
 
 
-def line_object(line):
-    """A purchase of the group; ``origin_product_id`` is ``None`` for a line that came after the merge."""
+def line_object(line, own=True):
+    """A purchase of the group; ``origin_product_id`` is ``None`` for a line that came after the merge.
+
+    ``own=False`` — a line of somebody else's receipt (only a moderator gets those):
+    ``receipt_id`` is ``None``, the receipt cannot be opened; the other fields stay.
+    """
     receipt = line.receipt
     return {
         "line_id": line.pk,
-        "receipt_id": line.receipt_id,
+        "receipt_id": line.receipt_id if own else None,
         "position": line.position,
         "purchased_on": iso_date(receipt.purchased_on),
         "store": store_brief(receipt.store),
