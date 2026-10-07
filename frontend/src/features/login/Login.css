@@ -1,0 +1,109 @@
+/* Screen /login. Colours come from theme/tokens.css only; every class starts with ck-login-.
+   Selectors are classes, so they outweigh the global element rules of App.css. No motion. */
+.ck-login {
+  box-sizing: border-box; display: grid; place-items: center;
+  min-height: 100vh; min-height: 100dvh; padding: 24px 16px;
+  background: var(--ck-bg); color: var(--ck-text);
+  font-family: var(--ck-font-body); line-height: 1.5; overflow-wrap: anywhere;
+}
+.ck-login *, .ck-login *::before, .ck-login *::after { box-sizing: border-box; }
+.ck-login-layout { display: grid; grid-template-columns: minmax(0, 1fr); justify-items: center; gap: 20px; width: 100%; max-width: 1080px; }
+
+/* The board is dark in both themes: the logo file is an opaque near-black square. */
+.ck-login-board {
+  position: relative; isolation: isolate; overflow: hidden;
+  /* One column: the logo takes no more than a third of the screen height. */
+  width: min(100%, 33vh); width: min(100%, 33svh); aspect-ratio: 1;
+  padding: 10px; border: 2px solid var(--ck-accent); border-radius: var(--ck-radius);
+  background: var(--ck-logo-bg);
+  box-shadow: inset 0 0 0 4px var(--ck-logo-bg), inset 0 0 0 5px var(--ck-accent);
+}
+/* Rays: a striped conic gradient that fades to nothing towards the emblem. */
+.ck-login-rays {
+  position: absolute; inset: 7px; z-index: 0;
+  background: repeating-conic-gradient(from -4deg at 50% 42%, color-mix(in srgb, var(--ck-brand) 30%, transparent) 0deg 4deg, transparent 4deg 12deg);
+  -webkit-mask-image: radial-gradient(circle at 50% 42%, transparent 42%, black 88%);
+  mask-image: radial-gradient(circle at 50% 42%, transparent 42%, black 88%);
+}
+/* `lighten` lets the rays through the dark background of the picture, so its square is not seen on the board. */
+.ck-login-logo { position: relative; z-index: 1; display: block; width: 100%; height: auto; mix-blend-mode: lighten; }
+
+.ck-login-panel { display: grid; gap: 12px; width: 100%; max-width: 420px; min-width: 0; }
+.ck-login-panel p { margin: 0; }
+.ck-login-title {
+  margin: 0; font-family: var(--ck-font-display); font-size: clamp(2.4rem, 9vw, 4rem); font-weight: 700;
+  line-height: 1.05; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ck-text);
+}
+.ck-login-subtitle { font-family: var(--ck-font-display); font-size: 1.05rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ck-accent-text); }
+.ck-login-rule { display: flex; align-items: center; gap: 12px; }
+.ck-login-rule::before, .ck-login-rule::after { content: ""; flex: 1 1 0; height: 2px; background: var(--ck-accent); }
+.ck-login-star { flex: 0 0 24px; fill: var(--ck-brand); stroke: var(--ck-accent); stroke-width: 1.2; stroke-linejoin: round; }
+.ck-login-invite { font-size: 1.15rem; font-weight: 600; }
+
+.ck-login-form { display: grid; gap: 16px; margin: 4px 0 0; }
+.ck-login-field { display: grid; gap: 6px; min-width: 0; }
+.ck-login-label { font-weight: 600; }
+.ck-login-input {
+  width: 100%; min-width: 0; min-height: 48px; padding: 10px 12px;
+  border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm);
+  background: var(--ck-surface); color: var(--ck-text); font: inherit; font-size: 1rem;
+}
+.ck-login-input[aria-invalid="true"] { border: 2px solid var(--ck-error-border); padding: 9px 11px; }
+.ck-login-field-error { display: flex; align-items: flex-start; gap: 8px; color: var(--ck-error-text); font-weight: 600; }
+.ck-login-mark { flex: 0 0 20px; margin-top: 2px; fill: currentColor; }
+
+.ck-login-submit {
+  width: 100%; min-height: 48px; padding: 10px 20px;
+  border: 1px solid var(--ck-brand); border-radius: var(--ck-radius-sm);
+  background: var(--ck-brand); color: var(--ck-on-brand);
+  font-family: var(--ck-font-display); font-size: 1.1rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+  cursor: pointer;
+}
+.ck-login-submit:hover:not([aria-disabled="true"]) { background: var(--ck-brand-hover); border-color: var(--ck-brand-hover); }
+.ck-login-submit:active:not([aria-disabled="true"]) { background: var(--ck-brand-active); border-color: var(--ck-brand-active); }
+.ck-login-submit[aria-disabled="true"] { background: var(--ck-disabled-bg); border-color: var(--ck-disabled-border); color: var(--ck-disabled-text); cursor: default; }
+
+.ck-login-message {
+  display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px;
+  border: 1px solid var(--ck-info-border); border-left-width: 4px; border-radius: var(--ck-radius-sm);
+  background: var(--ck-info-bg); color: var(--ck-info-text);
+}
+.ck-login-message-error { border-color: var(--ck-error-border); background: var(--ck-error-bg); color: var(--ck-error-text); }
+.ck-login-message-warning { border-color: var(--ck-warning-border); background: var(--ck-warning-bg); color: var(--ck-warning-text); }
+.ck-login-message-success { border-color: var(--ck-success-border); background: var(--ck-success-bg); color: var(--ck-success-text); }
+.ck-login-message-text { min-width: 0; font-weight: 600; }
+/* On a tinted message the link takes the message colour: the underline tells it from the text. */
+.ck-login-message .ck-login-link { color: inherit; }
+
+.ck-login-note { color: var(--ck-text-muted); font-size: 0.95rem; }
+.ck-login-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px; padding-top: 12px; border-top: 1px solid var(--ck-divider); }
+.ck-login-link { color: var(--ck-link); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.ck-login-link:hover { color: var(--ck-link-hover); }
+.ck-login-footer .ck-login-link { display: inline-flex; align-items: center; min-height: 44px; }
+
+/* The ring keeps an offset: in the light theme the blue ring is not seen right against the red fill. */
+.ck-login .ck-login-title:focus-visible, .ck-login .ck-login-input:focus-visible, .ck-login .ck-login-submit:focus-visible, .ck-login .ck-login-link:focus-visible {
+  outline: 3px solid var(--ck-focus); outline-offset: 3px;
+}
+
+@media (min-width: 720px) {
+  .ck-login { padding: 32px; }
+  .ck-login-layout { grid-template-columns: minmax(0, 1.2fr) minmax(280px, 1fr); align-items: center; justify-items: stretch; gap: 48px; }
+  .ck-login-board { justify-self: end; width: min(100%, 560px, 84vh); padding: 16px; }
+  .ck-login-panel { justify-self: start; }
+}
+
+@media (forced-colors: active) {
+  .ck-login-board { border-color: CanvasText; box-shadow: none; }
+  .ck-login-rays { display: none; }
+  .ck-login-logo { mix-blend-mode: normal; }
+  .ck-login-rule::before, .ck-login-rule::after { background: CanvasText; }
+  .ck-login-star { fill: CanvasText; stroke: CanvasText; }
+  .ck-login-input { border-color: FieldText; }
+  .ck-login-input[aria-invalid="true"] { border-color: CanvasText; }
+  .ck-login-submit { border-color: ButtonText; background: ButtonFace; color: ButtonText; }
+  .ck-login-submit[aria-disabled="true"] { border-color: GrayText; color: GrayText; }
+  .ck-login-message { border-color: CanvasText; }
+  .ck-login-link { color: LinkText; }
+  .ck-login .ck-login-title:focus-visible, .ck-login .ck-login-input:focus-visible, .ck-login .ck-login-submit:focus-visible, .ck-login .ck-login-link:focus-visible { outline-color: Highlight; }
+}
