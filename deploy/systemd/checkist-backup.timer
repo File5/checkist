@@ -1,0 +1,10 @@
+# Daily checkist-backup.service; a run missed while the server was off happens after boot.
+[Unit]
+Description=Daily Checkist backup
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target
