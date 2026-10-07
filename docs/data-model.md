@@ -1,8 +1,8 @@
 # Модель данных Checkist
 
-Документ описывает код в `backend/catalog`, `backend/stores`, `backend/receipts`, `backend/recognition` по состоянию ветки. Источник истины — `models.py` и миграции этих приложений; при расхождении прав код, документ исправляется.
+Документ описывает код в `backend/catalog`, `backend/stores`, `backend/receipts`, `backend/recognition`, `backend/merges`, `backend/classification`, `backend/accounts` по состоянию ветки. Источник истины — `models.py` и миграции этих приложений; при расхождении прав код, документ исправляется.
 
-Реализованы модели, нормализация, дедупликация, проверка чека, история цен и распознавание через host-worker. Данные доступны через [API](api-contract.md): прежний каталог/цены и новый локальный upload/jobs/receipts. Ручной ввод и правка — [Django admin](#админка); API произвольного редактирования нет. Фото хранятся в MEDIA и связаны с чеками через `ReceiptImage`. Владельца-пользователя и серверных курсов валют нет.
+Реализованы модели, нормализация, дедупликация, проверка чека, история цен и распознавание через host-worker. Данные доступны через [API](api-contract.md): прежний каталог/цены и новый локальный upload/jobs/receipts. Ручной ввод и правка — [Django admin](#админка); API произвольного редактирования нет. Фото хранятся в MEDIA и связаны с чеками через `ReceiptImage`. У чека и фото есть владелец — пользователь Django ([владелец и пользователи](#владелец-и-пользователи)); магазины, каталог, написания, слияния и предположения общие. Серверных курсов валют нет.
 
 ## Приложения и таблицы
 
@@ -13,6 +13,7 @@
 | `receipts` | Чеки и сопоставление названий | `receipts_receipt`, `receipts_receiptline`, `receipts_receiptdiscount`, `receipts_receipttax`, `receipts_productalias` |
 | `recognition` | Фото, очередь, вырезки и попытки | `recognition_sourcephoto`, `recognition_processingjob`, `recognition_receiptimage`, `recognition_recognitionattempt` |
 | `merges` | Предварительное слияние дублей товаров | `merges_productmerge`, `merges_productmergemember`, `merges_productmergeline`, `merges_productmergealias`, `merges_productmergerejection` |
+| `accounts` | Защита входа от перебора; правила доступа и вью MEDIA — код без таблиц | `accounts_loginfailure` |
 | `classification` | Предположение обобщённого продукта и категории с подтверждением человеком | `classification_productclassification`, `classification_createdgenericproduct`, `classification_createdcategory`, `classification_classificationrejection`, `classification_classificationrun`, `classification_classificationattempt` |
 
 `stores` и `catalog` друг от друга не зависят; `receipts` ссылается на оба. `catalog/units.py` принадлежит `catalog`, `receipts` его импортирует.
@@ -105,6 +106,7 @@
 | `package_unit` | `CharField(8)`, choices `Unit`, blank | `ml`, `l`, `g` |
 | `attributes` | JSON | `{"fat_percent": 2.5, "packaging": "пэт"}` |
 
+- Право `catalog.moderate_catalog` («Can moderate the shared catalog») объявлено в `Meta.permissions` модели: оно разрешает менять общий каталог через API слияний и предположений. Миграция `catalog.0002_alter_product_options` — только `AlterModelOptions`: таблицу `catalog_product` не меняет, строку права создаёт сигнал `post_migrate`.
 - Unique `gtin` при `gtin != ''` — `catalog_product_gtin_uniq`.
 - Unique `(brand, name, package_quantity, package_unit)`, `nulls_distinct=False` — `catalog_product_brand_name_package_uniq`. Сравнение `name` здесь чувствительно к регистру.
 - Check: фасовка задана целиком или не задана — `catalog_product_package_both_or_none`; `package_quantity > 0` — `catalog_product_package_quantity_positive`.
@@ -119,6 +121,7 @@
 
 | Поле | Тип | Примечание |
 | --- | --- | --- |
+| `owner` | FK `settings.AUTH_USER_MODEL`, `PROTECT`, `related_name="receipts"` | Обязательное, значения по умолчанию нет; см. [владельца](#владелец-и-пользователи) |
 | `store` | FK `stores.Store`, `PROTECT` | |
 | `currency` | FK `stores.Currency`, `PROTECT` | |
 | `operation` | `CharField(8)`: `sale` / `refund` | «ПРОДАЖА», «ПРИХОД» → `sale` |
@@ -136,8 +139,8 @@
 | `extra` | JSON | Поле «прочее», см. [JSON-поля](#json-поля) |
 | `created_at`, `updated_at` | `DateTimeField` | `auto_now_add` / `auto_now` |
 
-- Три unique-ограничения — см. [дедупликацию](#дедупликация).
-- Индекс `(store, purchased_at)` — `receipts_rcpt_store_at_idx`.
+- Три unique-ограничения в пределах владельца — см. [дедупликацию](#дедупликация).
+- Индексы `(store, purchased_at)` — `receipts_rcpt_store_at_idx` (история цен) и `(owner, purchased_on)` — `receipts_rcpt_owner_on_idx` (список чеков и статистика пользователя).
 - Если время на чеке двойное (в шапке и в фискальном блоке), в `purchased_at` берётся время фискального блока. Это правило ввода, код его не применяет.
 - `purchased_on`, `fiscal_key` и `discount_total` модель сама не вычисляет: их задаёт вызывающий код.
 
@@ -199,14 +202,14 @@
 
 | Модель | Сохраняемые данные и связи |
 | --- | --- |
-| `SourcePhoto` | `storage_uuid` unique; `original_file`, nullable `upright_file`; unique lowercase SHA-256 исходных байтов; sniffed content_type/bytes; raw и upright width/height, EXIF orientation 1–8, preparation_version, created_at |
+| `SourcePhoto` | `owner` FK на пользователя, `PROTECT`, `related_name="source_photos"`, обязательное; `storage_uuid` unique; `original_file`, nullable `upright_file`; lowercase SHA-256 исходных байтов, unique `(owner, sha256)` — `rec_photo_owner_sha256_uniq`; индексы `rec_photo_created_idx` `(created_at, id)` и `rec_photo_owner_created_idx` `(owner, created_at, id)`; sniffed content_type/bytes; raw и upright width/height, EXIF orientation 1–8, preparation_version, created_at |
 | `ProcessingJob` | photo PROTECT, retry_of SET_NULL; status/stage; detected/current_position и completed/imported/reused/review/failed/cancelled counters; version/run_token/claim_count; available/started/finished/deadline/heartbeat/lease/cancel timestamps; safe error_code |
 | `ReceiptImage` | photo PROTECT, job CASCADE; position 1–10; file/hash/width/height; normalized bbox/quad/rotation/crop_transform/clipped; status/import_effect; Receipt SET_NULL; nullable normalized_result, issues list, outcome_snapshot, created_at |
 | `RecognitionAttempt` | job CASCADE, nullable image CASCADE; phase detect/recognize, ordinal, run_token; provider/model/provider/CLI/prompt/schema versions; input_sha256; status, private raw_payload/invalid_output_text/error_code; started/finished |
 
 Ограничения БД:
 
-- Photo: bytes 1..20971520, оба размера положительны и площадь ≤40000000 (умножение bigint), JPEG/PNG/WebP; ориентация 1..8. SHA-256 и storage UUID unique.
+- Photo: bytes 1..20971520, оба размера положительны и площадь ≤40000000 (умножение bigint), JPEG/PNG/WebP; ориентация 1..8. Storage UUID unique; SHA-256 unique в пределах владельца: один и тот же файл у двух пользователей — два фото с разными каталогами в MEDIA.
 - Job: не более одного active job/photo (`queued`, `running`, `cancel_requested`); допустимые status/stage; version ≥1; detected_count ≤10; current_position в диапазоне обнаруженного количества; каждый progress counter ≤detected_count (при NULL только 0). Сумма counters отдельно БД не проверяется, её ведёт queue service.
 - Terminal Job требует finished_at и stage=finished; active — без finished_at. Только executing состояния имеют run_token/heartbeat/lease/started/deadline; queued/terminal не имеют token/heartbeat/lease. Cancel timestamp требуется только cancel_requested/cancelled.
 - Image: unique `(job,position)`, position 1..10, положительные размеры ≤40 MP, допустимые status/import_effect, rotation −180..180. Принадлежность photo к job и геометрия проверяются `clean()`/storage, не FK-ограничением БД.
@@ -292,11 +295,11 @@ MEDIA: original сохраняется без изменений; upright previe
 
 | Модель | Поля | Ограничения |
 | --- | --- | --- |
-| `ProductMerge` | `status` (`pending` / `confirmed` / `cancelled`), `version` (с 1, растёт при изменении состава), `target_ref` — id оставляемого товара без FK, `detector_version`, `created_at`, `resolved_at` | check: `pending` ⇔ `resolved_at IS NULL`; индекс `(status, id)` |
+| `ProductMerge` | `status` (`pending` / `confirmed` / `cancelled`), `version` (с 1, растёт при изменении состава), `target_ref` — id оставляемого товара без FK, `detector_version`, `created_at`, `resolved_at`, `resolved_by` — кто подтвердил либо отменил (FK на пользователя, null, `SET_NULL`) | check: `pending` ⇔ `resolved_at IS NULL`; индекс `(status, id)` |
 | `ProductMergeMember` | `group` CASCADE; `product_ref` — id товара, хранится всегда; `active_product` OneToOne → `catalog.Product`, null, **PROTECT** — заполнено, только пока группа ожидает и запись в ней; `role` (`target` / `source`); `state` (`active` / `excluded`); `name`, `facts` — снимок названия и фактов | unique `(group, product_ref)`; unique `active_product`; unique `group` при `role='target' AND state='active'` |
 | `ProductMergeLine` | `member` CASCADE, `line` → `ReceiptLine` CASCADE | unique `(member, line)` |
 | `ProductMergeAlias` | `member` CASCADE, `alias` → `ProductAlias` CASCADE | unique `(member, alias)` |
-| `ProductMergeRejection` | `product_low`, `product_high` → `Product` CASCADE, `group` SET_NULL, `created_at` | unique `(product_low, product_high)`; check `low < high` |
+| `ProductMergeRejection` | `product_low`, `product_high` → `Product` CASCADE, `group` SET_NULL, `created_at`, `created_by` — кто отклонил пару (FK на пользователя, null, `SET_NULL`) | unique `(product_low, product_high)`; check `low < high` |
 
 Состояния: `pending → confirmed` (подтверждение), `pending → cancelled` (отмена либо исключение, после которого осталось меньше двух записей), `pending → pending` (добавлена или исключена запись, `version + 1`). `confirmed` и `cancelled` конечны; отмены подтверждённого слияния нет.
 
@@ -412,6 +415,63 @@ MEDIA: original сохраняется без изменений; upright previe
 
 Если таблицы удалены, а код вернуть сразу нельзя, работу восстанавливает `migrate` (создаёт пустые таблицы `classification`; проверено: те же маршруты снова `200`, воркер — код 0) с `PRODUCT_CLASSIFICATION_AUTO_SUGGEST=0`, чтобы импорт не ставил новых запусков. История и память отказов при этом пусты.
 
+## Владелец и пользователи
+
+Решение и обоснование — [multi-user.md](multi-user.md). Модель пользователя — штатный `auth.User`, своей нет. **Миграции и поведение ниже разработчиками не запускались**; проверяет QA ([verification.md](verification.md#разделение-пользователей-проверки-qa)).
+
+| Что | Чьё |
+| --- | --- |
+| `Receipt`, `SourcePhoto` | Личное: поле `owner`, NOT NULL, `PROTECT` |
+| `ReceiptLine`, `ReceiptDiscount`, `ReceiptTax` | Личное через `receipt.owner`, своего поля нет |
+| `ProcessingJob`, `ReceiptImage`, `RecognitionAttempt` | Личное через `photo.owner`, своего поля нет |
+| `Country`, `Currency`, `TaxRate`, `Merchant`, `Store`, `Category`, `GenericProduct`, `Brand`, `Product`, `ProductAlias` | Общее |
+| Все модели `merges` и `classification` | Общее; в журналах — необязательное «кто» |
+
+Инварианты:
+
+- **Вырезка привязывается только к чеку владельца своего фото.** Импорт берёт владельца из `job.photo`, подтверждение `needs_review` — из `image.photo` под блокировкой задания; кандидат другого владельца отвергается до любой записи (`OwnerMismatch` в `recognition/importer.py`). У воркера это `import_failed` на вырезке, у подтверждения — ошибка с откатом. БД этого не гарантирует: прямой ORM может связать чужое.
+- **У поля нет значения по умолчанию**: забытый владелец — ошибка, а не тихий `local`.
+- **Владелец не входит в разрешение магазинов и товаров**: `recognition/resolution.py` не менялся, чек любого пользователя пополняет общие справочники.
+- Файлы MEDIA владельца в пути не содержат: `originals|prepared|crops/{storage_uuid}/…`; доступ решает вью по `SourcePhoto.storage_uuid` ([api-contract.md](api-contract.md#media)).
+
+### Пользователь `local`
+
+`backend/receipts/ownership.py`: `LOCAL_USERNAME = "local"`, `local_user()` — `get_or_create` записи с `is_active=True`, без `is_staff` и `is_superuser`, с непригодным паролем (`make_password(None)`); существующую запись не меняет. Этому пользователю миграции `receipts.0004` и `recognition.0003` отдали все прежние чеки и фото; ему же принадлежат чеки трёх seed-демо (`seed_stats_demo`, `seed_product_merge_demo`, `seed_product_classification_demo`).
+
+- В `local_single` это личность каждого запроса: пароль не нужен.
+- В `accounts` это обычная учётная запись: войти нельзя, пока человек не задаст пароль — `manage.py changepassword local` либо админка. Права администратора и модератора ему выдаёт человек, как любому пользователю.
+
+### «Кто» в журналах решений
+
+Пять необязательных ссылок на пользователя (`null`, `SET_NULL`, без обратной связи): `ProductMerge.resolved_by`, `ProductMergeRejection.created_by`, `ProductClassification.resolved_by`, `ClassificationRejection.created_by`, `ClassificationRun.requested_by`. Сервисы принимают необязательный `actor`; API передаёт пользователя запроса (в `local_single` — `local`), команды, импорт и сверка оставляют поле пустым. На логику поля не влияют, в API не отдаются; удаление пользователя обнуляет ссылку.
+
+### `accounts`: счётчик неудачных входов
+
+Приложение `backend/accounts/` (миграция `accounts.0001_initial`, зависимостей нет). Единственная модель:
+
+| Модель | Поля | Ограничения |
+| --- | --- | --- |
+| `LoginFailure` | `key` `CharField(128)` — `a:<адрес>` либо `p:<адрес>:<SHA-256 логина>`: сам логин не хранится; `failures` — число неудач в текущем окне; `window_started_at` — начало окна | unique `key`; индекс по `window_started_at` |
+
+Строки пишет только `accounts.throttle`: неудача — одна атомарная вставка-обновление для пары и для адреса, просроченные окна удаляются при следующей записи, успешный вход удаляет строку пары. Правила и пороги — [api-contract.md](api-contract.md#защита-от-перебора-пароля). Таблица служебная: её можно очистить, это только снимет действующие блокировки. Откат — `migrate accounts zero` вместе с revert кода: без таблицы вход с неверным паролем падает.
+
+Права и учётные записи живут в штатных таблицах `auth_*`; своей таблицы прав нет.
+
+### Откат владельца
+
+```powershell
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py ownership check-rollback
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py migrate receipts 0002_alter_receipttax_options --noinput
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py migrate recognition 0001_initial --noinput
+```
+
+`ownership check-rollback` (приложение `recognition`) только читает базу и печатает JSON `{"conflicts", "groups": [{"rule", "model", "constraint", "rows": [{"id", "owner_id"}]}]}` — группы строк, которые нарушат прежние глобальные ограничения: один `sha256` у нескольких фото, один непустой `fiscal_key`, один набор «магазин, дата, смена, касса, номер», один набор «магазин, момент, сумма» при пустых номере и ключе. Exit 0 — групп нет, 1 — есть. **Откат допустим, только пока вывод пуст.**
+
+- Обратный ход `receipts.0005` и `recognition.0004` сначала возвращает глобальные ограничения и падает целиком, если одинаковый чек либо файл есть у двух владельцев; обратный `RunPython` ничего не делает — пользователь `local` остаётся; обратный ход `0003` / `0002` удаляет колонку.
+- Откат стирает сведения о владельце: после него все чеки снова общие. При нескольких пользователях это возврат к резервной копии, а не штатная операция. Перед откатом — `pg_dump` и копия MEDIA.
+- `migrate recognition 0001_initial` — не то же, что [откат recognition](#откат-recognition) (`migrate recognition zero`), который удаляет историю очереди и фото.
+- Журналы «кто»: `migrate merges 0001_initial`, `migrate classification 0001_initial` удаляют колонки; право модератора: `migrate catalog 0001_initial` меняет только состояние миграций, строка права в `auth_permission` остаётся.
+
 ## JSON-поля
 
 Отдельных колонок под эти данные нет; набор ключей не фиксирован и не проверяется. Ниже — ключи, которые использует код и образцы `backend/receipts/tests/samples.py`.
@@ -438,13 +498,13 @@ MEDIA: original сохраняется без изменений; upright previe
 
 ## Дедупликация
 
-Три уровня, каждый — частичное unique-ограничение на `receipts_receipt`:
+Три уровня, каждый — частичное unique-ограничение на `receipts_receipt` **в пределах владельца**. Один и тот же кассовый чек у двух пользователей — две личные покупки: ограничения их не сталкивают, `find_duplicates(receipt_data, *, owner)` ищет только среди чеков этого владельца, импорт и подтверждение вырезки берут владельца из фото (`recognition/importer.py`, `recognition/review.py`).
 
 | Уровень | Ограничение | Условие |
 | --- | --- | --- |
-| 1. Фискальный ключ | unique `fiscal_key` — `receipts_receipt_fiscal_key_uniq` | `fiscal_key != ''` |
-| 2. Внутренний номер магазина | unique `(store, purchased_on, shift_number, register_code, receipt_number)` — `receipts_receipt_store_number_uniq` | `receipt_number != ''` |
-| 3. Номера нет вовсе | unique `(store, purchased_at, total)` — `receipts_receipt_store_time_total_uniq` | `receipt_number = '' AND fiscal_key = ''` |
+| 1. Фискальный ключ | unique `(owner, fiscal_key)` — `receipts_receipt_owner_fiscal_key_uniq` | `fiscal_key != ''` |
+| 2. Внутренний номер магазина | unique `(owner, store, purchased_on, shift_number, register_code, receipt_number)` — `receipts_receipt_owner_store_number_uniq` | `receipt_number != ''` |
+| 3. Номера нет вовсе | unique `(owner, store, purchased_at, total)` — `receipts_receipt_owner_store_time_total_uniq` | `receipt_number = '' AND fiscal_key = ''` |
 
 `receipts.dedup.build_fiscal_key(country_code, fiscal)` собирает ключ с префиксом схемы:
 
@@ -568,7 +628,7 @@ MEDIA: original сохраняется без изменений; upright previe
 | `GenericProduct` | Фильтр `base_unit`; поиск по `name` | `category` — автодополнение |
 | `Brand` | Поиск по `name`, `manufacturer` | — |
 | `Product` | Фильтр `package_unit`; поиск по `name`, `gtin`, `model`, названию бренда | `generic`, `brand` — автодополнение; пустое `attributes` сохраняется как `{}` |
-| `Receipt` | Фильтры `operation`, `currency`, страна магазина; иерархия дат по `purchased_on`; поиск по `receipt_number`, `fiscal_key`, названию и адресу магазина | `store` — автодополнение; три inline; `created_at`, `updated_at` и блок предупреждений только для чтения; пустые `fiscal`, `extra` сохраняются как `{}` |
+| `Receipt` | Колонка и фильтр `owner` (только владельцы, у которых есть чеки); фильтры `operation`, `currency`, страна магазина; иерархия дат по `purchased_on`; поиск по `receipt_number`, `fiscal_key`, названию и адресу магазина | `owner` обязателен: при добавлении подставлен текущий пользователь, при изменении поле только для чтения (смена владельца разорвала бы связь «вырезка — чек», команды передачи нет); `store` — автодополнение; три inline; `created_at`, `updated_at` и блок предупреждений только для чтения; пустые `fiscal`, `extra` сохраняются как `{}` |
 | `ReceiptLine` | Фильтры `kind`, `unit`, `is_excise`, `is_marked`, «товар задан / не задан»; поиск по `raw_name`, `store_item_code`, `barcode` | Отдельно добавить нельзя (403) — строка создаётся только внутри чека; `receipt`, `product`, `tax_rate` — автодополнение, `parent` — ввод id; пустые `name_i18n`, `extra` сохраняются как `{}` |
 | `ProductAlias` | Поиск по `raw_name`, `name_key`, `store_item_code`, названию товара | `merchant`, `product` — автодополнение; `name_key` только для чтения |
 
@@ -644,8 +704,9 @@ Inline внутри чека, все без пустых заготовок (`ex
 - **`statement_timeout=2000` мс.** Поиск идёт по `ILIKE`, списки считают строки; на больших таблицах запрос может превысить таймаут и дать HTTP 500. На больших объёмах не измерялось.
 - **Страница чека** делает запросы на каждую позицию (автодополнение читает выбранные значения): число запросов растёт с числом строк чека.
 - **Названия моделей и полей английские.** `verbose_name` у моделей нет, множественное число Django образует сам; там, где оно выходило неправильным, задано `verbose_name_plural`: `Categories`, `Countries`, `Currencies`, `Product aliases`, заголовок inline налогов на странице чека — `Receipt taxes`; интерфейс, подписи `choices`, заголовки сайта и сообщения форм — русские.
-- **Пользователь админки — пропуск в будущие API.** В DRF действуют Session и Basic, глобальная permission — `IsAuthenticated`: сессия и пароль пользователя админки подойдут к любому будущему эндпоинту, если тот не задаст свои правила. Сейчас таких эндпоинтов нет, health аутентификацию отключает.
-- **Персональные данные.** `extra`, `raw_text`, `fiscal` могут содержать данные с чека (кассир, ИНН); админка их показывает. Доступ — только `is_staff`; разграничения чеков между пользователями нет.
+- **Вход в админку — вход в приложение.** Cookie `sessionid` общая: в режиме `accounts` пользователь, вошедший в `/admin/`, вошёл и в API, и в SPA того же хоста, выход в одном месте завершает оба сеанса. Проверка пароля общая — `accounts.backends.ThrottledModelBackend` со счётчиком неудач ([`accounts`](#accounts-счётчик-неудачных-входов)). У вью API свои классы доступа (`accounts.access`), Basic не используется.
+- **Счётчики входа и «кто решил».** `LoginFailure` зарегистрирована только для чтения. В списках `ProductMerge`, `ProductClassification` и `ClassificationRun` показаны `resolved_by` / `requested_by`.
+- **Персональные данные.** `extra`, `raw_text`, `fiscal` могут содержать данные с чека (кассир, ИНН); админка их показывает. Доступ — только `is_staff`; **внутри админки разграничения нет**: оператор видит и правит чеки всех пользователей. Поэтому `is_staff` получает только оператор сервера; модератору каталога он не нужен.
 - **Миграций админка не добавляет**: `models.py` не менялся. Откат — revert кода `admin.py` и маршрута в `urls.py`; данные и схема при этом не затрагиваются. Пользователи и записи журнала действий остаются в таблицах `auth_*` и `django_admin_log`.
 
 **Откат исправлений F1/F2/F4** — revert соответствующих коммитов `7aa388d`, `c895168`, `a686413` (код админок и их регрессионные тесты), без отката `urls.py` или миграций. F4 можно откатить отдельно: `git revert a686413` удалит его изменения `backend/receipts/admin.py` и `backend/receipts/tests/test_admin.py`; файлы моделей и settings он не менял. Данные, включая уже сохранённые `{}` у товаров, и журнал админки остаются на месте. Revert F4 возвращает риск удаления перенесённой строки с зависимостями другого чека, HTTP 500 при DELETE с правкой зависимостей и прежнюю обработку таймаутов блокировок. Revert F1/F2 возвращает риск рассинхронизации связей, ошибку пустых Attributes и гонку цикла. Откат не восстанавливает ранее утраченные данные — для этого требуется проверенный backup. В F3/F5 меняется только документация, её revert также не затрагивает данные и миграции; при откате кода описание и числа тестов нужно согласованно обновить. Эти команды — инструкция, фактический revert в итоговом прогоне не выполняется.
@@ -662,8 +723,16 @@ Inline внутри чека, все без пустых заготовок (`ex
 | 4 | `receipts.0001_initial` | 5 таблиц чеков; зависит от `catalog.0001` и `stores.0002` |
 | 5 | `stores.0003_alter_country_options_alter_currency_options` | Только состояние: `verbose_name_plural` у `Country` и `Currency` |
 | 6 | `receipts.0002_alter_receipttax_options` | Только состояние: `verbose_name_plural` у `ReceiptTax` |
+| 7 | `receipts.0003_receipt_owner` | `owner` nullable и индекс `receipts_rcpt_owner_on_idx` |
+| 8 | `receipts.0004_assign_local_owner` | `RunPython`: создаёт пользователя `local` (существующего не меняет) и отдаёт ему чеки без владельца; обратный ход — noop. Зависит от `auth.0012` |
+| 9 | `receipts.0005_receipt_owner_required` | `owner` NOT NULL; три ограничения с владельцем добавляются **до** удаления трёх прежних |
+| 10 | `catalog.0002_alter_product_options` | Только состояние: право `moderate_catalog` у `Product` |
 
-Только новые таблицы; существующие технические таблицы Django не затрагиваются, расширения Postgres не нужны. Применение — `manage.py migrate --noinput`. У соединения `statement_timeout=2000` мс (`backend/config/settings.py`): на пустых таблицах миграции укладываются, тяжёлая data-миграция в будущем упрётся в него.
+Таблица перечисляет миграции трёх предметных приложений. Остальные собственные: `recognition.0001_initial`, `0002_sourcephoto_owner`, `0003_assign_local_owner`, `0004_sourcephoto_owner_required` (то же для фото: колонка и индекс, передача `local`, NOT NULL с `rec_photo_owner_sha256_uniq` до снятия `unique` с `sha256`); `merges.0001_initial`, `0002_actor_fields`; `classification.0001_initial`, `0002_actor_fields`; `accounts.0001_initial`. **Всего собственных миграций 19** (`catalog` 2, `stores` 3, `receipts` 5, `recognition` 4, `merges` 2, `classification` 2, `accounts` 1); вместе с 18 стандартными, о которых говорит прежний замер, должно получиться 37 — число посчитано по файлам, `migrate` на пустой базе после этих миграций не запускался.
+
+Миграции владельца снимают `statement_timeout` на время своей транзакции (`SET LOCAL statement_timeout = 0`): `UPDATE` всех чеков и построение unique-индексов в 2000 мс могут не уложиться. Время на копии dev-базы не замерялось.
+
+Миграции 1–6 создают только новые таблицы; существующие технические таблицы Django не затрагиваются, расширения Postgres не нужны. Миграция 8 добавляет строку в `auth_user`. Применение — `manage.py migrate --noinput`. У соединения `statement_timeout=2000` мс (`backend/config/settings.py`): на пустых таблицах миграции укладываются, тяжёлая data-миграция в будущем упрётся в него.
 
 **Миграции названий** (`stores.0003`, `receipts.0002`) состоят только из `AlterModelOptions`: меняют состояние миграций, SQL не выполняют, схему и данные не затрагивают. Их откат так же ничего не меняет в базе и возвращает прежние названия только вместе с revert кода моделей:
 
@@ -674,7 +743,9 @@ Inline внутри чека, все без пустых заготовок (`ex
 
 **Сид-данные** (`update_or_create`, повторное применение не дублирует): страны `KZ`, `RU`, `DE`; валюты `KZT`, `RUB`, `EUR`; ставки `DE 7%`, `DE 19%`, `KZ 16%`, `RU без НДС`. Остальные ставки создаются по мере появления на чеках. Категории и товары не сидируются.
 
-**Откат** — строго в этом порядке:
+Откат владельца, журналов «кто» и права модератора без удаления данных — [выше](#откат-владельца).
+
+**Откат** предметной модели целиком — строго в этом порядке:
 
 ```powershell
 ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py migrate receipts zero --noinput
@@ -708,8 +779,8 @@ docker compose -p checkist_dev cp postgres:/tmp/checkist.dump ./checkist.dump
 - **Нет курсов валют.** Цены лежат в валюте чека. API чтения пересчитывает цены только по курсам, переданным в запросе, и не хранит их; серверные курсы потребуют таблицы и источника данных.
 - **Скидка на весь чек не распределяется по строкам** (`ReceiptDiscount.line IS NULL`) и в `paid_unit_price` и `normalized_price` не входит.
 - **Локальный MEDIA.** Фото/вырезки хранятся на host filesystem; production storage, retention и cleanup не реализованы.
-- **Нет владельца.** Пользователей в проекте нет, чеки ни к кому не привязаны и не разграничены.
-- **Доступ локальный.** Прежние 13 GET открыты анонимно; новый API recognition/receipts требует DEBUG+флаг+loopback и CSRF для записи. Несопоставленные строки видны в новом `/api/receipts/{id}/lines/`, в API цен их нет. Произвольного HTTP редактирования нет; при внешнем развёртывании нужен другой контракт доступа.
+- **Владелец — только у чека и фото.** Передачи владения, общих (семейных) чеков и удаления пользователя с данными нет: пользователь выключается (`is_active=False`), `PROTECT` не даёт удалить его вместе с чеками. Один кассовый чек у двух владельцев даёт два наблюдения цены.
+- **Доступ по режиму.** `CHECKIST_AUTH_MODE=accounts` (по умолчанию): всё, кроме health, требует входа, чеки и фото видит только владелец. `local_single` (только при `DJANGO_DEBUG=1`): 13 GET открыты анонимно, API recognition/receipts требует DEBUG+флаг+loopback, все данные — пользователя `local`. Запись в обоих режимах требует CSRF. Несопоставленные строки видны в `/api/receipts/{id}/lines/`, в API цен их нет. Произвольного HTTP редактирования нет. Контракт — [api-contract.md](api-contract.md#реализовано-пользователи-вход-и-доступ-по-владельцу).
 - **Признак налога в ценах не выравнивается.** `Receipt.prices_include_tax` в истории цен и в API не учитывается: цены чеков с налогом и без него идут рядом как есть.
 - OCR недетерминирован и может ошибаться; fake проверяет конвейер, не качество. Нет ReceiptDraft, MutationRequest/Idempotency-Key, manual_locked/отпечатка админской формы, отдельного WorkerSlot и POSIX watchdog. Причины сохраняются на ReceiptImage; UI ручного разрешения причин отсутствует.
 - Валюты с тремя знаками после запятой не помещаются в `(14, 2)`.
