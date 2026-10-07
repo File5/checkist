@@ -7,6 +7,7 @@ from django.test import TestCase, override_settings, tag
 from rest_framework.test import APIClient
 
 from api.tests.test_recognition_api import NOW, PUBLIC, image_bytes, public_data, upload
+from receipts.ownership import local_user
 from recognition.models import ProcessingJob, SourcePhoto
 
 
@@ -95,7 +96,7 @@ class PublicExamplesTests(TestCase):
 
     def test_running_and_cancelled_job_examples(self):
         from recognition.queue import claim_job
-        photo = SourcePhoto.objects.create(id=11, sha256="a" * 64, original_file="originals/test/source.png",
+        photo = SourcePhoto.objects.create(id=11, owner=local_user(), sha256="a" * 64, original_file="originals/test/source.png",
             content_type="image/png", bytes=80, raw_width=10, raw_height=20, width=10, height=20)
         job = ProcessingJob.objects.create(id=31, photo=photo)
         SourcePhoto.objects.filter(pk=11).update(created_at=NOW)

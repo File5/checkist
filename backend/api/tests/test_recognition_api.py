@@ -16,6 +16,7 @@ from PIL import Image
 from rest_framework.test import APIClient
 
 from api.recognition_serialization import public_issues
+from receipts.ownership import local_user
 from recognition.management.commands.recognition_worker import worker_slot
 from recognition.models import ProcessingJob, ReceiptImage, SourcePhoto
 from recognition.queue import WORKER_LOCK, claim_job, request_cancel
@@ -240,9 +241,9 @@ def upload(data=None, name="receipt.png", content_type="image/png"):
     return SimpleUploadedFile(name, image_bytes() if data is None else data, content_type=content_type)
 
 
-def make_photo(**fields):
+def make_photo(owner=None, **fields):
     fields.setdefault("sha256", uuid.uuid4().hex * 2)
-    return SourcePhoto.objects.create(original_file="originals/test/source.png", content_type="image/png",
+    return SourcePhoto.objects.create(owner=owner or local_user(), original_file="originals/test/source.png", content_type="image/png",
         bytes=80, raw_width=10, raw_height=20, width=10, height=20, **fields)
 
 
@@ -266,7 +267,7 @@ def public_data():
     category = Category.objects.create(name="Тест")
     generic = GenericProduct.objects.create(name="Молоко", category=category, base_unit="l")
     product = Product.objects.create(id=61, generic=generic, name="Молоко 1 л")
-    receipt = Receipt.objects.create(id=71, store=store, currency_id="EUR", operation="sale",
+    receipt = Receipt.objects.create(id=71, owner=photo.owner, store=store, currency_id="EUR", operation="sale",
         purchased_at=NOW, purchased_on=NOW.date(), total="2.38", discount_total="0.20",
         raw_text="PRIVATE TEXT", fiscal={"secret": "PRIVATE FISCAL"}, extra={"stderr": "PRIVATE STDERR"},
         fiscal_key="PRIVATE KEY", receipt_number="PRIVATE NUMBER", register_code="PRIVATE REGISTER", shift_number="PRIVATE SHIFT")
