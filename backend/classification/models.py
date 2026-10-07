@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 from django.db.models import Q
 
@@ -48,6 +49,10 @@ class ClassificationRun(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     started_at = models.DateTimeField(null=True, blank=True)
     finished_at = models.DateTimeField(null=True, blank=True)
+    # Who asked for the run; empty for an import, a command and old records.
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+",
+    )
 
     class Meta:
         constraints = [
@@ -171,6 +176,10 @@ class ProductClassification(models.Model):
     confidence = models.DecimalField(max_digits=3, decimal_places=2, null=True, blank=True)  # private
     created_at = models.DateTimeField(auto_now_add=True)
     resolved_at = models.DateTimeField(null=True, blank=True)
+    # Who confirmed or rejected; empty for the automation, a command and old records.
+    resolved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+",
+    )
 
     class Meta:
         constraints = [
@@ -285,6 +294,10 @@ class ClassificationRejection(models.Model):
         ProductClassification, null=True, blank=True, on_delete=models.SET_NULL, related_name="rejections",
     )
     created_at = models.DateTimeField(auto_now_add=True)
+    # Who refused the name; empty for old records.
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+",
+    )
 
     class Meta:
         constraints = [
