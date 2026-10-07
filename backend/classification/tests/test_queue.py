@@ -6,10 +6,13 @@ from unittest.mock import patch
 from django.db import IntegrityError
 from django.test import TestCase, override_settings, tag
 
+from catalog.models import Product
 from classification import demo, queue, services
 from classification.models import ClassificationAttempt, ClassificationRun, ProductClassification
 from classification.runner import BatchResult
-from classification.tests.factories import JUICE, KEFIR_A, MILK, SOAP, TOAST, UNKNOWN, product
+from classification.tests.factories import (
+    JUICE, KEFIR_A, MILK, SOAP, TOAST, UNKNOWN, add_product, generic, product, service,
+)
 from recognition.queue import db_now
 
 
@@ -234,6 +237,27 @@ class AbsorbTests(QueueTestCase):
         self.assertFalse(ClassificationRun.objects.filter(pk=other.pk).exists())
         self.assertEqual(ClassificationRun.objects.count(), 1)
 
+    def test_import_during_a_batch_of_a_run_of_all_candidates_joins_it_on_requeue(self):
+        run = self.claimed()
+        self.assertEqual((run.scope, run.status, len(run.product_ids)), ("all", "running", 10))
+        fresh = add_product("Demo Neu")
+        # Nothing waits while the batch executes: the import queues its own run.
+        other, created = services.request_run(trigger="import", product_ids=[fresh.pk, run.product_ids[1]])
+        self.assertTrue(created)
+        self.assertEqual((other.status, other.trigger, other.scope), ("queued", "import", "products"))
+        self.assertEqual(other.product_ids, [run.product_ids[1], fresh.pk])
+        after = queue.finish_batch(run, result(consumed=1))
+        self.assertEqual((after.pk, after.status, after.cursor), (run.pk, "queued", 1))
+        self.assertEqual((after.scope, after.trigger), ("all", "manual"))
+        self.assertEqual(after.product_ids, run.product_ids + [fresh.pk])  # the known product is not added twice
+        self.assertEqual((after.requested_count, after.remaining_count), (11, 0))
+        self.assertFalse(ClassificationRun.objects.filter(pk=other.pk).exists())
+        self.assertEqual(ClassificationRun.objects.count(), 1)
+        # Back in the queue it takes the next import itself.
+        newer = add_product("Demo Neuer")
+        again, created = services.request_run(trigger="import", product_ids=[newer.pk])
+        self.assertEqual((again.pk, created, again.product_ids), (run.pk, False, after.product_ids + [newer.pk]))
+
     def test_last_batch_leaves_the_other_run_waiting(self):
         run = self.claimed(MILK)
         other, _created = services.request_run(trigger="import", product_ids=self.ids(JUICE))
@@ -302,6 +326,35 @@ class RequestBetweenBatchesTests(QueueTestCase):
         # The next batch takes the first product behind the cursor.
         claimed = queue.claim_run()
         self.assertEqual(claimed.product_ids[claimed.cursor], tail[0])
+
+    def test_import_adds_to_a_run_of_all_candidates_only_behind_the_cursor(self):
+        low = product(MILK)  # a lower id than everything in the run; not a candidate when the run is queued
+        Product.objects.filter(pk=low.pk).update(generic=generic("Молоко"))
+        run = queue.finish_batch(self.claimed(), result(consumed=2))
+        ids = run.product_ids
+        self.assertEqual((run.status, run.scope, run.trigger, run.cursor, len(ids)), ("queued", "all", "manual", 2, 9))
+        self.assertIsNotNone(run.started_at)
+        self.assertLess(low.pk, min(ids))
+        Product.objects.filter(pk=low.pk).update(generic=service())
+        fresh = add_product("Demo Neu")
+        # The receipt also has a product the run already passed: it is not added again.
+        again, created = services.request_run(trigger="import", product_ids=[fresh.pk, ids[0], low.pk])
+        self.assertEqual((again.pk, created), (run.pk, False))
+        self.assertEqual((again.status, again.scope, again.trigger, again.cursor), ("queued", "all", "manual", 2))
+        self.assertEqual((again.started_at, again.version), (run.started_at, run.version + 1))
+        self.assertEqual(again.product_ids, ids[:2] + [low.pk] + ids[2:] + [fresh.pk])
+        self.assertEqual((again.requested_count, again.remaining_count), (11, 0))
+        self.assertEqual(len(again.product_ids), len(set(again.product_ids)))
+        # The next batch takes the first product behind the cursor.
+        claimed = queue.claim_run()
+        self.assertEqual((claimed.pk, claimed.product_ids[claimed.cursor]), (run.pk, low.pk))
+
+    def test_import_of_only_passed_products_leaves_a_run_of_all_candidates_alone(self):
+        run = queue.finish_batch(self.claimed(), result(consumed=2))
+        before = ClassificationRun.objects.filter(pk=run.pk).values().get()
+        again, created = services.request_run(trigger="import", product_ids=run.product_ids[:2])
+        self.assertEqual((again.pk, created), (run.pk, False))
+        self.assertEqual(ClassificationRun.objects.filter(pk=run.pk).values().get(), before)
 
     def test_manual_run_widens_behind_the_cursor(self):
         run = queue.finish_batch(self.claimed(TOAST, JUICE, trigger="import"), result(consumed=1))

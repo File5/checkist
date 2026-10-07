@@ -1122,8 +1122,9 @@ def request_run(*, trigger, product_ids=None):
     ``manual`` / ``command``: no candidates — ``(None, False)``; an active run
     (queued or running) is returned as is, a queued run limited to products is
     widened to all candidates. ``import``: only products that never had a
-    record; they join the queued run or start a new one. The import mutex is
-    taken unless the trigger is ``import`` (the import already holds it).
+    record; they join the queued run of either scope behind its cursor or start
+    a new one; what the run limit cuts off is counted as remaining. The import
+    mutex is taken unless the trigger is ``import`` (the import already holds it).
     """
     limit = settings.PRODUCT_CLASSIFICATION_RUN_LIMIT
     if trigger == Trigger.IMPORT:
@@ -1134,16 +1135,23 @@ def request_run(*, trigger, product_ids=None):
             queued = ClassificationRun.objects.select_for_update().filter(status=RunStatus.QUEUED).first()
             if queued is None:
                 return _new_run(trigger=trigger, scope=Scope.PRODUCTS, ids=ids, limit=limit), True
+            # A run waiting between batches keeps the ids its cursor already passed.
+            done = queued.product_ids[:queued.cursor]
+            merged = done + sorted((set(queued.product_ids[queued.cursor:]) | set(ids)) - set(done))
+            kept = merged[:max(limit, queued.cursor)]
+            changed, remaining = kept != queued.product_ids, queued.remaining_count
             if queued.scope == Scope.PRODUCTS:
-                # A run waiting between batches keeps the ids its cursor already passed.
-                done = queued.product_ids[:queued.cursor]
-                merged = done + sorted((set(queued.product_ids[queued.cursor:]) | set(ids)) - set(done))
-                if merged[:limit] != queued.product_ids:
-                    queued.product_ids = merged[:limit]
-                    queued.requested_count = len(queued.product_ids)
-                    queued.remaining_count = max(0, len(merged) - limit)
-                    queued.version += 1
-                    queued.save(update_fields=["product_ids", "requested_count", "remaining_count", "version"])
+                if changed:
+                    remaining = max(0, len(merged) - limit)
+            elif len(merged) > len(kept):
+                # As in a manual run: its candidates outside the list. A product cut off by the
+                # limit changes nothing but this number.
+                remaining = candidates().exclude(pk__in=kept).count()
+                changed = changed or remaining != queued.remaining_count
+            if changed:
+                queued.product_ids, queued.requested_count, queued.remaining_count = kept, len(kept), remaining
+                queued.version += 1
+                queued.save(update_fields=["product_ids", "requested_count", "remaining_count", "version"])
             return queued, False
     with _mutation() as session:
         _reconcile_pending(session)
