@@ -18,6 +18,7 @@ from django.db import IntegrityError, connection, transaction
 from receipts.decimal_math import price_context
 from receipts.dedup import build_fiscal_key, find_duplicates, name_key
 from receipts.models import Receipt, ReceiptDiscount, ReceiptLine, ReceiptTax
+from receipts.ownership import local_user
 from receipts.validation import validate_receipt
 
 from .dto import ReceiptObservation
@@ -34,8 +35,8 @@ from .statuses import ImageStatus, ImportEffect, TERMINAL_IMAGE_STATUSES
 # CK OCR IMP, distinct from category locks and the queue's two-int lock.
 IMPORT_LOCK = 0x434B4F4352494D50
 RECEIPT_UNIQUES = {
-    "receipts_receipt_fiscal_key_uniq", "receipts_receipt_store_number_uniq",
-    "receipts_receipt_store_time_total_uniq",
+    "receipts_receipt_owner_fiscal_key_uniq", "receipts_receipt_owner_store_number_uniq",
+    "receipts_receipt_owner_store_time_total_uniq",
 }
 
 
@@ -251,7 +252,8 @@ def _create_graph(header, observation, country, derived, confirmed=None):
     }
     if confirmed is not None:
         recognition["confirmed"] = confirmed
-    receipt = clean_save(Receipt(**header, extra={"recognition": recognition}))
+    # Temporary shim: the owner comes from the job's photo once the import is owner-aware.
+    receipt = clean_save(Receipt(**header, owner=local_user(), extra={"recognition": recognition}))
     issues, lines = [], {}
     def tax_rate(rate, field):
         # prepare_observation already requires observed kind/rate, and may
