@@ -4,16 +4,17 @@ from django.middleware.csrf import get_token
 from rest_framework.exceptions import ParseError
 from rest_framework.response import Response
 
+from accounts.access import owner_q
 from api.common import get_or_404
 from api.pagination import paginate
 from api.params import MAX_ID, Params
 from api.recognition_serialization import (
-    executor_object, image_object, job_object, jobs_queryset,
+    annotate_jobs, annotate_photos, executor_object, image_object, images_queryset, job_object, jobs_queryset,
     photo_object, photos_queryset,
 )
 from config.exceptions import InvalidParameter, InvalidRequest, ObjectNotFound, RecognitionApiError
 from recognition.images import ImageError
-from recognition.models import ProcessingJob, ReceiptImage, SourcePhoto
+from recognition.models import ProcessingJob, SourcePhoto
 from recognition.queue import QueueError, create_job, create_retry, request_cancel
 from recognition.statuses import ACTIVE_JOB_STATUSES, JobStatus
 from recognition.storage import StorageError, accept_upload
@@ -34,8 +35,9 @@ def list_controls(request):
     return params, page, (ordering, "-id" if ordering.startswith("-") else "id")
 
 
-def job_response(job_id, *, status=200):
-    job = get_or_404(jobs_queryset(), job_id)
+def job_response(jobs, job_id, *, status=200):
+    """``jobs`` — ``jobs_queryset(request)``: a job of another user is ``404`` like a missing one."""
+    job = get_or_404(jobs, job_id)
     items = list(job.images.order_by("position", "id"))
     return Response(job_object(job, executor_object(), items=items), status=status)
 
@@ -59,7 +61,7 @@ class PhotosView(LocalAPIView):
     def get(self, request):
         params, page, ordering = list_controls(request)
         params.check()
-        return Response(paginate(photos_queryset().order_by(*ordering), page, photo_object))
+        return Response(paginate(photos_queryset(request).order_by(*ordering), page, photo_object))
 
     def post(self, request):
         try:
@@ -83,8 +85,10 @@ class PhotosView(LocalAPIView):
             job = ProcessingJob.objects.filter(photo=photo).order_by("-created_at", "-id").first()
             if job is None:
                 job, _ = create_job(photo)
-        photo = photos_queryset().get(pk=photo.pk)
-        response = job_response(job.pk, status=202 if created else 200)
+        # accept_upload returned this photo for the owner of the request, and the job is
+        # the photo's: both are read by key, like the rows locked above.
+        photo = annotate_photos(SourcePhoto.objects.filter(pk=photo.pk)).get()
+        response = job_response(annotate_jobs(ProcessingJob.objects.all()), job.pk, status=202 if created else 200)
         response.data = {"reused": not created, "photo": photo_object(photo), "job": response.data}
         response["Location"] = f"/api/recognition/jobs/{job.pk}/"
         return response
@@ -92,7 +96,7 @@ class PhotosView(LocalAPIView):
 
 class PhotoView(LocalAPIView):
     def get(self, request, pk):
-        return Response(photo_object(get_or_404(photos_queryset(), path_id(pk))))
+        return Response(photo_object(get_or_404(photos_queryset(request), path_id(pk))))
 
 
 class JobsView(LocalAPIView):
@@ -101,7 +105,7 @@ class JobsView(LocalAPIView):
         photo = params.integer("photo")
         status = params.choice("status", JobStatus.values)
         params.check()
-        jobs = jobs_queryset()
+        jobs = jobs_queryset(request)
         if photo is not None:
             jobs = jobs.filter(photo_id=photo)
         if status is not None:
@@ -112,7 +116,7 @@ class JobsView(LocalAPIView):
 
 class JobView(LocalAPIView):
     def get(self, request, pk):
-        return job_response(path_id(pk))
+        return job_response(jobs_queryset(request), path_id(pk))
 
 
 class JobMutationView(LocalAPIView):
@@ -129,25 +133,28 @@ class JobMutationView(LocalAPIView):
         if not request._request.META.get("CONTENT_LENGTH") or request._request.META["CONTENT_LENGTH"] == "0":
             raise InvalidRequest()
 
+    def own_job(self, request, pk):
+        # The same place as the existence check: another user's job answers as a missing one.
+        return get_or_404(ProcessingJob.objects.filter(owner_q(request, "photo__")), path_id(pk))
+
 
 class CancelView(JobMutationView):
     def post(self, request, pk):
         self.empty_body(request)
-        job_id = path_id(pk)
-        get_or_404(ProcessingJob.objects.all(), job_id)
+        job_id = self.own_job(request, pk).pk
         try:
             job = request_cancel(job_id)
         except QueueError as exc:
             if exc.code != "job_terminal":
                 raise
             raise RecognitionApiError("job_terminal") from None
-        return job_response(job.pk, status=200 if job.status == "cancelled" else 202)
+        return job_response(jobs_queryset(request), job.pk, status=200 if job.status == "cancelled" else 202)
 
 
 class RetryView(JobMutationView):
     def post(self, request, pk):
         self.empty_body(request)
-        previous = get_or_404(ProcessingJob.objects.all(), path_id(pk))
+        previous = self.own_job(request, pk)
         with transaction.atomic():
             SourcePhoto.objects.select_for_update().get(pk=previous.photo_id)
             if ProcessingJob.objects.filter(photo_id=previous.photo_id, status__in=ACTIVE_JOB_STATUSES).exists():
@@ -160,7 +167,7 @@ class RetryView(JobMutationView):
                 raise RecognitionApiError("retry_not_allowed") from None
             if not created:
                 raise RecognitionApiError("job_active")
-        response = job_response(job.pk, status=202)
+        response = job_response(jobs_queryset(request), job.pk, status=202)
         response["Location"] = f"/api/recognition/jobs/{job.pk}/"
         return response
 
@@ -170,13 +177,13 @@ class ReceiptImagesView(LocalAPIView):
         params, page, ordering = list_controls(request)
         filters = {name + "_id": params.integer(name) for name in ("photo", "job", "receipt")}
         params.check()
-        images = ReceiptImage.objects.filter(**{key: value for key, value in filters.items() if value is not None})
+        images = images_queryset(request).filter(**{key: value for key, value in filters.items() if value is not None})
         return Response(paginate(images.order_by(*ordering), page, image_object))
 
 
 class ReceiptImageView(LocalAPIView):
     def get(self, request, pk):
-        return Response(image_object(get_or_404(ReceiptImage.objects.all(), path_id(pk)), detail=True))
+        return Response(image_object(get_or_404(images_queryset(request), path_id(pk)), detail=True))
 
 
 class LocalNotFoundView(LocalAPIView):
