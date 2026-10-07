@@ -18,6 +18,7 @@ async function main() {
   assert.ok(process.argv.length <= 4, 'Too many arguments')
   assert.equal(process.env.POSTGRES_DB, 'checkist_qa', 'Apply the full QA environment first')
   assert.equal(process.env.VITE_API_BASE_URL, '/api', 'QA must use the /api prefix')
+  assert.equal(process.env.CHECKIST_AUTH_MODE, 'local_single', 'This script needs a server without a sign-in: set CHECKIST_AUTH_MODE=local_single in this terminal and in the terminal of the API, then restart the API (in the accounts mode every request here answers 401; that mode is checked by check_accounts_proxy.mjs)')
   const origins = [localOrigin(process.env.DEV_API_PROXY_TARGET), localOrigin(proxyOrigin)]
   assert.notEqual(origins[0], origins[1], 'API and Vite proxy must be separate origins')
 
