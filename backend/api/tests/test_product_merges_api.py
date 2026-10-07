@@ -7,6 +7,7 @@ from django.db import OperationalError
 from django.test import TestCase, override_settings, tag
 from rest_framework.test import APIClient
 
+from api.tests.accounts_helpers import TwoUsers, accounts_mode
 from api.tests.merge_factories import demo_groups, local_client, pending_group, product
 from catalog.models import Brand, Product
 from merges import demo, services
@@ -14,6 +15,7 @@ from merges.models import ProductMerge, ProductMergeRejection
 from merges.tests.factories import EGGS, MAULTASCHEN, MILK, PIZZA, ZIMBO, add_line, add_product, snapshot
 from merges.tests.test_concurrency import ConcurrencyTestCase
 from receipts.models import ProductAlias, ReceiptLine
+from receipts.ownership import local_user
 from recognition.importer import IMPORT_LOCK
 from stores.models import Store
 
@@ -589,6 +591,39 @@ class OperationTests(MergeApiMixin, TestCase):
         self.error(self.post(self.url(eggs, "exclude/"), {"version": 2, "product_id": product(EGGS[0]).pk}),
                    409, "merge_resolved")
 
+    def test_decisions_are_recorded_with_local_and_answers_keep_their_form(self):
+        local = local_user()
+        pizza, eggs, three = pending_group(PIZZA[0]), pending_group(EGGS[0]), pending_group(MAULTASCHEN[0])
+        # Отказ ничего не записывает.
+        self.error(self.confirm(pizza, version=9), 409, "merge_changed")
+        self.assertEqual(set(ProductMerge.objects.values_list("resolved_by_id", flat=True)), {None})
+
+        bodies = [
+            self.ok(self.confirm(pizza)),
+            self.ok(self.post(self.url(eggs, "cancel/"))),
+            self.ok(self.post(self.url(three, "exclude/"), {"version": 1, "product_id": product(MAULTASCHEN[2]).pk})),
+        ]
+        for body in bodies:
+            self.assertEqual(set(body), GROUP_KEYS)
+            self.assertNotIn("resolved_by", json.dumps(body))
+        decided = dict(ProductMerge.objects.values_list("pk", "resolved_by_id"))
+        self.assertEqual((decided[pizza.pk], decided[eggs.pk]), (local.pk, local.pk))
+        # Исключение оставило группу ожидающей: решения по ней ещё нет, отказ от пар — записан.
+        self.assertIsNone(decided[three.pk])
+        self.assertEqual(
+            set(ProductMergeRejection.objects.filter(group__in=[eggs, three]).values_list("created_by_id", flat=True)),
+            {local.pk},
+        )
+        self.assertEqual(ProductMergeRejection.objects.filter(group=three).count(), 2)
+        # Остальные группы никто не решал; поиск дублей автора не имеет.
+        others = ProductMerge.objects.exclude(pk__in=[pizza.pk, eggs.pk])
+        self.assertEqual(set(others.values_list("status", "resolved_by_id")), {("pending", None)})
+        self.ok(self.post(BASE + "detect/"))
+        self.assertEqual(set(others.values_list("resolved_by_id", flat=True)), {None})
+        # Чтения автора не показывают.
+        for path in (BASE, self.url(pizza), self.url(eggs), self.url(pizza, "lines/")):
+            self.assertNotIn("resolved_by", self.client.get(path).content.decode())
+
     def test_failure_in_the_middle_changes_nothing(self):
         group = pending_group(PIZZA[0])
         before = snapshot()
@@ -604,6 +639,42 @@ class OperationTests(MergeApiMixin, TestCase):
                 self.assertEqual(response.json()["error"]["code"], "internal_error")
                 self.assertNotIn("PRIVATE", response.content.decode())
                 self.assertEqual(snapshot(), before)
+
+
+@tag("integration")
+@accounts_mode()
+class SignedInActorTests(MergeApiMixin, TwoUsers, TestCase):
+    """В ``accounts`` решение записывается на вошедшего модератора, а не на ``local``."""
+
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        demo_groups()
+
+    def setUp(self):
+        self.client = self.client_of(self.moderator, csrf=True)
+
+    def test_moderator_is_recorded_and_a_refused_user_is_not(self):
+        pizza, eggs, three = pending_group(PIZZA[0]), pending_group(EGGS[0]), pending_group(MAULTASCHEN[0])
+        before = snapshot()
+        refused = self.client_of(self.first, csrf=True).post(self.url(eggs, "cancel/"), {}, format="json")
+        self.error(refused, 403, "permission_denied")
+        self.assertEqual(snapshot(), before)
+
+        self.assertEqual(self.ok(self.confirm(pizza))["status"], "confirmed")
+        self.assertEqual(self.ok(self.post(self.url(eggs, "cancel/")))["status"], "cancelled")
+        excluded = product(MAULTASCHEN[2]).pk
+        self.assertEqual(
+            self.ok(self.post(self.url(three, "exclude/"), {"version": 1, "product_id": excluded}))["status"], "pending",
+        )
+        decided = dict(ProductMerge.objects.values_list("pk", "resolved_by_id"))
+        self.assertEqual((decided[pizza.pk], decided[eggs.pk], decided[three.pk]),
+                         (self.moderator.pk, self.moderator.pk, None))
+        self.assertEqual(ProductMergeRejection.objects.count(), 3)
+        self.assertEqual(
+            set(ProductMergeRejection.objects.values_list("created_by_id", flat=True)), {self.moderator.pk},
+        )
+        self.assertEqual(sum(author is not None for author in decided.values()), 2)
 
 
 @tag("integration")
