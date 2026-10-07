@@ -123,14 +123,14 @@ class SavedSamplesTests(TestCase):
         for sample, receipt in self.saved:
             with self.subTest(receipt=str(receipt)):
                 data = {"store": receipt.store, **sample["receipt"]}
-                self.assertEqual(find_duplicates(data), [receipt])
+                self.assertEqual(find_duplicates(data, owner=receipt.owner), [receipt])
                 # Тот же чек, введённый без фискальных реквизитов и без смены и кассы.
                 by_number = {
                     "store": receipt.store_id,
                     "purchased_on": receipt.purchased_on,
                     "receipt_number": receipt.receipt_number,
                 }
-                self.assertEqual(find_duplicates(by_number), [receipt])
+                self.assertEqual(find_duplicates(by_number, owner=receipt.owner_id), [receipt])
 
     # --- оплата картой ---
 
