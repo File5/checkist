@@ -32,7 +32,7 @@ from .importer import (
     IMPORT_LOCK, RECEIPT_UNIQUES, _constraint_name, _detect_product_merges, _import_domain,
     _request_product_classification, effective_observation,
 )
-from .models import ProcessingJob, ReceiptImage
+from .models import ProcessingJob, ReceiptImage, SourcePhoto
 from .queue import db_now, refresh_progress
 from .resolution import ResolutionError, issue
 from .schema_validation import SchemaValidationError, validate_observation
@@ -658,11 +658,13 @@ def _confirm(image, store, digest, normalized, effective, notices, derived, inde
     if image.status != ImageStatus.NEEDS_REVIEW:
         raise ReviewUnavailable()
 
+    # The receipt belongs to the owner of the crop's photo, read under the job lock.
+    owner_id = SourcePhoto.objects.values_list("owner_id", flat=True).get(pk=image.photo_id)
     stamp = db_now().astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
     try:
         with transaction.atomic():
             receipt, effect, issues = _import_domain(
-                effective, derived, store=store, confirmed={"image_id": image.pk, "at": stamp})
+                effective, derived, owner_id=owner_id, store=store, confirmed={"image_id": image.pk, "at": stamp})
     except ResolutionError as problem:
         raise ReviewInvalid(notices + _to_body(problem.issues, indexes), normalized) from None
     except ValidationError:

@@ -4,6 +4,8 @@ import_receipt(image, observation, *, run_token, version, on_saved=None) -> Impo
 Pass result.job_version to subsequent queue writes. ImportBusy is a transient
 control signal: defer this crop and keep its fence alive; no result is written.
 FenceLost is propagated: cancelled/expired/stale work must not write anything.
+The receipt belongs to the owner of the job's photo: duplicates are looked for
+among this owner's receipts only; shops, products and aliases stay shared.
 Do not wrap this service in a caller transaction or run OCR while importing.
 """
 import logging
@@ -18,12 +20,11 @@ from django.db import IntegrityError, connection, transaction
 from receipts.decimal_math import price_context
 from receipts.dedup import build_fiscal_key, find_duplicates, name_key
 from receipts.models import Receipt, ReceiptDiscount, ReceiptLine, ReceiptTax
-from receipts.ownership import local_user
 from receipts.validation import validate_receipt
 
 from .dto import ReceiptObservation
 from .import_policy import derive_line_values, optional_field, prepare_observation
-from .models import ReceiptImage
+from .models import ReceiptImage, SourcePhoto
 from .queue import fenced_job, save_image_result
 from .resolution import (
     ResolutionError, canonical_gtin, clean_save, issue, product_matches_hint, purchased_at, resolve_country,
@@ -45,6 +46,13 @@ logger = logging.getLogger(__name__)
 
 class ImportBusy(RuntimeError):
     code = "import_busy"
+
+
+class OwnerMismatch(RuntimeError):
+    """The duplicate found for a crop belongs to another owner. Carries no receipt data."""
+
+    def __init__(self):
+        super().__init__("A receipt of another owner was selected for the import.")
 
 
 @dataclass(frozen=True)
@@ -197,14 +205,14 @@ def _preflight(observation, derived=(), *, store=None):
     return notices
 
 
-def _header(observation, country, store, currency):
+def _header(observation, country, store, currency, owner_id):
     fiscal = {k: v for k, v in observation.fiscal.to_dict().items() if v not in (None, "")}
     try:
         fiscal_key = build_fiscal_key(country.pk, fiscal)
     except ValueError:
         fiscal_key = ""  # Too long for the model; fall back to exact weak identity.
     return dict(
-        store=store, currency=currency, operation=observation.operation,
+        owner_id=owner_id, store=store, currency=currency, operation=observation.operation,
         purchased_at=purchased_at(observation, store), purchased_on=date.fromisoformat(observation.purchased_on),
         receipt_number=observation.receipt_number or "", shift_number=observation.shift_number or "",
         register_code=observation.register_code or "", fiscal=fiscal, fiscal_key=fiscal_key,
@@ -214,7 +222,8 @@ def _header(observation, country, store, currency):
 
 
 def _duplicate(header):
-    candidates = find_duplicates(header)
+    # Only the receipts of this owner: the same receipt of another owner is not a duplicate.
+    candidates = find_duplicates(header, owner=header["owner_id"])
     selected = []
     for candidate in candidates:
         fiscal = header["fiscal_key"] and candidate.fiscal_key == header["fiscal_key"]
@@ -252,8 +261,7 @@ def _create_graph(header, observation, country, derived, confirmed=None):
     }
     if confirmed is not None:
         recognition["confirmed"] = confirmed
-    # Temporary shim: the owner comes from the job's photo once the import is owner-aware.
-    receipt = clean_save(Receipt(**header, owner=local_user(), extra={"recognition": recognition}))
+    receipt = clean_save(Receipt(**header, extra={"recognition": recognition}))
     issues, lines = [], {}
     def tax_rate(rate, field):
         # prepare_observation already requires observed kind/rate, and may
@@ -405,9 +413,13 @@ def _update_graph(receipt, header, observation):
     return receipt, ImportEffect.UPDATED if changed else ImportEffect.LINKED, issues
 
 
-def _import_domain(observation, derived, *, require_duplicate=False, link_only=False, store=None, confirmed=None):
+def _import_domain(observation, derived, *, owner_id, require_duplicate=False, link_only=False, store=None,
+                   confirmed=None):
     """Resolve, deduplicate and write one effective observation; raises ResolutionError.
 
+    ``owner_id`` is the id of the user the crop belongs to. A duplicate is looked
+    for among the receipts of this owner only, a new receipt is created for this
+    owner, and the returned receipt always belongs to this owner.
     ``store`` is a shop already chosen by a person: it replaces store and
     country resolution. ``confirmed`` is recorded in ``extra`` of a NEW receipt
     only; an existing receipt is never rewritten.
@@ -426,10 +438,13 @@ def _import_domain(observation, derived, *, require_duplicate=False, link_only=F
             notices.append(issue("currency_inferred", "/currency_code", "Валюта определена по стране известного магазина."))
         if observation.merchant.tax_id_type and store.merchant.tax_id_type and observation.merchant.tax_id_type != store.merchant.tax_id_type:
             notices.append(issue("merchant_conflict", "/merchant/tax_id_type"))
-        header = _header(observation, country, store, currency)
+        header = _header(observation, country, store, currency, owner_id)
         receipt = _duplicate(header)
+        if receipt and receipt.owner_id != owner_id:
+            # A program error, never the person's: nothing is linked to or written into this receipt.
+            raise OwnerMismatch()
         if receipt and receipt.store_id != store.pk:
-            # A global fiscal match can expose a contradictory shop observation.
+            # A fiscal match of the owner can expose a contradictory shop observation.
             # Keep the candidate/header in memory, roll back unused new stores.
             transaction.set_rollback(True)
     if receipt:
@@ -480,25 +495,30 @@ def import_receipt(image, observation, *, run_token, version, on_saved=None):
                     if on_saved is not None:
                         job = on_saved(job)
                     return ImportResult(outcome, current.receipt, current.issues, current, job.version)
+                # The crop, its job and its photo are one owner's; the receipt joins them.
+                owner_id = SourcePhoto.objects.values_list("owner_id", flat=True).get(pk=job.photo_id)
                 receipt, effect, issues = None, ImportEffect.NONE, []
                 status = None
                 try:
                     with transaction.atomic():
-                        receipt, effect, issues = _import_domain(effective, derived)
+                        receipt, effect, issues = _import_domain(effective, derived, owner_id=owner_id)
                 except IntegrityError as error:
                     if _constraint_name(error) in RECEIPT_UNIQUES:
                         # A writer outside the OCR mutex won a known unique race.
                         # Re-read after rollback, once; never retry the create.
                         try:
                             with transaction.atomic():
-                                receipt, effect, issues = _import_domain(effective, derived, require_duplicate=True)
+                                receipt, effect, issues = _import_domain(
+                                    effective, derived, owner_id=owner_id, require_duplicate=True)
                         except ResolutionError as problem:
                             receipt, effect, issues = None, ImportEffect.NONE, problem.issues
                         except IntegrityError as retry_error:
                             if _constraint_name(retry_error) in RECEIPT_UNIQUES:
                                 try:
                                     with transaction.atomic():
-                                        receipt, effect, issues = _import_domain(effective, derived, require_duplicate=True, link_only=True)
+                                        receipt, effect, issues = _import_domain(
+                                            effective, derived, owner_id=owner_id, require_duplicate=True,
+                                            link_only=True)
                                 except ResolutionError as problem:
                                     receipt, effect, issues = None, ImportEffect.NONE, problem.issues
                                 except Exception:
