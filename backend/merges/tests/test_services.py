@@ -4,6 +4,7 @@ from decimal import Decimal
 from unittest.mock import patch
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.db import connection
@@ -22,6 +23,7 @@ from merges.tests.factories import (
 )
 from merges.visibility import absorbed_product_ids, is_absorbed, visible, visible_q
 from receipts.models import ProductAlias, Receipt, ReceiptDiscount, ReceiptLine, ReceiptTax
+from receipts.ownership import LOCAL_USERNAME
 from stores.models import Store, TaxRate
 
 WRITES = ("INSERT", "UPDATE", "DELETE")
@@ -987,6 +989,26 @@ class CommandTests(TestCase):
             with patch.dict(settings.DATABASES["default"], {"NAME": name}), self.assertRaises(CommandError):
                 call_command("seed_product_merge_demo", stdout=io.StringIO())
         self.assertEqual(snapshot(*DOMAIN_MODELS), before)
+
+    def test_every_demo_receipt_belongs_to_local(self):
+        User = get_user_model()
+        # The record may be left by a migration: the demo has to create it itself, exactly once.
+        User.objects.filter(username=LOCAL_USERNAME).delete()
+        for name in ("checkist_dev", "checkist"):
+            with patch.dict(settings.DATABASES["default"], {"NAME": name}), self.assertRaises(demo.DemoError):
+                demo.seed_demo()
+        # A refusal creates no owner either.
+        self.assertFalse(User.objects.filter(username=LOCAL_USERNAME).exists())
+
+        self.assertTrue(self.run_command("seed_product_merge_demo")["created"])
+        local = User.objects.get(username=LOCAL_USERNAME)
+        self.assertEqual((local.is_active, local.is_staff, local.is_superuser), (True, False, False))
+        self.assertFalse(local.has_usable_password())
+        self.assertEqual(Receipt.objects.count(), len(demo.RECEIPTS))
+        self.assertEqual(set(Receipt.objects.values_list("owner_id", flat=True)), {local.pk})
+        people = list(User.objects.order_by("pk").values())
+        self.assertEqual(self.run_command("seed_product_merge_demo"), {"created": False})
+        self.assertEqual(list(User.objects.order_by("pk").values()), people)
 
     def test_demo_receipts_are_consistent(self):
         from receipts.validation import validate_receipt

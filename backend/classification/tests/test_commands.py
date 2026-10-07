@@ -6,6 +6,7 @@ from datetime import timedelta
 from unittest.mock import patch
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import TestCase, override_settings, tag
@@ -23,6 +24,7 @@ from classification.tests.factories import (
 )
 from merges.demo import DemoError
 from receipts.models import ProductAlias, Receipt, ReceiptLine
+from receipts.ownership import LOCAL_USERNAME
 from recognition.providers.base import ProviderError, RunContext
 from stores.models import Merchant, Store
 
@@ -74,6 +76,25 @@ class DemoTests(TestCase):
                 with self.assertRaises(CommandError):
                     call_command("seed_product_classification_demo", stdout=io.StringIO())
         self.assertFalse(Merchant.objects.exists() or Product.objects.exists())
+
+    def test_every_demo_receipt_belongs_to_local(self):
+        User = get_user_model()
+        # The record may be left by a migration: the demo has to create it itself, exactly once.
+        User.objects.filter(username=LOCAL_USERNAME).delete()
+        with patch.dict(settings.DATABASES["default"], {"NAME": "checkist_dev"}), self.assertRaises(DemoError):
+            demo.seed_demo()
+        # A refusal creates no owner either.
+        self.assertFalse(User.objects.filter(username=LOCAL_USERNAME).exists())
+
+        self.assertTrue(command("seed_product_classification_demo")["created"])
+        local = User.objects.get(username=LOCAL_USERNAME)
+        self.assertEqual((local.is_active, local.is_staff, local.is_superuser), (True, False, False))
+        self.assertFalse(local.has_usable_password())
+        self.assertEqual(Receipt.objects.count(), 3)
+        self.assertEqual(set(Receipt.objects.values_list("owner_id", flat=True)), {local.pk})
+        people = list(User.objects.order_by("pk").values())
+        self.assertEqual(command("seed_product_classification_demo"), {"created": False})
+        self.assertEqual(list(User.objects.order_by("pk").values()), people)
 
     def test_seed_reuses_existing_catalog_records(self):
         Category.objects.create(parent=None, name="Продукты питания")
