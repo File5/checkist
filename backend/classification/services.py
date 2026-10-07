@@ -33,7 +33,7 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.db import DatabaseError, IntegrityError, connection, transaction
-from django.db.models import Case, Count, Exists, IntegerField, OuterRef, Q, Value, When
+from django.db.models import Case, Count, Exists, F, IntegerField, OuterRef, Q, Value, When
 from django.db.models.deletion import ProtectedError
 
 from catalog.models import Category, GenericProduct, Product
@@ -416,22 +416,96 @@ def _close(record, status, resolution, final):
     record.save()
 
 
+def _absorbed_by(product_ref):
+    """The survivor of the latest confirmed merge that absorbed this product, or ``None``."""
+    return (
+        ProductMergeMember.objects.filter(
+            product_ref=product_ref, state=ProductMergeMember.State.ACTIVE,
+            group__status=ProductMerge.Status.CONFIRMED,
+        ).exclude(group__target_ref=product_ref).order_by("-group_id")
+        .values_list("group__target_ref", flat=True).first()
+    )
+
+
 def _successor(product_ref):
     """The surviving product of the confirmed merges that absorbed this one, or ``None``."""
     current, seen = product_ref, {product_ref}
     while True:
-        target = (
-            ProductMergeMember.objects.filter(
-                product_ref=current, state=ProductMergeMember.State.ACTIVE,
-                group__status=ProductMerge.Status.CONFIRMED,
-            ).exclude(group__target_ref=current).order_by("-group_id")
-            .values_list("group__target_ref", flat=True).first()
-        )
+        target = _absorbed_by(current)
         if target is None or target in seen:
             break
         seen.add(target)
         current = target
     return None if current == product_ref else current
+
+
+def _absorbed_values(product_ids):
+    """``{survivor id: [(absorbed id, generic id, merged at)]}`` — meaningful values of absorbed duplicates.
+
+    Read from the journal of confirmed merges: the snapshot of an absorbed
+    record is taken right before the merge.
+    """
+    found = defaultdict(list)
+    if not product_ids:
+        return found
+    for target_ref, product_ref, facts, resolved_at in ProductMergeMember.objects.filter(
+        state=ProductMergeMember.State.ACTIVE, group__status=ProductMerge.Status.CONFIRMED,
+        group__target_ref__in=product_ids,
+    ).exclude(product_ref=F("group__target_ref")).values_list(
+        "group__target_ref", "product_ref", "facts", "group__resolved_at",
+    ):
+        generic = (facts or {}).get("generic") or {}
+        if generic.get("id") is not None and not is_service_generic(generic.get("name")):
+            found[target_ref].append((product_ref, generic["id"], resolved_at))
+    return found
+
+
+def _carriers(record):
+    """Products a moved record belonged to before its present one."""
+    carriers, current = set(), record.origin_product_ref
+    while current is not None and current != record.product_ref and current not in carriers:
+        carriers.add(current)
+        current = _absorbed_by(current)
+    return carriers
+
+
+def _was_suggestion(product_ref, generic_id):
+    """The absorbed product had this value only as a suggestion nobody confirmed.
+
+    Its record on the value was pending at the merge: closed as ``merged`` since
+    then, or still waiting for the reconciliation. A record a duplicate of a
+    human had settled before (``_settled_by_duplicate``) does not count.
+    """
+    return any(
+        not _settled_by_duplicate(record)
+        for record in ProductClassification.objects.filter(
+            Q(status=Status.PENDING) | Q(resolution=Resolution.MERGED),
+            product_ref=product_ref, suggested_generic_ref=generic_id,
+        )
+    )
+
+
+def _settled_by_duplicate(record, absorbed=None):
+    """A duplicate merged into the product had the suggested value on its own: set by a human or confirmed.
+
+    Without the suggestion the merge would have completed the empty fact of
+    the product with that value, so it is no longer the mechanism's to undo.
+    The value of a duplicate is not its own when it was a pending suggestion at
+    the merge: a record of that duplicate, or this very record, which the merge
+    moved here. A merge older than the record says nothing about its value.
+    ``absorbed`` — the entry of ``_absorbed_values`` for the product, when read.
+    """
+    if absorbed is None:
+        absorbed = _absorbed_values([record.product_ref])[record.product_ref]
+    carriers = None
+    for product_ref, generic_id, merged_at in absorbed:
+        if generic_id != record.suggested_generic_ref or merged_at < record.created_at:
+            continue
+        if carriers is None:
+            carriers = _carriers(record)
+        if product_ref not in carriers and not _was_suggestion(product_ref, generic_id):
+            return True
+    return False
 
 
 def _snapshot(generic, session):
@@ -459,13 +533,16 @@ def _reconcile(records, session):
     """Bring locked pending records in line with the catalog; ``{record id: outcome}``.
 
     Outcomes: the snapshot of the record was updated (``changed``); the record
-    was closed as superseded (``resolved``). Records in line with the catalog
+    was closed as superseded (``resolved``) — its product is gone, has another
+    value, or shares the suggested one with a merged duplicate that had it from
+    a human (``_settled_by_duplicate``). Records in line with the catalog
     are absent from the result. ``Product.generic`` is never written here; the
     catalog only loses created records that became empty.
     """
     outcomes, touched = {}, []
     pending = [record for record in records if record.status == Status.PENDING]
     products = _lock_products([record.active_product_id for record in pending if record.active_product_id])
+    absorbed = _absorbed_values(list(products))
     for record in pending:
         product = products.get(record.active_product_id)
         if product is None:
@@ -475,6 +552,11 @@ def _reconcile(records, session):
         elif product.generic_id != record.suggested_generic_ref:
             # A human changed the value meanwhile: it stays, the record steps aside.
             _close(record, Status.SUPERSEDED, Resolution.CHANGED, product.generic)
+            touched.append(record.suggested_generic_ref)
+            outcomes[record.pk] = _RESOLVED
+        elif _settled_by_duplicate(record, absorbed[product.pk]):
+            # A human gave the same value to a duplicate merged into this product: it is not a suggestion any more.
+            _close(record, Status.SUPERSEDED, Resolution.MERGED, product.generic)
             touched.append(record.suggested_generic_ref)
             outcomes[record.pk] = _RESOLVED
         else:
@@ -704,7 +786,8 @@ def _return_product(record, product, session):
     """Put the product back into the generic product it had before the suggestion.
 
     Only for a pending record after its reconciliation: the product still has
-    the suggested value, and that value was written by the mechanism — by
+    the suggested value, no duplicate merged into it had that value from a
+    human, and the value was written by the mechanism — by
     ``apply`` to this product, or by a merge that completed the empty fact of
     this product with the suggestion (``after_merge_confirmed``, which then
     stores this product's own previous value in the record).
@@ -840,9 +923,13 @@ def _own_values(target_id, absorbed_ids, records):
     """Generic products the absorbed products had on their own, not as a pending suggestion.
 
     Read from the journal of the confirmed merge: the snapshot of an absorbed
-    record is taken right before the merge.
+    record is taken right before the merge. A pending record a duplicate of a
+    human had settled, but no reconciliation closed yet, is not a suggestion.
     """
-    suggested = {(record.product_ref, record.suggested_generic_ref) for record in records}
+    suggested = {
+        (record.product_ref, record.suggested_generic_ref) for record in records
+        if not _settled_by_duplicate(record)
+    }
     values = set()
     for product_ref, facts in ProductMergeMember.objects.filter(
         product_ref__in=absorbed_ids, state=ProductMergeMember.State.ACTIVE,
@@ -880,9 +967,10 @@ def after_merge_confirmed(*, target_id, absorbed_ids, target_generic_before):
     (set by a human or confirmed) and the survivor has no pending record. In
     every other case the record is closed as ``merged`` and the survivor is not
     touched: a value it had before the merge is never undone by a rejection.
-    Then the survivor's own pending record is reconciled (``changed`` when the
-    human chose another value). Runs inside the merge transaction, which
-    already holds the mutex.
+    Then the survivor's own pending record is reconciled: ``changed`` when the
+    human chose another value, ``merged`` when an absorbed product had the
+    suggested value on its own — the survivor keeps it, nothing is left to
+    reject. Runs inside the merge transaction, which already holds the mutex.
     """
     absorbed_ids = list(absorbed_ids)
     with _mutation() as session:
