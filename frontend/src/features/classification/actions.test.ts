@@ -22,7 +22,9 @@ const api = (patch: Partial<ClassificationApi> = {}) => {
     requestRun: vi.fn(mocked.requestRun), refreshCsrf: vi.fn(mocked.refreshCsrf),
   }
 }
-const lifecycle = () => ({ pause: vi.fn(), success: vi.fn(), failure: vi.fn(), reread: vi.fn(async () => {}) }) satisfies ActionLifecycle
+const lifecycle = () => ({
+  pause: vi.fn(), success: vi.fn(), failure: vi.fn(), reread: vi.fn<ActionLifecycle['reread']>(async () => {}), release: vi.fn(), settled: vi.fn(),
+}) satisfies ActionLifecycle
 const confirm: Extract<ClassificationAction, { id: number }> = { type: 'confirm', id: 4, input: { version: 1, generic_id: 92 } }
 const choose: Extract<ClassificationAction, { id: number }> = { type: 'choose', id: 6, input: { version: 1, generic_id: 95 } }
 const reject: Extract<ClassificationAction, { id: number }> = { type: 'reject', id: 3, input: { version: 1 } }
@@ -182,19 +184,143 @@ describe('one action at a time', () => {
     await actions.run(reject)
     expect(calls.reject).toHaveBeenCalledTimes(1)
   })
-  it('aborts the request and stays silent after the screen is left', async () => {
+})
+
+/**
+ * The actions are replaced with every filter, product and page and with the screen itself. The state request of the
+ * page outlives them, so whatever way an action ends, the pause it put on the reads has to be lifted — once.
+ */
+describe('the owner goes away during an action', () => {
+  const lifted = (life: ReturnType<typeof lifecycle>) => life.success.mock.calls.length + life.failure.mock.calls.length + life.release.mock.calls.length
+  it('leaves a POST in flight to answer, lets the reads go on at once and reads again when it has answered', async () => {
     const life = lifecycle()
     let signal!: AbortSignal
     let finish!: (result: LocalApiResult<Classification>) => void
     const actions = createClassificationActions(api({ confirm: (_id, _input, given) => { signal = given; return new Promise((resolve) => { finish = resolve }) } }), life)
+    const states: string[] = []
+    actions.subscribe(() => states.push(actions.getSnapshot().kind))
     const running = actions.run(confirm)
     actions.dispose()
-    expect(signal.aborted).toBe(true)
+    // Aborting would not undo the POST on the server: it would only hide the moment it was saved.
+    expect(signal.aborted).toBe(false)
+    expect(life.release).toHaveBeenCalledTimes(1)
+    expect(life.settled).not.toHaveBeenCalled()
+    expect(actions.getSnapshot()).toEqual({ kind: 'idle' })
     finish(ok(record('classification-confirmed.json')))
     await running
+    expect(life.settled).toHaveBeenCalledTimes(1)
+    expect(life.release.mock.invocationCallOrder[0]).toBeLessThan(life.settled.mock.invocationCallOrder[0])
+    // The answer belongs to a screen that is gone: nothing of it is shown.
     expect(life.success).not.toHaveBeenCalled()
     expect(life.failure).not.toHaveBeenCalled()
-    expect(actions.getSnapshot().kind).toBe('pending')
+    expect(states).toEqual(['pending', 'idle'])
+    expect([life.pause.mock.calls.length, lifted(life)]).toEqual([1, 1])
+  })
+  it.each<[string, LocalApiResult<Classification>]>([
+    ['a refusal', refusal('error-classification-resolved.json')], ['a lost answer', { kind: 'error', reason: 'network' }],
+    ['a stale token', refusal('error-csrf-failed.json')], ['a cancelled request', { kind: 'aborted' }],
+  ])('reads again after %s of the POST it left, without the re-read and the token of a screen that is gone', async (_name, answer) => {
+    const life = lifecycle()
+    let finish!: (result: LocalApiResult<Classification>) => void
+    const calls = api({ confirm: () => new Promise((resolve) => { finish = resolve }) })
+    const actions = createClassificationActions(calls, life)
+    const running = actions.run(confirm)
+    actions.dispose()
+    finish(answer)
+    await running
+    expect([life.pause.mock.calls.length, lifted(life), life.release.mock.calls.length, life.settled.mock.calls.length]).toEqual([1, 1, 1, 1])
+    expect(life.reread).not.toHaveBeenCalled()
+    expect(calls.refreshCsrf).not.toHaveBeenCalled()
+    expect(actions.getSnapshot()).toEqual({ kind: 'idle' })
+  })
+  it.each<[string, LocalApiResult<Classification>, 'reread' | 'refreshCsrf']>([
+    ['the record is read again after a lost answer', { kind: 'error', reason: 'timeout' }, 'reread'],
+    ['the token is renewed', refusal('error-csrf-failed.json'), 'refreshCsrf'],
+  ])('aborts the read under way when it leaves while %s: the POST has answered already', async (_name, answer, step) => {
+    const life = lifecycle()
+    let signal!: AbortSignal
+    let finish!: () => void
+    const waiting = <T,>(value: T) => (given: AbortSignal) => { signal = given; return new Promise<T>((resolve) => { finish = () => resolve(value) }) }
+    life.reread.mockImplementation((_action: ClassificationAction, given: AbortSignal) => waiting<void>(undefined)(given))
+    const calls = api({ confirm: async () => answer, refreshCsrf: waiting(csrfOk) })
+    const actions = createClassificationActions(calls, life)
+    const running = actions.run(confirm)
+    await vi.waitFor(() => expect(step === 'reread' ? life.reread : calls.refreshCsrf).toHaveBeenCalledTimes(1))
+    actions.dispose()
+    expect(signal.aborted).toBe(true)
+    expect(life.release).toHaveBeenCalledTimes(1)
+    finish()
+    await running
+    // Nothing is in flight on the server any more: there is nothing to wait for and nothing to show.
+    expect(life.settled).not.toHaveBeenCalled()
+    expect([life.pause.mock.calls.length, lifted(life)]).toEqual([1, 1])
+    expect(actions.getSnapshot()).toEqual({ kind: 'idle' })
+  })
+  it('lets the batch of «Подтвердить все» in flight answer and sends none of the next ones', async () => {
+    const life = lifecycle()
+    const finish: ((result: LocalApiResult<ClassificationConfirmMany>) => void)[] = []
+    const calls = api({ confirmMany: () => new Promise((resolve) => { finish.push(resolve) }) })
+    const actions = createClassificationActions(calls, life)
+    const items = numbered(250)
+    const running = actions.run({ type: 'confirmAll', genericId: 93, items })
+    await vi.waitFor(() => expect(finish).toHaveLength(1))
+    actions.dispose()
+    finish[0](ok(many(items.slice(0, 100))))
+    await running
+    expect(calls.confirmMany).toHaveBeenCalledTimes(1)
+    expect([life.pause.mock.calls.length, lifted(life), life.settled.mock.calls.length]).toEqual([1, 1, 1])
+  })
+  it('does nothing when no action is being saved, and serves again after its owner came back', async () => {
+    const life = lifecycle()
+    let finish!: (result: LocalApiResult<Classification>) => void
+    const calls = api({ confirm: () => new Promise((resolve) => { finish = resolve }), reject: async () => ok(record('classification-rejected.json')) })
+    const actions = createClassificationActions(calls, life)
+    // React StrictMode runs the cleanup of a mounted screen once before anything is pressed.
+    actions.dispose()
+    expect([life.pause, life.release, life.settled].map((call) => call.mock.calls.length)).toEqual([0, 0, 0])
+    const left = actions.run(confirm)
+    actions.dispose()
+    actions.dispose()
+    expect(life.release).toHaveBeenCalledTimes(1)
+    // The old POST is still in flight; the same object takes the next action and shows only that one.
+    await actions.run(reject)
+    expect(actions.getSnapshot()).toMatchObject({ kind: 'done', action: reject })
+    finish(ok(record('classification-confirmed.json')))
+    await left
+    expect(actions.getSnapshot()).toMatchObject({ kind: 'done', action: reject })
+    expect([life.pause.mock.calls.length, lifted(life), life.settled.mock.calls.length]).toEqual([2, 2, 1])
+  })
+  it('lifts the pause when a request ends as cancelled although nobody left', async () => {
+    const life = lifecycle()
+    const actions = createClassificationActions(api({ confirm: async () => ({ kind: 'aborted' }) }), life)
+    await actions.run(confirm)
+    expect([life.pause.mock.calls.length, lifted(life), life.release.mock.calls.length, life.settled.mock.calls.length]).toEqual([1, 1, 1, 0])
+    expect(actions.getSnapshot()).toEqual({ kind: 'idle' })
+  })
+  it.each<[string, Partial<ClassificationApi>, ClassificationAction]>([
+    ['success', { confirm: async () => ok(record('classification-confirmed.json')) }, confirm],
+    ['a refusal', { reject: async () => refusal('error-classification-changed.json') }, reject],
+    ['a busy catalog', { confirm: async () => refusal('error-classification-busy.json') }, confirm],
+    ['a refused choice', { confirm: async () => refusal('error-invalid-parameter.json') }, choose],
+    ['a stale token', { confirm: async () => refusal('error-csrf-failed.json') }, confirm],
+    ['a token that cannot be renewed', { confirm: async () => refusal('error-csrf-failed.json'), refreshCsrf: async () => ({ kind: 'error', reason: 'network' }) }, confirm],
+    ['no network', { confirm: async () => ({ kind: 'error', reason: 'network' }) }, confirm],
+    ['a timeout', { requestRun: async () => ({ kind: 'error', reason: 'timeout' }) }, { type: 'run' }],
+    ['a broken answer', { confirm: async () => ({ kind: 'error', reason: 'invalid_response' }) }, confirm],
+    ['a thrown transport error', { confirm: async () => { throw new Error('private') } }, confirm],
+    ['a refused second batch', { confirmMany: async (items) => items[0].id === 1 ? ok(many(items)) : refusal('error-classification-busy.json') },
+      { type: 'confirmAll', genericId: 93, items: numbered(150) }],
+    ['a started run', { requestRun: async () => ok(runRequest('run-created.json')) }, { type: 'run' }],
+  ])('lifts the pause exactly once after %s', async (_name, patch, action) => {
+    const life = lifecycle()
+    const actions = createClassificationActions(api(patch), life)
+    await actions.run(action)
+    expect([life.pause.mock.calls.length, lifted(life), life.release.mock.calls.length, life.settled.mock.calls.length]).toEqual([1, 1, 0, 0])
+    // A re-read that throws does not leave the pause on either.
+    const broken = lifecycle()
+    broken.reread.mockRejectedValue(new Error('private'))
+    await createClassificationActions(api(patch), broken).run(action)
+    expect([broken.pause.mock.calls.length, lifted(broken)]).toEqual([1, 1])
   })
 })
 
@@ -303,7 +429,7 @@ describe('reads during an action', () => {
     expect(reads).toBe(2)
     const confirmed = record('classification-confirmed.json')
     const actions = createClassificationActions(api({ confirm: async () => ok(confirmed) }), {
-      pause: list.pause, reread: async () => {}, failure: () => list.resume(),
+      pause: list.pause, reread: async () => {}, failure: () => list.resume(), release: () => list.resume(), settled: () => {},
       success: (outcome) => {
         const current = list.getSnapshot()
         if (current.kind === 'ok') list.setData(replaceRecords(current.data, outcome.records))

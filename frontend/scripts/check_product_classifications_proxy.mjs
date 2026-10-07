@@ -3,10 +3,13 @@
 // seed_product_classification_demo + `product_classifications suggest --fake-scenario mixed` database only:
 // the scenario decides records, queues a run and executes it with its own fake worker, one batch of one product per pass;
 // after the pass that suggests something it reads the list of the screen while the run is still active.
+// At the end it kills a worker during a batch and waits for its lease to end (about 85 seconds): the run stays `running`
+// without a worker until the next pass.
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { getCategories, getGenericProduct, getGenericProducts, getProduct } from '../src/api/catalog.ts'
 import { getRecognitionCsrf } from '../src/api/local.ts'
@@ -53,6 +56,21 @@ function workerPass(scenario = 'mixed') {
     child.once('error', reject)
     child.once('exit', (code) => { code === 0 ? resolve(output.trim()) : reject(new Error(`Fake worker: exit ${code}; ${output.trim()}`)) })
   }).finally(() => { clearTimeout(timeout); workers.delete(child) })
+}
+/** A request to model takes 20 seconds at most here, so the lease of a lost batch ends 80 seconds after it began. */
+const lostWorker = { PRODUCT_CLASSIFICATION_BATCH_SIZE: '1', PRODUCT_CLASSIFICATION_TIMEOUT_SECONDS: '20' }
+/** The permanent host worker whose fake batch lasts until the worker is stopped. */
+function pausedWorker() {
+  const child = spawn(python, ['-X', 'utf8', join(root, 'backend/manage.py'), 'recognition_worker', '--classification-fake-scenario', 'pause'],
+    { cwd: root, env: { ...process.env, ...lostWorker }, windowsHide: true, stdio: 'ignore' })
+  workers.add(child)
+  return child
+}
+/** No Ctrl+C and no cleanup: the venv launcher of Windows runs Python as a child, so the whole tree is killed. */
+function killHard(child) {
+  if (process.platform === 'win32') spawnSync('taskkill', ['/T', '/F', '/PID', String(child.pid)], { windowsHide: true })
+  else child.kill('SIGKILL')
+  workers.delete(child)
 }
 function fails(result, reason, status, fields) {
   assert.deepEqual(result, { kind: 'error', reason, status, ...(fields && { fields }) })
@@ -318,6 +336,45 @@ try {
   assert.deepEqual(ok(await getProductClassificationRuns({}, options)).results.map((run) => [run.id, run.status]), [[queued.run.id, 'succeeded'], [state.run.id, 'succeeded']])
   console.log(`run ${queued.run.id}: second pass → queued 2 of 3, third pass → succeeded 3 of 3, applied 1 (the rejected variant is not offered again)`)
 
+  // The worker dies during a batch. Waiting reads go straight to Django and are not requests of the client.
+  const watch = async (until, seconds, what) => {
+    const deadline = Date.now() + seconds * 1000
+    for (;;) {
+      const body = JSON.parse((await direct(target, '/api/product-classifications/status/')).body)
+      if (until(body)) return
+      assert.ok(Date.now() < deadline, `${what}: still run ${body.run?.status}, worker ${body.executor?.state} after ${seconds} s`)
+      await delay(500)
+    }
+  }
+  const stuck = pausedWorker()
+  await watch((body) => body.executor.state === 'idle', 60, 'The worker did not start')
+  const taken = ok(await requestProductClassificationRun(options), 202)
+  assert.deepEqual([taken.created, taken.run.status, taken.run.progress.requested], [true, 'queued', finished.unclassified_count])
+  await watch((body) => body.run.status === 'running', 30, 'The worker did not take the run')
+  const batch = ok(await getProductClassificationState(options))
+  assert.deepEqual([batch.run.id, batch.run.status, batch.run.progress.processed, batch.executor.state], [taken.run.id, 'running', 0, 'busy'])
+  killHard(stuck)
+  const killedAt = Date.now()
+  // While the lease lives the dead worker still looks busy; nothing tells the client it is gone.
+  await watch((body) => body.executor.state !== 'busy', 150, 'The lease of the lost batch did not end')
+  const lost = ok(await getProductClassificationState(options))
+  assert.deepEqual([lost.run.id, lost.run.status, lost.run.started_at, lost.run.finished_at, lost.run.error], [taken.run.id, 'running', batch.run.started_at, null, null])
+  assert.deepEqual([lost.run.progress.processed, lost.executor, stateActive(lost)], [0, { available: false, state: 'absent', last_seen_at: null }, true])
+  assert.deepEqual([lost.pending_count, lost.unclassified_count], [finished.pending_count, finished.unclassified_count])
+  // The button gives the same run back: nothing is queued next to it and nothing restarts it.
+  const still = ok(await requestProductClassificationRun(options), 200)
+  assert.deepEqual([still.created, still.run, still.executor.state], [false, lost.run, 'absent'])
+  const lostAfter = Math.round((Date.now() - killedAt) / 1000)
+  // The next pass of a worker takes the run back into the queue and repeats the batch.
+  assert.match(await workerPass(), new RegExp(`Classification run ${taken.run.id}: queued`))
+  const recovered = ok(await getProductClassificationState(options))
+  assert.deepEqual([recovered.run.id, recovered.run.status, recovered.run.progress.processed, recovered.executor.state], [taken.run.id, 'queued', 1, 'absent'])
+  assert.match(await workerPass(), new RegExp(`Classification run ${taken.run.id}: succeeded`))
+  const closed = ok(await getProductClassificationState(options))
+  assert.deepEqual(closed.run.progress, { requested: 2, processed: 2, applied: 0, unknown: 1, skipped: 1 })
+  assert.deepEqual([closed.run.status, closed.pending_count, closed.unclassified_count], ['succeeded', finished.pending_count, finished.unclassified_count])
+  console.log(`run ${taken.run.id}: worker killed during the first batch → running / busy, ${lostAfter} s later running / absent, POST runs/ → 200 with the same run; the next pass → queued 1 of 2, then succeeded`)
+
   const counts = {}
   for (const status of ['pending', 'confirmed', 'rejected', 'superseded']) counts[status] = ok(await getProductClassifications({ status }, options)).count
   assert.deepEqual(counts, { pending: 4, confirmed: 4, rejected: 2, superseded: 0 })
@@ -326,6 +383,7 @@ try {
     records: { pending: counts.pending, confirmed: counts.confirmed, rejected: counts.rejected }, unclassified: finished.unclassified_count,
     run: { status: finished.run.status, between_batches: [between.run.progress.processed, nextPass.run.progress.processed], progress: finished.run.progress },
     list_while_run_active: { before: listBefore.count, after_first_batch: listBetween.count, run_status: between.run.status, reread: 'list' },
+    worker_lost_during_batch: { run_status: lost.run.status, executor: lost.executor.state, seconds_until_absent: lostAfter, repeated_post: 200, then: closed.run.status },
     requests: requests.length, posts: posts.length, statuses: [...new Set(requests.map((request) => request.status))].sort(), browser_ui: 'not tested' }))
 } catch (error) {
   console.error(`Product classification check FAILED: ${error.message}`)
@@ -334,5 +392,5 @@ try {
   process.exitCode = 1
 } finally {
   globalThis.fetch = originalFetch
-  for (const child of workers) child.kill()
+  for (const child of workers) killHard(child)
 }

@@ -180,8 +180,12 @@ describe('labels', () => {
   })
   it('describes a running, finished, failed and cancelled run', () => {
     expect(runText(stateOf('status-running.json'))?.text).toBe('Модель предлагает категории: обработано 0 из 2.')
-    expect(withRun({ status: 'running', progress: { requested: 1200, processed: 25, applied: 20, unknown: 3, skipped: 2 } })?.text)
-      .toBe('Модель предлагает категории: обработано 25 из 1 200.')
+    const batch: Partial<ClassificationRun> = { status: 'running', started_at: '2026-10-06T21:13:45.465650Z', progress: { requested: 1200, processed: 25, applied: 20, unknown: 3, skipped: 2 } }
+    expect(withRun(batch, 'busy')).toEqual({ text: 'Модель предлагает категории: обработано 25 из 1 200.', warning: false })
+    // The worker died during the batch and its lease has ended: the server keeps the run `running` until a worker comes.
+    expect(withRun(batch)).toEqual({
+      text: 'Запуск приостановлен: обработано 25 из 1 200. Воркер распознавания не запущен: запуск продолжится, когда воркер запустят.', warning: true,
+    })
     expect(runText(stateOf('status.json'))?.text).toBe('Запуск завершён: предложено 8, не распознано 1, пропущено 0.')
     expect(withRun({ status: 'succeeded', remaining: 12 })?.text).toBe('Запуск завершён: предложено 0, не распознано 0, пропущено 0. Без предложения осталось 12: запустите ещё раз.')
     expect(withRun({ status: 'failed', error: { code: 'invalid_output', message: 'private' } }))

@@ -1,6 +1,7 @@
 import type {
   Classification, ClassificationCategory, ClassificationProduct, ClassificationState, ClassificationStatus,
 } from '../../api/product-classifications'
+import type { ExecutorState } from '../../api/recognition-types'
 import type { BaseUnit, LocalApiFailure } from '../../api/types'
 import { formatQuantity } from '../../lib/format'
 import type { ClassificationQuery } from '../../navigation'
@@ -53,24 +54,32 @@ const runErrors: Record<string, string> = {
 }
 const number = (value: number) => value.toLocaleString('ru-RU')
 
-/** One line about the run to show and the worker. An unknown worker state adds nothing about the worker. */
+/**
+ * One line about the run to show and the worker: every run status is decided for every state of the worker.
+ * An unknown worker state adds nothing about the worker; a finished run does not depend on it.
+ */
 export function runText({ run, executor }: Pick<ClassificationState, 'run' | 'executor'>): { text: string; warning: boolean } | undefined {
   if (!run) return undefined
   const { progress } = run
   const processed = `обработано ${number(progress.processed)} из ${number(progress.requested)}`
+  const working = { text: `Модель предлагает категории: ${processed}.`, warning: false }
+  // Nothing moves a started run without the worker: said in the same words wherever it stopped.
+  const paused = { text: `Запуск приостановлен: ${processed}. Воркер распознавания не запущен: запуск продолжится, когда воркер запустят.`, warning: true }
+  const queued = { text: 'Запуск в очереди.', warning: false }
+  const busy = ' Воркер занят другим заданием.'
+  const byWorker = (texts: Record<ExecutorState, { text: string; warning: boolean }>) => texts[executor.state]
   switch (run.status) {
     // A started run waits in the queue between its batches: it is under way, not about to begin.
-    case 'queued': if (run.started_at !== null) switch (executor.state) {
-      case 'absent': return { text: `Запуск приостановлен: ${processed}. Воркер распознавания не запущен: запуск продолжится, когда воркер запустят.`, warning: true }
-      case 'busy': return { text: `Модель предлагает категории: ${processed}. Воркер занят другим заданием.`, warning: false }
-      default: return { text: `Модель предлагает категории: ${processed}.`, warning: false }
-    } else switch (executor.state) {
-      case 'absent': return { text: 'Запуск в очереди. Воркер распознавания не запущен: запуск начнётся, когда воркер запустят.', warning: true }
-      case 'busy': return { text: 'Запуск в очереди. Воркер занят другим заданием.', warning: false }
-      case 'idle': return { text: 'Запуск в очереди и начнётся в ближайшие секунды.', warning: false }
-      default: return { text: 'Запуск в очереди.', warning: false }
-    }
-    case 'running': return { text: `Модель предлагает категории: ${processed}.`, warning: false }
+    case 'queued': return run.started_at !== null
+      ? byWorker({ absent: paused, busy: { ...working, text: working.text + busy }, idle: working, unknown: working })
+      : byWorker({
+        absent: { text: 'Запуск в очереди. Воркер распознавания не запущен: запуск начнётся, когда воркер запустят.', warning: true },
+        busy: { ...queued, text: queued.text + busy },
+        idle: { text: 'Запуск в очереди и начнётся в ближайшие секунды.', warning: false },
+        unknown: queued,
+      })
+    // The worker died during a batch: the server keeps the run `running` — `busy` until its lease ends, `absent` after it.
+    case 'running': return byWorker({ absent: paused, busy: working, idle: working, unknown: working })
     case 'succeeded': return {
       text: `Запуск завершён: предложено ${number(progress.applied)}, не распознано ${number(progress.unknown)}, пропущено ${number(progress.skipped)}.`
         + (run.remaining > 0 ? ` Без предложения осталось ${number(run.remaining)}: запустите ещё раз.` : ''),
