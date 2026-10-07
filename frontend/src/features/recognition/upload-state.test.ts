@@ -3,6 +3,8 @@ import type { PhotoUpload } from '../../api/recognition'
 import { isPhotoUpload, isRecognitionCsrf } from '../../api/recognition-schema'
 import { publicFixture } from '../../api/recognition-test-support'
 import type { LocalApiResult } from '../../api/types'
+import { applyMe } from '../../session'
+import { resetSession } from '../../session/store'
 import { errorText } from './labels'
 import { createPreview } from './preview'
 import { createUpload, getJobNotice, retryNotice, setJobNotice, uploadMessage, validateFile } from './upload-state'
@@ -76,6 +78,19 @@ describe('upload and object URL lifecycle', () => {
     const upload = createUpload(async () => ({ kind: 'error', reason }), vi.fn(), vi.fn(), vi.fn())
     await upload.submit(file(), csrf().limits)
     expect(upload.getSnapshot()).toMatchObject({ kind: 'error', message: errorText({ kind: 'error', reason }, true) })
+  })
+  it('names the missing right instead of the local service to a user of accounts', () => {
+    const denied = { kind: 'error' as const, reason: 'permission_denied' as const }
+    const former = [errorText(denied), errorText(denied, true)]
+    const me = (mode: 'accounts' | 'local_single') =>
+      ({ mode, user: { id: 3, username: 'anna', is_staff: false }, permissions: { moderate_catalog: mode === 'local_single' }, csrf_token: 'token' })
+    try {
+      applyMe(me('accounts'))
+      expect([errorText(denied), errorText(denied, true)]).toEqual(Array(2).fill('Нет права модератора каталога.'))
+      expect(errorText({ kind: 'error', reason: 'csrf_failed' })).toContain('Токен безопасности устарел')
+      for (const enter of [() => applyMe(me('local_single')), () => applyMe(null)]) { enter(); expect([errorText(denied), errorText(denied, true)]).toEqual(former) }
+    } finally { resetSession() }
+    expect(former).toEqual(Array(2).fill('Локальный сервис недоступен с этого адреса или выключен. Проверьте запуск QA API и разрешение локального доступа.'))
   })
   it.each(['idle', 'busy', 'absent', 'unknown'] as const)('says nothing about the worker in the upload and retry notices when it is %s', async (state) => {
     for (const reused of [false, true]) {
