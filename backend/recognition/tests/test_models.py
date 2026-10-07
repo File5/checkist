@@ -170,6 +170,10 @@ class RecognitionMigrationTests(TransactionTestCase):
             self.assertFalse(any(name.startswith("recognition_") for name in connection.introspection.table_names()))
             self.assertEqual(before, [list(model.objects.order_by("pk").values()) for model in models])
         finally:
-            MigrationExecutor(connection).migrate([("recognition", "0001_initial")])
+            # Back to the latest migration, not to 0001: the following tests need the owner column.
+            executor = MigrationExecutor(connection)
+            executor.migrate(executor.loader.graph.leaf_nodes("recognition"))
         self.assertEqual(before, [list(model.objects.order_by("pk").values()) for model in models])
         self.assertEqual(SourcePhoto.objects.count(), 0)
+        # The schema is the current one again: a photo with an owner is accepted.
+        self.assertEqual(make_photo().owner_id, receipt.owner_id)

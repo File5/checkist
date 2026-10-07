@@ -26,7 +26,9 @@ DOMAIN = "checkist.example"
 UPSTREAM = "127.0.0.1:8000"
 SPA_ROOT = "/opt/checkist/frontend/dist"
 SECRETS = ("DJANGO_SECRET_KEY", "POSTGRES_PASSWORD")
-# Read by the settings only after the accounts stage; listed here until then.
+# Read by the settings: `accounts` by default, `local_single` is refused with DJANGO_DEBUG=0.
+# The sample names the server mode explicitly, so a QA `local_single` in the process environment
+# does not reach the settings load below.
 AUTH_MODE = "CHECKIST_AUTH_MODE"
 # Fictional values for a settings load.
 SERVER_KEY = "test-only-9f3b7c1e5a2d8046bd17c93e60fa4852-Qx7Lm2Zr8Vt5Hn"
@@ -304,7 +306,7 @@ class DeployFilesTests(SimpleTestCase):
         source = (settings.BASE_DIR / "config" / "settings.py").read_text(encoding="utf-8")
         for name in env_example():
             with self.subTest(name=name):
-                self.assertTrue(name == AUTH_MODE or f'"{name}"' in source)
+                self.assertIn(f'"{name}"', source)
 
     def load_settings(self, **overrides):
         with tempfile.TemporaryDirectory() as directory:
