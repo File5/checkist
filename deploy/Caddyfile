@@ -1,0 +1,54 @@
+# Checkist behind Caddy. Replace checkist.example with the real domain here and in
+# /etc/checkist/checkist.env (DJANGO_ALLOWED_HOSTS, DJANGO_CSRF_TRUSTED_ORIGINS).
+# HTTPS certificate and the http -> https redirect are automatic for a domain site address.
+#
+# No `log` directive: the access log would carry receipt and product ids; errors go to the journal.
+# No `trusted_proxies`: Caddy overwrites X-Forwarded-For / X-Forwarded-Proto sent by a client,
+# which is what DJANGO_TRUST_PROXY=1 relies on.
+checkist.example {
+	encode zstd gzip
+
+	# An upload is at most 20 MiB of image (RECEIPT_IMAGE_MAX_BYTES) plus the multipart envelope.
+	request_body {
+		max_size 25MB
+	}
+
+	# On every response, including the files Caddy serves itself; replaces the values Django sent.
+	# Keep max-age equal to DJANGO_HSTS_SECONDS and raise both only after the server is accepted.
+	header {
+		X-Robots-Tag "noindex, nofollow"
+		Strict-Transport-Security "max-age=3600"
+		-Server
+		defer
+	}
+
+	# Django: API, admin, robots.txt and uploaded files. Uploaded files are never read from
+	# disk by Caddy: only Django knows whose file it is.
+	@django path /api/* /admin /admin/* /media/* /robots.txt
+	handle @django {
+		reverse_proxy 127.0.0.1:8000
+	}
+
+	# `manage.py collectstatic` output (DJANGO_STATIC_ROOT): admin styles and scripts.
+	handle /static/* {
+		root * /var/lib/checkist/static
+		uri strip_prefix /static
+		file_server
+	}
+
+	# Built SPA (`npm run build`). Hashed assets never change; a missing one is a 404, not the page.
+	handle /assets/* {
+		root * /opt/checkist/frontend/dist
+		@built file
+		header @built Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
+	# Every other address is a client route: the page itself, always revalidated.
+	handle {
+		root * /opt/checkist/frontend/dist
+		header Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+}
