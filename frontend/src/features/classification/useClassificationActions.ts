@@ -54,3 +54,12 @@ export function useAreaFocus<T extends HTMLElement>() {
     closed: useCallback((key: string) => { wanted.current = `[data-class-trigger="${key}"]` }, []),
   }
 }
+
+/** A read of the list closed the area the person was in: focus left on nothing goes to the message, a focus elsewhere stays. */
+export function useNoticeFocus(notice: string | undefined, result: { current: HTMLElement | null }) {
+  useEffect(() => {
+    if (notice === undefined) return
+    const active = document.activeElement
+    if (!active || active === document.body) result.current?.focus()
+  }, [notice, result])
+}

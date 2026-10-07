@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Ref } from 'react'
 import { getProductClassification, getProductClassifications, getProductClassificationState } from '../../api/product-classifications'
 import type { Classification, ClassificationState } from '../../api/product-classifications'
@@ -15,13 +15,14 @@ import { useRequest } from '../recognition/useRequest'
 import { keepsArea, retryable } from './actions'
 import type { ActionLifecycle, ActionState, ClassificationAction } from './actions'
 import ClassificationBlock from './ClassificationBlock'
-import { filters } from './labels'
+import { areaNotice, filters } from './labels'
 import { FlatList, GroupList } from './RecordList'
 import type { RecordHandlers } from './RecordList'
 import StatePanel, { RunButton } from './StatePanel'
-import { applyRunRequest, areaKey, listParams, openArea, replaceRecords, runFinished, stateActive } from './state'
-import type { OpenArea } from './state'
-import { useActionFocus, useAreaFocus, useClassificationActions } from './useClassificationActions'
+import { createReadSync } from './list-sync'
+import { applyRunRequest, areaFate, areaKey, listParams, openArea, openedArea, replaceRecords, stateActive } from './state'
+import type { OpenArea, Opened } from './state'
+import { useActionFocus, useAreaFocus, useClassificationActions, useNoticeFocus } from './useClassificationActions'
 import './Classification.css'
 
 const ownFocus = { [focusOwnerAttribute]: '' }
@@ -29,9 +30,11 @@ const apiOff = <T,>(state: State<T>) => (state.kind === 'error' && state.error.r
   || (state.kind === 'ok' && state.refreshError?.reason === 'permission_denied')
 
 /** Pure markup of the screen: the page below only connects requests and actions to it. */
-export function ClassificationView({ query, state, list, action, open, optionsReload = 0, onRun, onRetryAction, onRetryState, onRetryList, resultRef, rootRef, ...handlers }: {
+export function ClassificationView({ query, state, list, action, open, notice, optionsReload = 0, onRun, onRetryAction, onRetryState, onRetryList, resultRef, rootRef, ...handlers }: {
   query: ClassificationQuery; state: State<ClassificationState>; list: State<Page<Classification>>
   action: ActionState; open?: OpenArea; optionsReload?: number
+  /** A read of the list closed the open area: said where the results of record actions are. */
+  notice?: string
   onRun: () => void; onRetryAction: () => void; onRetryState: () => void; onRetryList: () => void
   resultRef?: Ref<HTMLParagraphElement>; rootRef?: Ref<HTMLDivElement>
 } & RecordHandlers) {
@@ -41,11 +44,13 @@ export function ClassificationView({ query, state, list, action, open, optionsRe
   const runAction = action.kind !== 'idle' && action.action.type === 'run'
   // The message of a record or group action lives in the list; the one of «Предложить категории» — next to its button.
   const shown = !runAction && (action.kind === 'done' || action.kind === 'failed') ? action : undefined
+  const listText = notice ?? shown?.message ?? ''
+  const panelResult = runAction && notice === undefined
   const stateData = state.kind === 'ok' ? state.data : undefined
   const area = list.kind === 'ok' ? openArea(open, list.data.results) : undefined
   const title = `${query.product === undefined ? filter.label : `Записи товара №${query.product} · ${filter.label}`} · Страница ${query.page.toLocaleString('ru-RU')}`
   return <div className="ck-class" ref={rootRef}>
-    <StatePanel state={state} action={action} unavailable={unavailable} onRun={onRun} onRetry={onRetryState} resultRef={runAction ? resultRef : undefined} />
+    <StatePanel state={state} action={action} unavailable={unavailable} onRun={onRun} onRetry={onRetryState} resultRef={panelResult ? resultRef : undefined} />
     <nav className="ck-class-filter" aria-label="Состояние записей">
       <ul>{filters.map((item) => <li key={item.value}>
         <Link to={{ kind: 'classification', query: { ...(item.value && { status: item.value }), ...(query.product !== undefined && { product: query.product }), page: 1 } }}
@@ -57,11 +62,12 @@ export function ClassificationView({ query, state, list, action, open, optionsRe
         ? <Link className="action-link" to={{ kind: 'classification', query: { ...query, page: 1 } }}>На первую страницу</Link> : undefined}
       lead={<>
         {query.product !== undefined && <p><Link className="action-link" to={{ kind: 'classification', query: { ...(query.status && { status: query.status }), page: 1 } }}>Показать записи всех товаров</Link></p>}
-        <div className={`ck-class-result-bar${shown ? ' ck-class-result-shown' : ''}`} {...ownFocus}>
-          <p ref={runAction ? undefined : resultRef} tabIndex={-1} role="status" aria-live="polite" className={shown?.kind === 'failed' ? 'ck-class-error' : 'ck-class-result'}>
-            {shown ? shown.message : ''}
+        <div className={`ck-class-result-bar${listText ? ' ck-class-result-shown' : ''}`} {...ownFocus}>
+          <p ref={panelResult ? undefined : resultRef} tabIndex={-1} role="status" aria-live="polite"
+            className={notice !== undefined || shown?.kind === 'failed' ? 'ck-class-error' : 'ck-class-result'}>
+            {listText}
           </p>
-          {!runAction && retryable(action) && <button type="button" className="ck-class-secondary" disabled={unavailable} onClick={onRetryAction}>Повторить</button>}
+          {notice === undefined && !runAction && retryable(action) && <button type="button" className="ck-class-secondary" disabled={unavailable} onClick={onRetryAction}>Повторить</button>}
         </div>
       </>}>
       {(data) => data.results.length === 0
@@ -90,19 +96,18 @@ export default function ClassificationPage({ query }: ClassificationPageProps) {
   // The state is polled every 2 seconds while its run is queued or running.
   const stateRequest = useRequest(loadState, stateActive)
   const listRequest = useRequest(loadList)
-  const [open, setOpen] = useState<OpenArea>()
+  // An area belongs to the list it was opened in: another filter, product or page starts without it.
+  const place = `${status ?? ''}/${product ?? ''}/${page}`
+  const [openedAt, setOpened] = useState<Opened & { place: string }>()
+  const opened = openedAt?.place === place ? openedAt : undefined
   const [optionsReload, setOptionsReload] = useState(0)
   const states = stateRequest.request
   const lists = listRequest.request
 
-  // A run that was active and is not any more has put its suggestions into the list: read it once.
-  const seen = useRef<ClassificationState | undefined>(undefined)
-  useEffect(() => {
-    if (stateRequest.state.kind !== 'ok') return
-    const next = stateRequest.state.data
-    if (seen.current !== next && runFinished(seen.current, next)) lists.queueRefresh()
-    seen.current = next
-  }, [stateRequest.state, lists])
+  // The two requests are read independently: every state either of them publishes is checked against the other one,
+  // so the list follows the batches of an active run and the counters never contradict it for long.
+  const reads = useMemo(() => createReadSync(states, lists, { status, product }), [states, lists, status, product])
+  useEffect(() => reads.start(), [reads])
 
   const lifecycle = useMemo<ActionLifecycle>(() => {
     const replace = (records: Classification[]) => {
@@ -116,14 +121,24 @@ export default function ClassificationPage({ query }: ClassificationPageProps) {
         replace(outcome.records)
         const current = states.getSnapshot()
         if (outcome.run && current.kind === 'ok') states.setData(applyRunRequest(current.data, outcome.run))
-        setOpen(undefined)
+        setOpened(undefined)
+        reads.afterAction()
         states.resume()
         lists.resume()
       },
       failure: (error: LocalApiFailure, action: ClassificationAction, records: Classification[]) => {
         replace(records)
-        if (!keepsArea(error, action)) setOpen(undefined)
-        else if (action.type === 'choose' && error.reason !== 'classification_busy' && error.reason !== 'csrf_failed') setOptionsReload((count) => count + 1)
+        if (!keepsArea(error, action)) setOpened(undefined)
+        else {
+          // The kept area goes on from the records as the action left them.
+          const current = lists.getSnapshot()
+          if (current.kind === 'ok') setOpened((area) => {
+            const kept = area && openedArea(area.area, current.data.results)
+            return kept && { ...kept, place: area.place }
+          })
+          if (action.type === 'choose' && error.reason !== 'classification_busy' && error.reason !== 'csrf_failed') setOptionsReload((count) => count + 1)
+        }
+        reads.afterAction()
         states.resume()
         lists.resume()
       },
@@ -140,15 +155,25 @@ export default function ClassificationPage({ query }: ClassificationPageProps) {
         }
       },
     }
-  }, [states, lists, loadState, loadList])
+  }, [states, lists, reads, loadState, loadList])
   const actions = useClassificationActions(lifecycle)
   const focus = useActionFocus<HTMLParagraphElement>(actions.state)
   const areas = useAreaFocus<HTMLDivElement>()
-  const run = (action: ClassificationAction) => { focus.remember(); void actions.run(action) }
+  // A read of the list leaves the open area alone while its record is what the person saw; otherwise it closes with a message.
+  const records = listRequest.state.kind === 'ok' ? listRequest.state.data.results : undefined
+  const fate = opened && records && actions.state.kind !== 'pending' ? areaFate(opened, records) : 'open'
+  const notice = opened && fate !== 'open' ? areaNotice(fate, opened.area) : undefined
+  useNoticeFocus(notice, focus.result)
+  const run = (action: ClassificationAction) => { focus.remember(); if (notice !== undefined) setOpened(undefined); void actions.run(action) }
   const failed = retryable(actions.state) ? actions.state.action : undefined
-  return <ClassificationView query={query} state={stateRequest.state} list={listRequest.state} action={actions.state} open={open} optionsReload={optionsReload}
+  return <ClassificationView query={query} state={stateRequest.state} list={listRequest.state} action={actions.state}
+    open={notice === undefined ? opened?.area : undefined} notice={notice} optionsReload={optionsReload}
     resultRef={focus.result} rootRef={areas.root} onRetryState={states.refresh} onRetryList={lists.refresh}
     onRun={() => run({ type: 'run' })} onRetryAction={() => { if (failed) run(failed) }} onAction={run}
-    onOpen={(area) => { areas.opened(); setOpen(area) }}
-    onClose={(area) => { areas.closed(areaKey(area)); setOpen(undefined) }} />
+    onOpen={(area) => {
+      const next = records && openedArea(area, records)
+      areas.opened()
+      setOpened(next && { ...next, place })
+    }}
+    onClose={(area) => { areas.closed(areaKey(area)); setOpened(undefined) }} />
 }

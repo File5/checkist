@@ -5,6 +5,7 @@ import type { BaseUnit, LocalApiFailure } from '../../api/types'
 import { formatQuantity } from '../../lib/format'
 import type { ClassificationQuery } from '../../navigation'
 import { counted } from '../merges/labels'
+import type { AreaFate, OpenArea } from './state'
 
 export const missing = 'Не указано'
 export const unitLabels: Record<BaseUnit, string> = { kg: 'кг', l: 'л', pcs: 'шт' }
@@ -113,4 +114,13 @@ export function errorText(error: LocalApiFailure, context: 'read' | 'action' | '
       : 'Ответ сервера не соответствует ожидаемому формату. Повторите запрос позже.'
     default: return 'Запрос не выполнен. Повторите действие позже.'
   }
+}
+
+/** A read of the list closed an open area: the same words as the refusal the action itself would have got. */
+export function areaNotice(fate: Exclude<AreaFate, 'open'>, area: OpenArea): string {
+  if (area.kind === 'bulk') return fate === 'changed'
+    ? 'Состав группы изменился. Данные обновлены: проверьте группу и повторите действие.'
+    : 'В группе больше нет записей для подтверждения. Показано актуальное состояние.'
+  return fate === 'changed' ? errorText({ kind: 'error', reason: 'classification_changed' }, 'action')
+    : 'Предложение уже решено либо записи больше нет в этом списке. Показано актуальное состояние.'
 }

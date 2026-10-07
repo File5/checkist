@@ -1,10 +1,11 @@
 import { classificationConfirmLimit } from '../../api/product-classifications'
 import type {
-  Classification, ClassificationConfirmItem, ClassificationParams, ClassificationRun, ClassificationRunRequest, ClassificationState,
+  Classification, ClassificationConfirmItem, ClassificationParams, ClassificationRunRequest, ClassificationState,
   ClassificationSuggested,
 } from '../../api/product-classifications'
 import type { GenericProduct, Page } from '../../api/types'
 import type { ClassificationQuery } from '../../navigation'
+import { runActive } from './list-sync'
 
 /** One page holds as many records as the server allows, so a group is rarely split between pages. */
 export const listPageSize = 200
@@ -62,12 +63,7 @@ export function searchQuery(text: string): { q?: string; short: boolean } {
   return length === 0 ? { short: false } : length < 2 ? { short: true } : { q: value, short: false }
 }
 
-export const runActive = (run: ClassificationRun | null | undefined) => run?.status === 'queued' || run?.status === 'running'
-export const stateActive = (state: ClassificationState) => runActive(state.run)
-/** The run seen as active is not active any more: its suggestions are in the list now. */
-export function runFinished(previous: ClassificationState | undefined, next: ClassificationState): boolean {
-  return runActive(previous?.run) && !runActive(next.run)
-}
+export { runActive, runFinished, stateActive } from './list-sync'
 export function canRequestRun(state: ClassificationState): boolean {
   return state.unclassified_count > 0 && !runActive(state.run)
 }
@@ -90,4 +86,28 @@ export function openArea(area: OpenArea | undefined, records: Classification[]):
   if (area.kind === 'bulk') return confirmable(records.filter((record) => record.suggested.generic.id === area.genericId)).length ? area : undefined
   const record = records.find((item) => item.id === area.id)
   return record && canAct(record) && (area.kind === 'reject' ? record.actions.can_reject : record.actions.can_choose) ? area : undefined
+}
+
+/** An open area with what the person saw when it opened. */
+export type Opened = { area: OpenArea; seen: string }
+/** What an area acts on: the version of its record, or the records «Подтвердить все» would send. Nothing — the area cannot live. */
+export function areaSeen(area: OpenArea, records: Classification[]): string | undefined {
+  if (!openArea(area, records)) return undefined
+  if (area.kind !== 'bulk') return String(records.find((record) => record.id === area.id)!.version)
+  return confirmItems(confirmable(records.filter((record) => record.suggested.generic.id === area.genericId)))
+    .map((item) => `${item.id}:${item.version}`).join(',')
+}
+export function openedArea(area: OpenArea, records: Classification[]): Opened | undefined {
+  const seen = areaSeen(area, records)
+  return seen === undefined ? undefined : { area, seen }
+}
+export type AreaFate = 'open' | 'changed' | 'gone'
+/**
+ * A read of the list never closes an area whose record is the same. A record that left the list or cannot be acted on
+ * (`gone`) and a record or a group that is not what the person saw (`changed`) close it, as the refusals
+ * `classification_resolved` and `classification_changed` of the action itself would.
+ */
+export function areaFate(opened: Opened, records: Classification[]): AreaFate {
+  const now = areaSeen(opened.area, records)
+  return now === opened.seen ? 'open' : now === undefined ? 'gone' : 'changed'
 }
