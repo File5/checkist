@@ -116,7 +116,7 @@ describe('request lifetimes (Node; React runtime is manual)', () => {
       expect(url.pathname).toBe('/api/products/')
       expect(Object.fromEntries(url.searchParams)).toEqual({ category: '2', q: 'молоко & сыр', generic: '5', page: '1' })
       expect(options.signal).toBeInstanceOf(AbortSignal)
-      expect(options.credentials).toBe('omit')
+      expect(options.credentials).toBe('same-origin')
     } finally {
       request.stop()
       vi.unstubAllGlobals()
