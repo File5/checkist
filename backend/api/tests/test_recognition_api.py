@@ -963,6 +963,6 @@ class RecognitionAPITests(TestCase):
         from recognition.images import ImageError
         from recognition.storage import accept_upload
         with self.assertRaises(ImageError) as caught:
-            accept_upload(file)
+            accept_upload(file, owner=local_user())
         self.assertEqual(caught.exception.code, "file_too_large")
         self.assertEqual(SourcePhoto.objects.count(), 0)

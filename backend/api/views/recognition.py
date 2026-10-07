@@ -18,7 +18,7 @@ from recognition.queue import QueueError, create_job, create_retry, request_canc
 from recognition.statuses import ACTIVE_JOB_STATUSES, JobStatus
 from recognition.storage import StorageError, accept_upload
 
-from .recognition_base import BoundedMultiPartParser, EmptyObjectParser, LocalAPIView
+from .recognition_base import BoundedMultiPartParser, EmptyObjectParser, LocalAPIView, request_owner
 
 
 def path_id(value):
@@ -71,7 +71,7 @@ class PhotosView(LocalAPIView):
         if len(request.FILES.getlist("file")) != 1 or len(data.getlist("file")) != 1:
             raise InvalidParameter({"file": ["Выберите один файл."]})
         try:
-            photo, created = accept_upload(request.FILES["file"])
+            photo, created = accept_upload(request.FILES["file"], owner=request_owner(request))
         except ImageError as exc:
             raise RecognitionApiError("upload_too_large" if exc.code == "file_too_large" else exc.code) from None
         except StorageError:

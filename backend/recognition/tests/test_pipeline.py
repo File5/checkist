@@ -16,6 +16,7 @@ from PIL import Image
 
 from catalog.models import Product
 from receipts.models import Receipt, ReceiptLine
+from receipts.ownership import local_user
 from recognition import queue, storage
 from recognition.demo import seed_demo
 from recognition.dto import PreparedImage
@@ -150,7 +151,7 @@ class PipelineEnvironment(TransactionTestCase):
 
     def new_job(self, path=None):
         with (path or self.double).open("rb") as stream:
-            self.photo, _ = storage.accept_upload(stream)
+            self.photo, _ = storage.accept_upload(stream, owner=local_user())
         job, _ = queue.create_job(self.photo)
         return job
 

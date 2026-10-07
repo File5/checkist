@@ -8,7 +8,16 @@ from rest_framework.renderers import JSONRenderer
 from rest_framework.views import APIView
 
 from config.exceptions import InvalidRequest, RecognitionApiError
+from receipts.ownership import local_user
 from recognition.auth import LocalRecognitionPermission
+
+
+def request_owner(request):
+    """request_owner(request) -> User; whose receipts and photos the request works with.
+
+    Views take the owner only from here. Without sign-in every request belongs to ``local``.
+    """
+    return local_user()
 
 
 class LimitedStream:
