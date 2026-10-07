@@ -1,6 +1,6 @@
 # Правила работы с Checkist
 
-Перед правками прочитайте этот файл и относящиеся к задаче документы в `docs/`: [архитектуру](docs/architecture.md), [модель данных](docs/data-model.md), [API-контракт](docs/api-contract.md), [разработку](docs/development.md), [проверки](docs/verification.md). Сверяйте утверждения с кодом, `compose.yaml` и `.env.example`. Требования конкретной задачи и проекта имеют приоритет; при существенном противоречии выясните решение, не меняйте контракт молча.
+Перед правками прочитайте этот файл и относящиеся к задаче документы в `docs/`: [архитектуру](docs/architecture.md), [модель данных](docs/data-model.md), [API-контракт](docs/api-contract.md), [разработку](docs/development.md), [проверки](docs/verification.md). Проект разделения пользователей — [docs/multi-user.md](docs/multi-user.md): решение спроектировано, не реализовано. Сверяйте утверждения с кодом, `compose.yaml` и `.env.example`. Требования конкретной задачи и проекта имеют приоритет; при существенном противоречии выясните решение, не меняйте контракт молча.
 
 ## Реализовано и планируется
 
@@ -47,7 +47,7 @@ backend/
 frontend/                 React SPA, API-адаптер, Vite config, npm lock и tests
 compose.yaml, .env.example
 README.md, AGENTS.md, CLAUDE.md
-docs/                     architecture, data-model, api-contract, development, frontend, verification
+docs/                     architecture, data-model, api-contract, development, frontend, verification, multi-user (проект, не реализовано)
 ```
 
 | Область | Владелец |
