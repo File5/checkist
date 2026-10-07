@@ -18,11 +18,11 @@ describe('product price series', () => {
     fetchMock.mockResolvedValue(response(name))
     expect(await getProductPriceSeries(1)).toEqual({ kind: 'ok', data: statsFixture(name) })
   })
-  it('is an open request: no cookies, the trailing slash and an explicit prefix', async () => {
+  it('carries the session cookie of this origin, the trailing slash and an explicit prefix', async () => {
     fetchMock.mockResolvedValue(response('price-series-milk-paid.json'))
     await getProductPriceSeries(1, {}, { baseUrl: '/other/' })
     expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(fetchMock).toHaveBeenCalledWith('/other/products/1/prices/series/', { headers: { Accept: 'application/json' }, credentials: 'omit', cache: 'no-store', signal: expect.any(AbortSignal) })
+    expect(fetchMock).toHaveBeenCalledWith('/other/products/1/prices/series/', { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store', signal: expect.any(AbortSignal) })
   })
   it('keeps prices as strings and similar series without a store', async () => {
     fetchMock.mockResolvedValue(response('price-series-milk-normalized.json'))

@@ -4,6 +4,8 @@
 
 Клиент слияния дублей товаров (Ф1) описан отдельно: [PRODUCT_MERGES.md](PRODUCT_MERGES.md).
 
+Вход, сессия и поведение транспорта при `401` / `403` (К1-А) — в разделе [Сессия и транспорт](#сессия-и-транспорт-к1-а); он действует поверх текста F1 ниже.
+
 ## Функции и результаты
 
 Все функции возвращают `Promise<ApiResult<T>>`. Типы импортируются из `types.ts`, функции — из соответствующего модуля. `params` и `options` необязательны и по умолчанию `{}`; ID — обязательный положительный безопасный `number`.
@@ -60,7 +62,7 @@ type ApiResult<T> =
 
 `ProductOrdering`: `name`, `-name`, `last_observed_at`, `-last_observed_at`. `PriceGroupBy`: `country`, `store`, `none`. `PriceInterval`: `none`, `day`, `week`, `month`. `PriceMode`: `paid`, `list`, `normalized`. `has_prices` сериализуется как `1`/`0`. История по умолчанию имеет серверный порядок `observed_at`; экран для новых записей сначала передаёт `-observed_at` явно. Размер страницы по умолчанию задаёт сервер: 50/max 200 для списков, 200/max 500 для истории.
 
-`RequestOptions.baseUrl` — публичный префикс, default `import.meta.env.VITE_API_BASE_URL || '/api'`; завершающие/повторяющиеся слэши нормализуются как в health. `signal` принадлежит экрану. Общий deadline **15 секунд на fetch + чтение JSON**, timer/listener удаляются после завершения. Все запросы анонимные, с `Accept: application/json`, `credentials: 'omit'`, `cache: 'no-store'`. Последнее — клиентская настройка, серверный Cache-Control каталога не предполагается.
+`RequestOptions.baseUrl` — публичный префикс, default `import.meta.env.VITE_API_BASE_URL || '/api'`; завершающие/повторяющиеся слэши нормализуются как в health. `signal` принадлежит экрану. Общий deadline **15 секунд на fetch + чтение JSON**, timer/listener удаляются после завершения. Все запросы идут с `Accept: application/json`, `credentials: 'same-origin'` (cookie сессии своего origin; до К1-А открытые GET шли с `omit`; health — отдельный адаптер, он остаётся с `omit`), `cache: 'no-store'`. Последнее — клиентская настройка, серверный Cache-Control каталога не предполагается.
 
 Для Node 24 CLI используйте импорты с `.ts` и явный `baseUrl`, например:
 
@@ -71,6 +73,101 @@ const result = await getProducts(
   { baseUrl: 'http://127.0.0.1:15173/api', signal: controller.signal },
 )
 ```
+
+## Сессия и транспорт (К1-А)
+
+Серверный контракт — `backend/api/views/auth.py`, эталоны — `backend/api/tests/fixtures/auth/*.json` (тесты читают их напрямую, копий нет).
+
+### Транспорт (`http.ts`, `auth-signal.ts`)
+
+| Ответ сервера | Результат адаптера | Сигнал |
+| --- | --- | --- |
+| `401` + `{"error": {"code": "not_authenticated", "message"}}` | `{ kind: 'aborted' }` — экран не показывает ошибку | `unauthenticated`, ровно один на ответ |
+| `401` с любым другим телом | `invalid_response` | нет |
+| `403 permission_denied` у локального запроса | прежний `permission_denied` | `forbidden` |
+| остальное | как раньше | нет |
+
+`ApiErrorReason` и `LocalApiErrorReason` не расширены: исчерпывающие `switch` экранов не меняются. Запрос, который владелец уже отменил, сигнал не шлёт. Автоматических повторов нет.
+
+```ts
+// auth-signal.ts — без React и без импортов
+type AuthSignal = 'unauthenticated' | 'forbidden'
+onAuthSignal(listener: (signal: AuthSignal) => void): () => void   // возвращает отписку
+reportAuthSignal(signal: AuthSignal): void                          // сбой слушателя не ломает запрос
+```
+
+`JsonRequest.emptyStatuses` — статусы успеха без тела (`204`): тело не читается, валидатор получает `null`. `sendJson` — тот же транспорт с собственным разбором отказа; им пользуется только `session.ts`.
+
+### Адаптеры (`session.ts`, guard — `session-schema.ts`)
+
+```ts
+type Me = {
+  mode: 'accounts' | 'local_single'
+  user: { id: number; username: string; is_staff: boolean }
+  permissions: { moderate_catalog: boolean }
+  csrf_token: string            // не выводить и не хранить вне адаптеров
+}
+type AuthResult<T> = { kind: 'ok'; data: T } | AuthFailure | { kind: 'aborted' }
+type AuthFailure = { kind: 'error'; reason: AuthFailureReason; status?: number
+  fields?: string[]; retryAfter?: number; passwordIssues?: PasswordIssue[] }
+type PasswordIssue = 'too_short' | 'too_common' | 'entirely_numeric' | 'too_similar'
+
+getMe(options?): Promise<AuthResult<Me>>
+login({ username, password }, options?): Promise<AuthResult<Me>>
+logout(options?): Promise<AuthResult<null>>
+changePassword({ current_password, new_password }, options?): Promise<AuthResult<Me>>
+clearAuthCsrf(options?): void   // тестам и скриптам, которые сами меняют cookie
+```
+
+| Вызов | Запрос | Что различает клиент |
+| --- | --- | --- |
+| `getMe` | `GET me/` | `200` «Я»; `401 not_authenticated` → `reason: 'not_authenticated'` — это **гость**, сигнал не шлётся |
+| `login` | `GET auth/csrf/` (если токена нет), затем `POST auth/login/` | `200` «Я»; `401 invalid_credentials` (сигнал не шлётся); `429 login_throttled` + `retryAfter` (секунды из тела, заголовок не читается); `400 invalid_parameter` с `fields` / `invalid_request`; `403 csrf_failed`; `404 not_found` в `local_single` |
+| `logout` | `POST auth/logout/`, тело `{}` | `204` без тела → `data: null`; гостю тоже `204` |
+| `changePassword` | `POST auth/password/` | `200` «Я» (эта сессия жива); `400 invalid_parameter`: `fields` — `current_password` либо `new_password`, для нового пароля `passwordIssues`; `429 login_throttled`; `401 not_authenticated` → `aborted` + сигнал `unauthenticated`, как у любого запроса посреди сеанса |
+
+Прочие `reason`: `server`, `network`, `timeout`, `invalid_response` (в него попадает всё вне контракта: `429` без пригодного `retry_after`, неизвестный код причины пароля, `401` с чужим кодом). Серверные фразы и пароль в результат не попадают.
+
+Токен CSRF этих POST живёт только в памяти модуля, отдельно для каждого `baseUrl`: до входа — из анонимного `GET auth/csrf/`, после входа и смены пароля — из ответа «Я». `403 csrf_failed` забывает токен; POST не повторяется, следующая явная попытка берёт новый. Успешные вход, выход и смена пароля сбрасывают и токен локального API (`clearRecognitionCsrf`): Django меняет его при входе. `src/api/local.ts` не менялся — после сброса `mutate` сам читает `recognition/csrf/` (в `accounts` он требует входа).
+
+Для Node-скриптов адаптеры пригодны с явным `baseUrl`; cookie (`csrftoken`, `sessionid`) скрипт переносит сам.
+
+### Хранилище (`../session/store.ts`, хук — `../session/index.ts`)
+
+```ts
+type Session =
+  | { kind: 'loading' } | { kind: 'error' }
+  | { kind: 'guest'; expired: boolean }
+  | { kind: 'user'; mode: Me['mode']; user: Me['user']; permissions: Me['permissions'] }
+
+getSession(): Session
+subscribeSession(listener: () => void): () => void
+loadSession(signal?: AbortSignal): Promise<void>   // GET /api/me/
+applyMe(me: Me | null): void                        // «Я» из ответа входа или смены пароля; null — после выхода
+canModerate(session: Session): boolean
+permissionDeniedText(session: Session): string
+useSession(): Session                               // только из index.ts
+```
+
+- `loadSession`: `200` → `user`; `401 not_authenticated` → `guest`; сбой первого чтения → `error`, повтор из `error` проходит через `loading`. Уже известная сессия (`user` / `guest`) перечитывается тихо: без `loading`, сбой чтения её не меняет. Из двух пересекающихся чтений применяется только последнее; ответ, запрошенный до `applyMe` или до конца сеанса, отбрасывается.
+- `guest.expired` — сеанс закончился посреди работы (сигнал `unauthenticated` либо `401` при перечитывании пользователя); пометка держится до входа. После выхода — `expired: false`.
+- Сигнал `forbidden` у пользователя `accounts` перечитывает «Я» (одно чтение на несколько отказов): так обнаруживается отозванное право. В `local_single`, у гостя и до первого чтения оба сигнала игнорируются.
+- Снимок не пересоздаётся и подписчики не будятся, пока не изменились режим, пользователь или право. Токен CSRF в сессии не хранится.
+- `applyMe`, конец сеанса и смена пользователя при чтении сбрасывают токен локального API; перечитывание того же пользователя — нет (иначе оборвался бы идущий POST).
+- `canModerate` — право `permissions.moderate_catalog` (в `local_single` оно есть всегда); `is_staff` права не даёт.
+- `permissionDeniedText`: пользователю `accounts` — «Нет права модератора каталога.», иначе прежний текст про `ALLOW_LOCAL_RECOGNITION_API=1`.
+- `store.ts` не использует `window` и React; `resetSession` в нём — только для тестов. Хранилище рассчитано на браузер и Vitest: без `baseUrl` оно читает `import.meta.env`, Node-скриптам нужны адаптеры, а не оно.
+
+### Отличия от плана А3 (раздел 2.1)
+
+- `getMe` возвращает `AuthResult<Me>`, а не `ApiResult<Me>`: анониму в `accounts` сервер отвечает `401`, и гостя нужно отличить от сбоя.
+- В «Я» нет `user: null` и `is_moderator`: право — `permissions.moderate_catalog`, поэтому в `Session` есть `permissions`.
+- `logout` возвращает `AuthResult<null>` (сервер отвечает `204`), `applyMe` принимает `null` для выхода.
+- В `AuthFailureReason` добавлены `not_authenticated` (только `getMe`) и `not_found` (`local_single`).
+
+### Не проверено (К1-А)
+
+Разработчик запускал только статические проверки: `npx.cmd tsc -b` и `npm.cmd run lint` — exit 0. Тесты и сборку не запускал. Для QA, в `frontend/`: `npm.cmd ci`, `npm.cmd run lint`, `npm.cmd run test`, `npm.cmd run build`. Настоящий HTTP входа (cookie `sessionid`, смена токена Django при входе, `204` через Vite proxy) проверяет скрипт подзадачи К1-Д; поведение в браузере — ручная приёмка.
 
 ## Экспортируемые типы данных
 
