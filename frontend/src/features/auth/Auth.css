@@ -1,0 +1,24 @@
+.ck-auth { display: grid; gap: 20px; min-width: 0; max-width: 520px; overflow-wrap: anywhere; }
+.ck-auth-panel { display: grid; gap: 18px; min-width: 0; padding: 24px; background: #fff; border: 1px solid #d7e0d3; border-radius: 16px; }
+.ck-auth-panel > * { min-width: 0; max-width: 100%; }
+.ck-auth-field { display: grid; gap: 6px; min-width: 0; }
+.ck-auth-field label { font-weight: 600; }
+.ck-auth-field input { width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px; color: #20332c; background: #fff; border: 1px solid #6f8275; border-radius: 8px; }
+.ck-auth-field input[aria-invalid="true"] { border-color: #a33427; border-width: 2px; }
+.ck-auth-actions { display: grid; gap: 12px; justify-items: start; }
+.ck-auth button[aria-disabled="true"], .ck-auth button[aria-disabled="true"]:hover { background: #e5ebe3; border-color: #d2dccd; color: #586655; cursor: default; }
+.ck-auth-secondary { background: #fff; color: #246044; }
+.ck-auth-secondary:hover:not(:disabled) { background: #edf5ee; }
+.ck-auth-message:empty { display: none; }
+.ck-auth-message p, .ck-auth-message ul { margin: 0; }
+.ck-auth-message ul, .ck-auth-rules { padding-left: 22px; }
+.ck-auth-error { display: grid; gap: 6px; color: #8c2c22; }
+.ck-auth-done { color: #246044; font-weight: 600; }
+.ck-auth-notice { color: #604512; background: #fff4dc; border: 1px solid #dfcd9c; padding: 14px; border-radius: 8px; }
+.ck-auth-rules { margin: 0; color: #526158; font-size: 0.9rem; }
+.ck-auth-username { font-size: 1.15rem; font-weight: 600; }
+
+@media (max-width: 540px) {
+  .ck-auth-panel { padding: 20px; }
+  .ck-auth-actions button { width: 100%; }
+}

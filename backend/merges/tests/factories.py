@@ -10,6 +10,7 @@ from merges.models import (
 )
 from receipts.dedup import name_key
 from receipts.models import ProductAlias, Receipt, ReceiptDiscount, ReceiptLine, ReceiptTax
+from receipts.ownership import local_user
 from stores.models import Merchant, Store
 
 DOMAIN_MODELS = (
@@ -64,11 +65,11 @@ def add_product(name, *, store=None, **fields):
 _numbers = iter(range(1, 10_000))
 
 
-def add_line(item, raw_name, *, on=date(2026, 11, 2), price="3.49", store=None, **fields):
+def add_line(item, raw_name, *, on=date(2026, 11, 2), price="3.49", store=None, owner=None, **fields):
     """A new receipt with one line, as if imported while a group is pending."""
     store = store or main_store()
     receipt = Receipt.objects.create(
-        store=store, currency_id="EUR", operation=Receipt.Operation.SALE, purchased_on=on,
+        owner=owner or local_user(), store=store, currency_id="EUR", operation=Receipt.Operation.SALE, purchased_on=on,
         purchased_at=datetime.combine(on, time(12, 0), tzinfo=ZoneInfo(store.timezone)),
         receipt_number=f"TEST-MERGE-{next(_numbers)}", total=Decimal(price),
     )

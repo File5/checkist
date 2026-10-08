@@ -5,3 +5,4 @@ psycopg[binary]==3.3.6
 redis==6.4.0
 python-dotenv==1.2.4
 Pillow==12.3.0
+gunicorn==26.2.0

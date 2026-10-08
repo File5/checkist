@@ -96,6 +96,7 @@ export type Product = NamedObject & {
   package: { quantity: Decimal; unit: Unit } | null
   generic: GenericRef
   category: CategoryRef
+  /** Null without purchases and when the latest purchase belongs to another user. */
   last_observed_at: ISODateTime | null
   prices: ProductPrice[]
 }
@@ -109,19 +110,34 @@ export type ProductDetail = Product & {
 }
 
 export type PriceProduct = NamedObject & { base_unit: BaseUnit }
-export type PricePoint = NormalizedPrice & {
-  observed_at: ISODateTime
+type PricePointBase = NormalizedPrice & {
   purchased_on: ISODate
   store: StoreBrief
   currency: CurrencyCode
-  quantity: Decimal
   unit: Unit
   list_unit_price: Decimal
   paid_unit_price: Decimal
+}
+/** Purchase of the signed-in user: the receipt behind the price is visible. */
+export type OwnPricePoint = PricePointBase & {
+  own: true
+  observed_at: ISODateTime
+  quantity: Decimal
   discount_amount: Decimal
   receipt_id: number
   position: number
 }
+/** Purchase of another user: the price is shared, the five receipt fields are null. */
+export type ForeignPricePoint = PricePointBase & {
+  own: false
+  observed_at: null
+  quantity: null
+  discount_amount: null
+  receipt_id: null
+  position: null
+}
+/** `own` here is «my purchase»; it is unrelated to `role: 'own'` of a price series. */
+export type PricePoint = OwnPricePoint | ForeignPricePoint
 export type PriceHistory = Page<PricePoint> & { product: PriceProduct }
 export type PriceFilters = {
   store?: number

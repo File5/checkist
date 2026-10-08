@@ -8,6 +8,11 @@ vi.mock('../src/navigation', async (importOriginal) => ({
   ...await importOriginal<typeof import('../src/navigation')>(),
   useNavigation: () => navigation.snapshot,
 }))
+// The shell needs to know who works: these tests check the unchanged interface of local_single.
+vi.mock('../src/session', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../src/session')>(),
+  useSession: () => ({ kind: 'user', mode: 'local_single', user: { id: 1, username: 'local', is_staff: false }, permissions: { moderate_catalog: true } }),
+}))
 
 beforeEach(() => { navigation.snapshot = { href: '/catalog', route: { kind: 'catalog', query: { page: 1 } } } })
 

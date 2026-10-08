@@ -1,0 +1,30 @@
+# Django under gunicorn on 127.0.0.1:8000; Caddy is the only way in from outside.
+[Unit]
+Description=Checkist web (gunicorn)
+After=network.target postgresql.service redis-server.service
+Wants=postgresql.service redis-server.service
+
+[Service]
+Type=exec
+User=checkist
+Group=checkist
+WorkingDirectory=/opt/checkist/backend
+EnvironmentFile=/etc/checkist/checkist.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/checkist/backend/.venv/bin/gunicorn config.wsgi:application --config /opt/checkist/deploy/gunicorn.conf.py
+ExecReload=/bin/kill -s HUP $MAINPID
+KillMode=mixed
+TimeoutStopSec=40
+Restart=on-failure
+RestartSec=5
+
+# The web process shares the OS user with the recognition worker but must not read its Codex login.
+NoNewPrivileges=yes
+ProtectSystem=strict
+PrivateTmp=yes
+InaccessiblePaths=-/home/checkist/.codex
+# MEDIA and its staging directories, which storage creates next to MEDIA.
+ReadWritePaths=/var/lib/checkist
+
+[Install]
+WantedBy=multi-user.target

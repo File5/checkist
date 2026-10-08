@@ -134,7 +134,7 @@ class ReceiptsAPITests(TestCase):
         rates = [TaxRate.objects.create(country_id="DE", kind="vat", rate=i) for i in range(1, 5)]
         ReceiptTax.objects.bulk_create([ReceiptTax(receipt_id=71, tax_rate=rate, net="1", tax="0", gross="1") for rate in rates])
         for i in range(2, 6):
-            Receipt.objects.create(store=self.receipt.store, currency_id="EUR", operation="sale",
+            Receipt.objects.create(owner_id=self.receipt.owner_id, store=self.receipt.store, currency_id="EUR", operation="sale",
                 purchased_at=self.receipt.purchased_at + timedelta(minutes=i), purchased_on=self.receipt.purchased_on,
                 total="1", receipt_number=f"PRIVATE {i}")
         for size in (1, 5):

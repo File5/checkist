@@ -5,6 +5,7 @@ from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
+from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.test import TestCase, override_settings, tag
 from django.utils import timezone
@@ -380,6 +381,125 @@ class ConfirmManyTests(SuggestedTestCase):
 
 
 @tag("integration")
+class ActorTests(SuggestedTestCase):
+    """Who decided: the user given by the caller; nobody for the automation and a command."""
+
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        cls.actor = get_user_model().objects.create_user("synthetic-decider")
+        cls.other = get_user_model().objects.create_user("synthetic-other-decider")
+
+    def authors(self, model=ProductClassification, field="resolved_by_id"):
+        return set(model.objects.values_list(field, flat=True))
+
+    def test_applied_suggestions_have_no_author(self):
+        self.assertEqual(ProductClassification.objects.count(), 9)
+        self.assertEqual(self.authors(), {None})
+        self.assertEqual(self.authors(ClassificationRun, "requested_by_id"), {None})
+
+    def test_confirm_records_the_actor_and_a_repeat_keeps_the_author(self):
+        entry = record(SAUSAGE_A)
+        confirmed = services.confirm(entry.pk, version=1, generic_id=entry.suggested_generic_ref, actor=self.actor)
+        self.assertEqual((confirmed.status, confirmed.resolved_by_id), ("confirmed", self.actor.pk))
+        self.assertFalse(ClassificationRejection.objects.exists())
+        before = snapshot()
+        repeat = services.confirm(entry.pk, version=7, generic_id=entry.suggested_generic_ref, actor=self.other)
+        self.assertEqual(repeat.resolved_by_id, self.actor.pk)
+        self.assertUnchanged(before)
+        # The other records are still nobody's.
+        self.assertEqual(
+            set(ProductClassification.objects.exclude(pk=entry.pk).values_list("status", "resolved_by_id")),
+            {("pending", None)},
+        )
+
+    def test_choosing_another_generic_product_records_the_actor_in_the_record_and_the_rejection(self):
+        entry = record(CHEESE)
+        confirmed = services.confirm(entry.pk, version=1, generic_id=generic("Молоко").pk, actor=self.actor)
+        self.assertEqual((confirmed.resolution, confirmed.resolved_by_id), ("other", self.actor.pk))
+        self.assertEqual(
+            list(ClassificationRejection.objects.values_list("product__name", "classification_id", "created_by_id")),
+            [(CHEESE, entry.pk, self.actor.pk)],
+        )
+
+    def test_reject_records_the_actor_in_the_record_and_the_rejection(self):
+        entry = record(MILK)
+        rejected = services.reject(entry.pk, version=1, actor=self.actor)
+        self.assertEqual((rejected.status, rejected.resolved_by_id), ("rejected", self.actor.pk))
+        self.assertEqual(
+            list(ClassificationRejection.objects.values_list("product__name", "created_by_id")),
+            [(MILK, self.actor.pk)],
+        )
+        before = snapshot()
+        self.assertEqual(services.reject(entry.pk, version=1, actor=self.other).resolved_by_id, self.actor.pk)
+        self.assertUnchanged(before)
+
+    def test_confirm_many_records_the_actor_and_keeps_the_author_of_a_confirmed_record(self):
+        milk = record(MILK)
+        services.confirm(milk.pk, version=1, generic_id=milk.suggested_generic_ref, actor=self.actor)
+        result = services.confirm_many(
+            [(milk.pk, 1), (record(KEFIR_A).pk, 1), (record(KEFIR_B).pk, 1)], actor=self.other,
+        )
+        self.assertEqual({entry.product_name: entry.resolved_by_id for entry in result}, {
+            MILK: self.actor.pk, KEFIR_A: self.other.pk, KEFIR_B: self.other.pk,
+        })
+
+    def test_refused_decisions_record_nobody(self):
+        entry = record(SAUSAGE_A)
+        self.assertRefused(
+            services.ClassificationChanged,
+            lambda: services.confirm(entry.pk, version=9, generic_id=entry.suggested_generic_ref, actor=self.actor),
+        )
+        self.assertRefused(
+            services.ClassificationChanged, lambda: services.reject(entry.pk, version=9, actor=self.actor),
+        )
+        self.assertRefused(
+            services.ClassificationChanged,
+            lambda: services.confirm_many([(entry.pk, 9), (record(JUICE).pk, 1)], actor=self.actor),
+        )
+        self.assertEqual(self.authors(), {None})
+
+    def test_record_closed_by_the_reconciliation_of_a_call_has_no_author(self):
+        Product.objects.filter(name=JUICE).update(generic=generic("Молоко"))
+        entry = record(JUICE)
+        calls = (
+            lambda: services.confirm(entry.pk, version=1, generic_id=entry.suggested_generic_ref, actor=self.actor),
+            lambda: services.reject(entry.pk, version=1, actor=self.actor),
+            lambda: services.confirm_many([(entry.pk, 1)], actor=self.actor),
+        )
+        for call in calls:
+            with self.assertRaises(services.ClassificationResolved):
+                call()
+        closed = record(JUICE)
+        self.assertEqual((closed.status, closed.resolution, closed.resolved_by_id), ("superseded", "changed", None))
+        self.assertFalse(ClassificationRejection.objects.exists())
+
+    def test_calls_without_an_actor_reconcile_and_cancel_pending_record_nobody(self):
+        services.confirm(record(SAUSAGE_A).pk, version=1, generic_id=record(SAUSAGE_A).suggested_generic_ref)
+        services.confirm(record(CHEESE).pk, version=1, generic_id=generic("Молоко").pk)
+        services.reject(record(MILK).pk, version=1)
+        services.confirm_many([(record(KEFIR_A).pk, 1)])
+        Product.objects.filter(name=JUICE).update(generic=generic("Молоко"))
+        services.reconcile()
+        self.assertEqual((record(JUICE).status, record(JUICE).resolution), ("superseded", "changed"))
+        services.cancel_pending()
+        self.assertFalse(ProductClassification.objects.filter(status="pending").exists())
+        self.assertEqual(self.authors(), {None})
+        self.assertEqual(ClassificationRejection.objects.count(), 2)
+        self.assertEqual(self.authors(ClassificationRejection, "created_by_id"), {None})
+
+    def test_cancel_pending_keeps_the_author_of_earlier_decisions(self):
+        entry = record(MILK)
+        services.reject(entry.pk, version=1, actor=self.actor)
+        services.cancel_pending()
+        self.assertEqual(
+            dict(ProductClassification.objects.values_list("resolution", "resolved_by_id").distinct()),
+            {"rejected": self.actor.pk, "cancelled": None},
+        )
+        self.assertEqual(self.authors(ClassificationRejection, "created_by_id"), {self.actor.pk})
+
+
+@tag("integration")
 class ReconcileTests(SuggestedTestCase):
     def test_deleted_product_closes_the_record(self):
         entry = record(JUICE)
@@ -601,6 +721,37 @@ class RunTests(TestCase):
         with override_settings(RECEIPT_OCR_PROVIDER="codex_cli", RECEIPT_OCR_MODEL="demo-model"):
             run, _created = services.request_run(trigger="manual")
         self.assertEqual((run.provider, run.model), ("codex_cli", "demo-model"))
+
+    def test_run_keeps_who_asked_for_it(self):
+        actor, other = (get_user_model().objects.create_user(f"synthetic-decider-{n}") for n in (1, 2))
+        run, created = services.request_run(trigger="manual", actor=actor)
+        self.assertEqual((created, run.requested_by_id), (True, actor.pk))
+        # The active run is returned as it is: the first author stays.
+        before = snapshot()
+        again, created = services.request_run(trigger="manual", actor=other)
+        self.assertEqual((again.pk, created, again.requested_by_id), (run.pk, False, actor.pk))
+        self.assertEqual(snapshot(), before)
+        # An import that joins the run does not change the author either.
+        fresh = add_product("Demo Neu")
+        joined, created = services.request_run(trigger="import", product_ids=[fresh.pk])
+        self.assertEqual((joined.pk, created, joined.version), (run.pk, False, 2))
+        self.assertEqual(ClassificationRun.objects.get(pk=run.pk).requested_by_id, actor.pk)
+
+    def test_import_and_command_runs_have_no_author(self):
+        actor = get_user_model().objects.create_user("synthetic-decider")
+        for trigger, options in (("import", {"product_ids": self.ids(TOAST, JUICE)}), ("command", {}), ("manual", {})):
+            with self.subTest(trigger=trigger):
+                run, created = services.request_run(trigger=trigger, **options)
+                self.assertEqual((created, run.trigger, run.requested_by_id), (True, trigger, None))
+                run.delete()
+        # A manual request that widens the queued run of an import leaves it without an author.
+        queued, _created = services.request_run(trigger="import", product_ids=self.ids(TOAST, JUICE))
+        widened, created = services.request_run(trigger="manual", actor=actor)
+        self.assertEqual((widened.pk, created, widened.scope, widened.trigger), (queued.pk, False, "all", "import"))
+        self.assertIsNone(ClassificationRun.objects.get(pk=queued.pk).requested_by_id)
+        # A run started in the process (the ``suggest`` command) has none as well.
+        widened.delete()
+        self.assertIsNone(services.start_run().requested_by_id)
 
     def test_nothing_to_suggest(self):
         Product.objects.filter(generic=service()).update(generic=generic("Молоко"))

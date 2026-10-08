@@ -92,11 +92,11 @@ describe('reading parameters', () => {
     expect(await getProductClassifications({ status: 'rejected' })).toEqual({ kind: 'ok', data: empty })
     expect(await getProductClassificationState()).toMatchObject({ kind: 'ok', data: { run: null, pending_count: 0 } })
   })
-  it('reads the options of «выбрать другой» from the unchanged catalog list without credentials', async () => {
+  it('reads the options of «выбрать другой» from the unchanged catalog list with the session cookie of this origin', async () => {
     fetchMock.mockResolvedValue(json({ count: 0, page: 1, page_size: 50, pages: 0, results: [] }))
     expect((await getGenericProducts({ q: 'сыр', page_size: 50 })).kind).toBe('ok')
     expect(fetchMock).toHaveBeenCalledWith(`/api/generic-products/?q=${encodeURIComponent('сыр')}&page_size=50`,
-      { headers: { Accept: 'application/json' }, credentials: 'omit', cache: 'no-store', signal: expect.any(AbortSignal) })
+      { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store', signal: expect.any(AbortSignal) })
   })
 })
 

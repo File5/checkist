@@ -1,13 +1,17 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { Me } from '../../api/session'
 import { detail, pageOf, product } from '../../api/test-support'
 import type { NavigationSnapshot } from '../../navigation'
 import App from '../../App'
+import { applyMe } from '../../session'
+import { resetSession } from '../../session/store'
 import ProductList from '../catalog/ProductList'
 import ProductsSection from '../catalog/ProductsSection'
 import ProductPage from '../product/ProductPage'
 import * as productRequests from '../product/useProductRequest'
 import type { RequestState } from '../recognition/polling'
+import { errorText } from './labels'
 import { pendingTargets } from './state'
 import { failed, groups, success } from './test-support'
 
@@ -20,8 +24,15 @@ vi.mock('../../navigation', async (importOriginal) => ({
   ...await importOriginal<typeof import('../../navigation')>(),
   useNavigation: () => mocked.snapshot,
 }))
-beforeEach(() => { mocked.states = []; mocked.snapshot = undefined })
-afterEach(() => { vi.restoreAllMocks() })
+// «Я» as the server answers: without accounts everyone moderates, with them — only the holder of the right.
+const me = (mode: Me['mode'], moderate_catalog: boolean): Me =>
+  ({ mode, user: { id: 3, username: 'anna', is_staff: false }, permissions: { moderate_catalog }, csrf_token: 'token' })
+const local = me('local_single', true)
+const moderator = me('accounts', true)
+const reader = me('accounts', false)
+// The former markup is the markup of local_single: the real store of the session holds it in every test.
+beforeEach(() => { mocked.states = []; mocked.snapshot = undefined; applyMe(local) })
+afterEach(() => { vi.restoreAllMocks(); resetSession() })
 
 const noop = () => {}
 const loading = { kind: 'loading' as const }
@@ -36,6 +47,29 @@ describe('catalog list marks', () => {
     expect(html.match(/class="ck-merge-badge"/g)).toHaveLength(1)
     expect(html).toContain('Steinhof.PizzaSpezial</a></h3><p class="ck-merge-badge"><a href="/catalog/merges/2">Дубли: требует подтверждения</a></p>')
     expect(html).toContain('href="/catalog/products/77"')
+  })
+  it('keeps the link for a moderator of accounts: the markup is the one of local_single', () => {
+    const render = () => renderToStaticMarkup(<ProductList products={[kept, other]} merges={pendingTargets(groups().results)} />)
+    const former = render()
+    applyMe(moderator)
+    expect(render()).toBe(former)
+    expect(former).toContain('<a href="/catalog/merges/2">Дубли: требует подтверждения</a>')
+  })
+  it.each([
+    ['a user without the right', () => applyMe(reader)], ['a guest', () => applyMe(null)], ['an unknown session', resetSession],
+  ])('shows the mark as text without a link to %s', (_name, enter) => {
+    enter()
+    const html = renderToStaticMarkup(<ProductList products={[kept, other]} merges={pendingTargets(groups().results)} />)
+    expect(html).toContain('Steinhof.PizzaSpezial</a></h3><p class="ck-merge-badge"><span>Дубли: требует подтверждения</span></p>')
+    expect(html).not.toContain('/catalog/merges')
+    expect(html).toContain('href="/catalog/products/5"'); expect(html).toContain('href="/catalog/products/77"')
+  })
+  it('shows the mark of the section as text to a user without the right', () => {
+    applyMe(reader)
+    mocked.states = [success(groups())]
+    const html = renderToStaticMarkup(<ProductsSection route={route} state={{ kind: 'ok', data: pageOf([kept, other]) }} onRetry={noop} />)
+    expect(html).toContain('<p class="ck-merge-badge"><span>Дубли: требует подтверждения</span></p>')
+    expect(html).not.toContain('/catalog/merges'); expect(html).toContain('Найдено товаров: 2')
   })
   it('renders the same list without marks when none are given', () => {
     const plain = renderToStaticMarkup(<ProductList products={[kept, other]} />)
@@ -81,6 +115,21 @@ describe('product card marks', () => {
     expect(html).toContain('href="/catalog/merges/2">Открыть группу дублей №2</a>')
     expect(html).toContain('<dt>Бренд</dt>')
   })
+  it('keeps the notice and its link for a moderator of accounts', () => {
+    const render = () => { mocked.states = [success(groups())]; return section(card({ kind: 'ok', data: { ...detail, id: 5 } }, 5)) }
+    const former = render()
+    applyMe(moderator)
+    expect(render()).toBe(former)
+    expect(former).toContain('href="/catalog/merges/2">Открыть группу дублей №2</a>')
+  })
+  it('announces the preliminary merge to a user without the right as text without a link to the group', () => {
+    applyMe(reader)
+    mocked.states = [success(groups())]
+    const html = section(card({ kind: 'ok', data: { ...detail, id: 5, name: 'Steinhof.PizzaSpezial' } }, 5))
+    expect(html).toContain('<p>Предварительно объединено 3 написания — требует подтверждения. Покупки всех написаний уже показаны в этой карточке.</p></div>')
+    expect(html).not.toContain('/catalog/merges'); expect(html).not.toContain('Открыть группу дублей')
+    expect(html).toContain('<dt>Бренд</dt>')
+  })
   it('shows no notice on a product outside pending groups, including the kept product of a confirmed group', () => {
     mocked.states = [success(groups())]
     expect(section(card({ kind: 'ok', data: { ...detail, id: 2 } }, 2))).not.toContain('Предварительно объединено')
@@ -105,6 +154,22 @@ describe('product card marks', () => {
     expect(section(html).match(/<a /g)).toHaveLength(1)
     expect(html).not.toContain('Загружаем историю покупок…')
   })
+  it('leads an absorbed id of a pending group to the kept product for a user without the right', () => {
+    applyMe(reader)
+    mocked.states = [success(groups())]
+    const html = section(card({ kind: 'error', reason: 'not_found', status: 404 }, 26))
+    expect(html).toContain('>Товар объединён</h2>')
+    expect(html).toContain('Товар объединён с «Steinhof.PizzaSpezial». Слияние ещё ждёт подтверждения.')
+    expect(html).not.toContain('в группе дублей'); expect(html).not.toContain('/catalog/merges')
+    expect(html).toContain('href="/catalog/products/5">Открыть товар «Steinhof.PizzaSpezial»</a>')
+    expect(html.match(/<a /g)).toHaveLength(1)
+  })
+  it('leads an id deleted by a confirmed merge to the kept product for everyone', () => {
+    const render = () => { mocked.states = [success(groups())]; return section(card({ kind: 'error', reason: 'not_found', status: 404 }, 36)) }
+    const former = render()
+    applyMe(reader)
+    expect(render()).toBe(former)
+  })
   it('leads an id deleted by a confirmed merge to the kept product', () => {
     mocked.states = [success(groups())]
     const html = section(card({ kind: 'error', reason: 'not_found', status: 404 }, 36))
@@ -127,6 +192,33 @@ describe('product card marks', () => {
     mocked.states = [success(groups())]
     const html = section(card({ kind: 'error', reason: 'network' }, 26))
     expect(html).toContain('Повторить'); expect(html).not.toContain('Товар объединён')
+  })
+})
+
+describe('text of a refused access', () => {
+  const denied = { kind: 'error' as const, reason: 'permission_denied' as const, status: 403 }
+  const localText = 'Локальный API выключен или недоступен с этого адреса. Запустите сервер с ALLOW_LOCAL_RECOGNITION_API=1 и откройте приложение с этого компьютера.'
+
+  it('names the missing right to a user of accounts, for a read and for an action', () => {
+    applyMe(reader)
+    expect(errorText(denied)).toBe('Нет права модератора каталога.')
+    expect(errorText(denied, true)).toBe('Нет права модератора каталога.')
+    // The right was there when the screen opened and is withdrawn now: the text is the same.
+    applyMe(moderator)
+    expect(errorText(denied, true)).toBe('Нет права модератора каталога.')
+  })
+  it.each([
+    ['local_single', () => applyMe(local)], ['a guest', () => applyMe(null)], ['an unknown session', resetSession],
+  ])('keeps the former text about the local API for %s', (_name, enter) => {
+    enter()
+    expect(errorText(denied)).toBe(localText)
+    expect(errorText(denied, true)).toBe(localText)
+  })
+  it('leaves every other text independent of the session', () => {
+    const texts = () => (['csrf_failed', 'not_found', 'merge_busy', 'network', 'server'] as const).map((reason) => errorText({ kind: 'error', reason }, true))
+    const former = texts()
+    applyMe(reader)
+    expect(texts()).toEqual(former)
   })
 })
 

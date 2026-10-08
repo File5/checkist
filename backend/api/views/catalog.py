@@ -2,12 +2,14 @@ from django.db.models import CharField, Count, Exists, F, Max, OuterRef, Q, Valu
 from django.db.models.functions import Cast, Coalesce, Concat, NullIf
 from rest_framework.response import Response
 
+from accounts.access import owner_q
 from api.common import (
     CategoryTree, brand_brief, generic_brief, get_or_404, iso_date, package, price, store_name, store_object,
     utc_datetime,
 )
 from api.pagination import paginate
 from api.params import MAX_ID, Params
+from api.projection import own_annotation
 from catalog.models import Brand, GenericProduct, Product
 from config.exceptions import ObjectNotFound
 from merges.visibility import visible, visible_q
@@ -84,7 +86,8 @@ class StoresView(ReadOnlyAPIView):
                 NullIf("merchant__brand_name", Value("")), NullIf("name", Value("")),
                 Concat(Value("Магазин №"), Cast("pk", CharField())), output_field=CharField(),
             ),
-            receipts_count=Count("receipts"),
+            # Чеки личные: счётчик — по чекам запроса, магазин без своих чеков остаётся в списке.
+            receipts_count=Count("receipts", filter=owner_q(request, "receipts__")),
         )
         if country is not None:
             stores = stores.filter(country=country)
@@ -244,16 +247,28 @@ class GenericProductView(ReadOnlyAPIView):
 
 # --- продукты ---
 
-def _product_objects(products, tree):
+def _last_moment(lasts):
+    """Момент самого позднего наблюдения товара либо ``None``, если оно чужое или его нет.
+
+    Точное время чужой покупки не отдаётся; её день остаётся в ``prices[].last.purchased_on``.
+    «Самое позднее» — по тому же порядку, что у истории цен: момент, чек, позиция.
+    """
+    if not lasts:
+        return None
+    last = max(lasts, key=lambda line: (line.observed_at, line.receipt_id, line.position))
+    return last.observed_at if last.own else None
+
+
+def _product_objects(products, tree, request):
     """Объекты товаров; сводка цен всего набора — двумя запросами ``price_summary``."""
-    summary = price_summary([product.pk for product in products])
+    summary = price_summary([product.pk for product in products], own=own_annotation(request))
     objects = []
     for product in products:
         generic = product.generic
-        prices, moments = [], []
+        prices, lasts = [], []
         for group in summary.get(product.pk, ()):
             last = group.last
-            moments.append(last.observed_at)
+            lasts.append(last)
             prices.append({
                 "country": group.country,
                 "currency": group.currency,
@@ -276,7 +291,7 @@ def _product_objects(products, tree):
             "package": package(product),
             "generic": generic_brief(generic),
             "category": tree.category(generic.category_id),
-            "last_observed_at": utc_datetime(max(moments, default=None)),
+            "last_observed_at": utc_datetime(_last_moment(lasts)),
             "prices": prices,
         })
     return objects
@@ -332,7 +347,7 @@ class ProductsView(ReadOnlyAPIView):
             products = products.order_by(ordering, "pk")
 
         body = paginate(products, page)
-        body["results"] = _product_objects(body["results"], tree)
+        body["results"] = _product_objects(body["results"], tree, request)
         return Response(body)
 
 
@@ -390,7 +405,7 @@ class ProductView(ReadOnlyAPIView):
     def get(self, request, pk):
         product = get_or_404(visible(Product.objects.select_related("generic__category", "brand")), _object_pk(pk))
         return Response({
-            **_product_objects([product], CategoryTree.load())[0],
+            **_product_objects([product], CategoryTree.load(), request)[0],
             "attributes": product.attributes,
             "aliases": _alias_objects(product),
             "stores": _store_objects(product),

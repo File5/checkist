@@ -75,11 +75,13 @@ def _fiscal_key(data, store_id):
     return build_fiscal_key(country_code, fiscal)
 
 
-def find_duplicates(receipt_data):
-    """Сохранённые чеки, похожие на ввод, до его сохранения: три уровня по очереди.
+def find_duplicates(receipt_data, *, owner):
+    """Сохранённые чеки владельца, похожие на ввод, до его сохранения: три уровня по очереди.
 
     ``receipt_data`` — словарь полей Receipt (``store`` — объект или id) либо
     несохранённый/сохранённый Receipt; сам чек из результата исключается.
+    ``owner`` — пользователь либо его id; чеки других владельцев не кандидаты,
+    как и в unique-ограничениях БД. Из ``receipt_data`` владелец не берётся.
 
     В отличие от unique-ограничений БД уровни не зависят от того, какие поля
     заполнены у сохранённого чека: чек, введённый с фискальным ключом, находится
@@ -87,15 +89,20 @@ def find_duplicates(receipt_data):
     и касса сравнению не мешают: на вводе это «неизвестно», а не «другая».
     Результат — кандидаты, от более сильного уровня к слабому, без повторов.
     """
+    owner_id = getattr(owner, "pk", owner)
+    if owner_id is None:
+        # Без владельца поиск молча ничего бы не нашёл, и повтор сохранился бы как новый чек.
+        raise ValueError("find_duplicates: owner is required.")
+    own = Receipt.objects.filter(owner_id=owner_id)
     store_id = _store_id(receipt_data)
     queries = []
 
     fiscal_key = _fiscal_key(receipt_data, store_id)
     if fiscal_key:
-        queries.append(Receipt.objects.filter(fiscal_key=fiscal_key))
+        queries.append(own.filter(fiscal_key=fiscal_key))
 
     if store_id is not None:
-        in_store = Receipt.objects.filter(store_id=store_id)
+        in_store = own.filter(store_id=store_id)
 
         receipt_number = _value(receipt_data, "receipt_number") or ""
         purchased_on = _value(receipt_data, "purchased_on", None)

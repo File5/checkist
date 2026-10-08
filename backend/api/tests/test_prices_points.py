@@ -19,7 +19,7 @@ INVALID = {"code": "invalid_parameter", "message": "Некорректные п�
 NOT_FOUND = {"error": {"code": "not_found", "message": "Не найдено."}}
 POINT_KEYS = {
     "observed_at", "purchased_on", "store", "currency", "quantity", "unit", "list_unit_price", "paid_unit_price",
-    "discount_amount", "normalized_price", "normalized_unit", "comparable", "receipt_id", "position",
+    "discount_amount", "normalized_price", "normalized_unit", "comparable", "receipt_id", "position", "own",
 }
 
 
@@ -65,7 +65,7 @@ class PricePointsTests(TestCase):
             "currency": "EUR", "quantity": "1.000", "unit": "pcs",
             "list_unit_price": "1.0500", "paid_unit_price": "1.0500", "discount_amount": "0.00",
             "normalized_price": None, "normalized_unit": None, "comparable": False,
-            "receipt_id": receipt.pk, "position": position, **fields,
+            "receipt_id": receipt.pk, "position": position, "own": True, **fields,
         }
 
     def test_exact_body_of_lidl_milk(self):
@@ -98,7 +98,7 @@ class PricePointsTests(TestCase):
                 "currency": "RUB", "quantity": "1.000", "unit": "pcs",
                 "list_unit_price": "111.0000", "paid_unit_price": "111.0000", "discount_amount": "0.00",
                 "normalized_price": "130.5882", "normalized_unit": "l", "comparable": True,
-                "receipt_id": self.data.shop.pk, "position": 1,
+                "receipt_id": self.data.shop.pk, "position": 1, "own": True,
             }],
         })
 
@@ -421,7 +421,7 @@ class PendingMergePricePointsTests(TestCase):
         self.assertEqual(set(body["results"][0]), {
             "observed_at", "purchased_on", "store", "currency", "quantity", "unit", "list_unit_price",
             "paid_unit_price", "discount_amount", "normalized_price", "normalized_unit", "comparable", "receipt_id",
-            "position",
+            "position", "own",
         })
 
     def test_absorbed_product_is_not_found(self):

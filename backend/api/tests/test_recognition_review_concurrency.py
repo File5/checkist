@@ -10,6 +10,7 @@ from django.test import TransactionTestCase, override_settings, tag
 from rest_framework.test import APIClient
 
 from receipts.models import Receipt, ReceiptLine
+from receipts.ownership import local_user
 from recognition import importer, review
 from recognition.importer import IMPORT_LOCK, import_receipt
 from recognition.models import ProcessingJob, ReceiptImage
@@ -254,7 +255,7 @@ class ReviewConcurrencyTests(TransactionTestCase):
         image = review_image()
         effective, _, derived = review.effective_observation(observation())
         with transaction.atomic():
-            store = importer._import_domain(effective, derived)[0].store
+            store = importer._import_domain(effective, derived, owner_id=local_user().pk)[0].store
         Receipt.objects.all().delete()
         before = image_state(image)
         original, raced = importer.clean_save, []
@@ -262,7 +263,7 @@ class ReviewConcurrencyTests(TransactionTestCase):
         def outside_writer():
             try:
                 with transaction.atomic():
-                    return importer._import_domain(effective, derived)[0].pk
+                    return importer._import_domain(effective, derived, owner_id=local_user().pk)[0].pk
             finally:
                 connections.close_all()
 

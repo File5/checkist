@@ -1,6 +1,7 @@
 from django.db.models import Exists, OuterRef, Q
 from rest_framework.response import Response
 
+from accounts.access import owner_q
 from api.common import get_or_404
 from api.pagination import paginate
 from api.params import Params
@@ -24,7 +25,7 @@ class ReceiptsView(LocalAPIView):
         date_from, date_to = params.date_range()
         search = params.search()
         params.check()
-        receipts = receipts_queryset()
+        receipts = receipts_queryset(request)
         for field, value in (("store_id", store), ("store__country_id", country),
                              ("currency_id", currency), ("operation", operation),
                              ("purchased_on__gte", date_from), ("purchased_on__lte", date_to)):
@@ -40,14 +41,19 @@ class ReceiptsView(LocalAPIView):
         return Response(paginate(receipts.order_by(ordering, "-id" if ordering.startswith("-") else "id"), page, receipt_object))
 
 
+def own_receipt(request, pk):
+    """The receipt of the request's user; another user's one is ``404`` like a missing one."""
+    return get_or_404(Receipt.objects.filter(owner_q(request)), path_id(pk))
+
+
 class ReceiptView(LocalAPIView):
     def get(self, request, pk):
-        return Response(receipt_object(get_or_404(receipts_queryset(), path_id(pk))))
+        return Response(receipt_object(get_or_404(receipts_queryset(request), path_id(pk))))
 
 
 class ReceiptLinesView(LocalAPIView):
     def get(self, request, pk):
-        receipt = get_or_404(Receipt.objects.all(), path_id(pk))
+        receipt = own_receipt(request, pk)
         params = Params(request.query_params)
         page = params.page()
         kind = params.choice("kind", ReceiptLine.Kind.values)
@@ -63,7 +69,7 @@ class ReceiptLinesView(LocalAPIView):
 
 class ReceiptDiscountsView(LocalAPIView):
     def get(self, request, pk):
-        receipt = get_or_404(Receipt.objects.all(), path_id(pk))
+        receipt = own_receipt(request, pk)
         params = Params(request.query_params)
         page = params.page()
         params.check()
@@ -72,7 +78,7 @@ class ReceiptDiscountsView(LocalAPIView):
 
 class ReceiptTaxesView(LocalAPIView):
     def get(self, request, pk):
-        receipt = get_or_404(Receipt.objects.all(), path_id(pk))
+        receipt = own_receipt(request, pk)
         params = Params(request.query_params)
         page = params.page()
         params.check()

@@ -1,0 +1,25 @@
+# Host recognition worker next to the native Codex CLI of the `checkist` user (~/.codex).
+# Enable it only after `codex login status` succeeds under that user.
+[Unit]
+Description=Checkist recognition worker
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=exec
+User=checkist
+Group=checkist
+WorkingDirectory=/opt/checkist/backend
+EnvironmentFile=/etc/checkist/checkist.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/checkist/backend/.venv/bin/python manage.py recognition_worker
+# The worker gives its job back to the queue only on KeyboardInterrupt; after SIGTERM
+# the job would stay claimed until the lease (RECEIPT_OCR_LEASE_SECONDS) expires.
+KillSignal=SIGINT
+KillMode=mixed
+TimeoutStopSec=30
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

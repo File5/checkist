@@ -1,5 +1,6 @@
 import type { ExecutorState, Job, JobStage, JobStatus } from '../../api/recognition'
 import type { LocalApiFailure } from '../../api/types'
+import { getSession, permissionDeniedText } from '../../session'
 
 export const jobLabels: Record<JobStatus, string> = {
   queued: 'В очереди', running: 'Обрабатывается', cancel_requested: 'Отмена запрошена',
@@ -32,6 +33,8 @@ export function uploadExecutorNote(state: ExecutorState) { return uploadExecutor
 /** Job page line: only the current snapshot of a queued job; a stalled job has its own text. */
 export function jobExecutorNote(job: Pick<Job, 'status' | 'executor'>) { return job.status === 'queued' ? queuedExecutorNotes[job.executor.state] : undefined }
 export function isExecutorAbsent(data: { executor: { state: ExecutorState } }) { return data.executor.state === 'absent' }
+/** With accounts a refused access is a missing right, not a switched off local service. */
+const accountsSession = () => { const session = getSession(); return session.kind === 'user' && session.mode === 'accounts' }
 export function errorText(error: LocalApiFailure, mutation = false): string {
   switch (error.reason) {
     case 'unsupported_format': case 'unsupported_media_type': return 'Формат не поддерживается. HEIC и другие форматы сохраните в JPEG или PNG и выберите файл заново.'
@@ -39,7 +42,8 @@ export function errorText(error: LocalApiFailure, mutation = false): string {
     case 'image_too_large': return 'Разрешение фото превышает лимит сервера. Уменьшите изображение.'
     case 'invalid_image': return 'Изображение повреждено, пусто или содержит несколько кадров. Сохраните одно фото в JPEG или PNG.'
     case 'csrf_failed': return 'Токен безопасности устарел. Обновите токен и повторите действие.'
-    case 'permission_denied': return 'Локальный сервис недоступен с этого адреса или выключен. Проверьте запуск QA API и разрешение локального доступа.'
+    case 'permission_denied': return accountsSession() ? permissionDeniedText(getSession())
+      : 'Локальный сервис недоступен с этого адреса или выключен. Проверьте запуск QA API и разрешение локального доступа.'
     case 'not_found': return 'Запись не найдена. Возможно, она была удалена.'
     case 'page_out_of_range': return 'Такой страницы больше нет. Откройте первую страницу.'
     case 'job_active': return 'Для этого фото уже идёт обработка. Откройте список заданий этого фото.'

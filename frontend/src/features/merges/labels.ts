@@ -1,6 +1,7 @@
 import type { MergeConflictField, MergeDetectResult, MergeMemberBrief, MergeStatus } from '../../api/product-merges'
 import type { LocalApiFailure } from '../../api/types'
 import { formatQuantity } from '../../lib/format'
+import { getSession, permissionDeniedText } from '../../session'
 
 export const statusLabels: Record<MergeStatus, string> = {
   pending: 'Ожидает подтверждения', confirmed: 'Подтверждено', cancelled: 'Отменено',
@@ -46,10 +47,10 @@ export function detectText(result: MergeDetectResult): string {
   ].filter(Boolean).join(', ').replace(/^д/, 'Д') + '.'
 }
 
-/** Local translations only: a server message never reaches the screen. */
+/** Local translations only: a server message never reaches the screen. The text of a refused access depends on the session. */
 export function errorText(error: LocalApiFailure, mutation = false): string {
   switch (error.reason) {
-    case 'permission_denied': return 'Локальный API выключен или недоступен с этого адреса. Запустите сервер с ALLOW_LOCAL_RECOGNITION_API=1 и откройте приложение с этого компьютера.'
+    case 'permission_denied': return permissionDeniedText(getSession())
     case 'csrf_failed': return 'Токен безопасности устарел. Обновите токен и повторите действие.'
     case 'not_found': return 'Группа не найдена. Возможно, ссылка устарела.'
     case 'page_out_of_range': return 'Такой страницы больше нет. Откройте первую страницу.'

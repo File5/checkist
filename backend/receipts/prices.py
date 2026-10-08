@@ -195,6 +195,7 @@ def price_groups(products, *, countries=None, currency=None, store=None, date_fr
 
 def last_prices(
     products, *, countries=None, currency=None, store=None, date_from=None, date_to=None, comparable_only=False,
+    own=None,
 ):
     """Последнее наблюдение каждой группы «товар, страна магазина, валюта чека».
 
@@ -203,6 +204,10 @@ def last_prices(
     ``comparable_only=True`` оставляет только сравнимые наблюдения (``comparable_q``).
     Возвращает список строк с аннотациями ``price_history`` и загруженными
     ``receipt.store.merchant``, по порядку ``product_id, country, currency``.
+
+    ``own`` — булево выражение «наблюдение своё» от строки чека (его строит API по
+    владельцу чека); тогда у каждой строки есть аннотация ``own``. На выбор последнего
+    наблюдения оно не влияет: последнее ищется среди всех.
     """
     products = list(products)
     if not products:
@@ -212,6 +217,8 @@ def last_prices(
     )
     if comparable_only:
         lines = lines.filter(comparable_q())
+    if own is not None:
+        lines = lines.annotate(own=own)
     group = ("product_id", "receipt__store__country_id", "receipt__currency_id")
     return list(
         lines.select_related("receipt__store__merchant")
@@ -220,7 +227,9 @@ def last_prices(
     )
 
 
-def price_summary(products, *, countries=None, currency=None, store=None, date_from=None, date_to=None):
+def price_summary(
+    products, *, countries=None, currency=None, store=None, date_from=None, date_to=None, own=None,
+):
     """Сводка цен набора товаров: ``{product_id: [PriceGroup, ...]}``.
 
     Два запроса на весь набор независимо от числа товаров: ``price_groups`` и
@@ -228,6 +237,9 @@ def price_summary(products, *, countries=None, currency=None, store=None, date_f
     ``country, currency``. Товара без наблюдений в результате нет. Если группа
     исчезла между запросами, она пропускается: ``last`` всегда заполнена.
     Общего снимка на оба запроса при READ COMMITTED нет.
+
+    ``own`` — см. ``last_prices``: признак «своё» у ``last`` каждой группы (``last.own``);
+    счётчики и агрегаты групп считаются по всем наблюдениям.
     """
     filters = dict(countries=countries, currency=currency, store=store, date_from=date_from, date_to=date_to)
     products = list(products)
@@ -236,7 +248,7 @@ def price_summary(products, *, countries=None, currency=None, store=None, date_f
         return {}
     last = {
         (line.product_id, line.receipt.store.country_id, line.currency_code): line
-        for line in last_prices(products, **filters)
+        for line in last_prices(products, own=own, **filters)
     }
     summary = {}
     for group in groups:

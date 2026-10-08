@@ -110,6 +110,8 @@ export type NavigableRoute = CatalogRoute
   | { kind: 'merges'; query: MergesQuery }
   | { kind: 'merge'; groupId: number }
   | { kind: 'classification'; query: ClassificationQuery }
+  /** «Аккаунт»: password change and sign-out. The shell answers «not found» for it in local_single. */
+  | { kind: 'account' }
 
 export type Route = NavigableRoute
   | { kind: 'not-found'; path: string }
@@ -422,6 +424,7 @@ export function buildRoute(route: NavigableRoute): string {
     case 'merges': return `/catalog/merges${buildMergesQuery(route.query)}`
     case 'merge': return `/catalog/merges/${buildId(route.groupId)}`
     case 'classification': return `/catalog/classification${buildClassificationQuery(route.query)}`
+    case 'account': return '/account'
   }
 }
 
@@ -436,6 +439,7 @@ export function parseRoute(input: string | URL): Route {
   const normalizedPath = path === '/' ? path : path.replace(/\/$/, '')
   if (normalizedPath === '/health') return { kind: 'health' }
   if (normalizedPath === '/receipts/upload') return { kind: 'upload' }
+  if (normalizedPath === '/account') return { kind: 'account' }
   // Statistics never answer with invalid-query: a wrong value is dropped and the screen opens without it.
   if (normalizedPath === '/stats') return { kind: 'spending', query: parseSpendingQuery(url.searchParams).query }
   if (normalizedPath === '/stats/receipts') return { kind: 'receipts-stats', query: parseReceiptsStatsQuery(url.searchParams).query }

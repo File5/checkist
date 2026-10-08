@@ -1,0 +1,57 @@
+{
+  "product": {
+    "id": 71,
+    "name": "Демо-молоко 1 л",
+    "base_unit": "l"
+  },
+  "count": 2,
+  "page": 1,
+  "page_size": 200,
+  "pages": 1,
+  "results": [
+    {
+      "observed_at": "2026-06-09T10:00:00Z",
+      "purchased_on": "2026-06-09",
+      "store": {
+        "id": 61,
+        "name": "Demomarkt",
+        "city": "Musterstadt",
+        "country": "DE"
+      },
+      "currency": "EUR",
+      "quantity": "2.000",
+      "unit": "pcs",
+      "list_unit_price": "1.0500",
+      "paid_unit_price": "0.9500",
+      "discount_amount": "0.20",
+      "normalized_price": "0.9500",
+      "normalized_unit": "l",
+      "comparable": true,
+      "receipt_id": 21,
+      "position": 2,
+      "own": true
+    },
+    {
+      "observed_at": null,
+      "purchased_on": "2026-06-29",
+      "store": {
+        "id": 61,
+        "name": "Demomarkt",
+        "city": "Musterstadt",
+        "country": "DE"
+      },
+      "currency": "EUR",
+      "quantity": null,
+      "unit": "pcs",
+      "list_unit_price": "1.1000",
+      "paid_unit_price": "1.0000",
+      "discount_amount": null,
+      "normalized_price": "1.0000",
+      "normalized_unit": "l",
+      "comparable": true,
+      "receipt_id": null,
+      "position": null,
+      "own": false
+    }
+  ]
+}

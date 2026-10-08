@@ -3,6 +3,7 @@ import type { ReceiptCompare, ReceiptCompareParams, ReceiptSeries, ReceiptSeries
 import type { LocalApiFailure } from '../../api/types'
 import { maxStatsStores, parseReceiptsStatsQuery, receiptsStatsHref } from '../../navigation'
 import type { ReceiptsStatsInterval, ReceiptsStatsQuery } from '../../navigation'
+import { getSession, permissionDeniedText } from '../../session'
 
 export const dateFields = ['base_from', 'base_to', 'current_from', 'current_to'] as const
 export type DateField = typeof dateFields[number]
@@ -157,12 +158,15 @@ export function coarserIntervals(current: ReceiptsStatsInterval): { interval: Re
 }
 export const intervalHref = (query: ReceiptsStatsQuery, interval: ReceiptsStatsInterval) => receiptsStatsHref({ ...query, interval })
 
+/** With accounts a refused access is a missing right, not a switched off local mode. */
+const accountsSession = () => { const session = getSession(); return session.kind === 'user' && session.mode === 'accounts' }
 /** Local wording only: the server's message never reaches the screen. */
 export function failureMessage(failure: StatsFailure): string {
   switch (statsFailureKind(failure)) {
     case 'invalid_parameter': return 'Сервер не принял параметры запроса. Исправьте отмеченные поля в форме выше или сбросьте фильтры.'
     case 'range_too_large': return 'Слишком много интервалов для одного графика: уменьшите период или укрупните интервал.'
-    case 'permission_denied': return 'Статистика чеков доступна только в локальном режиме сервера, сейчас он выключен. Включите его в настройках сервера (DEBUG и ALLOW_LOCAL_RECOGNITION_API=1) и откройте приложение на этом же компьютере; без этого повтор не поможет.'
+    case 'permission_denied': return accountsSession() ? permissionDeniedText(getSession())
+      : 'Статистика чеков доступна только в локальном режиме сервера, сейчас он выключен. Включите его в настройках сервера (DEBUG и ALLOW_LOCAL_RECOGNITION_API=1) и откройте приложение на этом же компьютере; без этого повтор не поможет.'
     case 'not_found': return 'Сервер не знает такого адреса статистики. Возможно, серверная часть старее клиента.'
     case 'invalid_response': return 'Сервер вернул неожиданный ответ. Повторите попытку.'
     case 'unavailable': switch (failure.reason) {

@@ -201,10 +201,14 @@ class SettingsTests(SimpleTestCase):
     def test_production_rejects_dev_secret(self):
         rejected = self.load_settings({
             "DJANGO_DEBUG": "0", "DJANGO_SECRET_KEY": "dev-only-checkist-key-change-before-deployment",
+            "CHECKIST_AUTH_MODE": "accounts",
         })
         self.assertNotEqual(rejected.returncode, 0)
         self.assertIn("DJANGO_SECRET_KEY:", rejected.stderr)
-        accepted = self.load_settings({"DJANGO_DEBUG": "0", "DJANGO_SECRET_KEY": "custom-test-secret"})
+        # A QA environment carries local_single, which is refused with DEBUG=0 before the key is read.
+        accepted = self.load_settings({
+            "DJANGO_DEBUG": "0", "DJANGO_SECRET_KEY": "custom-test-secret", "CHECKIST_AUTH_MODE": "accounts",
+        })
         self.assertEqual(accepted.returncode, 0, accepted.stderr)
 
 

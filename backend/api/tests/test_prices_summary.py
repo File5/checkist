@@ -10,6 +10,7 @@ from merges import demo
 from api.tests.factories import observe
 from catalog.units import Unit
 from receipts.models import Receipt, ReceiptDiscount, ReceiptLine
+from receipts.ownership import local_user
 from receipts.tests import samples
 from receipts.tests.test_models import make_line
 from stores.models import Store
@@ -621,9 +622,10 @@ class PriceSummaryRangeTests(SummaryTestCase):
         data = factories.save_samples()
         cls.product = factories.make_product(data.milk, "Молоко каждый день", package=("1", Unit.L))
         days = [cls.START + timedelta(days=offset) for offset in range(cls.DAYS)]
+        owner = local_user()
         receipts = Receipt.objects.bulk_create([
             Receipt(
-                store=data.lidl_store, currency_id="EUR", operation=Receipt.Operation.SALE,
+                owner=owner, store=data.lidl_store, currency_id="EUR", operation=Receipt.Operation.SALE,
                 purchased_at=datetime.combine(day, time(12, 0), tzinfo=timezone.utc), purchased_on=day,
                 receipt_number=f"range-{offset}", total=D("1.00"),
             )
@@ -672,9 +674,10 @@ class PriceSummaryRangeTests(SummaryTestCase):
     def test_limit_counts_intervals_of_all_groups(self):
         # Вторая валюта в те же дни: 600 + 600 интервалов в двух группах — больше 1000 суммарно.
         days = [self.START + timedelta(days=offset) for offset in range(600)]
+        owner = local_user()
         receipts = Receipt.objects.bulk_create([
             Receipt(
-                store=self.store, currency_id="RUB", operation=Receipt.Operation.SALE,
+                owner=owner, store=self.store, currency_id="RUB", operation=Receipt.Operation.SALE,
                 purchased_at=datetime.combine(day, time(13, 0), tzinfo=timezone.utc), purchased_on=day,
                 receipt_number=f"range-rub-{offset}", total=D("90.00"),
             )

@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getCategories, getCategory, getGenericProduct, getGenericProducts, getProduct, getProducts } from './catalog'
+import { onAuthSignal } from './auth-signal'
+import type { AuthSignal } from './auth-signal'
 import { apiUrl } from './http'
 import { getProductPrices, getProductPriceSummary } from './prices'
+import { getReceipts } from './receipts'
+import { cancelJob, clearRecognitionCsrf } from './recognition'
 import { getStores } from './stores'
 import { category, categoryDetail, detail, generic, history, pageOf, product, storeEntry, summary } from './test-support'
 import type { ApiResult, RequestOptions } from './types'
@@ -36,14 +40,14 @@ describe('common URL transport', () => {
 })
 
 describe.each(adapters)('transport for %s', (path, call, body) => {
-  it('requests anonymous JSON using the public default prefix and cleans up after success', async () => {
+  it('requests JSON with the session cookie of this origin using the public default prefix and cleans up after success', async () => {
     vi.useFakeTimers()
     const controller = new AbortController()
     const remove = vi.spyOn(controller.signal, 'removeEventListener')
     reply(body)
     expect(await call({ signal: controller.signal })).toEqual({ kind: 'ok', data: body })
     expect(fetchMock).toHaveBeenCalledWith(`/api/${path}`, {
-      headers: { Accept: 'application/json' }, credentials: 'omit', cache: 'no-store', signal: expect.any(AbortSignal),
+      headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store', signal: expect.any(AbortSignal),
     })
     expect(vi.getTimerCount()).toBe(0)
     expect(remove).toHaveBeenCalledWith('abort', expect.any(Function))
@@ -180,5 +184,81 @@ describe('safe errors and retries', () => {
     expect(await getProducts()).toEqual({ kind: 'error', reason: 'timeout' })
     expect(fetchMock.mock.calls[0][1]?.signal?.aborted).toBe(true)
     expect(vi.getTimerCount()).toBe(0)
+  })
+})
+
+describe('session signals of the transport', () => {
+  const notAuthenticated = { error: { code: 'not_authenticated', message: 'Требуется вход.' } }
+  const denied = { error: { code: 'permission_denied', message: 'Доступ запрещён.' } }
+  const signals: AuthSignal[] = []
+  let off: () => void
+  beforeEach(() => { clearRecognitionCsrf(); signals.length = 0; off = onAuthSignal((signal) => { signals.push(signal) }) })
+  afterEach(() => { off(); clearRecognitionCsrf() })
+
+  it.each([
+    ['an open GET', () => getProducts()], ['a local GET', () => getReceipts()], ['a local POST', () => cancelJob(31)],
+  ])('turns 401 not_authenticated of %s into aborted with exactly one signal', async (_name, call) => {
+    reply(notAuthenticated, 401)
+    expect(await call()).toEqual({ kind: 'aborted' })
+    expect(signals).toEqual(['unauthenticated'])
+    // Nothing is repeated: the shell shows the sign-in instead of the page.
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+  it.each([
+    { error: { code: 'invalid_credentials', message: 'Ошибка' } }, { error: { code: 'not_authenticated', message: ' ' } },
+    { error: { code: 'not_authenticated' } }, { error: 'not_authenticated' }, { detail: 'not_authenticated' }, null, [[]],
+  ])('keeps 401 with another body %# an invalid_response without a signal', async (body) => {
+    reply(body, 401)
+    expect(await getProducts()).toEqual({ kind: 'error', reason: 'invalid_response', status: 401 })
+    reply(body, 401)
+    expect(await getReceipts()).toEqual({ kind: 'error', reason: 'invalid_response', status: 401 })
+    expect(signals).toEqual([])
+  })
+  it('does not take not_authenticated with another status for the end of the session', async () => {
+    for (const status of [200, 400, 403, 500]) {
+      reply(notAuthenticated, status)
+      expect(await getReceipts()).toEqual({ kind: 'error', reason: 'invalid_response', status })
+    }
+    expect(signals).toEqual([])
+  })
+  it('keeps the result of 403 permission_denied and reports forbidden once per answer', async () => {
+    reply(denied, 403)
+    expect(await getReceipts()).toEqual({ kind: 'error', reason: 'permission_denied', status: 403 })
+    expect(signals).toEqual(['forbidden'])
+    reply(denied, 403)
+    expect(await cancelJob(31)).toEqual({ kind: 'error', reason: 'permission_denied', status: 403 })
+    expect(signals).toEqual(['forbidden', 'forbidden'])
+  })
+  it('reports nothing for 403 outside the local contract and for other refusals', async () => {
+    reply(denied, 403)
+    expect(await getProducts()).toEqual({ kind: 'error', reason: 'invalid_response', status: 403 })
+    reply({ error: { code: 'csrf_failed', message: 'Ошибка' } }, 403)
+    expect(await getReceipts()).toEqual({ kind: 'error', reason: 'csrf_failed', status: 403 })
+    reply({ error: { code: 'not_found', message: 'Ошибка' } }, 404)
+    expect(await getReceipts()).toEqual({ kind: 'error', reason: 'not_found', status: 404 })
+    fetchMock.mockRejectedValue(new TypeError('offline'))
+    expect(await getReceipts()).toEqual({ kind: 'error', reason: 'network' })
+    expect(signals).toEqual([])
+  })
+  it('survives a failing listener and stops telling an unsubscribed one', async () => {
+    const stop = onAuthSignal(() => { throw new Error('shell failure') })
+    reply(notAuthenticated, 401)
+    expect(await getProducts()).toEqual({ kind: 'aborted' })
+    expect(signals).toEqual(['unauthenticated'])
+    stop(); off()
+    reply(denied, 403)
+    expect(await getReceipts()).toEqual({ kind: 'error', reason: 'permission_denied', status: 403 })
+    expect(signals).toEqual(['unauthenticated'])
+  })
+  it('does not report for a request its owner already cancelled', async () => {
+    let resolveFetch!: (response: Response) => void
+    fetchMock.mockImplementation(() => new Promise((resolve) => { resolveFetch = resolve }))
+    const controller = new AbortController()
+    const pending = getProducts({}, { signal: controller.signal })
+    controller.abort()
+    expect(await pending).toEqual({ kind: 'aborted' })
+    resolveFetch(new Response(JSON.stringify(notAuthenticated), { status: 401 }))
+    await Promise.resolve()
+    expect(signals).toEqual([])
   })
 })

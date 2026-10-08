@@ -14,3 +14,4 @@ htmlcov/
 .orca-attachments/
 media/
 .media-recognition-staging-*/
+staticfiles/

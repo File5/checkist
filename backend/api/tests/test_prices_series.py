@@ -12,6 +12,7 @@ from catalog.units import Unit
 from merges import services
 from merges.models import ProductMerge, ProductMergeMember
 from receipts.models import Receipt, ReceiptLine
+from receipts.ownership import local_user
 from receipts.tests import samples
 from stores.models import Store
 
@@ -57,9 +58,10 @@ def absorb(target, source):
 def bulk_days(product, store, start, days, currency="EUR"):
     """По одной покупке товара в каждый из ``days`` дней подряд, цена 1.00."""
     dates = [start + timedelta(days=offset) for offset in range(days)]
+    owner = local_user()
     receipts = Receipt.objects.bulk_create([
         Receipt(
-            store=store, currency_id=currency, operation=Receipt.Operation.SALE,
+            owner=owner, store=store, currency_id=currency, operation=Receipt.Operation.SALE,
             purchased_at=datetime.combine(day, time(12, 0), tzinfo=timezone.utc), purchased_on=day,
             receipt_number=f"series-{product.pk}-{store.pk}-{offset}", total=D("1.00"),
         )

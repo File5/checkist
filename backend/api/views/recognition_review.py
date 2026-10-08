@@ -9,10 +9,11 @@ from rest_framework.exceptions import ParseError, UnsupportedMediaType
 from rest_framework.response import Response
 
 from api.common import get_or_404
-from api.recognition_serialization import executor_object, image_object, job_object, jobs_queryset, public_issues
+from api.recognition_serialization import (
+    executor_object, image_object, images_queryset, job_object, jobs_queryset, public_issues,
+)
 from config.exceptions import ApiError, InvalidParameter, InvalidRequest, ObjectNotFound, RecognitionApiError
 from recognition import review
-from recognition.models import ReceiptImage
 
 from .recognition import path_id
 from .recognition_base import JsonObjectParser, LocalAPIView
@@ -74,9 +75,14 @@ class ConfirmView(LocalAPIView):
 
     def post(self, request, pk):
         data = self.body(request)
-        result = review.confirm(path_id(pk), data)
-        image = get_or_404(ReceiptImage.objects.all(), result.image_id)
-        job = get_or_404(jobs_queryset(), result.job_id)
+        image_id = path_id(pk)
+        # Where review.confirm looks the crop up, before any check of the body: a crop of
+        # another user answers 404 like a missing one, whatever the body says.
+        if not images_queryset(request).filter(pk=image_id).exists():
+            raise ObjectNotFound()
+        result = review.confirm(image_id, data)
+        image = get_or_404(images_queryset(request), result.image_id)
+        job = get_or_404(jobs_queryset(request), result.job_id)
         items = list(job.images.order_by("position", "id"))
         return Response({"image": image_object(image, detail=True),
                          "job": job_object(job, executor_object(), items=items)})

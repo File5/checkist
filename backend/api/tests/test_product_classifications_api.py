@@ -7,6 +7,7 @@ from django.test import TestCase, override_settings, tag
 from django.test.utils import CaptureQueriesContext
 from rest_framework.test import APIClient
 
+from api.tests.accounts_helpers import TwoUsers, accounts_mode
 from api.tests.classification_factories import local_client
 from catalog.models import Category, GenericProduct, Product
 from classification import demo, services
@@ -18,6 +19,7 @@ from classification.tests.factories import (
     generic, generic_of, product, record, service, snapshot, suggest,
 )
 from classification.tests.test_concurrency import ConcurrencyTestCase, import_lock, tree_lock
+from receipts.ownership import local_user
 from stores.models import Merchant, Store
 
 BASE = "/api/product-classifications/"
@@ -686,6 +688,50 @@ class OperationTests(ClassificationApiMixin, TestCase):
         self.assertEqual(snapshot(), before)
         self.assertEqual((record(KEFIR_A).status, record(KEFIR_B).status), ("pending", "pending"))
 
+    def test_decisions_are_recorded_with_local_and_answers_keep_their_form(self):
+        local = local_user()
+        hidden = {"resolved_by", "requested_by", "created_by"}
+        self.assertEqual(set(ProductClassification.objects.values_list("resolved_by_id", flat=True)), {None})
+        self.assertIsNone(self.last_run.requested_by_id)
+        # Отказ ничего не записывает; запись, закрытая сверкой во время запроса, остаётся без автора.
+        self.error(self.reject(record(TOAST), version=9), 409, "classification_changed")
+        Product.objects.filter(name=JUICE).update(generic=generic("Молоко"))
+        self.error(self.confirm(record(JUICE)), 409, "classification_resolved")
+        self.assertEqual((record(JUICE).status, record(JUICE).resolved_by_id), ("superseded", None))
+        self.assertEqual(set(ProductClassification.objects.values_list("resolved_by_id", flat=True)), {None})
+
+        bodies = [
+            self.ok(self.confirm(record(SAUSAGE_A))),
+            self.ok(self.confirm(record(CHEESE), generic_id=generic("Молоко").pk)),
+            self.ok(self.reject(record(MILK))),
+        ]
+        many = self.ok(self.confirm_many((record(KEFIR_A).pk, 1), (record(KEFIR_B).pk, 1)))
+        queued = self.ok(self.post(BASE + "runs/"), 202)
+        for body in bodies + many["results"]:
+            self.assertEqual(set(body), RECORD_KEYS)
+        self.assertEqual(set(queued["run"]), RUN_KEYS)
+        for body in (*bodies, many, queued):
+            self.assertEqual(keys(body) & hidden, set())
+
+        decided = {name: record(name).resolved_by_id for name in (SAUSAGE_A, CHEESE, MILK, KEFIR_A, KEFIR_B)}
+        self.assertEqual(set(decided.values()), {local.pk})
+        self.assertEqual(
+            set(ClassificationRejection.objects.values_list("product__name", "created_by_id")),
+            {(CHEESE, local.pk), (MILK, local.pk)},
+        )
+        self.assertEqual(ClassificationRun.objects.get(pk=queued["run"]["id"]).requested_by_id, local.pk)
+        # Повтор запуска возвращает тот же запуск; нерешённые записи и прежний запуск — без автора.
+        self.assertIs(self.ok(self.post(BASE + "runs/"))["created"], False)
+        self.assertEqual(ClassificationRun.objects.filter(requested_by__isnull=False).count(), 1)
+        pending = ProductClassification.objects.filter(status="pending")
+        self.assertEqual(pending.count(), 3)
+        self.assertEqual(set(pending.values_list("resolved_by_id", flat=True)), {None})
+        # Чтения автора не показывают.
+        run_url = f"{BASE}runs/{queued['run']['id']}/"
+        for path in (BASE, self.url(record(MILK)), BASE + "status/", BASE + "runs/", run_url):
+            with self.subTest(path=path):
+                self.assertEqual(keys(self.ok(self.client.get(path))) & hidden, set())
+
     def test_runs_are_queued_once(self):
         self.assertFalse(ClassificationRun.objects.filter(status="queued").exists())
         created = self.ok(self.post(BASE + "runs/"), 202)
@@ -727,6 +773,52 @@ class OperationTests(ClassificationApiMixin, TestCase):
         self.assertEqual(response.status_code, 500)
         self.assertNotIn("secret", response.content.decode("utf-8"))
         self.assertEqual(snapshot(), before)
+
+
+@tag("integration")
+@accounts_mode()
+class SignedInActorTests(ClassificationApiMixin, TwoUsers, TestCase):
+    """В ``accounts`` решение записывается на вошедшего модератора, а не на ``local``."""
+
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        demo.seed_demo()
+        suggest()
+
+    def setUp(self):
+        self.client = self.client_of(self.moderator, csrf=True)
+
+    def test_moderator_is_recorded_and_a_refused_user_is_not(self):
+        before = snapshot()
+        plain = self.client_of(self.first, csrf=True)
+        entry = record(TOAST)
+        for path, body in (
+            (self.url(entry, "confirm/"), {"version": 1, "generic_id": entry.suggested_generic_ref}),
+            (self.url(entry, "reject/"), {"version": 1}),
+            (BASE + "confirm/", {"items": [{"id": entry.pk, "version": 1}]}),
+            (BASE + "runs/", {}),
+        ):
+            with self.subTest(path=path):
+                self.error(plain.post(path, body, format="json"), 403, "permission_denied")
+        self.assertEqual(snapshot(), before)
+
+        self.ok(self.confirm(record(SAUSAGE_A)))
+        self.ok(self.confirm(record(CHEESE), generic_id=generic("Молоко").pk))
+        self.ok(self.reject(record(MILK)))
+        self.ok(self.confirm_many((record(KEFIR_A).pk, 1), (record(KEFIR_B).pk, 1)))
+        queued = self.ok(self.post(BASE + "runs/"), 202)
+        authors = {
+            name: record(name).resolved_by_id for name in (SAUSAGE_A, CHEESE, MILK, KEFIR_A, KEFIR_B)
+        }
+        self.assertEqual(set(authors.values()), {self.moderator.pk})
+        self.assertEqual(
+            set(ClassificationRejection.objects.values_list("product__name", "created_by_id")),
+            {(CHEESE, self.moderator.pk), (MILK, self.moderator.pk)},
+        )
+        self.assertEqual(ClassificationRun.objects.get(pk=queued["run"]["id"]).requested_by_id, self.moderator.pk)
+        self.assertEqual(ProductClassification.objects.filter(resolved_by__isnull=False).count(), 5)
+        self.assertEqual(ClassificationRun.objects.filter(requested_by__isnull=False).count(), 1)
 
 
 @tag("integration")

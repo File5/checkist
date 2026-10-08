@@ -57,7 +57,7 @@ class SpendingView(LocalAPIView):
             if category not in tree:  # как в списках каталога: пусто, не ошибка
                 return Response({**head, "currencies": []})
             head["parent"] = tree.category(category)
-        data = spending.collect(stats_common.receipts(scope, period), stats_common.owner_product_id())
+        data = spending.collect(stats_common.receipts(request, scope, period), stats_common.owner_product_id())
         stores = None
         if group_by == "store":
             ids = {row.store_id for row in data.receipts}
