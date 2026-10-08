@@ -12,6 +12,8 @@ const failed = (message: string, fields: string[] = [], details: string[] = []):
 const count = (html: string, text: string) => html.split(text).length - 1
 /** One field's tag in lower case: the spelling of attribute names is the renderer's business, not the form's. */
 const tag = (html: string, id: string) => (html.match(new RegExp(`<input\\b[^>]*\\bid="${id}"[^>]*>`))?.[0] ?? '').toLowerCase()
+/** The form's tag in lower case: the renderer writes `method` after the other attributes, so their order is not asserted. */
+const formTag = (html: string) => (html.match(/<form\b[^>]*>/)?.[0] ?? '').toLowerCase()
 
 function loginHtml(props: Partial<LoginViewProps> = {}) {
   return renderToStaticMarkup(<LoginView state={idle} expired={false} values={{ username: '', password: '' }} onChange={() => {}} onSubmit={() => {}} {...props} />)
@@ -24,7 +26,9 @@ function accountHtml(props: Partial<AccountViewProps> = {}) {
 describe('sign-in form (Node server markup, not browser behavior)', () => {
   it('is a real form with labelled fields a password manager recognizes', () => {
     const html = loginHtml()
-    expect(html).toMatch(/<form class="ck-auth-panel" method="post"[^>]*>/)
+    expect(html.match(/<form\b/g)).toHaveLength(1)
+    expect(formTag(html)).toContain(' class="ck-auth-panel"')
+    expect(formTag(html)).toContain(' method="post"')
     expect(html).toContain('<label for="login-username">Имя пользователя</label>')
     expect(html).toContain('<label for="login-password">Пароль</label>')
     expect(tag(html, 'login-username')).toContain('name="username"')
@@ -98,7 +102,9 @@ describe('account page (Node server markup, not browser behavior)', () => {
     for (const id of ['account-current_password', 'account-new_password', 'account-repeat']) expect(tag(html, id)).toContain('type="password"')
     const owner = (html.match(/<input\b[^>]*\bname="username"[^>]*>/)?.[0] ?? '').toLowerCase()
     for (const part of ['type="text"', 'autocomplete="username"', 'readonly=""', 'hidden=""', 'value="synthetic-reader"']) expect(owner).toContain(part)
-    expect(html).toMatch(/<form class="ck-auth-panel" method="post"[^>]*>/)
+    expect(html.match(/<form\b/g)).toHaveLength(1)
+    expect(formTag(html)).toContain(' class="ck-auth-panel"')
+    expect(formTag(html)).toContain(' method="post"')
     expect(html).toContain('<button type="submit" data-auth-submit="true" aria-describedby="password-message">Сменить пароль</button>')
   })
   it('lists the four rules of a new password before any attempt', () => {
