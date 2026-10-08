@@ -38,6 +38,44 @@ describe('scales and axis divisions', () => {
     expect(niceTicks(1.05, 1.09, 5, false, minAxisStep)).toEqual(niceTicks(1.05, 1.09))
   })
   it.each([
+    [0.95, 1.05, 5, false, true, ['0,95', '1,00', '1,05']],
+    [2.1, 2.2, 5, false, false, ['2,10', '2,15', '2,20']],
+    [0, 0.09, 4, true, true, ['0,00', '0,05', '0,10']],
+    [0.95, 1.05, 4, false, false, ['0,95', '1,00', '1,05']],
+    [130.53, 130.64, 5, false, true, ['130,50', '130,55', '130,60', '130,65']],
+    [-0.06, 0.05, 5, false, false, ['-0,10', '-0,05', '0,00', '0,05']],
+    [9.4, 10.6, 5, false, true, ['9,25', '9,50', '9,75', '10,00', '10,25', '10,50', '10,75']],
+    [0.31, 0.39, 5, false, false, ['0,30', '0,32', '0,34', '0,36', '0,38', '0,40']],
+  ] as const)('writes every division of %s..%s exactly, on an even step', (low, high, target, zero, money, texts) => {
+    const ticks = niceTicks(low, high, target, zero, minAxisStep)
+    const axis = ticks.values.map((value) => formatAxisTick(value, ticks.step, money))
+    expect(axis).toEqual(texts)
+    const read = axis.map((text) => Number(text.replace(',', '.')))
+    expect(read).toEqual(ticks.values)
+    const gaps = read.slice(1).map((value, index) => Math.round((value - read[index]) * 1e6))
+    expect(new Set(gaps)).toEqual(new Set([Math.round(ticks.step * 1e6)]))
+  })
+  it('never rounds a division of a chart axis, whatever the range', () => {
+    for (let low = -0.4; low < 140; low = Math.abs(low) * 1.37 + 0.173) {
+      for (let span = 0.003; span < 60; span *= 1.31) {
+        for (const target of [4, 5]) {
+          const ticks = niceTicks(low, low + span, target, false, minAxisStep)
+          for (const money of [true, false]) {
+            const read = ticks.values.map((value) => Number(formatAxisTick(value, ticks.step, money).replace(/\s/g, '').replace(',', '.')))
+            expect(read).toEqual(ticks.values)
+          }
+        }
+      }
+    }
+  })
+  it('skips a step finer than the asked grid only when one is asked', () => {
+    expect(niceTicks(0.95, 1.05).step).toBe(0.025)
+    expect(niceTicks(0.95, 1.05, 5, false, minAxisStep).step).toBe(0.05)
+    expect(niceTicks(9.4, 10.6, 5, false, minAxisStep)).toEqual(niceTicks(9.4, 10.6))
+    expect(niceTicks(94, 106, 5, false, 1).step).toBe(5)
+    expect(niceTicks(940, 1060, 5, false, minAxisStep).step).toBe(25)
+  })
+  it.each([
     [1000, 0, 0], [5, 0, 0], [1, 0, 0], [0.5, 1, 2], [0.2, 1, 2], [0.1, 1, 2], [0.25, 2, 2], [0.05, 2, 2], [0.01, 2, 2],
     [0.005, 2, 2], [0.0025, 2, 2], [0, 0, 0], [NaN, 0, 0],
   ])('counts the decimals of the step %s: %s, on a money axis %s', (step, plain, money) => {
