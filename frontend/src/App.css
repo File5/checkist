@@ -30,8 +30,6 @@ h2 { font-size: 1.35rem; letter-spacing: 0.01em; }
 /* The emblem file is transparent: it lies straight on the header bar, with no backing and no rounded corners. */
 .brand-mark { flex: none; width: 44px; height: 44px; }
 .brand-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.brand-actions a { display: inline-flex; align-items: center; min-height: 44px; padding: 8px 12px; border-radius: var(--ck-radius-sm); text-underline-offset: 4px; }
-.brand-actions a:hover { background: var(--ck-header-hover-bg); }
 .main-navigation { display: flex; flex-wrap: wrap; gap: 8px; }
 .main-navigation a { display: inline-flex; align-items: center; min-height: 44px; padding: 8px 12px; border-radius: var(--ck-radius-sm); text-underline-offset: 4px; }
 .main-navigation a[aria-current] { color: var(--ck-accent-text); background: var(--ck-accent-bg); font-weight: 600; }

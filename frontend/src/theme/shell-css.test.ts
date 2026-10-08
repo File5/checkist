@@ -103,7 +103,7 @@ describe('state rules of the shell (text of the rules, not rendering)', () => {
     expect(found).toEqual([
       'button:focus-visible = 1', 'a:focus-visible = 1', 'input:focus-visible = 1', 'select:focus-visible = 1', '[tabindex]:focus-visible = 2',
       '.skip-link:focus = 2', '.skip-link:focus-visible = 2', '.brand-bar :focus-visible = 2',
-      '.brand-actions a:hover = 2', '.brand-bar .main-navigation a:hover = 3',
+      '.brand-bar .main-navigation a:hover = 3',
       'button:where(:hover:not(:disabled)) = 0', 'button:where(:active:not(:disabled)) = 0', 'button:disabled = 1',
       '.action-link:where(:hover) = 1', '.rec-issues summary:focus-visible = 2',
     ])
