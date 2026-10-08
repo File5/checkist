@@ -503,9 +503,9 @@ class SpendingAPITests(TestCase):
             ("category=0", {"category": ["Ожидается целое положительное число."]}),
             ("generic=-1", {"generic": ["Ожидается целое положительное число."]}),
             ("generic=" + "9" * 20, {"generic": ["Ожидается целое положительное число."]}),
-            ("limit=0", {"limit": ["Допустимо от 1 до 50."]}),
-            ("limit=51", {"limit": ["Допустимо от 1 до 50."]}),
-            ("limit=ten", {"limit": ["Допустимо от 1 до 50."]}),
+            ("limit=0", {"limit": ["Допустимо от 1 до 500."]}),
+            ("limit=501", {"limit": ["Допустимо от 1 до 500."]}),
+            ("limit=ten", {"limit": ["Допустимо от 1 до 500."]}),
             ("country=%00", {"country": ["Управляющие символы недопустимы."]}),
         )
         for query, fields in cases:
@@ -516,9 +516,12 @@ class SpendingAPITests(TestCase):
             "currency": ["Ожидается код валюты из трёх букв."], "store": store_format,
             "group_by": ["Допустимые значения: category, generic, product, store."],
             "category": ["Ожидается целое положительное число."], "generic": ["Ожидается целое положительное число."],
-            "limit": ["Допустимо от 1 до 50."],
+            "limit": ["Допустимо от 1 до 500."],
         })
         self.assertEqual(self.get("limit=1&limit=50")["group_by"], "category")
+        for accepted in (1, 50, 51, 500):  # состав «прочего» клиент читает большим limit
+            with self.subTest(limit=accepted):
+                self.assertEqual(self.client.get(f"{URL}?limit={accepted}").status_code, 200)
         repeated = ",".join([str(self.data.lidl.pk)] * 30)  # повторы в пределе 20 не считаются
         self.assertEqual([block["currency"] for block in self.get(f"store={repeated}")["currencies"]], ["EUR"])
 
