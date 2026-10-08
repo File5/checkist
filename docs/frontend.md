@@ -38,7 +38,7 @@
 | --- | --- |
 | `src/App.tsx`, `App.css`, `main.tsx`, `index.html` | F2: shell и общие стили; F5 подключает feature-экраны в App. `main.tsx` подключает `theme/tokens.css` раньше `App.css`; в `index.html` — встроенный скрипт темы |
 | `src/theme/**` | Редизайн: `tokens.css` — единственный файл с цветами, `theme.ts` — хранилище темы и `useTheme`, `ThemeToggle` — кнопка переключения |
-| `src/assets/brand/**`, `src/assets/fonts/**`, `public/`, `frontend/brand/` | Редизайн: логотип и эмблема (WebP), шрифт заголовков Oswald с лицензией, favicon и apple-touch-icon; `frontend/brand/logo-source.png` — исходник, в сборку не идёт |
+| `src/assets/brand/**`, `src/assets/fonts/**`, `public/`, `frontend/brand/` | Редизайн: логотип и эмблема (WebP), шрифт заголовков Oswald с лицензией, favicon и apple-touch-icon; `frontend/brand/logo-source.png` и `emblem-source.png` — исходники, в сборку не идут |
 | `src/navigation/` | F2: routes/query, controller с подставляемым History-окружением, browser hooks, Link и Node-тесты |
 | `src/components/` | F2: RequestState, Pagination и их Node-проверки; R2: общий механизм локального фокуса |
 | `src/pages/` | F2: HealthPage и типы props экранов; прежние CatalogPlaceholder больше не подключены |
@@ -154,8 +154,9 @@ Feature-экраны рендерятся под общим h1, собствен
 
 ### Бренд
 
-- Файлы и способ их получения — `frontend/src/assets/brand/README.md`. Полный логотип (`logo-640.webp`, `logo-1280.webp`) показывает экран входа, эмблему без надписей (`emblem-96.webp`, `emblem-192.webp`) — шапка; `frontend/public/favicon.svg` (красная звезда с золотой обводкой) и `apple-touch-icon.png` подключены в `index.html`. Заголовок вкладки — `Чекист — <название экрана>`.
-- Файлы логотипа непрозрачные, фон — почти чёрный `#0f0f0e`: логотип и эмблему ставят только на подложку `--ck-logo-bg`. Исходник `frontend/brand/logo-source.png` (1,58 МБ) лежит вне `src/` и `public/` и в `dist/` не попадает.
+- Файлы и способ их получения — `frontend/src/assets/brand/README.md`. Полный логотип (`logo-640.webp`, `logo-1280.webp`) показывает экран входа, эмблему без надписи и без фона (`emblem-96.webp`, `emblem-192.webp`, WebP с альфа-каналом) — шапка; `frontend/public/favicon.svg` (красная звезда с золотой обводкой) и `apple-touch-icon.png` (та же эмблема на непрозрачной подложке `#0f0f0e`) подключены в `index.html`. Заголовок вкладки — `Чекист — <название экрана>`.
+- Файлы полного логотипа непрозрачные, фон — почти чёрный `#0f0f0e`: логотип ставят только на подложку `--ck-logo-bg` (доска экрана входа). Эмблема с 2026-10-08 собрана из отдельного исходника владельца и прозрачная: `.brand-mark` в `App.css` задаёт ей только размер (44 px, на узком экране 40 px), подложки, рамки и скругления нет — она лежит прямо на полосе шапки `--ck-header-bg`, тёмной в обеих темах. Правило и заголовки файлов (альфа-канал у эмблемы, его отсутствие у `apple-touch-icon.png`) сторожит `theme/shell-css.test.ts`.
+- Исходники `frontend/brand/logo-source.png` (1,58 МБ) и `frontend/brand/emblem-source.png` (1,71 МБ) лежат вне `src/` и `public/` и в `dist/` не попадают. В файле исходника эмблемы фон не прозрачный, а ровный чёрный; прозрачность восстановлена при сборке заливкой от углов — шаги в `src/assets/brand/README.md`.
 - Шрифт заголовков — вариативный Oswald (OFL 1.1, `src/assets/fonts/`), один файл на латиницу и кириллицу, `font-display: swap`; внешних шрифтов и CDN нет.
 - Ироничные фразы стоят только в нерабочих местах: строка над заголовком («Доверяй, но проверяй чек»), подвал, экран входа, «Страница не найдена». Тексты ошибок, подписи полей и кнопок, статусы и сообщения загрузки прежние.
 

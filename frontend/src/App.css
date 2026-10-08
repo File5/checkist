@@ -27,7 +27,8 @@ h2 { font-size: 1.35rem; letter-spacing: 0.01em; }
 .brand-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 16px; padding: 14px max(36px, calc(50% - 424px)) 13px; border-bottom: 1px solid var(--ck-header-accent); background: var(--ck-header-bg); box-shadow: inset 0 -3px 0 var(--ck-header-border); color: var(--ck-header-text); overflow-wrap: anywhere; }
 .brand-bar :focus-visible { outline-color: var(--ck-header-focus); }
 .brand { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; border-radius: var(--ck-radius-sm); font-family: var(--ck-font-display); font-size: 1.6rem; font-weight: 600; letter-spacing: 0.08em; line-height: 1.1; text-decoration: none; text-transform: uppercase; }
-.brand-mark { flex: none; width: 44px; height: 44px; border-radius: var(--ck-radius-sm); background: var(--ck-logo-bg); }
+/* The emblem file is transparent: it lies straight on the header bar, with no backing and no rounded corners. */
+.brand-mark { flex: none; width: 44px; height: 44px; }
 .brand-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .brand-actions a { display: inline-flex; align-items: center; min-height: 44px; padding: 8px 12px; border-radius: var(--ck-radius-sm); text-underline-offset: 4px; }
 .brand-actions a:hover { background: var(--ck-header-hover-bg); }
