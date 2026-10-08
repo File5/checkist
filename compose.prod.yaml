@@ -1,0 +1,162 @@
+# Server deployment of Checkist. Run through deploy/docker/ck (it adds -f and --env-file) and
+# update with deploy/docker/deploy.sh. The dev/QA file is compose.yaml; the two are independent.
+#
+# Environment: .env.prod in the repository root, from deploy/docker/checkist.env.example;
+# another path - CHECKIST_ENV_FILE (absolute or relative to the repository root).
+# Only the proxy publishes ports. Volumes are never removed by the scripts.
+name: checkist
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "5"
+
+# web and celery: one image, the whole environment file.
+x-app: &app
+  image: checkist-app
+  build:
+    context: .
+    target: app
+  env_file:
+    - ${CHECKIST_ENV_FILE:-.env.prod}
+  restart: unless-stopped
+  logging: *logging
+
+services:
+  postgres:
+    image: postgres:17.11-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in the environment file}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in the environment file}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the environment file}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      # TCP, not the socket: the first-start initialisation server listens on the socket only.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+    logging: *logging
+
+  redis:
+    image: redis:7.4.11-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+    logging: *logging
+
+  # Django under gunicorn; reachable only by the proxy over the project network.
+  web:
+    <<: *app
+    command: ["gunicorn", "config.wsgi:application", "-c", "/app/deploy/gunicorn.conf.py", "--bind", "0.0.0.0:8000"]
+    volumes:
+      # The parent of MEDIA_ROOT: storage renames files from a staging directory next to MEDIA.
+      - data:/var/lib/checkist
+      - ${CHECKIST_BACKUP_DIR:-/var/backups/checkist}:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # /robots.txt is answered before the host check and the https redirect.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/robots.txt', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    stop_grace_period: 40s
+    security_opt:
+      - no-new-privileges:true
+
+  # Needed only by the `celery` check of /api/health/; runs no recognition and has no schedule.
+  celery:
+    <<: *app
+    command: ["celery", "-A", "config", "worker", "--loglevel=INFO", "--pool=prefork", "--concurrency=1", "--hostname=checkist@worker"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "celery", "-A", "config", "inspect", "ping", "--destination=checkist@worker", "--timeout=2"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+
+  # Caddy: HTTPS, the built SPA and admin static from its own image; everything else goes to web.
+  proxy:
+    image: checkist-proxy
+    build:
+      context: .
+      target: proxy
+    environment:
+      CHECKIST_SITE_ADDRESS: ${CHECKIST_SITE_ADDRESS:?set CHECKIST_SITE_ADDRESS in the environment file}
+      # One source for Django and Caddy.
+      DJANGO_HSTS_SECONDS: ${DJANGO_HSTS_SECONDS:-3600}
+    ports:
+      - "${CHECKIST_HTTP_BIND:-80}:80"
+      - "${CHECKIST_HTTPS_BIND:-443}:443"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+    healthcheck:
+      # The admin endpoint of Caddy, loopback inside the container.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+    logging: *logging
+
+  # Recognition worker next to Codex CLI. Off by default: add COMPOSE_PROFILES=recognition to the
+  # environment file only after `codex login status` succeeds in this service.
+  recognition:
+    <<: *app
+    profiles: ["recognition"]
+    image: checkist-recognition
+    build:
+      context: .
+      target: recognition
+    environment:
+      CODEX_HOME: /home/checkist/.codex
+    command: ["python", "manage.py", "recognition_worker"]
+    # The worker gives its job back to the queue only on KeyboardInterrupt.
+    init: true
+    stop_signal: SIGINT
+    stop_grace_period: 40s
+    volumes:
+      - data:/var/lib/checkist
+      - ocr_scratch:/var/lib/checkist-scratch
+      - codex_home:/home/checkist/.codex
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
+  data:
+  ocr_scratch:
+  codex_home:
+  caddy_data:
+  caddy_config:
