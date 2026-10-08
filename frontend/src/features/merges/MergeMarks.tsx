@@ -1,7 +1,7 @@
 import RequestState from '../../components/RequestState'
 import { Link } from '../../navigation'
 import { canModerate, useSession } from '../../session'
-import { counted } from './labels'
+import { countedWhole } from './labels'
 import type { MergedHint, PendingMark } from './state'
 import './Merges.css'
 
@@ -19,7 +19,7 @@ export function MergeBadge({ mark }: { mark: PendingMark }) {
 export function ProductMergeNotice({ mark }: { mark: PendingMark }) {
   const moderator = useModerator()
   return <div className="ck-merge-warning ck-merge-notice">
-    <p>Предварительно объединено {counted(mark.records, 'написание', 'написания', 'написаний')} — требует подтверждения. Покупки всех написаний уже показаны в этой карточке.</p>
+    <p>Предварительно объединено {countedWhole(mark.records, 'написание', 'написания', 'написаний')} — требует подтверждения. Покупки всех написаний уже показаны в этой карточке.</p>
     {moderator && <Link className="action-link" to={{ kind: 'merge', groupId: mark.groupId }}>Открыть группу дублей №{mark.groupId}</Link>}
   </div>
 }

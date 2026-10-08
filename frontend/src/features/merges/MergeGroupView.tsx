@@ -1,9 +1,10 @@
 import type { FormEvent, Ref } from 'react'
 import type { MergeGroup, MergeMember } from '../../api/product-merges'
 import { formatPurchasedOn } from '../../lib/format'
+import { numbered } from '../../lib/text'
 import { Link } from '../../navigation'
 import type { ActionState } from './actions'
-import { factValue, fieldLabels, hasFact, memberName, statusLabels } from './labels'
+import { factValue, fieldLabels, hasFact, memberName, periodJoint, statusLabels } from './labels'
 import { activeMembers, canConfirm, conflictOptions, missingResolutions, refusedFields, selectName, selectResolution, selectTarget } from './state'
 import type { MergeSelection } from './state'
 
@@ -14,6 +15,15 @@ function hasCard(group: MergeGroup, member: MergeMember): boolean {
 
 const facts = ['generic', 'brand', 'package', 'gtin', 'model'] as const
 
+const day = (value: string) => <time dateTime={value}>{formatPurchasedOn(value)}</time>
+
+/** First and last purchase of a record: one date, or a period that never starts a line with its dash. */
+function PurchaseDates({ member }: { member: MergeMember }) {
+  if (member.first_purchased_on === null) return 'Нет покупок'
+  if (member.last_purchased_on === null || member.first_purchased_on === member.last_purchased_on) return day(member.first_purchased_on)
+  return <>{day(member.first_purchased_on)}{periodJoint}{day(member.last_purchased_on)}</>
+}
+
 function MemberRow({ group, member, selection, busy, excluding, onSelection, onExclude }: {
   group: MergeGroup; member: MergeMember; selection: MergeSelection; busy: boolean; excluding: boolean
   onSelection: (selection: MergeSelection) => void; onExclude: (productId: number) => void
@@ -21,27 +31,24 @@ function MemberRow({ group, member, selection, busy, excluding, onSelection, onE
   const pending = group.status === 'pending'
   const active = member.state === 'active'
   const name = memberName(member)
-  const dates = member.first_purchased_on === null ? 'Нет покупок'
-    : member.first_purchased_on === member.last_purchased_on ? formatPurchasedOn(member.first_purchased_on)
-      : `${formatPurchasedOn(member.first_purchased_on)} — ${formatPurchasedOn(member.last_purchased_on)}`
   return <tr>
-    {pending && <td>{active && <label className="ck-merge-choice">
+    {pending && <td className="ck-merge-whole">{active && <label className="ck-merge-choice">
       <input type="radio" name="merge-target" value={member.product_id} checked={selection.target === member.product_id}
         disabled={busy || !group.actions.can_confirm} onChange={() => onSelection(selectTarget(selection, member.product_id))} />
       <span>Оставить<span className="ck-merge-hidden"> запись №{member.product_id}: {name}</span></span>
     </label>}</td>}
     <th scope="row">
       {hasCard(group, member) ? <Link to={{ kind: 'product', productId: member.product_id, query: { page: 1 } }}>{name}</Link> : name}
-      <span className="ck-merge-subtext">Запись №{member.product_id}
+      <span className="ck-merge-subtext">{numbered('Запись', member.product_id)}
         {!active ? ' · исключена из группы' : !member.exists ? ' · удалена после слияния'
           : member.product_id === group.target_product_id ? (pending ? ' · оставляемая по умолчанию' : ' · оставленный товар') : ''}</span>
     </th>
-    <td>{member.aliases.length === 0 ? '—' : <ul className="ck-merge-cell-list">{member.aliases.map((alias, index) =>
+    <td className="ck-merge-text">{member.aliases.length === 0 ? '—' : <ul className="ck-merge-cell-list">{member.aliases.map((alias, index) =>
       <li key={`${alias.store_name}/${alias.raw_name}/${alias.store_item_code}/${index}`}>{alias.raw_name}
         <span className="ck-merge-subtext">{alias.store_name.trim() || 'Магазин не указан'}{alias.store_item_code && ` · код ${alias.store_item_code}`}</span></li>)}</ul>}</td>
     <td className="ck-merge-number">{member.lines_count.toLocaleString('ru-RU')}</td>
-    <td>{dates}</td>
-    <td><dl className="ck-merge-cell-facts">
+    <td className="ck-merge-whole"><PurchaseDates member={member} /></td>
+    <td className="ck-merge-text"><dl className="ck-merge-cell-facts">
       {facts.filter((field) => field === 'generic' || hasFact(member, field)).map((field) => <div key={field}><dt>{fieldLabels[field]}</dt><dd>{factValue(member, field)}</dd></div>)}
     </dl></td>
     {pending && <td>{active && group.actions.can_exclude && <button type="button" className="ck-merge-secondary" disabled={busy}
@@ -72,11 +79,11 @@ export default function MergeGroupView({ group, selection, action, onSelection, 
     <h2 id="merge-members-title">Записи группы</h2>
     <form className="ck-merge-form" noValidate onSubmit={submit}>
       <div className="ck-merge-table-scroll" role="region" aria-label="Таблица записей группы, прокручивается по горизонтали" tabIndex={0}>
-        <table className="ck-merge-table">
+        <table className={`ck-merge-table ck-merge-members${pending ? ' ck-merge-choosing' : ''}`}>
           <caption>{pending ? 'Выберите запись, которая останется товаром каталога. Счётчики и написания показаны по исходной принадлежности.' : 'Записи группы на момент завершения.'}</caption>
           <thead><tr>
             {pending && <th scope="col">Оставляемая запись</th>}
-            <th scope="col">Название</th><th scope="col">Написания в чеках</th><th scope="col">Покупок</th>
+            <th scope="col" className="ck-merge-name-head">Название</th><th scope="col">Написания в чеках</th><th scope="col">Покупок</th>
             <th scope="col">Даты покупок</th><th scope="col">Факты</th>
             {pending && <th scope="col">Действие</th>}
           </tr></thead>

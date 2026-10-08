@@ -3,12 +3,13 @@ import { getProductMerge, getProductMergeLines } from '../../api/product-merges'
 import type { MergeGroup } from '../../api/product-merges'
 import type { LocalApiFailure } from '../../api/types'
 import { formatObservedAt } from '../../lib/format'
+import { numbered } from '../../lib/text'
 import { Link } from '../../navigation'
 import type { MergePageProps } from '../../pages/types'
 import { useRequest } from '../recognition/useRequest'
 import { outcomeGroup } from './actions'
 import type { MergeOutcome } from './actions'
-import { counted, memberName, statusLabels } from './labels'
+import { countedWhole, memberName, statusLabels } from './labels'
 import MergeBlock from './MergeBlock'
 import MergeGroupView from './MergeGroupView'
 import MergeLines from './MergeLines'
@@ -30,7 +31,7 @@ export function MergeSummary({ group }: { group: MergeGroup }) {
     {group.conflicts.length > 0 && <p className="ck-merge-warning">Есть конфликт данных: у записей разные значения. Перед подтверждением выберите нужное значение ниже.</p>}
     <dl className="ck-merge-facts">
       <div><dt>Записей</dt><dd>{(group.status === 'pending' ? activeMembers(group.members) : group.members).length.toLocaleString('ru-RU')}</dd></div>
-      <div><dt>Покупок</dt><dd>{group.lines_count.toLocaleString('ru-RU')}{group.new_lines_count > 0 && ` · ${counted(group.new_lines_count, 'добавлена', 'добавлены', 'добавлено')} после слияния`}</dd></div>
+      <div><dt>Покупок</dt><dd>{group.lines_count.toLocaleString('ru-RU')}{group.new_lines_count > 0 && ` · ${countedWhole(group.new_lines_count, 'добавлена', 'добавлены', 'добавлено')} после слияния`}</dd></div>
       <div><dt>Создана</dt><dd><time dateTime={group.created_at}>{formatObservedAt(group.created_at)}</time></dd></div>
       {group.resolved_at && <div><dt>Завершена</dt><dd><time dateTime={group.resolved_at}>{formatObservedAt(group.resolved_at)}</time></dd></div>}
     </dl>
@@ -71,7 +72,7 @@ function MergeScreen({ groupId, returnTo }: MergePageProps) {
   const missing = state.kind === 'error' && state.error.reason === 'not_found'
   return <div className="ck-merge">
     <div className="ck-merge-actions"><Link className="action-link" to={returnTo ?? '/catalog/merges'}>К списку групп</Link></div>
-    <MergeBlock title={`Группа №${groupId}`} id="merge-group-title" state={state} retry={request.refresh}
+    <MergeBlock title={numbered('Группа', groupId)} id="merge-group-title" state={state} retry={request.refresh}
       recovery={missing ? <Link className="action-link" to="/catalog/merges">К списку групп</Link> : undefined}>
       {(data) => <MergeSummary group={data} />}
     </MergeBlock>
