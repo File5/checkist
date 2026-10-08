@@ -114,6 +114,40 @@ describe('state rules of the shell (text of the rules, not rendering)', () => {
   })
 })
 
+describe('width of the page and values that never break (text of the rules, not rendering)', () => {
+  const px = (text: string, pattern: RegExp) => Number(pattern.exec(text)?.[1] ?? NaN)
+  /** Rules outside of any media block. */
+  const wide = app.slice(0, app.indexOf('@media'))
+
+  it('keeps a date whole through a rule that weighs nothing', () => {
+    // App.css follows the screen stylesheets in the build: only :where() lets a screen override the rule.
+    expect(rule(':where(time)', app)).toBe('white-space: nowrap;')
+    expect(weight(':where(time)')).toBe(0)
+    expect(rules(app).filter((item) => /(^|[\s>+~(])time(?![\w-])/.test(item.selector)).map((item) => item.selector)).toEqual([':where(time)'])
+  })
+
+  it('gives the desktop page about 1200 px and keeps the header on the same vertical', () => {
+    const page = rule('.page', wide)
+    const width = px(page, /max-width: (\d+)px;/)
+    const padding = px(page, /padding: 0 (\d+)px;/)
+    expect(width).toBeGreaterThanOrEqual(1160)
+    expect(width).toBeLessThanOrEqual(1240)
+    expect(page).toContain('margin: auto;')
+    // The bar spans the window: its side padding is the gap beside .page plus .page's own padding, never less than it.
+    const bar = /padding: \d+px max\((\d+)px, calc\(50% - (\d+)px\)\) \d+px;/.exec(rule('.brand-bar', wide))
+    expect(bar?.slice(1).map(Number)).toEqual([padding, width / 2 - padding])
+  })
+
+  it('still wraps free text instead of scrolling the page, and leaves the phone as it was', () => {
+    expect(rule('.page', wide)).toContain('overflow-wrap: anywhere;')
+    const phone = /@media \(max-width: 540px\) \{([\s\S]*?)\n\}/.exec(app)?.[1] ?? ''
+    expect(rule('.page', phone)).toBe('padding: 0 20px;')
+    expect(rule('.brand-bar', phone)).toBe('padding: 10px 20px 11px; gap: 4px 10px;')
+    expect(rule('.brand-bar .main-navigation', phone)).toContain('flex-wrap: nowrap;')
+    expect(rule('.brand-bar .main-navigation', phone)).toContain('overflow-x: auto;')
+  })
+})
+
 describe('name of the product in the page and the theme file', () => {
   it('is written in Russian', () => {
     const html = raw('../index.html')
