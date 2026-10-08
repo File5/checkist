@@ -21,7 +21,7 @@ describe('App feature connections (Node server markup, not browser behavior)', (
     navigation.snapshot = { href: '/catalog?q=молоко&generic=42&page=2', route: { kind: 'catalog', query: { q: 'молоко', generic: 42, page: 2 } } }
     const html = renderToStaticMarkup(<App />)
     expect(html).toContain('value="молоко"')
-    expect(html).toContain('Выбран обобщённый продукт № 42')
+    expect(html).toContain('Выбран обобщённый продукт №42.')
     expect(html).toContain('Загружаем категории…')
     expect(html).toContain('Загружаем товары…')
     expect(html.match(/<h1\b/g)).toHaveLength(1)

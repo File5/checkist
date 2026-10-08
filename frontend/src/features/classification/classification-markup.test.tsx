@@ -172,7 +172,7 @@ describe('filter of states', () => {
     const narrowed = view({ query: { status: 'rejected', product: 13, page: 3 }, list: success(pageOf([record('classification-rejected.json')])) })
     expect(narrowed).toContain('<a aria-current="true" href="/catalog/classification?status=rejected&amp;product=13">Отклонённые</a>')
     expect(narrowed).toContain('<a href="/catalog/classification?product=13">Ожидают</a>')
-    expect(narrowed).toContain('Записи товара №13 · Отклонённые · Страница 3')
+    expect(narrowed).toContain('Записи товара №13 · Отклонённые · Страница 3')
     expect(narrowed).toContain('href="/catalog/classification?status=rejected">Показать записи всех товаров</a>')
   })
 })

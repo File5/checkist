@@ -183,10 +183,10 @@ describe('breakdown and drill-down', () => {
     ])
   })
   it('names an unknown level by its number instead of guessing', () => {
-    expect(breadcrumbs({ category: 77 }, undefined).at(-1)).toEqual({ label: 'Категория №77' })
+    expect(breadcrumbs({ category: 77 }, undefined).at(-1)).toEqual({ label: 'Категория №77' })
     // An answer for another category (still on screen while the next one loads) does not lend its name.
-    expect(breadcrumbs({ category: 77 }, drilldown.parent).at(-1)).toEqual({ label: 'Категория №77' })
-    expect(breadcrumbs({ generic: 5, group_by: 'product' }, null).at(-1)).toEqual({ label: 'Обобщённый продукт №5' })
+    expect(breadcrumbs({ category: 77 }, drilldown.parent).at(-1)).toEqual({ label: 'Категория №77' })
+    expect(breadcrumbs({ generic: 5, group_by: 'product' }, null).at(-1)).toEqual({ label: 'Обобщённый продукт №5' })
   })
 })
 
