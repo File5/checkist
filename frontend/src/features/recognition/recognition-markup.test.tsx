@@ -160,6 +160,6 @@ describe('recognition SSR markup (interactive UI remains manual)', () => {
     const jobs = renderToStaticMarkup(<JobsPage query={{ page: 3, status: 'failed' }} />)
     expect(jobs).toContain('Страница 3'); expect(jobs).toContain('selected=""')
     const detail = renderToStaticMarkup(<JobPage jobId={31} returnTo="/recognition/jobs?page=3" />)
-    expect(detail).toContain('<span class="ck-rec-pair">Задание №31</span>'); expect(detail).toContain('href="/recognition/jobs?page=3"')
+    expect(detail).toContain('<span class="ck-rec-pair">Задание\u00a0№31</span>'); expect(detail).toContain('href="/recognition/jobs?page=3"')
   })
 })

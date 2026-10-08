@@ -6,6 +6,7 @@ import { getReceiptImages } from '../../api/recognition'
 import type { ReceiptImage } from '../../api/recognition'
 import type { Page } from '../../api/types'
 import RequestState from '../../components/RequestState'
+import { numbered } from '../../lib/text'
 import { Link } from '../../navigation'
 import type { ReceiptPageProps } from '../../pages/types'
 import { ReceiptBlock, ReceiptPagination } from './ReceiptBlock'
@@ -46,7 +47,7 @@ export function ReceiptView({ receiptId, returnTo, header, images, lines, discou
       <Link className="action-link" to="/receipts/upload">Загрузить фото</Link>
       <Link className="action-link" to="/recognition/jobs">Обработка</Link>
     </div>
-    <ReceiptBlock title={`Страница чека №${receiptId}`} state={header.state} retry={header.retry}>
+    <ReceiptBlock title={numbered('Страница чека', receiptId)} state={header.state} retry={header.retry}>
       {receipt && <ReceiptHeader receipt={receipt} />}
     </ReceiptBlock>
     <PagedBlock title="Изображения чека" id="receipt-images" request={images} empty="У этого чека нет изображений."

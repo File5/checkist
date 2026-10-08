@@ -209,6 +209,23 @@ describe('chart block (Vitest/SSR, not browser acceptance)', () => {
     expect(markup).toContain('Возвраты в график не входят: исключено 1.')
     expect(markup.match(/Возвраты в график/g)).toHaveLength(1)
   })
+  it('writes the money axis like amounts and the lines axis by its step', () => {
+    const data = seriesFixture('series-month.json')
+    const [first] = data.currencies
+    const values = ['1.10', '1.40', '1.70']
+    const buckets = first.buckets.slice(0, 3).map((bucket, index) => ({
+      ...bucket, avg_receipt: values[index], median_receipt: values[index], lines_per_receipt: values[index],
+    }))
+    const markup = trend({ kind: 'ok', data: { ...data, currencies: [{ ...first, buckets }] } })
+    const axes = markup.split('<svg class="ck-line-svg"').slice(1)
+      .map((svg) => [...svg.matchAll(/<text [^>]*dominant-baseline="central"[^>]*>([^<]*)<\/text>/g)].map((match) => match[1]).filter((tick) => /^\d/.test(tick)))
+    expect(axes).toHaveLength(2)
+    const [money, lines] = axes
+    // Both axes share one scale here, so only the way of writing a division differs.
+    expect(lines).toContain('0,5')
+    expect(lines.every((tick) => /^\d+,\d$/.test(tick))).toBe(true)
+    expect(money).toEqual(lines.map((tick) => `${tick}0`))
+  })
   it('names months in the table of a monthly chart', () => {
     const markup = trend({ kind: 'ok', data: seriesFixture('series-month.json') })
     expect(text(markup)).toContain('январь 2026 45,12 EUR 45,85 EUR')
