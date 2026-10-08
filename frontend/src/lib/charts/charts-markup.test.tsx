@@ -93,6 +93,104 @@ describe('PieChart markup (Node, not pointer or focus behaviour)', () => {
   })
 })
 
+describe('PieChart legend rows of an item’s parts (Node, not pointer or focus behaviour)', () => {
+  const base: PieChartItem[] = [
+    { key: 'g1', label: 'Молоко', value: 120, valueText: '120,00 EUR', shareText: '48,00 %', href: '/stats?generic=1' },
+    { key: 'g2', label: 'Хлеб', value: 80, valueText: '80,00 EUR', shareText: '32,00 %', href: '/stats?generic=2' },
+    { key: 'other', label: 'Прочее', value: 40, valueText: '40,00 EUR', shareText: '16,00 %', tone: 'other', note: 'Ещё 3 обобщённых продукта с меньшими суммами, одной строкой.' },
+    { key: 'unmatched', label: 'Строки без товара', value: 10, valueText: '10,00 EUR', shareText: '4,00 %', tone: 'muted' },
+  ]
+  const children = [
+    { key: 'g3', label: 'Сыр', href: '/stats?generic=3', valueText: '25,00 EUR', shareText: '10,00 %', note: '4 строки · 3 чека' },
+    { key: 'g4', label: 'Соль', href: '/stats?generic=4', valueText: '10,00 EUR', shareText: '4,00 %' },
+    { key: 'rest', label: 'Ещё 12 товаров с меньшими суммами, одной строкой', valueText: '5,00 EUR', shareText: '2,00 %', note: 'Чтобы увидеть их, сузьте период.' },
+  ]
+  const withOther = (extra: Partial<PieChartItem>) => base.map((item) => (item.key === 'other' ? { ...item, ...extra } : item))
+  const render = (items: PieChartItem[]) => renderToStaticMarkup(<PieChart title="Траты, EUR" items={items} centerLabel="Всего" centerValue="250,00 EUR" />)
+  const drawingOf = (html: string) => html.slice(html.indexOf('<div class="ck-pie-figure">'), html.indexOf('<table'))
+  const trs = (html: string) => [...html.matchAll(/<tr([^>]*)>(.*?)<\/tr>/g)].slice(1).map((match) => ({ attrs: match[1], body: match[2] }))
+
+  const plain = render(base)
+  const collapsed = render(withOther({ action: { label: 'Показать состав', ariaLabel: 'Показать состав «Прочего», EUR', href: '/stats?other=open', expanded: false } }))
+  const expanded = render(withOther({
+    note: '3 обобщённых продукта с меньшими суммами.',
+    action: { label: 'Скрыть состав', href: '/stats', expanded: true },
+    children, childrenPrefix: 'В составе «Прочего»: ',
+    childrenStatus: <p role="status">Доли состава посчитаны от другой суммы.</p>,
+  }))
+
+  it('keeps the former markup when no item has the new fields', () => {
+    expect(plain).not.toMatch(/ck-pie-child|ck-pie-action|ck-chart-hidden|aria-expanded|colSpan|colspan/)
+    expect(trs(plain).map((row) => row.attrs)).toEqual(['', '', '', ''])
+    expect(trs(plain)[2].body).toBe(
+      '<th scope="row"><span class="ck-pie-name"><span class="ck-pie-swatch ck-chart-other" aria-hidden="true"></span>'
+      + '<span class="ck-pie-name-text">Прочее<span class="ck-chart-note">Ещё 3 обобщённых продукта с меньшими суммами, одной строкой.</span></span></span></th>'
+      + '<td class="ck-chart-number">40,00 EUR</td><td class="ck-chart-number">16,00 %</td>',
+    )
+    // Empty or absent values of the new fields are the same as no fields.
+    expect(render(withOther({ children: [], childrenPrefix: 'В составе: ', childrenStatus: null }))).toBe(plain)
+  })
+  it('adds no sector, no label and no palette shift for child rows', () => {
+    expect(drawingOf(expanded)).toBe(drawingOf(plain))
+    expect(drawingOf(collapsed)).toBe(drawingOf(plain))
+    expect(count(expanded, /<g class="ck-pie-slice /g)).toBe(4)
+    // Children of an ordinary item do not move the colours of the items after it.
+    const nested = render(base.map((item) => (item.key === 'g1' ? { ...item, children } : item)))
+    expect(drawingOf(nested)).toBe(drawingOf(plain))
+    expect(trs(nested)[4].body).toContain('ck-pie-swatch ck-chart-c2')
+  })
+  it('puts a toggle link with aria-expanded after the name and the note, the same element in both states', () => {
+    expect(trs(collapsed)[2].body).toContain(
+      'одной строкой.</span><a href="/stats?other=open" class="ck-pie-action" aria-expanded="false" aria-label="Показать состав «Прочего», EUR">Показать состав</a></span>',
+    )
+    expect(trs(expanded)[2].body).toContain('<a href="/stats" class="ck-pie-action" aria-expanded="true">Скрыть состав</a></span>')
+    expect(count(collapsed, /aria-expanded=/g)).toBe(1)
+    // The toggle only: the row keeps its sum and share, the drawing its link count.
+    expect(trs(collapsed)[2].body).toContain('<td class="ck-chart-number">40,00 EUR</td><td class="ck-chart-number">16,00 %</td>')
+    const spa = ({ to, ...props }: ChartLinkProps) => <a {...props} href={to} data-spa="true" />
+    const linked = renderToStaticMarkup(<PieChart title="Траты, EUR" items={withOther({ action: { label: 'Показать состав', href: '/stats?other=open', expanded: false } })} linkComponent={spa} />)
+    expect(linked).toContain('<a class="ck-pie-action" aria-expanded="false" href="/stats?other=open" data-spa="true">Показать состав</a>')
+  })
+  it('orders the rows: items before, the item, its children, the status row, items after', () => {
+    const body = trs(expanded)
+    expect(body.map((row) => row.attrs)).toEqual(['', '', '', ' class="ck-pie-child"', ' class="ck-pie-child"', ' class="ck-pie-child"', ' class="ck-pie-child-status"', ''])
+    expect(body[2].body).toContain('Прочее')
+    expect(body[7].body).toContain('Строки без товара')
+  })
+  it('renders a child as a row header with the hidden prefix, the swatch of its item, a link and a note', () => {
+    const body = trs(expanded)
+    expect(body[3].body).toBe(
+      '<th scope="row"><span class="ck-pie-name"><span class="ck-pie-swatch ck-chart-other" aria-hidden="true"></span>'
+      + '<span class="ck-pie-name-text"><span><span class="ck-chart-hidden">В составе «Прочего»: </span><a href="/stats?generic=3">Сыр</a></span>'
+      + '<span class="ck-chart-note">4 строки · 3 чека</span></span></span></th>'
+      + '<td class="ck-chart-number">25,00 EUR</td><td class="ck-chart-number">10,00 %</td>',
+    )
+    expect(body[4].body).not.toContain('ck-chart-note')
+    // The remainder: no link, the hint under the name.
+    expect(body[5].body).toContain('</span>Ещё 12 товаров с меньшими суммами, одной строкой</span><span class="ck-chart-note">Чтобы увидеть их, сузьте период.</span>')
+    expect(body[5].body).not.toContain('<a ')
+    expect(body[5].body).toContain('<td class="ck-chart-number">5,00 EUR</td><td class="ck-chart-number">2,00 %</td>')
+    // Child links are keyboard stops; the drawing gets no link for them.
+    expect(count(expanded, /tabindex="-1"/g)).toBe(2)
+    expect(count(expanded, /<a href="\/stats\?generic=3"/g)).toBe(1)
+  })
+  it('spans the status row over every column and shows it without children too', () => {
+    expect(trs(expanded)[6].body).toBe('<td colSpan="3"><div class="ck-pie-child-status-body"><p role="status">Доли состава посчитаны от другой суммы.</p></div></td>')
+    expect(count(expanded, /<th scope="col"/g)).toBe(3)
+    const loading = render(withOther({ childrenStatus: <p role="status">Загружаем состав…</p> }))
+    expect(trs(loading).map((row) => row.attrs)).toEqual(['', '', '', ' class="ck-pie-child-status"', ''])
+    expect(count(loading, /role="status"/g)).toBe(1)
+  })
+  it('gives children of an item that is not drawn its dashed swatch and takes 500 rows', () => {
+    const refund: PieChartItem = { key: 'other', label: 'Прочее', value: -4, valueText: '-4,00 EUR', shareText: '—', tone: 'other', children: children.slice(0, 1) }
+    expect(trs(render([base[0], refund]))[2].body).toContain('<span class="ck-pie-swatch ck-pie-swatch-none" aria-hidden="true"></span>')
+    const many = Array.from({ length: 500 }, (_, index) => ({ key: `p${index}`, label: `Товар ${index + 1}`, valueText: '0,01 EUR', shareText: '0,01 %' }))
+    const long = render(withOther({ children: many }))
+    expect(count(long, /<tr class="ck-pie-child">/g)).toBe(500)
+    expect(drawingOf(long)).toBe(drawingOf(plain))
+  })
+})
+
 describe('LineChart markup (Node, not keyboard or pointer behaviour)', () => {
   const eur = (value: number) => `${value.toFixed(2).replace('.', ',')} EUR`
   const point = (month: string, value: number) => ({ x: `2026-${month}-01`, value, valueText: eur(value) })

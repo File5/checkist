@@ -25,6 +25,17 @@ describe('stylesheet guards (text of the rules, not rendering)', () => {
     expect(rule(charts, '.ck-line-tooltip[data-side="left"]')).toBe('margin-right: 12px;')
     expect(rules(charts).filter((item) => item.selector.includes('ck-line-tooltip') && item.body.includes('transform'))).toEqual([])
   })
+  it('keeps the toggle link of a pie legend row a 44px target over a screen’s own link rule, without motion', () => {
+    const action = rule(charts, '.ck-chart .ck-pie-legend a.ck-pie-action')
+    expect(action).toContain('min-height: 44px')
+    expect(action).toContain('display: inline-flex')
+    // The screen rule this one has to outweigh: two classes and an element.
+    expect(rule(spending, '.spending-currency .ck-pie-legend a')).toContain('display: inline-block')
+    const parts = rules(charts).filter((item) => /ck-pie-(child|action)|ck-chart-hidden/.test(item.selector))
+    expect(parts.length).toBeGreaterThan(5)
+    for (const item of parts) expect(item.body, item.selector).not.toMatch(/transition|animation|#[0-9a-f]{3,8}\b|rgba?\(/i)
+    expect(rule(charts, '.ck-chart-hidden')).toContain('clip-path: inset(50%)')
+  })
   it('resets the global 44px minimum height wherever a checkbox or radio is given a small box', () => {
     expect(rule(app, 'input, select')).toContain('min-height: 44px')
     const small = [charts, spending, receipts, product, merges].flatMap(rules)

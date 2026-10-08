@@ -74,6 +74,17 @@
 .ck-pie-swatch { flex: 0 0 14px; width: 14px; height: 14px; margin-top: 5px; border-radius: 3px; background: var(--ck-c); }
 .ck-pie-swatch[data-hatched] { background: repeating-linear-gradient(45deg, var(--ck-c) 0 3px, color-mix(in srgb, var(--ck-c) 45%, var(--ck-chart-surface)) 3px 5px); }
 .ck-pie-swatch-none { background: none; border: 1px dashed var(--ck-chart-muted); }
+/* Rows of the parts of a legend item (PieChartItem.children): indented under its name, with its swatch.
+   The row under the pointer is marked here, not by data-state: see ChildRows. */
+.ck-chart-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.ck-pie-child .ck-pie-name, .ck-pie-child-status-body { margin-left: 24px; }
+.ck-pie-child-status-body { min-width: 0; }
+.ck-pie-legend tbody tr.ck-pie-child:hover, .ck-pie-legend tbody tr.ck-pie-child:focus-within { background: var(--ck-chart-highlight); }
+/* Heavier than a screen's own `.ck-pie-legend a`, so the 44px target survives there. */
+.ck-chart .ck-pie-legend a.ck-pie-action { display: inline-flex; align-items: center; gap: 6px; justify-self: start; min-height: 44px; padding-block: 0; color: var(--ck-link); }
+.ck-pie-action::before { content: ""; flex: none; border: 5px solid transparent; border-right-width: 0; border-left-color: currentColor; }
+.ck-pie-action[aria-expanded="true"]::before { border: 5px solid transparent; border-bottom-width: 0; border-top-color: currentColor; }
+.ck-pie-legend button:focus-visible { outline: 3px solid var(--ck-chart-focus); outline-offset: 2px; }
 
 /* Line */
 .ck-line-legend { display: flex; flex-wrap: wrap; gap: 4px 18px; min-width: 0; margin: 0; padding: 0; border: 0; }
@@ -115,6 +126,7 @@
 @media (max-width: 540px) {
   .ck-chart th, .ck-chart td { padding: 8px 6px; }
   .ck-pie-legend .ck-chart-number { white-space: normal; }
+  .ck-pie-child .ck-pie-name, .ck-pie-child-status-body { margin-left: 12px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .ck-pie-shape, .ck-pie-legend tbody tr { transition: none; }
@@ -122,6 +134,6 @@
 @media (forced-colors: active) {
   .ck-pie-shape { stroke: Canvas; }
   .ck-pie-slice[data-state="active"] .ck-pie-shape { stroke: Highlight; stroke-width: 3; }
-  .ck-pie-legend tbody tr[data-state="active"] { outline: 2px solid Highlight; outline-offset: -2px; }
+  .ck-pie-legend tbody tr[data-state="active"], .ck-pie-legend tbody tr.ck-pie-child:hover, .ck-pie-legend tbody tr.ck-pie-child:focus-within { outline: 2px solid Highlight; outline-offset: -2px; }
   .ck-line-marker[data-state="active"] { stroke: Highlight; }
 }
