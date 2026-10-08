@@ -121,14 +121,19 @@ class ReceiptIsolationTests(IsolationMixin, TestCase):
 
     def test_filters_by_shared_store_and_product_keep_only_own(self):
         queries = (f"store={self.store.pk}", f"product={self.product.pk}", "country=DE", "currency=EUR",
-                   "operation=sale", "date_from=2026-03-05&date_to=2026-03-05", "search=SYNTH", "search=молоко")
+                   "operation=sale", "date_from=2026-03-05&date_to=2026-03-05", "q=SYNTH", "q=молоко")
         for account, own, _other in self.pairs():
             for query in queries:
                 with self.subTest(account=account.username, query=query):
                     self.assertEqual(ids(self.client_of(account).get(f"/api/receipts/?{query}")), [own.pk])
         # Текст строки чужого чека своих чеков не находит.
-        self.assertEqual(count(self.client_of(self.first).get("/api/receipts/?search=ZWEI")), 0)
-        self.assertEqual(count(self.client_of(self.second).get("/api/receipts/?search=EINS")), 0)
+        self.assertEqual(count(self.client_of(self.first).get("/api/receipts/?q=ZWEI")), 0)
+        self.assertEqual(count(self.client_of(self.second).get("/api/receipts/?q=EINS")), 0)
+        # Тот же текст свой чек находит: пустой ответ выше — не от неработающего поиска.
+        self.assertEqual(ids(self.client_of(self.first).get("/api/receipts/?q=EINS")),
+                         [self.receipts[self.first.pk].pk])
+        self.assertEqual(ids(self.client_of(self.second).get("/api/receipts/?q=ZWEI")),
+                         [self.receipts[self.second.pk].pk])
 
     def test_own_receipt_and_children_are_read(self):
         for account, own, _other in self.pairs():
@@ -178,7 +183,9 @@ class RecognitionIsolationTests(IsolationMixin, TestCase):
         for account in (cls.first, cls.second):
             receipt = purchase(account, store, "EUR", date(2026, 3, 5), "5.00", product)
             photo = make_photo(owner=account)
-            job = ProcessingJob.objects.create(photo=photo)
+            # Задание в очереди с готовой вырезкой — как после возврата потерянного воркером:
+            # счётчики согласованы с вырезкой (rec_job_*_count_check), иначе отмену отвергает база.
+            job = ProcessingJob.objects.create(photo=photo, detected_count=1, completed_count=1, imported_count=1)
             image = make_image(job, status="imported", receipt=receipt, import_effect="created",
                                outcome_snapshot={"receipt_id": receipt.pk})
             cls.rows[account.pk] = {"photos": photo, "jobs": job, "receipt-images": image, "receipt": receipt}

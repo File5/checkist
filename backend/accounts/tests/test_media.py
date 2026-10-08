@@ -24,11 +24,15 @@ OUTSIDE_BYTES = b"synthetic file outside MEDIA_ROOT"
 
 
 def body(response):
-    """Тело ответа; файл закрывается, иначе временный каталог на Windows не удалить."""
-    try:
-        return b"".join(response.streaming_content) if response.streaming else response.content
-    finally:
-        response.close()
+    """Тело ответа; файл закрывается, иначе временный каталог на Windows не удалить.
+
+    Свой ``response.close()`` здесь не нужен и вреден: обычный ответ тестовый клиент уже
+    закрыл, потоковый закрывает сам, когда тело дочитано до конца (в том числе пустое тело
+    HEAD), — и оба раза без ``close_old_connections``. Повторное закрытие послало бы
+    ``request_finished`` с этим обработчиком, а он внутри ``TestCase`` (autocommit
+    выключен) закрывает соединение теста.
+    """
+    return b"".join(response.streaming_content) if response.streaming else response.content
 
 
 def refusal(response):
