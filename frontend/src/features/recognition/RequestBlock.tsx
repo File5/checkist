@@ -5,7 +5,7 @@ import { errorText } from './labels'
 import type { RequestState as State } from './polling'
 
 export default function RequestBlock<T>({ title, id, state, retry, children, errorAction }: {
-  title: string; id: string; state: State<T>; retry: () => void; children: (data: T) => ReactNode; errorAction?: ReactNode
+  title: ReactNode; id: string; state: State<T>; retry: () => void; children: (data: T) => ReactNode; errorAction?: ReactNode
 }) {
   const block = useLocalRequestFocus(state)
   return <section ref={block} className="ck-rec-panel" aria-labelledby={id} aria-busy={state.kind === 'loading'}>

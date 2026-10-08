@@ -3,6 +3,7 @@ import type { FormEvent } from 'react'
 import { getRecognitionCsrf, uploadPhoto } from '../../api/recognition'
 import RequestState from '../../components/RequestState'
 import { useLocalRequestFocus } from '../../components/useLocalRequestFocus'
+import { glue } from '../../lib/text'
 import { Link, navigate } from '../../navigation'
 import { errorText, isExecutorAbsent, uploadExecutorNote } from './labels'
 import { createUpload, fileFormat, formatBytes, setJobNotice, uploadMessage, validateFile } from './upload-state'
@@ -67,7 +68,7 @@ export default function UploadPage() {
       {config.kind === 'loading' && <RequestState kind="loading" message="Получаем лимиты и токен безопасности…" />}
       {config.kind === 'error' && <RequestState kind="error" message={errorText(config.error)} onRetry={request.refresh} />}
       {config.kind === 'ok' && <>
-        <p>Форматы: {config.data.limits.formats.map((format) => format.replace('image/', '').toUpperCase()).join(', ')}. Максимальный размер: {formatBytes(config.data.limits.max_bytes)}. До {config.data.limits.max_pixels.toLocaleString('ru-RU')} пикселей и {config.data.limits.max_receipts.toLocaleString('ru-RU')} чеков на фото.</p>
+        <p>Форматы: {config.data.limits.formats.map((format) => format.replace('image/', '').toUpperCase()).join(', ')}. Максимальный размер: {formatBytes(config.data.limits.max_bytes)}. До {glue(config.data.limits.max_pixels.toLocaleString('ru-RU'), 'пикселей')} и {glue(config.data.limits.max_receipts.toLocaleString('ru-RU'), 'чеков')} на фото.</p>
         {executorNote && <p className={executorNote.warning ? 'ck-rec-warning' : undefined}>{executorNote.text}</p>}
         <button type="button" disabled={sending || refreshing} onClick={refreshConfig}>Обновить условия загрузки</button>
         {config.refreshError && <p role="status" className="ck-rec-error">Не удалось обновить условия. {errorText(config.refreshError)}</p>}

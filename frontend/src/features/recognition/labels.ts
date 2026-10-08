@@ -1,5 +1,6 @@
 import type { ExecutorState, Job, JobStage, JobStatus } from '../../api/recognition'
 import type { LocalApiFailure } from '../../api/types'
+import { glue } from '../../lib/text'
 import { getSession, permissionDeniedText } from '../../session'
 
 export const jobLabels: Record<JobStatus, string> = {
@@ -15,7 +16,7 @@ export function isActive(job: Pick<Job, 'status'>) { return ['queued', 'running'
 export function acceptJob(previous: Job, next: Job) { return previous.id === next.id && next.version >= previous.version }
 export function stageText(job: Job) {
   const { current_position: position, detected } = job.progress
-  return `${stageLabels[job.stage]}${position === null ? '' : ` · чек ${position.toLocaleString('ru-RU')}${detected === null ? '' : ` из ${detected.toLocaleString('ru-RU')}`}`}`
+  return `${stageLabels[job.stage]}${position === null ? '' : ` · ${glue('чек', position.toLocaleString('ru-RU'), ...(detected === null ? [] : ['из', detected.toLocaleString('ru-RU')]))}`}`
 }
 export type ExecutorNote = { text: string; warning: boolean }
 const executorAbsent: ExecutorNote = { text: 'Воркер распознавания не запущен. Задание будет ждать в очереди, пока воркер не запустят.', warning: true }

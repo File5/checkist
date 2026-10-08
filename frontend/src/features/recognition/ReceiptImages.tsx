@@ -5,6 +5,7 @@ import { focusOwnerAttribute } from '../../components/local-request-focus'
 import RecognitionIssues from '../../components/RecognitionIssues'
 import RequestState from '../../components/RequestState'
 import { formatObservedAt } from '../../lib/format'
+import { glue, numbered } from '../../lib/text'
 import { Link } from '../../navigation'
 import { imageLabels } from './labels'
 import MediaImage from './MediaImage'
@@ -36,7 +37,7 @@ function ImageCard({ item, confirmed, finished, busy, review, remember, result }
     if (left && addressed && (!document.activeElement || document.activeElement === document.body)) card.current?.querySelector<HTMLElement>('.ck-rec-result')?.focus()
   }, [shown.status, addressed])
   return <li className="ck-rec-card" ref={card} {...{ [focusOwnerAttribute]: '' }}>
-    <h3>Чек {shown.position} · {imageLabels[shown.status]}</h3>
+    <h3><span className="ck-rec-pair">{glue('Чек', shown.position)}</span> · {imageLabels[shown.status]}</h3>
     <MediaImage url={shown.image_url} alt={`Вырезка чека ${shown.position}`} />
     {shown.clipped && <p className="ck-rec-warning">Часть чека обрезана.</p>}
     <p ref={addressed ? result : undefined} tabIndex={-1} role="status" className={`ck-rec-result${message && action.kind === 'failed' ? ' ck-rec-result-failed' : ''}`}>{message}</p>
@@ -45,7 +46,7 @@ function ImageCard({ item, confirmed, finished, busy, review, remember, result }
     {shown.status === 'needs_review'
       ? <ReviewResult image={shown} finished={finished} busy={busy} review={review} remember={remember} />
       : <RecognitionIssues issues={shown.issues} status={shown.status} />}
-    {shown.receipt_id !== null && <Link className="action-link" to={{ kind: 'receipt', receiptId: shown.receipt_id }}>Открыть чек №{shown.receipt_id}</Link>}
+    {shown.receipt_id !== null && <Link className="action-link" to={{ kind: 'receipt', receiptId: shown.receipt_id }}>Открыть {numbered('чек', shown.receipt_id)}</Link>}
     {shown.receipt_deleted && <p>Ранее сохранённый чек удалён.</p>}
   </li>
 }

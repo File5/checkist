@@ -1,5 +1,6 @@
 import type { ReceiptImageDetail, RecognitionCsrf, ReviewConfirmInput, ReviewConfirmResult } from '../../api/recognition'
 import type { LocalApiFailure, LocalApiResult } from '../../api/types'
+import { NBSP } from '../../lib/text'
 import { reviewErrorText, reviewKeepsState } from './labels'
 
 export type ReviewActionState = { kind: 'idle' } | { kind: 'pending'; imageId: number }
@@ -45,7 +46,7 @@ export function rememberConfirmed(saved: ConfirmedCrops, state: ReviewActionStat
 }
 
 function doneText(image: ReceiptImageDetail): string {
-  const receipt = image.receipt_id === null ? '' : ` №${image.receipt_id}`
+  const receipt = image.receipt_id === null ? '' : `${NBSP}№${image.receipt_id}`
   if (image.status === 'reused') return `Подтверждено. Вырезка привязана к уже сохранённому чеку${receipt}: его значения не изменены, исправления к нему не применены.`
   if (image.status === 'updated') return `Подтверждено. Вырезка привязана к уже сохранённому чеку${receipt}: дополнены только его пустые поля, заполненные значения не изменены.`
   return `Подтверждено. Чек${receipt} сохранён.`

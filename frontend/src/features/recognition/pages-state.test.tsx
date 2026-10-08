@@ -113,7 +113,7 @@ describe('page block states with public API data (SSR)', () => {
     const csrf = fixture('csrf.json', isRecognitionCsrf)
     mocked.states = [success(csrf)]
     const html = renderToStaticMarkup(<UploadPage />)
-    expect(html).toContain('20 МиБ'); expect(html).toContain('40 000 000'); expect(html).toContain('JPEG, PNG, WEBP')
+    expect(html).toContain('20\u00a0МиБ'); expect(html).toContain('40 000 000'); expect(html).toContain('JPEG, PNG, WEBP')
     expect(html).toContain('Воркер распознавания не запущен.'); expect(html).not.toContain(csrf.csrf_token)
     expect(html).toContain('Фото передаётся облачной модели')
   })
@@ -127,7 +127,7 @@ describe('page block states with public API data (SSR)', () => {
     const job = fixture('job-running.json', isJobDetail)
     mocked.states = [success({ count: 3, page: 2, page_size: 1, pages: 3, results: [job] })]
     const html = renderToStaticMarkup(<JobsPage query={{ page: 2, page_size: 1, status: 'running', photo: job.photo_id }} />)
-    expect(html).toContain('href="/recognition/jobs/31"'); expect(html).toContain('Фото №11')
+    expect(html).toContain('href="/recognition/jobs/31"'); expect(html).toContain('<span class="ck-rec-pair">Фото\u00a0№11</span>')
     expect(html).toMatch(/href="\/recognition\/jobs\?[^"]*status=running[^"]*"/)
     expect(html).toContain('photo=11'); expect(html).toContain('page_size=1'); expect(html).toContain('aria-current="page"')
     expect(html).toContain('Обрабатывается'); expect(html).toContain('Отменить')

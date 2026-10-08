@@ -10,6 +10,8 @@
 .ck-rec-warning { color: var(--ck-warning-text); background: var(--ck-warning-bg); border: 1px solid var(--ck-warning-border); padding: 14px; border-radius: var(--ck-radius-sm); }
 .ck-rec-error { color: var(--ck-error-text); }
 .ck-rec-note { color: var(--ck-text-muted); font-size: 0.9rem; }
+/* A word with its number or a number with its unit («Фото №3», «2,5 МиБ»): never split, the pair wraps as a whole. */
+.ck-rec-pair { white-space: nowrap; }
 .ck-rec-summary { display: grid; gap: 12px; }
 .ck-rec-status { font-weight: 650; padding: 12px; background: var(--ck-neutral-bg); border-radius: var(--ck-radius-sm); }
 .ck-rec-status-succeeded { color: var(--ck-success-text); background: var(--ck-success-bg); }
@@ -20,6 +22,7 @@
 .ck-rec-facts dt { color: var(--ck-text-muted); font-size: 0.9rem; }
 .ck-rec-facts dd { margin: 4px 0 0; }
 .ck-rec-list { display: grid; gap: 16px; padding: 0; margin: 0; list-style: none; }
+.ck-rec-list > li { min-width: 0; }
 .ck-rec-card { display: grid; gap: 16px; padding: 18px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius); min-width: 0; }
 .ck-rec h3, .ck-rec h4 { margin: 0; }
 .ck-rec h3 a { display: inline-flex; min-height: 44px; align-items: center; text-underline-offset: 4px; }
@@ -42,7 +45,8 @@
 .ck-rec-result:empty { display: block; padding: 0; border: 0; margin-top: -16px; }
 .ck-rec-result-failed { color: var(--ck-error-text); background: var(--ck-error-bg); border-color: var(--ck-error-border); }
 .ck-rec-confirmed { margin: 0; color: var(--ck-success-text); font-weight: 600; }
-.ck-review { display: grid; gap: 16px; min-width: 0; border-top: 1px solid var(--ck-divider); padding-top: 16px; }
+/* The form keeps the width it had on the 920 px page: on the wide page its fields and notes do not stretch further. */
+.ck-review { display: grid; gap: 16px; min-width: 0; max-width: 760px; border-top: 1px solid var(--ck-divider); padding-top: 16px; }
 .ck-review p { margin: 0; }
 .ck-review-body { display: grid; gap: 16px; min-width: 0; margin: 0; padding: 0; border: 0; }
 .ck-review-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
