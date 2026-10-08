@@ -29,7 +29,7 @@ export default function PriceSummary({ state, retry, reset }: {
               <div><dt>Средняя</dt><dd className="product-number">{formatPrice(group.total.avg, group.currency, group.unit)}</dd></div>
               <div><dt>Первая цена</dt><dd className="product-number">{formatPrice(group.total.first.price, group.currency, group.unit)}<span className="product-subtext"><time dateTime={group.total.first.purchased_on}>{formatPurchasedOn(group.total.first.purchased_on)}</time></span></dd></div>
               <div><dt>Последняя цена</dt><dd className="product-number">{formatPrice(group.total.last.price, group.currency, group.unit)}<span className="product-subtext"><time dateTime={group.total.last.purchased_on}>{formatPurchasedOn(group.total.last.purchased_on)}</time></span></dd></div>
-              <div><dt>Изменение</dt><dd className="product-number">{group.total.change_percent === null ? 'Нет данных для расчёта' : formatPercent(group.total.change_percent)}</dd></div>
+              <div><dt>Изменение</dt><dd className="product-number">{group.total.change_percent === null ? <span className="product-cell-text">Нет данных для расчёта</span> : formatPercent(group.total.change_percent)}</dd></div>
             </dl>
           </li>
         ))}</ul>)}

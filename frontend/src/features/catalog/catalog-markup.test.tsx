@@ -42,8 +42,11 @@ describe('catalog HTML semantics (Node, not visual or interactive acceptance)', 
     expect(html).toContain('9 999 999 999 999 999,12 RUB')
     expect(html).toContain('Страна: DE')
     expect(html).toContain('Страна: RU')
-    expect(html).toContain('dateTime="2026-09-28"')
-    expect(html).toContain('28.09.2026')
+    expect(html).toContain('<time dateTime="2026-09-28">28.09.2026</time>')
+    // Every price is in the unbreakable price element, every date inside <time>.
+    expect(html.match(/<span class="ck-catalog-price">/g)).toHaveLength(2)
+    expect(html.match(/<time dateTime=/g)).toHaveLength(2)
+    expect(html).toMatch(/<dd><span class="ck-catalog-value">[^<]+<\/span><\/dd>/)
   })
   it('uses native lists for categories, branch counters and the server breadcrumb path', () => {
     const links = renderToStaticMarkup(<CategoryLinks categories={[{ ...category, products_count: 1, products_total: 12 }]} />)
