@@ -1,9 +1,10 @@
 import type { SpendingCurrency, SpendingGroupBy, SpendingItem } from '../../api/stats'
 import { chartNumber } from '../../lib/charts'
-import type { PieChartItem } from '../../lib/charts'
+import type { PieChartChild, PieChartItem } from '../../lib/charts'
 import { formatAmount, formatPercent, formatQuantity } from '../../lib/format'
 import type { SpendingQuery } from '../../navigation/routes'
-import { groupingCaptions, itemHref } from './spending-state'
+import { groupingCaptions, itemHref, otherHref } from './spending-state'
+import type { BlockTail } from './spending-tail'
 
 /** Russian plural: 1 → one, 2–4 → few, 5+ and 11–14 → many. */
 export function plural(count: number, one: string, few: string, many: string): string {
@@ -29,6 +30,22 @@ const otherNouns: Record<SpendingGroupBy, [string, string, string]> = {
   product: ['товар', 'товара', 'товаров'], store: ['магазин', 'магазина', 'магазинов'],
 }
 
+/** What narrows the list when the composition did not fit one answer. */
+const restHints: Record<SpendingGroupBy, string> = {
+  category: 'Чтобы увидеть их, сузьте период или фильтры.',
+  generic: 'Чтобы увидеть их, сузьте период или откройте категорию.',
+  product: 'Чтобы увидеть их, сузьте период или откройте обобщённый продукт.',
+  store: 'Чтобы увидеть их, сузьте период или фильтры.',
+}
+export const tailPrefix = 'В составе „Прочего“: '
+export const tailSharesNote = 'В „Прочем“ есть строки с неположительной суммой: доли состава посчитаны от суммы положительных строк полного списка.'
+
+/**
+ * The composition of «Прочее» of a block: `undefined` — closed, `loading` — asked and not answered yet,
+ * `failed` — the answer did not come (the text is the caller's), otherwise the result of `blockTail`.
+ */
+export type TailView = BlockTail | { kind: 'loading' } | { kind: 'failed' }
+
 export function itemKey(item: SpendingItem): string {
   return item.id === null ? item.kind : `${item.direct ? 'direct' : item.kind}:${item.id}`
 }
@@ -50,8 +67,25 @@ function itemNote(item: SpendingItem): string {
   return item.unassigned ? `${unassignedHint} ${facts}` : facts
 }
 
-/** Sectors and legend rows in the server's order; amounts are formatted from the wire strings, the number only draws. */
-export function pieItems(block: SpendingCurrency, groupBy: SpendingGroupBy, query: SpendingQuery): PieChartItem[] {
+/** Rows under «Прочее» in the server's order, then what did not fit the answer as one more row. Server numbers only. */
+export function tailChildren(block: SpendingCurrency, groupBy: SpendingGroupBy, query: SpendingQuery, tail: TailView | undefined): PieChartChild[] {
+  if (tail?.kind !== 'ok') return []
+  const rows: PieChartChild[] = tail.items.map((item) => ({
+    key: itemKey(item), label: itemLabel(item), href: itemHref(query, item), note: itemNote(item),
+    valueText: formatAmount(item.amount, block.currency), shareText: formatPercent(item.share_percent),
+  }))
+  if (tail.rest) rows.push({
+    key: 'rest', label: `Ещё ${counted(tail.rest.count, ...otherNouns[groupBy])} с меньшими суммами, одной строкой`, note: restHints[groupBy],
+    valueText: formatAmount(tail.rest.amount, block.currency), shareText: formatPercent(tail.rest.share_percent),
+  })
+  return rows
+}
+
+/**
+ * Sectors and legend rows in the server's order; amounts are formatted from the wire strings, the number only draws.
+ * With `tail` the «Прочее» row is open: its own sum and share stay, the composition goes under it as child rows.
+ */
+export function pieItems(block: SpendingCurrency, groupBy: SpendingGroupBy, query: SpendingQuery, tail?: TailView): PieChartItem[] {
   const items: PieChartItem[] = block.items.map((item) => ({
     key: itemKey(item), label: itemLabel(item), value: chartNumber(item.amount) ?? 0,
     valueText: formatAmount(item.amount, block.currency), shareText: formatPercent(item.share_percent),
@@ -62,8 +96,15 @@ export function pieItems(block: SpendingCurrency, groupBy: SpendingGroupBy, quer
     const row: PieChartItem = {
       key: 'other', label: otherLabel, value: chartNumber(block.other.amount) ?? 0, tone: 'other',
       valueText: formatAmount(block.other.amount, block.currency), shareText: formatPercent(block.other.share_percent),
-      note: `Ещё ${counted(block.other.count, ...otherNouns[groupBy])} с меньшими суммами, одной строкой.`,
+      note: tail ? `${counted(block.other.count, ...otherNouns[groupBy])} с меньшими суммами.`
+        : `Ещё ${counted(block.other.count, ...otherNouns[groupBy])} с меньшими суммами, одной строкой.`,
+      action: {
+        label: tail ? 'Скрыть состав' : 'Показать состав', ariaLabel: `${tail ? 'Скрыть' : 'Показать'} состав „Прочего“, ${block.currency}`,
+        href: otherHref(query, !tail), expanded: Boolean(tail),
+      },
     }
+    const children = tailChildren(block, groupBy, query, tail)
+    if (children.length) Object.assign(row, { children, childrenPrefix: tailPrefix })
     // «Прочее» closes the regular items; the special rows stay after it, as on the server.
     const special = items.findIndex((item) => item.tone === 'muted')
     items.splice(special === -1 ? items.length : special, 0, row)
@@ -84,6 +125,8 @@ export type BlockView = {
   items: PieChartItem[]
   /** At least one row is «Не разобрано» or lines without a product. */
   needsAdminHint: boolean
+  /** State of the composition of «Прочее»; absent while it is closed or the block has no «Прочее». */
+  tail?: { kind: TailView['kind']; sharesDiffer: boolean }
 }
 
 export function differenceText(block: SpendingCurrency): string {
@@ -97,8 +140,10 @@ export function differenceText(block: SpendingCurrency): string {
     + 'Разница — это скидки на весь чек, налог сверх цен и округление: по строкам они не распределяются.'
 }
 
-export function blockView(block: SpendingCurrency, groupBy: SpendingGroupBy, query: SpendingQuery): BlockView {
+export function blockView(block: SpendingCurrency, groupBy: SpendingGroupBy, query: SpendingQuery, tail?: TailView): BlockView {
   const { receipts_total, lines_paid, receipts_count } = block.totals
+  // A block without «Прочее» has nothing to open, whatever the address says.
+  const opened = block.other ? tail : undefined
   const linesPaid = formatAmount(lines_paid, block.currency)
   return {
     currency: block.currency,
@@ -110,7 +155,9 @@ export function blockView(block: SpendingCurrency, groupBy: SpendingGroupBy, que
     linesPaid,
     difference: differenceText(block),
     center: { label: groupBy === 'store' && receipts_total !== null ? 'Сумма чеков' : 'Сумма строк', value: linesPaid },
-    items: pieItems(block, groupBy, query),
-    needsAdminHint: block.items.some((item) => item.unassigned || item.kind === 'unmatched'),
+    items: pieItems(block, groupBy, query, opened),
+    needsAdminHint: block.items.some((item) => item.unassigned || item.kind === 'unmatched')
+      || (opened?.kind === 'ok' && opened.items.some((item) => item.unassigned)),
+    ...(opened && { tail: { kind: opened.kind, sharesDiffer: opened.kind === 'ok' && opened.sharesDiffer } }),
   }
 }

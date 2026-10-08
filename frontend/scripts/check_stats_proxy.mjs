@@ -5,12 +5,15 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { getProductPriceSeries } from '../src/api/price-series.ts'
 import { getReceiptCompare, getReceiptSeries, getSpending } from '../src/api/stats.ts'
+import { blockTail } from '../src/features/stats/spending-tail.ts'
 
 const usage = 'Usage: node frontend/scripts/check_stats_proxy.mjs dev|preview <vite-origin, e.g. http://127.0.0.1:15173>'
 const fixtureDir = new URL('../../backend/api/tests/fixtures/stats/', import.meta.url)
 const fixture = (name) => JSON.parse(readFileSync(new URL(name, fixtureDir), 'utf8'))
 // Ids of a fresh demo database (docs/api-contract.md): category «Продукты питания», generic «Молоко», products, stores.
 const FOOD = 1, MILK_GENERIC = 1, MILK = 1, APPLES = 6, COOKIES = 11
+// What the screen asks for the composition of «Прочее» (`spendingTailLimit` of the client); the server accepts 1–500.
+const TAIL_LIMIT = 500
 const periods = { base_from: '2020-01-01', base_to: '2020-12-31', current_from: '2026-01-01', current_to: '2026-09-30' }
 let passed = 0
 
@@ -39,6 +42,44 @@ function spendingIdentities(body, label) {
     else assert.equal(units(totals.lines_paid) + units(totals.difference), units(totals.receipts_total), `${label} ${currency}: lines_paid + difference ≠ receipts_total`)
     for (const part of parts) assert.equal(part.share_percent === null, units(part.amount) <= 0n, `${label} ${currency}: share of ${part.amount}`)
   }
+}
+/**
+ * The usual answer (the server default of regular items) and the long one of the same request: the first items are
+ * the same, and the regular items after them plus the remainder are exactly «прочее» of the usual answer —
+ * by the count and, in exact decimals, by the amount. The client's own `blockTail` must read the pair the same way.
+ * Returns how many blocks had «прочее».
+ */
+function tailIdentities(short, long, label) {
+  assert.deepEqual(long.currencies.map((block) => block.currency), short.currencies.map((block) => block.currency), `${label}: currencies of the two answers differ`)
+  let opened = 0
+  for (const [index, block] of short.currencies.entries()) {
+    const full = long.currencies[index]
+    const name = `${label} ${block.currency}`
+    const regular = (items) => items.filter((item) => item.id !== null)
+    // Shares are left out: their base differs between the answers when «прочее» holds an item that is not positive.
+    const bare = (items) => items.map((item) => ({ ...item, share_percent: null }))
+    const head = regular(block.items), all = regular(full.items)
+    assert.deepEqual(full.totals, block.totals, `${name}: totals of the two answers differ`)
+    assert.deepEqual(bare(all.slice(0, head.length)), bare(head), `${name}: the first ${head.length} items of the two answers differ`)
+    assert.deepEqual(bare(full.items.filter((item) => item.id === null)), bare(block.items.filter((item) => item.id === null)), `${name}: special rows of the two answers differ`)
+    const tail = blockTail(block, full)
+    if (block.other === null) {
+      assert.deepEqual([full.other, all.length, tail], [null, head.length, undefined], `${name}: no «прочее» in the usual answer, but the long one is longer`)
+      continue
+    }
+    opened++
+    const rest = all.slice(head.length)
+    assert.ok(rest.length > 0, `${name}: limit=${TAIL_LIMIT} added no items to the ${head.length} of the usual answer`)
+    assert.equal(rest.length + (full.other?.count ?? 0), block.other.count, `${name}: items of the composition + remainder ≠ other.count`)
+    assert.equal(sum([...rest, ...(full.other ? [full.other] : [])].map((part) => part.amount)), units(block.other.amount), `${name}: Σ composition + remainder ≠ other.amount`)
+    assert.equal(tail?.kind, 'ok', `${name}: the client refused the pair of answers`)
+    assert.deepEqual([tail.items, tail.rest], [rest, full.other], `${name}: the client cut another composition`)
+    // With the whole composition in sight and every item of it positive, both answers count shares from one base.
+    if (full.other === null && rest.every((item) => units(item.amount) > 0n)) {
+      assert.equal(tail.sharesDiffer, false, `${name}: shares of the first items differ between the two answers`)
+    }
+  }
+  return opened
 }
 /** `quantity + price + mix = change.avg_receipt`; without a price index only `quantity + price_per_line`. */
 function compareIdentities(body, label) {
@@ -177,6 +218,22 @@ async function main() {
   const [byCategory, byGeneric, byProduct, byStore] = groupings
   assert.deepEqual([byGeneric, byProduct], [byCategory, byCategory], 'Groupings of one filter disagree in totals')
   assert.deepEqual(byStore, { ...byCategory, lines_paid: byCategory.receipts_total, difference: '0.00' }, 'Stores must add up to the receipts')
+  // Composition of «Прочее»: the pair the screen asks with `other=open`. On the demo «прочее» exists for generic products
+  // (EUR) and products (EUR and KZT); categories and stores have none in either answer.
+  const tails = {}
+  for (const currency of ['EUR', 'KZT']) {
+    for (const group_by of ['category', 'generic', 'product', 'store']) {
+      const short = await spending({ group_by, currency })
+      const long = await spending({ group_by, currency, limit: TAIL_LIMIT })
+      tails[`${group_by}/${currency}`] = tailIdentities(short, long, `tail ${group_by} ${currency}`)
+    }
+  }
+  assert.deepEqual(
+    [tails['category/EUR'], tails['store/EUR'], tails['category/KZT'], tails['store/KZT'], tails['generic/EUR'], tails['product/EUR'], tails['product/KZT']],
+    [0, 0, 0, 0, 1, 1, 1], `«Прочее» of the demo is not where it is expected (${JSON.stringify(tails)}); use a fresh QA database: migrate, then seed_stats_demo`)
+  // The refusal above the limit is the server's: the adapter does not check the upper bound.
+  await check('stats/spending/', { limit: TAIL_LIMIT + 1 }, (options) => getSpending({ limit: TAIL_LIMIT + 1 }, options),
+    { status: 400, reason: 'invalid_parameter', fields: ['limit'] })
   const stores = await check('stats/spending/', { store: '1,3', group_by: 'store', limit: 1 }, (options) => getSpending({ group_by: 'store', store: [1, 3], limit: 1 }, options))
   spendingIdentities(stores, 'spending store=1,3')
   assert.deepEqual(stores.currencies.map((block) => block.items.map((item) => item.id)), [[1], [3]], 'store=1,3 keeps one store per currency')

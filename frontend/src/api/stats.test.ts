@@ -84,7 +84,7 @@ describe('error fixtures of the backend', () => {
   it('spending keeps the names of all rejected parameters and none of the server texts', async () => {
     const expected = statsErrorFixtures['error-invalid-parameter.json']
     fetchMock.mockResolvedValue(response('error-invalid-parameter.json', expected.status))
-    const result = await getSpending({ date_from: '2026-13-01', country: 'de1', currency: 'E', store: [99], limit: 60 })
+    const result = await getSpending({ date_from: '2026-13-01', country: 'de1', currency: 'E', store: [99], limit: 501 })
     expect(result).toEqual({ kind: 'error', ...expected })
     expect(JSON.stringify(result)).not.toMatch(/[А-я]/)
     expect(statsFailureKind(result as LocalApiFailure)).toBe('invalid_parameter')

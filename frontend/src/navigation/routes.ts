@@ -63,6 +63,7 @@ export interface ProductQuery extends HistoryQuery {
 
 export const spendingGroupings = ['category', 'generic', 'product', 'store'] as const
 export type SpendingGroupBy = typeof spendingGroupings[number]
+const spendingOtherStates = ['open'] as const
 export const receiptsStatsIntervals = ['month', 'week', 'quarter', 'year'] as const
 export type ReceiptsStatsInterval = typeof receiptsStatsIntervals[number]
 /** The API accepts no more than this many stores in one `store` list. */
@@ -82,6 +83,8 @@ export interface SpendingQuery extends StatsScopeQuery {
   group_by?: SpendingGroupBy
   category?: number
   generic?: number
+  /** The composition of «Прочее» is shown. State of the screen only: never sent to the API. */
+  other?: 'open'
 }
 
 /** `/stats/receipts`. All four dates are optional here; a parsed query never holds the default `interval=month`. */
@@ -272,10 +275,12 @@ export function parseSpendingQuery(search: string | URLSearchParams): ParsedQuer
   const group_by = reader.choice('group_by', spendingGroupings)
   const category = reader.integer('category')
   const generic = reader.integer('generic')
+  const other = reader.choice('other', spendingOtherStates)
   return {
     query: {
       ...(date_from && { date_from }), ...(date_to && { date_to }), ...scope,
       ...(group_by && group_by !== 'category' && { group_by }), ...(category && { category }), ...(generic && { generic }),
+      ...(other && { other }),
     },
     invalidFields: reader.invalidFields,
   }
@@ -370,7 +375,7 @@ export function buildProductQuery(query: ProductQuery): string {
 
 /** Like the address itself, drops wrong values instead of throwing; a store list stays readable: `store=3,5`. */
 export function buildSpendingQuery(query: SpendingQuery): string {
-  return buildQuery(query, ['date_from', 'date_to', 'country', 'currency', 'store', 'group_by', 'category', 'generic'], parseSpendingQuery, false)
+  return buildQuery(query, ['date_from', 'date_to', 'country', 'currency', 'store', 'group_by', 'category', 'generic', 'other'], parseSpendingQuery, false)
     .replaceAll('%2C', ',')
 }
 
