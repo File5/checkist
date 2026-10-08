@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import type { Classification, ClassificationSuggested } from '../../api/product-classifications'
 import { formatObservedAt } from '../../lib/format'
+import { numbered } from '../../lib/text'
 import { Link } from '../../navigation'
 import type { ActionState, ClassificationAction } from './actions'
 import GenericChooser from './GenericChooser'
@@ -46,7 +47,7 @@ function ProductDetails({ record }: { record: Classification }) {
       </li>)}
     </ul>}
     {facts && <p className="ck-class-note">{facts}</p>}
-    {product.merge_group_id !== null && <p><Link to={{ kind: 'merge', groupId: product.merge_group_id }}>Входит в группу дублей №{product.merge_group_id}</Link></p>}
+    {product.merge_group_id !== null && <p><Link to={{ kind: 'merge', groupId: product.merge_group_id }}>Входит в группу {numbered('дублей', product.merge_group_id)}</Link></p>}
   </>
 }
 

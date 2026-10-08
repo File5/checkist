@@ -30,4 +30,17 @@ describe('classification stylesheet guards (text of the rules, not rendering)', 
     expect(general.map((item) => item.selector)).toEqual(['.ck-class a:not(.action-link):not([aria-current])'])
     expect(general[0].body).toMatch(/(^|[;\s])color: var\(--ck-link\);/)
   })
+  it('keeps marks and dates whole', () => {
+    // The screen breaks free text anywhere; a mark wraps between its words only and a short pill not at all.
+    expect(rule('.ck-class-new')).toMatch(/(^|[;\s])white-space: nowrap;/)
+    expect(rule('.ck-class-state')).toMatch(/(^|[;\s])overflow-wrap: normal;/)
+    expect(rule('.ck-class-badge a, .ck-class-badge span')).toMatch(/(^|[;\s])overflow-wrap: normal;/)
+    // Dates stay whole by the rule of the shell for <time>: no rule of this screen may undo it.
+    expect(rules(css).filter((item) => /white-space\s*:\s*(normal|pre-wrap|pre-line)/.test(item.body)).map((item) => item.selector)).toEqual([])
+  })
+  it('keeps the size of the text', () => {
+    const sizes = [...css.matchAll(/font-size\s*:\s*([^;]+);/g)].map((match) => match[1].trim())
+    expect(sizes.every((size) => /^\d+(\.\d+)?rem$/.test(size))).toBe(true)
+    expect(Math.min(...sizes.map(parseFloat))).toBe(0.8)
+  })
 })

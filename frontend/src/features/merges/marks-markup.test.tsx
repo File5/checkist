@@ -111,7 +111,7 @@ describe('product card marks', () => {
   it('announces the preliminary merge on the kept product with a link to the group', () => {
     mocked.states = [success(groups())]
     const html = section(card({ kind: 'ok', data: { ...detail, id: 5, name: 'Steinhof.PizzaSpezial' } }, 5))
-    expect(html).toContain('Предварительно объединено 3 написания — требует подтверждения')
+    expect(html).toContain('Предварительно объединено 3\u00a0написания — требует подтверждения')
     expect(html).toContain('href="/catalog/merges/2">Открыть группу дублей №2</a>')
     expect(html).toContain('<dt>Бренд</dt>')
   })
@@ -126,7 +126,7 @@ describe('product card marks', () => {
     applyMe(reader)
     mocked.states = [success(groups())]
     const html = section(card({ kind: 'ok', data: { ...detail, id: 5, name: 'Steinhof.PizzaSpezial' } }, 5))
-    expect(html).toContain('<p>Предварительно объединено 3 написания — требует подтверждения. Покупки всех написаний уже показаны в этой карточке.</p></div>')
+    expect(html).toContain('<p>Предварительно объединено 3\u00a0написания — требует подтверждения. Покупки всех написаний уже показаны в этой карточке.</p></div>')
     expect(html).not.toContain('/catalog/merges'); expect(html).not.toContain('Открыть группу дублей')
     expect(html).toContain('<dt>Бренд</dt>')
   })
@@ -238,7 +238,7 @@ describe('App shell routes of the catalog section', () => {
   it('connects the group screen and passes the list context', () => {
     const html = app({ href: '/catalog/merges/7', route: { kind: 'merge', groupId: 7 }, returnTo: '/catalog/merges?status=confirmed' })
     expect(html).toContain('<h1 id="page-heading" tabindex="-1">Группа дублей</h1>')
-    expect(html).toContain('Группа №7')
+    expect(html).toContain('Группа №7')
     expect(html).toContain('href="/catalog/merges?status=confirmed">К списку групп</a>')
     expect(sectionNav(html)).toContain('<a aria-current="page" href="/catalog/merges">Дубли</a>')
   })

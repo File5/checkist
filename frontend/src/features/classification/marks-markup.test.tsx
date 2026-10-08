@@ -244,7 +244,7 @@ describe('product card marks', () => {
     const moved = own(13).results.map((item): Classification => ({ ...item, product: { ...item.product, id: 5 } }))
     mocked.states = [success(groups()), success(pageOf(moved))]
     const html = section(card({ kind: 'ok', data: { ...detail, ...sausage, id: 5 } }, 5))
-    expect(html).toContain('Предварительно объединено 3 написания'); expect(html).toContain('href="/catalog/classification?product=5"')
+    expect(html).toContain('Предварительно объединено 3\u00a0написания'); expect(html).toContain('href="/catalog/classification?product=5"')
   })
 })
 

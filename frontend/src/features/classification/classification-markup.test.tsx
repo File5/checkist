@@ -185,14 +185,14 @@ describe('groups of pending records', () => {
     expect(html).toContain('<h3 id="class-group-92">Молоко</h3>')
     expect(html).toContain('<p class="ck-class-path"><span>Продукты питания</span><span> → Молочные продукты</span></p>')
     expect(html).toContain('<p class="ck-class-path"><span>Продукты питания</span><span> → Мясные продукты <span class="ck-class-new">новая</span></span></p>')
-    expect(html).toContain('Базовая единица: л · 2 товара')
-    expect(html).toContain('Базовая единица: кг · 1 товар')
+    expect(html).toContain('Базовая единица: л · 2\u00a0товара')
+    expect(html).toContain('Базовая единица: кг · 1\u00a0товар')
     expect(html.match(/<h3 /g)).toHaveLength(3)
     expect(html.indexOf('Кефир <span')).toBeLessThan(html.indexOf('>Колбаса <span'))
     expect(html.indexOf('>Колбаса <span')).toBeLessThan(html.indexOf('>Молоко</h3>'))
     expect(button(html, 'Подтвердить все (2)')).toContain('data-class-trigger="bulk-93"')
     expect(buttons(html, 'Подтвердить все (1)')).toHaveLength(2)
-    expect(html).toContain('Всего: 4 записи. Страница 1 из 1.')
+    expect(html).toContain('Всего: 4\u00a0записи. Страница 1 из 1.')
     expect(html).not.toContain('Показано')
   })
   it('says when a group continues on other pages or belongs to other products too', () => {
@@ -224,7 +224,7 @@ describe('groups of pending records', () => {
     first.product.merge_group_id = 7
     const html = view({ list: success(pageOf([first, ...rest])) })
     expect(html).toContain('<p class="ck-class-product">Demo Kefir mild 500g</p>')
-    expect(html).toContain('<a href="/catalog/merges/7">Входит в группу дублей №7</a>')
+    expect(html).toContain('<a href="/catalog/merges/7">Входит в группу дублей\u00a0№7</a>')
     expect(html).not.toContain('href="/catalog/products/11"')
   })
   it('replaces the buttons of a record changed outside the screen and of a removed product', () => {
@@ -266,11 +266,11 @@ describe('inline confirmations', () => {
   it('turns «Подтвердить все» into a question naming the count and the generic product', () => {
     const html = view({ open: { kind: 'bulk', genericId: 93 } })
     expect(html).toContain('aria-label="Подтверждение группы «Кефир»"')
-    expect(html).toContain('<p>Подтвердить 2 товара как „Кефир“?</p>')
+    expect(html).toContain('<p>Подтвердить 2\u00a0товара как „Кефир“?</p>')
     expect(button(html, 'Да, подтвердить')).not.toContain('disabled')
     expect(html).not.toContain('Подтвердить все (2)')
     const single = view({ open: { kind: 'bulk', genericId: 94 } })
-    expect(single).toContain('<p>Подтвердить 1 товар как „Колбаса“?</p>')
+    expect(single).toContain('<p>Подтвердить 1\u00a0товар как „Колбаса“?</p>')
   })
   it('opens one area at a time and drops an area whose record is not actionable any more', () => {
     const html = view({ open: { kind: 'reject', id: 77 } })

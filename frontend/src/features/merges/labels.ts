@@ -1,6 +1,7 @@
 import type { MergeConflictField, MergeDetectResult, MergeMemberBrief, MergeStatus } from '../../api/product-merges'
 import type { LocalApiFailure } from '../../api/types'
 import { formatQuantity } from '../../lib/format'
+import { dateRange, glue } from '../../lib/text'
 import { getSession, permissionDeniedText } from '../../session'
 
 export const statusLabels: Record<MergeStatus, string> = {
@@ -20,6 +21,12 @@ export function plural(count: number, one: string, few: string, many: string): s
 export function counted(count: number, one: string, few: string, many: string): string {
   return `${count.toLocaleString('ru-RU')} ${plural(count, one, few, many)}`
 }
+/** «18 покупок» with the number glued to its word: the screens of duplicates and of categories say counts this way. */
+export function countedWhole(count: number, one: string, few: string, many: string): string {
+  return glue(count.toLocaleString('ru-RU'), plural(count, one, few, many))
+}
+/** What the shared period helper puts between its two dates: each date goes into its own `<time>`, only the joint is text. */
+export const periodJoint = dateRange('', '')
 export const memberName = (member: Pick<MergeMemberBrief, 'name'>) => member.name.trim() || missing
 
 /** Value of a disputed fact as the record holds it. A record carries no `attributes`. */

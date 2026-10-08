@@ -6,13 +6,14 @@ import type { Page } from '../../api/types'
 import Pagination from '../../components/Pagination'
 import RequestState from '../../components/RequestState'
 import { formatObservedAt } from '../../lib/format'
+import { numbered } from '../../lib/text'
 import { Link, navigate } from '../../navigation'
 import type { MergesQuery } from '../../navigation'
 import type { MergesPageProps } from '../../pages/types'
 import type { RequestState as State } from '../recognition/polling'
 import { useRequest } from '../recognition/useRequest'
 import type { ActionState } from './actions'
-import { counted, memberName, statusLabels } from './labels'
+import { countedWhole, memberName, statusLabels } from './labels'
 import MergeBlock from './MergeBlock'
 import { activeMembers, apiStatus } from './state'
 import { useActionFocus, useMergeActions } from './useMergeActions'
@@ -27,7 +28,7 @@ function GroupCard({ group }: { group: MergeGroupBrief }) {
   const target = group.members.find((member) => member.product_id === group.target_product_id)
   const records = group.status === 'pending' ? activeMembers(group.members) : group.members
   return <li className="ck-merge-card">
-    <h3><Link to={{ kind: 'merge', groupId: group.id }}>Группа №{group.id}: {target ? memberName(target) : 'Не указано'}</Link></h3>
+    <h3><Link to={{ kind: 'merge', groupId: group.id }}>{numbered('Группа', group.id)}: {target ? memberName(target) : 'Не указано'}</Link></h3>
     <p className={`ck-merge-status ck-merge-status-${group.status}`}>
       {statusLabels[group.status]}
       {group.has_conflicts && <span className="ck-merge-flag"> · Есть конфликт данных: нужен выбор значения</span>}
@@ -71,7 +72,7 @@ export function MergesView({ query, state, action, onDetect, onRetry, resultRef 
         {action.kind === 'done' || action.kind === 'failed' ? action.message : ''}
       </p>
       {detected && detected.group_ids.length > 0 && <ul className="ck-merge-names" aria-label="Найденные группы">
-        {detected.group_ids.map((id) => <li key={id}><Link to={{ kind: 'merge', groupId: id }}>Группа №{id}</Link></li>)}
+        {detected.group_ids.map((id) => <li key={id}><Link to={{ kind: 'merge', groupId: id }}>{numbered('Группа', id)}</Link></li>)}
       </ul>}
     </div>
     <MergeBlock title={`${filter.label} · Страница ${query.page.toLocaleString('ru-RU')}`} id="merge-groups-title" state={state} retry={onRetry}
@@ -82,7 +83,7 @@ export function MergesView({ query, state, action, onDetect, onRetry, resultRef 
           ? <RequestState kind="empty" message="Групп, требующих подтверждения, нет." action={detectButton} />
           : <RequestState kind="empty" message="Групп с таким состоянием нет." action={<Link className="action-link" to={{ kind: 'merges', query: { page: 1 } }}>Показать ожидающие</Link>} />)
         : <>
-          <p>Всего: {counted(data.count, 'группа', 'группы', 'групп')}. Страница {data.page.toLocaleString('ru-RU')} из {(data.pages || 1).toLocaleString('ru-RU')}.</p>
+          <p>Всего: {countedWhole(data.count, 'группа', 'группы', 'групп')}. Страница {data.page.toLocaleString('ru-RU')} из {(data.pages || 1).toLocaleString('ru-RU')}.</p>
           <ul className="ck-merge-list">{data.results.map((group) => <GroupCard group={group} key={group.id} />)}</ul>
           <Pagination page={data.page} pages={data.pages} buildPageHref={(page) => ({ kind: 'merges', query: { ...query, page } })} label="Страницы групп" />
         </>}

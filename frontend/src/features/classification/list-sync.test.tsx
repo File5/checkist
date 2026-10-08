@@ -341,7 +341,7 @@ describe('page: the list follows the batches of an active run', () => {
     expect(page.reads.state).toBeLessThanOrEqual(2)
     const html = page.html()
     expect(html).toContain('Ожидают подтверждения: 1.')
-    expect(html).toContain('Всего: 1 запись.')
+    expect(html).toContain('Всего: 1\u00a0запись.')
     const reads = { ...page.reads }
     await page.poll()
     expect(page.reads).toEqual({ state: reads.state + 1, list: reads.list })
@@ -369,7 +369,7 @@ describe('page: the list follows the batches of an active run', () => {
     page.states.refresh()
     await page.settled()
     expect(page.reads).toEqual({ state: 2, list: 2 })
-    expect(page.html()).toContain('Всего: 3 записи.')
+    expect(page.html()).toContain('Всего: 3\u00a0записи.')
     page.states.refresh()
     await page.settled()
     expect(page.reads).toEqual({ state: 3, list: 2 })
@@ -404,7 +404,7 @@ describe('page: the list follows the batches of an active run', () => {
     await page.settled()
     expect(page.reads.list).toBe(2)
     expect(page.reads.state).toBeLessThanOrEqual(2)
-    expect(page.html()).toContain('Всего: 4 записи.')
+    expect(page.html()).toContain('Всего: 4\u00a0записи.')
     page.dispose()
   })
 })
@@ -514,7 +514,7 @@ describe('page: a read of the list and the open area', () => {
     const after = page.html(area)
     // The same area under the same record: the component keeps its typed search and chosen option, nothing is remounted.
     expect(chooser(after, first.id)).toBe(chooser(before, first.id))
-    expect(after).toContain('Всего: 4 записи.')
+    expect(after).toContain('Всего: 4\u00a0записи.')
     // Only the line of the run changed its text; the result lines of actions stay empty: nothing extra is announced.
     expect(statuses(before)).toEqual([expect.stringContaining(paused(1)), '', ''])
     expect(statuses(after)).toEqual([expect.stringContaining(paused(2)), '', ''])

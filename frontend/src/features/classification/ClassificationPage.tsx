@@ -9,7 +9,7 @@ import RequestState from '../../components/RequestState'
 import { Link } from '../../navigation'
 import type { ClassificationQuery } from '../../navigation'
 import type { ClassificationPageProps } from '../../pages/types'
-import { counted } from '../merges/labels'
+import { countedWhole } from '../merges/labels'
 import type { RequestState as State } from '../recognition/polling'
 import { useRequest } from '../recognition/useRequest'
 import { retryable } from './actions'
@@ -80,7 +80,7 @@ export function ClassificationView({ query, state, list, action, open, notice, o
           : <RequestState kind="empty" message="Записей с таким состоянием нет."
             action={<Link className="action-link" to={{ kind: 'classification', query: { ...(query.product !== undefined && { product: query.product }), page: 1 } }}>Показать ожидающие</Link>} />)
         : <div className="ck-class-list" {...ownFocus}>
-          <p>Всего: {counted(data.count, 'запись', 'записи', 'записей')}. Страница {data.page.toLocaleString('ru-RU')} из {(data.pages || 1).toLocaleString('ru-RU')}.</p>
+          <p>Всего: {countedWhole(data.count, 'запись', 'записи', 'записей')}. Страница {data.page.toLocaleString('ru-RU')} из {(data.pages || 1).toLocaleString('ru-RU')}.</p>
           {pendingFilter
             ? <GroupList records={data.results} product={query.product !== undefined} action={action} open={area} unavailable={unavailable} optionsReload={optionsReload} {...handlers} />
             : <FlatList records={data.results} />}

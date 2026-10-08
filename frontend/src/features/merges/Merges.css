@@ -29,11 +29,22 @@
 .ck-merge h3 a, .ck-merge-names a { display: inline-flex; align-items: center; min-height: 44px; color: var(--ck-link); text-underline-offset: 4px; }
 .ck-merge-names { margin: 0; padding-left: 22px; }
 .ck-merge-table-scroll { max-width: 100%; overflow-x: auto; border: 1px solid var(--ck-border); border-radius: var(--ck-radius-sm); overscroll-behavior-x: contain; }
-.ck-merge-table { width: 100%; min-width: 860px; border-collapse: collapse; font-size: 0.95rem; }
+/* Borders belong to the cells (separate model): a collapsed border would stay behind when the name column sticks. */
+.ck-merge-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.95rem; }
+/* Smallest width at which every column still holds its content: the sum of the columns, not a spare. */
+.ck-merge-members { min-width: 720px; }
+.ck-merge-choosing, .ck-merge-lines { min-width: 1040px; }
 .ck-merge-table caption { padding: 12px; text-align: left; color: var(--ck-text-muted); font-size: 0.9rem; }
 .ck-merge-table th, .ck-merge-table td { padding: 12px; border-top: 1px solid var(--ck-divider); text-align: left; vertical-align: top; }
-.ck-merge-table thead th { background: var(--ck-surface-raised); }
-.ck-merge-table tbody th { min-width: 180px; font-weight: 600; }
+/* A heading wraps between its words only: `anywhere` of the screen would let a squeezed column cut a word. */
+.ck-merge-table thead th { background: var(--ck-surface-raised); overflow-wrap: normal; }
+.ck-merge-table tbody th { min-width: 160px; font-weight: 600; background: var(--ck-surface); }
+/* The name stays in sight while the table scrolls sideways inside its frame. */
+.ck-merge-table tbody th, .ck-merge-table .ck-merge-name-head { position: sticky; left: 0; z-index: 1; border-right: 1px solid var(--ck-divider); }
+/* Free text keeps room for whole words; a value (period, «Чек №12», a choice) is never cut inside a word. */
+.ck-merge-table .ck-merge-text { min-width: 160px; }
+.ck-merge-table .ck-merge-whole { overflow-wrap: normal; }
+.ck-merge-table button { white-space: nowrap; }
 .ck-merge-table a { display: inline-block; min-height: 44px; padding-block: 10px; color: var(--ck-link); text-underline-offset: 3px; }
 .ck-merge-table .ck-merge-number { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ck-merge-cell-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
