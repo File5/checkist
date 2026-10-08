@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { LoginPage } from '../features/login'
+import { LoginPage } from '../features/auth'
 import { ThemeToggle } from './ThemeToggle'
 import { createThemeStore, defaultTheme, nextTheme, parseTheme, themeColors, themeLabel, themeStorageKey, useTheme } from './theme'
 import type { Theme, ThemeEnvironment } from './theme'
@@ -156,8 +156,10 @@ describe('without a browser', () => {
     expect(renderToStaticMarkup(createElement(ThemeToggle))).toContain('Тема: тёмная')
   })
 
-  it('renders the login placeholder', () => {
-    expect(renderToStaticMarkup(createElement(LoginPage))).toContain('class="ck-login"')
+  it('renders the sign-in screen with the page theme switch', () => {
+    const html = renderToStaticMarkup(createElement(LoginPage, { expired: false }))
+    expect(html).toContain('class="ck-login"')
+    expect(html.match(/class="ck-theme-toggle"/g)).toHaveLength(1)
   })
 })
 

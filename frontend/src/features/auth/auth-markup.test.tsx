@@ -75,6 +75,64 @@ describe('sign-in form (Node server markup, not browser behavior)', () => {
     expect(html).toContain('<button type="submit" data-auth-submit="true" aria-disabled="true" aria-describedby="login-message">Входим…</button>')
     expect(html).not.toMatch(/<button[^>]*\sdisabled=""/)
   })
+  it('is the whole screen: its own main around the shell heading, without header, menu, footer or links', () => {
+    // React puts an image preload hint in front of the server markup; the screen itself is one <main>.
+    const html = loginHtml({ heading: <h1 id="page-heading" tabIndex={-1}>Вход</h1> }).replace(/^<link rel="preload" as="image"[^>]*\/>/, '')
+    expect(html.startsWith('<main id="main" class="ck-login">')).toBe(true)
+    expect(html.endsWith('</main>')).toBe(true)
+    expect(html.match(/<main\b/g)).toHaveLength(1)
+    expect(html).toContain('<div class="ck-login-panel"><h1 id="page-heading" tabindex="-1">Вход</h1><p class="ck-login-subtitle">')
+    expect(html).toContain('<section class="ck-auth" aria-labelledby="page-heading">')
+    expect(html).not.toMatch(/<header\b|<nav\b|<footer\b|<a\b/)
+  })
+  it('shows the logo in two sizes with its text alternative, before the form', () => {
+    const html = loginHtml()
+    const image = html.match(/<img[^>]*>/)?.[0] ?? ''
+    expect(html.match(/<img\b/g)).toHaveLength(1)
+    expect(image).toContain('class="ck-login-logo"')
+    expect(image).toContain('alt="Чекист — продуктовая разведка"')
+    expect(image).toMatch(/src="[^"]*logo-640[^"]*\.webp"/)
+    expect(image).toMatch(/srcSet="[^"]*logo-640[^"]*\.webp 640w, [^"]*logo-1280[^"]*\.webp 1280w"/)
+    expect(image).toContain('sizes="(min-width: 720px) min(50vw, 560px), 33vh"')
+    expect(image).toContain('width="640"')
+    expect(image).toContain('height="640"')
+    // One column on a phone follows the markup: the board first, the form under it.
+    expect(html.indexOf('class="ck-login-board"')).toBeLessThan(html.indexOf('class="ck-login-panel"'))
+    expect(html.indexOf('<img')).toBeLessThan(html.indexOf('<form'))
+  })
+  it('words the screen: motto, invitation and the note under the form', () => {
+    const html = loginHtml()
+    expect(html).toContain('<p class="ck-login-subtitle">Продуктовая разведка</p>')
+    expect(html).toContain('<p class="ck-login-invite">Предъявите пропуск</p>')
+    expect(html).toContain('<p class="ck-login-note">Пропуска выдаёт администратор</p>')
+    expect(html.indexOf('ck-login-invite')).toBeLessThan(html.indexOf('<form'))
+    expect(html.indexOf('ck-login-note')).toBeGreaterThan(html.indexOf('</form>'))
+    expect(html).not.toContain('Вход пока не подключён')
+  })
+  it('hides the decoration from assistive technology', () => {
+    const html = loginHtml()
+    expect(html).toContain('<span class="ck-login-rays" aria-hidden="true"></span>')
+    expect(html).toContain('<div class="ck-login-rule" aria-hidden="true">')
+    for (const svg of html.match(/<svg[^>]*>/g) ?? []) if (!svg.includes('ck-login-star')) expect(svg).toContain('aria-hidden="true"')
+  })
+  it('keeps the Tab order: name, password, «Войти», theme switch', () => {
+    for (const html of [loginHtml(), loginHtml({ expired: true, state: failed('Неверное имя пользователя или пароль.') }), loginHtml({ state: { kind: 'pending' } })]) {
+      const stops = [...html.matchAll(/<(input|button|a|select|textarea)\b[^>]*>/g)].map((match) => match[0])
+      expect(stops).toHaveLength(4)
+      expect(stops[0]).toContain('id="login-username"')
+      expect(stops[1]).toContain('id="login-password"')
+      expect(stops[2]).toContain('data-auth-submit="true"')
+      expect(stops[3]).toContain('class="ck-theme-toggle"')
+      // Nothing reorders the stops, and nothing is switched off: the button stays reachable during the request.
+      expect(html).not.toContain('tabindex=')
+      expect(html).not.toMatch(/\sdisabled=""/)
+    }
+  })
+  it('puts the ended-session notice over the form and the theme switch after the note', () => {
+    const html = loginHtml({ expired: true })
+    expect(html).toContain('<section class="ck-auth" aria-labelledby="page-heading"><p class="ck-auth-notice" data-auth-expired="true">Сеанс завершён. Войдите снова.</p><form')
+    expect(html).toMatch(/<p class="ck-login-note">[^<]*<\/p><div class="ck-login-footer"><button type="button" class="ck-theme-toggle" data-theme-current="dark">/)
+  })
   it('mounts with empty fields and no message', () => {
     const html = renderToStaticMarkup(<LoginPage expired />)
     expect(tag(html, 'login-username')).not.toBe('')

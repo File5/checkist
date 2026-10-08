@@ -161,16 +161,10 @@ export default function App() {
   const signedIn = session.kind === 'user'
   const username = signedIn ? session.user.username : ''
   // The sign-in is drawn alone, on the address the person opened: no header, menu or footer.
-  // Its form is labelled by this heading, so the heading stays with it.
+  // Its form is labelled by this heading, so the heading goes into the screen, which draws its own <main>.
   if (view === 'login') return (
-    <div className="page">
-      <main id="main" ref={content}>
-        <div className="intro">
-          <h1 id="page-heading" ref={heading} tabIndex={-1}>{title}</h1>
-        </div>
-        <LoginPage expired={session.kind === 'guest' && session.expired} />
-      </main>
-    </div>
+    <LoginPage expired={session.kind === 'guest' && session.expired}
+      heading={<h1 id="page-heading" ref={heading} tabIndex={-1}>{title}</h1>} />
   )
   let body: ReactNode
   switch (view) {
