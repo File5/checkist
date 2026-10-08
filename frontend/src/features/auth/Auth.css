@@ -1,24 +1,95 @@
+/* Sign-in (the whole screen, .ck-login-*) and /account (.ck-auth-*). Colours come from theme/tokens.css only.
+   App.css goes AFTER this file in the build: every state of a button that sets a colour here is written with
+   a class, so it outweighs the shared `button` rules of the shell. No motion. */
 .ck-auth { display: grid; gap: 20px; min-width: 0; max-width: 520px; overflow-wrap: anywhere; }
-.ck-auth-panel { display: grid; gap: 18px; min-width: 0; padding: 24px; background: #fff; border: 1px solid #d7e0d3; border-radius: 16px; }
+.ck-auth-panel { display: grid; gap: 18px; min-width: 0; padding: 24px; background: var(--ck-surface); border: 1px solid var(--ck-border); border-radius: 16px; }
 .ck-auth-panel > * { min-width: 0; max-width: 100%; }
 .ck-auth-field { display: grid; gap: 6px; min-width: 0; }
 .ck-auth-field label { font-weight: 600; }
-.ck-auth-field input { width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px; color: #20332c; background: #fff; border: 1px solid #6f8275; border-radius: 8px; }
-.ck-auth-field input[aria-invalid="true"] { border-color: #a33427; border-width: 2px; }
+.ck-auth-field input { width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px; color: var(--ck-text); background: var(--ck-surface); border: 1px solid var(--ck-border-field); border-radius: 8px; }
+.ck-auth-field input[aria-invalid="true"] { border-color: var(--ck-error-border); border-width: 2px; }
 .ck-auth-actions { display: grid; gap: 12px; justify-items: start; }
-.ck-auth button[aria-disabled="true"], .ck-auth button[aria-disabled="true"]:hover { background: #e5ebe3; border-color: #d2dccd; color: #586655; cursor: default; }
-.ck-auth-secondary { background: #fff; color: #246044; }
-.ck-auth-secondary:hover:not(:disabled) { background: #edf5ee; }
+
+/* The outline button keeps its surface, frame and text in every state. */
+.ck-auth-secondary { background: var(--ck-surface); border-color: var(--ck-border-field); color: var(--ck-link); }
+.ck-auth-secondary:hover { background: var(--ck-surface-raised); border-color: var(--ck-link-hover); color: var(--ck-link-hover); }
+.ck-auth-secondary:active { background: var(--ck-accent-bg); border-color: var(--ck-link-hover); color: var(--ck-link-hover); }
+/* A request in flight: `aria-disabled`, never `disabled`. Heavier than the states above, so it holds under the pointer. */
+.ck-auth button[aria-disabled="true"], .ck-auth button[aria-disabled="true"]:hover, .ck-auth button[aria-disabled="true"]:active { background: var(--ck-disabled-bg); border-color: var(--ck-disabled-border); color: var(--ck-disabled-text); cursor: default; }
+/* The ring keeps an offset: in the light theme the blue ring is not seen right against the red fill. */
+.ck-auth button:focus-visible, .ck-auth input:focus-visible, .ck-login-panel h1:focus-visible { outline: 3px solid var(--ck-focus); outline-offset: 3px; }
+
 .ck-auth-message:empty { display: none; }
 .ck-auth-message p, .ck-auth-message ul { margin: 0; }
 .ck-auth-message ul, .ck-auth-rules { padding-left: 22px; }
-.ck-auth-error { display: grid; gap: 6px; color: #8c2c22; }
-.ck-auth-done { color: #246044; font-weight: 600; }
-.ck-auth-notice { color: #604512; background: #fff4dc; border: 1px solid #dfcd9c; padding: 14px; border-radius: 8px; }
-.ck-auth-rules { margin: 0; color: #526158; font-size: 0.9rem; }
+/* The bar on the left tells a refusal from a success without the colour. */
+.ck-auth-error { display: grid; gap: 6px; padding-left: 12px; border-left: 4px solid var(--ck-error-border); color: var(--ck-error-text); }
+.ck-auth-done { color: var(--ck-success-text); font-weight: 600; }
+.ck-auth-notice { color: var(--ck-warning-text); background: var(--ck-warning-bg); border: 1px solid var(--ck-warning-border); padding: 14px; border-radius: 8px; }
+.ck-auth-rules { margin: 0; color: var(--ck-text-muted); font-size: 0.9rem; }
 .ck-auth-username { font-size: 1.15rem; font-weight: 600; }
+
+/* Sign-in screen: the logo board and the form; one column on a phone, two from 720 px. */
+.ck-login {
+  display: grid; place-items: center; min-height: 100vh; min-height: 100dvh; padding: 24px 16px;
+  background: var(--ck-bg); color: var(--ck-text); overflow-wrap: anywhere;
+}
+.ck-login-layout { display: grid; grid-template-columns: minmax(0, 1fr); justify-items: center; gap: 20px; width: 100%; max-width: 1080px; }
+/* The board is dark in both themes: the logo file is an opaque near-black square. */
+.ck-login-board {
+  position: relative; isolation: isolate; overflow: hidden;
+  /* One column: the logo takes no more than a third of the screen height. */
+  width: min(100%, 33vh); width: min(100%, 33svh); aspect-ratio: 1;
+  padding: 10px; border: 2px solid var(--ck-accent); border-radius: var(--ck-radius);
+  background: var(--ck-logo-bg);
+  box-shadow: inset 0 0 0 4px var(--ck-logo-bg), inset 0 0 0 5px var(--ck-accent);
+}
+/* Rays: a striped conic gradient that fades to nothing towards the emblem. */
+.ck-login-rays {
+  position: absolute; inset: 7px; z-index: 0;
+  background: repeating-conic-gradient(from -4deg at 50% 42%, color-mix(in srgb, var(--ck-brand) 30%, transparent) 0deg 4deg, transparent 4deg 12deg);
+  -webkit-mask-image: radial-gradient(circle at 50% 42%, transparent 42%, black 88%);
+  mask-image: radial-gradient(circle at 50% 42%, transparent 42%, black 88%);
+}
+/* `lighten` lets the rays through the dark background of the picture, so its square is not seen on the board. */
+.ck-login-logo { position: relative; z-index: 1; display: block; width: 100%; height: auto; mix-blend-mode: lighten; }
+
+.ck-login-panel { display: grid; gap: 12px; width: 100%; max-width: 420px; min-width: 0; }
+.ck-login-panel h1 { font-size: clamp(2.4rem, 9vw, 4rem); font-weight: 700; line-height: 1.05; letter-spacing: 0.08em; text-transform: uppercase; }
+.ck-login-subtitle { font-family: var(--ck-font-display); font-size: 1.05rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ck-accent-text); }
+.ck-login-rule { display: flex; align-items: center; gap: 12px; }
+.ck-login-rule::before, .ck-login-rule::after { content: ""; flex: 1 1 0; height: 2px; background: var(--ck-accent); }
+.ck-login-star { flex: 0 0 24px; fill: var(--ck-brand); stroke: var(--ck-accent); stroke-width: 1.2; stroke-linejoin: round; }
+.ck-login-invite { font-size: 1.15rem; font-weight: 600; }
+/* On this screen the form lies on the page itself, without a card, and its button takes the whole width. */
+.ck-login .ck-auth { gap: 16px; max-width: none; }
+.ck-login .ck-auth-panel { gap: 16px; padding: 0; background: none; border: 0; border-radius: 0; }
+.ck-login .ck-auth-field input { min-height: 48px; }
+.ck-login .ck-auth-actions { justify-items: stretch; }
+.ck-login .ck-auth-actions button { width: 100%; min-height: 48px; font-family: var(--ck-font-display); font-size: 1.1rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+.ck-login-note { color: var(--ck-text-muted); font-size: 0.95rem; }
+.ck-login-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 12px 16px; padding-top: 12px; border-top: 1px solid var(--ck-divider); }
 
 @media (max-width: 540px) {
   .ck-auth-panel { padding: 20px; }
   .ck-auth-actions button { width: 100%; }
+}
+
+@media (min-width: 720px) {
+  .ck-login { padding: 32px; }
+  .ck-login-layout { grid-template-columns: minmax(0, 1.2fr) minmax(280px, 1fr); align-items: center; justify-items: stretch; gap: 48px; }
+  .ck-login-board { justify-self: end; width: min(100%, 560px, 84vh); padding: 16px; }
+  .ck-login-panel { justify-self: start; }
+}
+
+@media (forced-colors: active) {
+  .ck-login-board { border-color: CanvasText; box-shadow: none; }
+  .ck-login-rays { display: none; }
+  .ck-login-logo { mix-blend-mode: normal; }
+  .ck-login-rule::before, .ck-login-rule::after { background: CanvasText; }
+  .ck-login-star { fill: CanvasText; stroke: CanvasText; }
+  .ck-auth-field input { border-color: FieldText; }
+  .ck-auth-field input[aria-invalid="true"], .ck-auth-error, .ck-auth-notice { border-color: CanvasText; }
+  .ck-auth button[aria-disabled="true"] { border-color: GrayText; color: GrayText; }
+  .ck-auth button:focus-visible, .ck-auth input:focus-visible, .ck-login-panel h1:focus-visible { outline-color: Highlight; }
 }

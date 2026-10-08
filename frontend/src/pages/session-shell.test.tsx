@@ -56,6 +56,8 @@ const everywhere = [...pages, ...moderated, ...other]
 const loginRoute: [Route, string] = [{ kind: 'login' }, '/login']
 /** What only the application shell draws: the sign-in is shown without any of it. */
 const shellParts = ['<header', 'brand-bar', 'main-navigation', '<nav', '<footer', 'skip-link', 'ck-theme-toggle', 'Доверяй, но проверяй чек']
+/** The sign-in keeps one thing of the shell: the theme switch, drawn on the page and not on the header bar. */
+const signInShellParts = [...shellParts.filter((part) => part !== 'ck-theme-toggle'), 'ck-theme-toggle-header']
 
 function render(session: Session, route: Route, href: string) {
   state.session = session
@@ -87,11 +89,15 @@ describe('session gate of the shell (SSR only, no browser interaction)', () => {
     // No redirect and no `next`: the address stays, so the page opens by itself after the sign-in.
     expect(html).not.toContain('next=')
     // Without the header, the menu and the footer; the only heading is the one the form is labelled by.
-    for (const part of shellParts) expect(html, part).not.toContain(part)
+    for (const part of signInShellParts) expect(html, part).not.toContain(part)
     expect(html).toContain('<h1 id="page-heading" tabindex="-1">Вход</h1>')
     expect(html).toContain('<section class="ck-auth" aria-labelledby="page-heading">')
-    // The real sign-in, not the placeholder of the redesign.
-    expect(html).not.toContain('ck-login')
+    // The only sign-in: the real form in the layout of the redesign, inside its own <main>, with the page theme switch.
+    expect(html.match(/<main\b[^>]*>/g)).toEqual(['<main id="main" class="ck-login">'])
+    expect(html.match(/<form\b/g)).toHaveLength(1)
+    expect(html).toContain('data-auth-submit="true"')
+    expect(html).not.toContain('Вход пока не подключён')
+    expect(html.match(/<button\b[^>]*class="ck-theme-toggle[^"]*"/g)).toEqual(['<button type="button" class="ck-theme-toggle"'])
     expect(html.match(/<a\b/g)).toBeNull()
   })
   it('explains a session that ended in the middle of work', () => {
@@ -99,7 +105,7 @@ describe('session gate of the shell (SSR only, no browser interaction)', () => {
     expect(h1(html)).toBe('Вход')
     expect(html.split('Сеанс завершён. Войдите снова.')).toHaveLength(2)
     expect(screens(html)).toEqual([])
-    for (const part of shellParts) expect(html, part).not.toContain(part)
+    for (const part of signInShellParts) expect(html, part).not.toContain(part)
   })
   it.each([...everywhere, loginRoute])('waits for «Я» at %j without mounting the page', (route, href) => {
     const html = render({ kind: 'loading' }, route, href)
