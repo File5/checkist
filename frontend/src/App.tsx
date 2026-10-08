@@ -17,6 +17,7 @@ import { pageKey, shellView, watchSession } from './features/auth/auth-state'
 import type { ShellView } from './features/auth/auth-state'
 import { moderatorOnlyText } from './features/auth/labels'
 import { canModerate, loadSession, useSession } from './session'
+import { menuKey, useCurrentItemInView } from './menu-view'
 import { ThemeToggle } from './theme'
 import emblem from './assets/brand/emblem-96.webp'
 import emblem2x from './assets/brand/emblem-192.webp'
@@ -87,7 +88,6 @@ export default function App() {
   const { route } = navigation
   const heading = useRef<HTMLHeadingElement>(null)
   const content = useRef<HTMLElement>(null)
-  const mainNavigation = useRef<HTMLElement>(null)
   const previousNavigation = useRef<NavigationSnapshot | undefined>(undefined)
   const previousShell = useRef<string | undefined>(undefined)
   const pathname = navigation.href.split(/[?#]/)[0]
@@ -145,14 +145,7 @@ export default function App() {
     document.title = `Чекист — ${title}`
   }, [title])
 
-  useLayoutEffect(() => {
-    // On a narrow window the menu is one row scrolled sideways: keep the current item in view.
-    const menu = mainNavigation.current
-    const current = menu?.querySelector<HTMLElement>('[aria-current]')
-    if (!menu || !current || menu.scrollWidth <= menu.clientWidth) return
-    const offset = current.getBoundingClientRect().left - menu.getBoundingClientRect().left + menu.scrollLeft
-    menu.scrollLeft = offset - (menu.clientWidth - current.offsetWidth) / 2
-  }, [pathname])
+  const mainNavigation = useCurrentItemInView(menuKey(view, session, route))
 
   const mergesActive = route.kind === 'merges' || route.kind === 'merge'
   const classificationActive = route.kind === 'classification'
