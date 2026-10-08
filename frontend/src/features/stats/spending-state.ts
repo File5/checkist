@@ -1,6 +1,7 @@
 import { statsFailureKind } from '../../api/stats'
 import type { Spending, SpendingItem, SpendingParams } from '../../api/stats'
 import type { LocalApiResult } from '../../api/types'
+import { numbered } from '../../lib/text'
 import { buildSpendingQuery, maxStatsStores, parseSpendingQuery, spendingHref } from '../../navigation/routes'
 import type { SpendingGroupBy, SpendingQuery } from '../../navigation/routes'
 import { getSession, permissionDeniedText } from '../../session'
@@ -228,12 +229,12 @@ export function breadcrumbs(query: SpendingQuery, parent: Spending['parent'] | u
   const by = grouping(query)
   const crumbs: Crumb[] = [{ label: 'Все траты', href: spendingHref(base) }]
   if (query.category) {
-    const path = parent?.id === query.category ? parent.path : [{ id: query.category, name: `Категория №${query.category}` }]
+    const path = parent?.id === query.category ? parent.path : [{ id: query.category, name: numbered('Категория', query.category) }]
     for (const category of path) crumbs.push({ label: category.name, href: spendingHref({ ...base, category: category.id }) })
   }
   if (query.generic) {
     if (query.category) crumbs.push({ label: groupingLabels.generic, href: spendingHref({ ...base, category: query.category, group_by: 'generic' }) })
-    crumbs.push({ label: genericName?.trim() || `Обобщённый продукт №${query.generic}`,
+    crumbs.push({ label: genericName?.trim() || numbered('Обобщённый продукт', query.generic),
       href: spendingHref({ ...base, ...(query.category && { category: query.category }), generic: query.generic, group_by: 'product' }) })
     if (by !== 'product') crumbs.push({ label: groupingLabels[by] })
   } else if (by !== 'category') crumbs.push({ label: groupingLabels[by] })

@@ -96,7 +96,7 @@ describe('spending screen markup (Vitest/SSR — not what the browser shows, foc
   it('names the generic product of the filter once it is known', () => {
     const query: SpendingQuery = { generic: 1, group_by: 'product' }
     expect(render(query, ok('spending-generic-filter.json'), { genericName: 'Молоко' })).toContain('<span aria-current="page">Молоко</span>')
-    expect(render(query, ok('spending-generic-filter.json'))).toContain('<span aria-current="page">Обобщённый продукт №1</span>')
+    expect(render(query, ok('spending-generic-filter.json'))).toContain('<span aria-current="page">Обобщённый продукт №1</span>')
   })
   it('keeps an amount that is not positive in the table only, with a mark', () => {
     const html = render({ date_from: '2026-03-14', date_to: '2026-03-14' }, ok('spending-refund-day.json'))

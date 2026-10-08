@@ -1,6 +1,7 @@
 import { useId, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import type { ApiFailure, CategoryGeneric } from '../../api/types'
+import { numbered } from '../../lib/text'
 import { buildRoute, navigate } from '../../navigation'
 import type { CatalogRoute } from '../../navigation'
 import { fieldError, resetFilters, searchError, withGeneric, withSearch } from './catalog-state'
@@ -58,13 +59,13 @@ export default function CatalogSearch({ route, generics, error }: Props) {
         onChange={(event) => navigate({ ...route, query: withGeneric(route.query, event.target.value ? Number(event.target.value) : undefined) })}
         aria-describedby={genericError ? genericErrorId : undefined} aria-invalid={genericError ? true : undefined}>
         <option value="">Все обобщённые продукты</option>
-        {unknownGeneric && <option value={route.query.generic}>Продукт № {route.query.generic?.toLocaleString('ru-RU')} — отсутствует в этой категории</option>}
+        {unknownGeneric && <option value={route.query.generic}>{numbered('Продукт', route.query.generic?.toLocaleString('ru-RU') ?? '')} — отсутствует в этой категории</option>}
         {generics.map((generic) => <option value={generic.id} key={generic.id}>{generic.name} — товаров: {generic.products_count.toLocaleString('ru-RU')}</option>)}
       </select>
       <p className="ck-catalog-note">Варианты из этой категории. Без фильтра — товары всей ветви.</p>
       {genericError && <p id={genericErrorId} className="ck-catalog-field-error" role="alert">{genericError}</p>}
     </div>}
-    {route.kind === 'catalog' && route.query.generic !== undefined && <p className="ck-catalog-note">Выбран обобщённый продукт № {route.query.generic.toLocaleString('ru-RU')}.</p>}
+    {route.kind === 'catalog' && route.query.generic !== undefined && <p className="ck-catalog-note">Выбран обобщённый {numbered('продукт', route.query.generic.toLocaleString('ru-RU'))}.</p>}
     {filtered && <button className="ck-catalog-reset" type="button" onClick={reset}>Сбросить фильтры</button>}
   </form>
 }

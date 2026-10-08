@@ -6,6 +6,7 @@ import type { Page } from '../../api/types'
 import { focusOwnerAttribute } from '../../components/local-request-focus'
 import Pagination from '../../components/Pagination'
 import RequestState from '../../components/RequestState'
+import { numbered } from '../../lib/text'
 import { Link } from '../../navigation'
 import type { ClassificationQuery } from '../../navigation'
 import type { ClassificationPageProps } from '../../pages/types'
@@ -50,7 +51,7 @@ export function ClassificationView({ query, state, list, action, open, notice, o
   const panelResult = runAction && notice === undefined
   const stateData = state.kind === 'ok' ? state.data : undefined
   const area = list.kind === 'ok' ? openArea(open, list.data.results) : undefined
-  const title = `${query.product === undefined ? filter.label : `Записи товара №${query.product} · ${filter.label}`} · Страница ${query.page.toLocaleString('ru-RU')}`
+  const title = `${query.product === undefined ? filter.label : `${numbered('Записи товара', query.product)} · ${filter.label}`} · Страница ${query.page.toLocaleString('ru-RU')}`
   return <div className="ck-class" ref={rootRef}>
     <StatePanel state={state} action={action} unavailable={unavailable} onRun={onRun} onRetry={onRetryState} resultRef={panelResult ? resultRef : undefined} />
     <nav className="ck-class-filter" aria-label="Состояние записей">
