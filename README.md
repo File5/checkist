@@ -114,6 +114,7 @@ Vite dev/preview проксирует `/api` и `/media`. Новый API тре�
 - [Разработка](docs/development.md) — env, установка, запуск, остановка и диагностика Windows/Docker.
 - [Проверки](docs/verification.md) — изолированная QA-среда, фактические результаты и ручные сценарии.
 - [Разделение пользователей](docs/multi-user.md) — решение, что реализовано и чем отличается от проекта.
-- [Развёртывание](docs/deployment.md) и [приёмка сервера](docs/deployment-acceptance.md) — один Linux-сервер, gunicorn, Caddy, systemd; на сервере не проверено.
+- [Развёртывание в Docker](docs/deployment-docker.md) — основной путь: на сервере только Docker и git, всё остальное (Caddy с автоматическим HTTPS, gunicorn, сборка фронтенда, PostgreSQL, Redis, Celery, распознавание с Codex отдельным профилем) — в `compose.prod.yaml`; первый запуск и каждое обновление — одна команда `./deploy/docker/deploy.sh`. Образы собраны и конфигурации проверены статически; стек не поднимался, тесты не запускались, на сервере не проверено.
+- [Развёртывание без Docker](docs/deployment.md) — запасной вариант: gunicorn, Caddy, systemd; [приёмка сервера](docs/deployment-acceptance.md) общая для обоих вариантов; на сервере не проверено.
 
 Публикация и выпуск версии не входят в текущий scaffold.
