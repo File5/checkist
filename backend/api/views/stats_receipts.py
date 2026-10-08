@@ -43,7 +43,7 @@ class ReceiptSeriesView(LocalAPIView):
         interval = params.interval()
         params.check()
         try:
-            found = basket.series(stats_common.receipts(scope, period), interval)
+            found = basket.series(stats_common.receipts(request, scope, period), interval)
         except basket.TooManyBuckets:
             raise RangeTooLarge() from None
         return Response({"interval": interval, **period.as_json(), "currencies": [_series(item) for item in found]})
@@ -129,7 +129,7 @@ class ReceiptCompareView(LocalAPIView):
         limit = params.integer("limit", default=20, maximum=MAX_LIMIT, message=f"Допустимо от 1 до {MAX_LIMIT}.")
         params.check()
 
-        data = basket.collect(stats_common.receipts(scope), base, current, stats_common.owner_product_id())
+        data = basket.collect(stats_common.receipts(request, scope), base, current, stats_common.owner_product_id())
         return Response({
             "base": base.as_json(), "current": current.as_json(),
             "currencies": [

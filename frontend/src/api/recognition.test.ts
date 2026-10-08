@@ -237,10 +237,10 @@ describe('crop confirmation', () => {
 
 describe('reference countries for the review form', () => {
   const body = { results: [{ code: 'DE', name: 'Германия', currencies: ['EUR'], stores_count: 1, products_count: 1 }, { code: 'KZ', name: 'Казахстан', currencies: [], stores_count: 0, products_count: 0 }] }
-  it('asks for every reference country anonymously', async () => {
+  it('asks for every reference country with the session cookie of this origin', async () => {
     fetchMock.mockResolvedValue(new Response(JSON.stringify(body)))
     expect(await getCountries({ all: true })).toEqual({ kind: 'ok', data: body })
-    expect(fetchMock).toHaveBeenCalledWith('/api/countries/?all=1', { headers: { Accept: 'application/json' }, credentials: 'omit', cache: 'no-store', signal: expect.any(AbortSignal) })
+    expect(fetchMock).toHaveBeenCalledWith('/api/countries/?all=1', { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store', signal: expect.any(AbortSignal) })
   })
   it.each([{ results: [{ ...body.results[0], currencies: 'EUR' }] }, { results: [{ code: 'DE' }] }, { results: null }, []])('rejects a malformed reference %#', async (invalid) => {
     fetchMock.mockResolvedValue(new Response(JSON.stringify(invalid)))

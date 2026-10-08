@@ -1,14 +1,17 @@
 import { renderToStaticMarkup } from 'react-dom/server'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Classification, ClassificationState } from '../../api/product-classifications'
+import type { Me } from '../../api/session'
 import type { GenericProduct, LocalApiFailure, Page } from '../../api/types'
 import App from '../../App'
 import type { ClassificationQuery, NavigationSnapshot } from '../../navigation'
+import { applyMe } from '../../session'
+import { resetSession } from '../../session/store'
 import type { RequestState } from '../recognition/polling'
 import type { ActionState, ClassificationAction } from './actions'
 import ClassificationPage, { ClassificationView } from './ClassificationPage'
 import { GenericChooserView } from './GenericChooser'
-import { errorText } from './labels'
+import { apiOffText, errorText } from './labels'
 import type { OpenArea } from './state'
 import { failed, generics, pageOf, record, records, refusal, stateOf, success } from './test-support'
 
@@ -24,7 +27,15 @@ vi.mock('../../navigation', async (importOriginal) => ({
   ...await importOriginal<typeof import('../../navigation')>(),
   useNavigation: () => mocked.navigation,
 }))
-beforeEach(() => { mocked.states = []; mocked.loads = []; mocked.navigation = undefined })
+// «Я» as the server answers: without accounts everyone moderates, with them — only the holder of the right.
+const me = (mode: Me['mode'], moderate_catalog: boolean): Me =>
+  ({ mode, user: { id: 3, username: 'anna', is_staff: false }, permissions: { moderate_catalog }, csrf_token: 'token' })
+const local = me('local_single', true)
+const moderator = me('accounts', true)
+const reader = me('accounts', false)
+// The former markup is the markup of local_single: the real store of the session holds it in every test.
+beforeEach(() => { mocked.states = []; mocked.loads = []; mocked.navigation = undefined; applyMe(local) })
+afterEach(() => { resetSession() })
 
 const noop = () => {}
 const idle: ActionState = { kind: 'idle' }
@@ -393,6 +404,25 @@ describe('states of the list', () => {
     const html = view({ query: { status: 'all', page: 1 }, list: success(pageOf([removed, merged, cancelled])) })
     for (const text of ['Заменено: товар удалён', 'Заменено: товар объединён с другим', 'Отменено командой']) expect(html).toContain(text)
     expect(html).toContain('<p class="ck-class-product">Demo Joghurt Natur</p>')
+  })
+  it('names the missing right instead of the local API to a user of accounts and leaves no action available', () => {
+    applyMe(reader)
+    const off = failed('permission_denied', 403)
+    const html = view({ state: off, list: off })
+    expect(html.match(/Нет права модератора каталога\./g)).toHaveLength(2)
+    expect(html).not.toContain('Локальный API'); expect(html).not.toContain('ALLOW_LOCAL_RECOGNITION_API')
+    expect(button(html, 'Предложить категории')).toContain('disabled=""')
+    expect(buttons(html, 'Подтвердить')).toHaveLength(0)
+  })
+  it('words a refused access by the session: the right with accounts, the local API without them', () => {
+    const denied: LocalApiFailure = { kind: 'error', reason: 'permission_denied', status: 403 }
+    const texts = () => (['read', 'action', 'choose'] as const).map((context) => errorText(denied, context))
+    expect(texts()).toEqual(Array(3).fill(apiOffText))
+    for (const enter of [() => applyMe(null), resetSession]) { enter(); expect(texts()).toEqual(Array(3).fill(apiOffText)) }
+    for (const person of [reader, moderator]) { applyMe(person); expect(texts()).toEqual(Array(3).fill('Нет права модератора каталога.')) }
+    // The refusal of an action keeps the text it was given when it happened.
+    applyMe(reader)
+    expect(failure(confirm, denied)).toMatchObject({ kind: 'failed', message: 'Нет права модератора каталога.' })
   })
   it('explains a switched-off local API with a retry and leaves no action available', () => {
     const off = failed('permission_denied', 403)

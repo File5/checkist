@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { buildReceiptsQuery, parseReceiptsQuery } from '../../navigation'
 import type { ReceiptsQuery } from '../../navigation'
+import { applyMe } from '../../session'
+import { resetSession } from '../../session/store'
 import { applyFilters, errorMessage, filterDraft, hasFilters, money, price, receiptParams, recognizedText } from './state'
 
 describe('receipt URL filters and display values', () => {
@@ -50,6 +52,19 @@ describe('receipt URL filters and display values', () => {
     expect(money(null, 'EUR')).toBe('Не распознано')
     expect(money('2.38')).toBe('2,38')
     expect(recognizedText('  ')).toBe('Не распознано')
+  })
+  it('names the missing right instead of the local mode to a user of accounts', () => {
+    const denied = { kind: 'error' as const, reason: 'permission_denied' as const }
+    const former = errorMessage(denied)
+    const me = (mode: 'accounts' | 'local_single') =>
+      ({ mode, user: { id: 3, username: 'anna', is_staff: false }, permissions: { moderate_catalog: mode === 'local_single' }, csrf_token: 'token' })
+    try {
+      applyMe(me('accounts'))
+      expect(errorMessage(denied)).toBe('Нет права модератора каталога.')
+      expect(errorMessage({ kind: 'error', reason: 'page_out_of_range' })).toContain('первую страницу')
+      for (const enter of [() => applyMe(me('local_single')), () => applyMe(null)]) { enter(); expect(errorMessage(denied)).toBe(former) }
+    } finally { resetSession() }
+    expect(former).toContain('локальном режиме')
   })
   it('uses local messages for inaccessible local API and stale pages', () => {
     expect(errorMessage({ kind: 'error', reason: 'permission_denied' })).toContain('локальном режиме')

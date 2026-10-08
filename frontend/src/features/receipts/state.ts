@@ -3,6 +3,7 @@ import type { ReceiptParams } from '../../api/receipts'
 import { buildReceiptsQuery, parseReceiptsQuery } from '../../navigation'
 import type { ReceiptsQuery } from '../../navigation'
 import { formatAmount, formatPrice } from '../../lib/format'
+import { getSession, permissionDeniedText } from '../../session'
 
 export const unknown = 'Не распознано'
 export const recognizedText = (value: string | null | undefined) => value?.trim() || unknown
@@ -51,9 +52,12 @@ export function hasFilters(query: ReceiptsQuery): boolean {
   return Boolean(query.q || query.date_from || query.date_to || query.operation || query.store || query.product || query.country || query.currency)
 }
 
+/** With accounts a refused access is a missing right, not a switched off local mode. */
+const accountsSession = () => { const session = getSession(); return session.kind === 'user' && session.mode === 'accounts' }
 export function errorMessage(failure: Failure): string {
   switch (failure.reason) {
-    case 'permission_denied': return 'Просмотр чеков доступен только в локальном режиме. Проверьте настройки доступа сервера.'
+    case 'permission_denied': return accountsSession() ? permissionDeniedText(getSession())
+      : 'Просмотр чеков доступен только в локальном режиме. Проверьте настройки доступа сервера.'
     case 'not_found': return 'Чек не найден. Возможно, он был удалён.'
     case 'page_out_of_range': return 'Этой страницы больше нет. Перейдите на первую страницу.'
     case 'invalid_parameter': case 'invalid_request': return 'Не удалось применить параметры. Исправьте или сбросьте фильтры.'

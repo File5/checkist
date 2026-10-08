@@ -1,25 +1,8 @@
-"""Explicit anonymous CSRF and local-only permission for the v1 HTTP API."""
-import ipaddress
-
-from django.conf import settings
+"""Explicit CSRF check of the v1 HTTP API; the access rules live in ``accounts.access``."""
 from django.http import QueryDict
 from rest_framework.authentication import CSRFCheck
-from rest_framework.permissions import BasePermission, SAFE_METHODS
 
 from config.exceptions import RecognitionApiError
-
-
-class LocalRecognitionPermission(BasePermission):
-    def has_permission(self, request, view):
-        try:
-            local = ipaddress.ip_address(request.META.get("REMOTE_ADDR", "")).is_loopback
-        except ValueError:
-            local = False
-        if not (settings.DEBUG and settings.ALLOW_LOCAL_RECOGNITION_API and local):
-            raise RecognitionApiError("permission_denied")
-        if request.method not in SAFE_METHODS:
-            enforce_csrf(request._request)
-        return True
 
 
 def enforce_csrf(request):
@@ -40,3 +23,12 @@ def enforce_csrf(request):
             del request._post
     if reason:
         raise RecognitionApiError("csrf_failed")
+
+
+def __getattr__(name):
+    # The former name of the permission. Resolved on access: ``accounts.access`` imports
+    # ``enforce_csrf`` from this module.
+    if name == "LocalRecognitionPermission":
+        from accounts.access import LocalOrSignedIn
+        return LocalOrSignedIn
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

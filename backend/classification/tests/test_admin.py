@@ -52,6 +52,26 @@ class ClassificationAdminTests(TestCase):
             self.client.get(admin_url(ClassificationRun, ClassificationRun.objects.get().pk, "change")), "run_token",
         )
 
+    def test_records_and_runs_show_who_decided_read_only(self):
+        decider = get_user_model().objects.create_user("synthetic-decider")
+        entry = services.reject(record(MILK).pk, version=1, actor=decider)
+        run, created = services.request_run(trigger="manual", actor=decider)
+        self.assertTrue(created)
+        self.assertIn("resolved_by", admin.site._registry[ProductClassification].list_display)
+        self.assertIn("requested_by", admin.site._registry[ClassificationRun].list_display)
+        before = snapshot()
+        for model, pk, field in (
+            (ProductClassification, entry.pk, "resolved_by"), (ClassificationRun, run.pk, "requested_by"),
+        ):
+            with self.subTest(model=model.__name__):
+                self.assertContains(self.client.get(admin_url(model)), "synthetic-decider")
+                response = self.client.get(admin_url(model, pk, "change"))
+                self.assertContains(response, "synthetic-decider")
+                self.assertNotContains(response, f'name="{field}"')
+                response = self.client.post(admin_url(model, pk, "change"), {field: self.superuser.pk})
+                self.assertEqual(response.status_code, 403)
+        self.assertEqual(snapshot(), before)
+
     def test_nothing_can_be_added_changed_or_deleted(self):
         before = snapshot()
         for model in REGISTERED:

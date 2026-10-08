@@ -71,6 +71,7 @@ async function main() {
   assert.ok(process.argv.length === 4 && ['dev', 'preview'].includes(mode), usage)
   assert.match(process.env.POSTGRES_DB ?? '', /^checkist_qa(?:_[a-zA-Z0-9]+)*$/, 'Apply the full QA environment first: POSTGRES_DB must be checkist_qa or checkist_qa_<suffix>')
   assert.equal(process.env.VITE_API_BASE_URL, '/api', 'QA must use the /api prefix')
+  assert.equal(process.env.CHECKIST_AUTH_MODE, 'local_single', 'This script needs a server without a sign-in: set CHECKIST_AUTH_MODE=local_single in this terminal and in the terminal of the API, then restart the API (in the accounts mode every request here answers 401; that mode is checked by check_accounts_proxy.mjs)')
   const direct = loopback(process.env.DEV_API_PROXY_TARGET, 'DEV_API_PROXY_TARGET')
   const proxy = loopback(viteOrigin, 'Vite origin')
   assert.notEqual(direct, proxy, 'API and Vite proxy must be separate origins')

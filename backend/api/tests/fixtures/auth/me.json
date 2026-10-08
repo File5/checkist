@@ -1,0 +1,12 @@
+{
+  "mode": "accounts",
+  "user": {
+    "id": 1,
+    "username": "synthetic-reader",
+    "is_staff": false
+  },
+  "permissions": {
+    "moderate_catalog": false
+  },
+  "csrf_token": "Zq3mP8vK1xW6bN4cR9dT2fY7hJ5sL0aGuEoIiXkMnBvCzQwErTyUpAsDfGhJkLz1"
+}

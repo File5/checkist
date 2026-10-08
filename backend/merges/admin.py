@@ -27,11 +27,11 @@ class ProductMergeMemberInline(ReadOnlyAdminMixin, admin.TabularInline):
 
 @admin.register(ProductMerge)
 class ProductMergeAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
-    list_display = ("id", "status", "version", "target_ref", "created_at", "resolved_at")
+    list_display = ("id", "status", "version", "target_ref", "created_at", "resolved_at", "resolved_by")
     list_filter = ("status",)
     ordering = ("-id",)
-    # No foreign keys to follow in the list.
-    list_select_related = False
+    # The only foreign key of the list: who decided.
+    list_select_related = ("resolved_by",)
     inlines = (ProductMergeMemberInline,)
 
 

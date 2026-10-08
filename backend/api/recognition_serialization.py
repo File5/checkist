@@ -8,6 +8,7 @@ from django.db.models import Count, Exists, IntegerField, OuterRef, Q, Subquery,
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
+from accounts.access import owner_q
 from api.common import amount, iso_date, percent, price, quantity, store_object, utc_datetime
 from receipts.decimal_math import price_context
 from receipts.models import Receipt, ReceiptLine
@@ -139,12 +140,21 @@ def related_count(queryset, group):
                     Value(0), output_field=IntegerField())
 
 
-def photos_queryset():
-    return SourcePhoto.objects.annotate(
+# Rows of the request's user only: every view and every other module takes receipts,
+# photos, jobs and crops from the four ``*_queryset(request)`` below. A job and a crop
+# have no owner of their own, it is the owner of their photo.
+
+
+def annotate_photos(photos):
+    return photos.annotate(
         latest_job_id=Subquery(ProcessingJob.objects.filter(photo_id=OuterRef("pk"))
                               .order_by("-created_at", "-id").values("id")[:1]),
         image_count=related_count(ReceiptImage.objects.filter(photo_id=OuterRef("pk")), "photo_id"),
     )
+
+
+def photos_queryset(request):
+    return annotate_photos(SourcePhoto.objects.filter(owner_q(request)))
 
 
 def photo_object(photo):
@@ -195,14 +205,22 @@ def executor_object():
             "last_seen_at": utc_datetime(latest["heartbeat_at"]) if latest else None}
 
 
-def jobs_queryset():
-    return ProcessingJob.objects.annotate(
+def annotate_jobs(jobs):
+    return jobs.annotate(
         items_count=Count("images"),
         has_review=Exists(ReceiptImage.objects.filter(job_id=OuterRef("pk"))
                          .filter(REVIEW_IMAGES)),
         has_active_sibling=Exists(ProcessingJob.objects.filter(photo_id=OuterRef("photo_id"),
                                   status__in=["queued", "running", "cancel_requested"])),
     )
+
+
+def jobs_queryset(request):
+    return annotate_jobs(ProcessingJob.objects.filter(owner_q(request, "photo__")))
+
+
+def images_queryset(request):
+    return ReceiptImage.objects.filter(owner_q(request, "photo__"))
 
 
 def job_object(job, executor, *, items=None):
@@ -357,10 +375,10 @@ def image_object(image, *, detail=False):
     return result
 
 
-def receipts_queryset():
+def receipts_queryset(request):
     images = ReceiptImage.objects.filter(receipt_id=OuterRef("pk"))
     lines = ReceiptLine.objects.filter(receipt_id=OuterRef("pk"))
-    return Receipt.objects.select_related("store__merchant").annotate(
+    return Receipt.objects.filter(owner_q(request)).select_related("store__merchant").annotate(
         lines_count=related_count(lines, "receipt_id"),
         unmatched_products_count=related_count(lines.filter(kind="product", product__isnull=True), "receipt_id"),
         image_count=related_count(images, "receipt_id"),

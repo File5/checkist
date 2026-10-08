@@ -1,0 +1,26 @@
+# Celery is needed only by /api/health/ (the `celery` check); it runs no recognition.
+[Unit]
+Description=Checkist Celery worker
+After=network.target postgresql.service redis-server.service
+Wants=postgresql.service redis-server.service
+
+[Service]
+Type=exec
+User=checkist
+Group=checkist
+WorkingDirectory=/opt/checkist/backend
+EnvironmentFile=/etc/checkist/checkist.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/checkist/backend/.venv/bin/celery -A config worker --loglevel=INFO --pool=prefork --concurrency=1 --hostname=checkist@worker
+KillMode=mixed
+TimeoutStopSec=30
+Restart=on-failure
+RestartSec=5
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+PrivateTmp=yes
+InaccessiblePaths=-/home/checkist/.codex
+
+[Install]
+WantedBy=multi-user.target

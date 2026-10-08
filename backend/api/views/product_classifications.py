@@ -3,12 +3,14 @@
 Same access as the recognition API (``LocalAPIView``). Every mutation is one
 call of ``classification.services``; its errors are mapped to the contract codes
 here. No ``Idempotency-Key``: a repeat is recognised by the request content and
-the state of the record.
+the state of the record. A decision is recorded with the user of the request
+(``local`` in ``local_single``).
 """
 from rest_framework import status
 from rest_framework.exceptions import ParseError, UnsupportedMediaType
 from rest_framework.response import Response
 
+from accounts.access import Moderator, request_user
 from api.pagination import paginate
 from api.params import MAX_ID, Params
 from api.product_classification_serialization import record_object, record_objects, run_object, status_object
@@ -110,6 +112,7 @@ def _ids(request, *names):
 
 
 class ClassificationMutationView(ClassificationAPIView):
+    permission_classes = [Moderator]
     http_method_names = ["post", "options"]
     parser_classes = [JsonObjectParser]
 
@@ -139,14 +142,16 @@ class RecordView(ClassificationAPIView):
 class ConfirmView(ClassificationMutationView):
     def post(self, request, pk):
         data = _ids(request, "version", "generic_id")
-        record = services.confirm(path_id(pk), version=data["version"], generic_id=data["generic_id"])
+        record = services.confirm(
+            path_id(pk), version=data["version"], generic_id=data["generic_id"], actor=request_user(request),
+        )
         return Response(record_object(services.get_record(record.pk)))
 
 
 class RejectView(ClassificationMutationView):
     def post(self, request, pk):
         data = _ids(request, "version")
-        record = services.reject(path_id(pk), version=data["version"])
+        record = services.reject(path_id(pk), version=data["version"], actor=request_user(request))
         return Response(record_object(services.get_record(record.pk)))
 
 
@@ -176,7 +181,9 @@ class ConfirmManyView(ClassificationMutationView):
                     errors[f"items.{position}.{name}"] = [EXPECTED_ID]
         if errors:
             raise InvalidParameter(errors)
-        records = services.confirm_many([(item["id"], item["version"]) for item in items])
+        records = services.confirm_many(
+            [(item["id"], item["version"]) for item in items], actor=request_user(request),
+        )
         # Read again with the run loaded: the page is serialized in a fixed number of queries.
         results = record_objects(services.records().filter(pk__in=[record.pk for record in records]).order_by("pk"))
         return Response({"confirmed": len(results), "results": results})
@@ -191,6 +198,10 @@ class RunsView(ClassificationAPIView):
     http_method_names = ["get", "head", "options", "post"]
     parser_classes = [JsonObjectParser]
 
+    def get_permissions(self):
+        # Reading the runs is open like the other GET; queueing one is a moderator's decision.
+        return [Moderator()] if self.request.method == "POST" else super().get_permissions()
+
     def get(self, request):
         params = Params(request.query_params)
         page = params.page()
@@ -200,7 +211,7 @@ class RunsView(ClassificationAPIView):
 
     def post(self, request):
         _body(request)
-        run, created = services.request_run(trigger=ClassificationRun.Trigger.MANUAL)
+        run, created = services.request_run(trigger=ClassificationRun.Trigger.MANUAL, actor=request_user(request))
         return Response(
             {"created": created, "run": run_object(run) if run else None, "executor": executor_object()},
             status=status.HTTP_202_ACCEPTED if created else status.HTTP_200_OK,

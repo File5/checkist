@@ -28,11 +28,12 @@
 .product-store-search { display: flex; align-items: start; gap: 12px; min-width: 0; }
 .product-store-search input { flex: 1; }
 .product-table-scroll { max-width: 100%; overflow-x: auto; border: 1px solid var(--ck-border); border-radius: var(--ck-radius); }
-.product-table { width: 100%; min-width: 780px; border-collapse: collapse; font-size: 0.95rem; }
+.product-table { width: 100%; min-width: 900px; border-collapse: collapse; font-size: 0.95rem; }
 .product-table caption { padding: 14px; text-align: left; font-weight: 600; }
 .product-table th, .product-table td { padding: 14px 12px; border-top: 1px solid var(--ck-divider); text-align: left; vertical-align: top; }
 .product-table thead th { background: var(--ck-surface-raised); }
 .product-table tbody th { min-width: 160px; max-width: 240px; font-weight: 500; overflow-wrap: anywhere; }
+.product-table a { display: inline-block; min-height: 44px; padding-block: 10px; color: var(--ck-link); text-underline-offset: 3px; }
 .product-number, .product-table .product-number { text-align: right; font-variant-numeric: tabular-nums; }
 .product-subtext { display: block; font-size: 0.85rem; color: var(--ck-text-muted); margin-top: 6px; }
 .product-summary-list { display: grid; gap: 18px; list-style: none; margin: 20px 0 0; padding: 0; }

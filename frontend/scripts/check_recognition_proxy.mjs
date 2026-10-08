@@ -74,6 +74,7 @@ try {
   assert.equal(process.env.DJANGO_DEBUG, '1')
   assert.equal(process.env.ALLOW_LOCAL_RECOGNITION_API, '1')
   assert.equal(process.env.VITE_API_BASE_URL, '/api')
+  assert.equal(process.env.CHECKIST_AUTH_MODE, 'local_single', 'This script needs a server without a sign-in: set CHECKIST_AUTH_MODE=local_single in this terminal and in the terminal of the API, then restart the API (in the accounts mode every request here answers 401; that mode is checked by check_accounts_proxy.mjs)')
   for (const key of ['MEDIA_ROOT', 'RECEIPT_OCR_TEMP_ROOT']) assert.ok(isAbsolute(process.env[key] ?? ''), `${key} must be absolute`)
   const media = resolve(process.env.MEDIA_ROOT), scratch = resolve(process.env.RECEIPT_OCR_TEMP_ROOT)
   const contains = (a, b) => { const path = relative(a, b); return !path || (!path.startsWith('..') && !isAbsolute(path)) }

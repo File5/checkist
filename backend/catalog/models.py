@@ -78,6 +78,8 @@ class Product(models.Model):
     attributes = models.JSONField(default=dict, blank=True)
 
     class Meta:
+        # Decisions about the shared catalog: product merges and suggested categories.
+        permissions = [("moderate_catalog", "Can moderate the shared catalog")]
         constraints = [
             models.UniqueConstraint(
                 fields=["gtin"], condition=~Q(gtin=""), name="catalog_product_gtin_uniq",

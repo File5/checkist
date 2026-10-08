@@ -2,6 +2,7 @@ import io
 import uuid
 from datetime import timedelta
 
+from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.db import IntegrityError, connection, transaction
 from django.db.migrations.executor import MigrationExecutor
@@ -21,6 +22,7 @@ from classification.tests.factories import (
 )
 
 CLASSIFICATION_TABLES = {model._meta.db_table for model in CLASSIFICATION_MODELS}
+LATEST = [("classification", "0002_actor_fields")]
 
 
 def running_fields(now=None):
@@ -209,9 +211,48 @@ class CatalogFreedomTests(TestCase):
             if type(operation).__name__ in ("AddConstraint", "AddIndex"):
                 self.assertIn(operation.model_name, created)
         self.assertEqual(
-            [name for app, name in MigrationLoader(connection).disk_migrations if app == "classification"],
-            ["0001_initial"],
+            sorted(name for app, name in MigrationLoader(connection).disk_migrations if app == "classification"),
+            ["0001_initial", LATEST[0][1]],
         )
+
+    def test_actor_is_empty_by_default_and_a_deleted_user_clears_it(self):
+        services.reject(record(CHEESE).pk, version=1)
+        entry, run, rejection = record(MILK), ClassificationRun.objects.get(), ClassificationRejection.objects.get()
+        self.assertFalse(ProductClassification.objects.filter(resolved_by__isnull=False).exists())
+        self.assertEqual((entry.resolved_by_id, run.requested_by_id, rejection.created_by_id), (None, None, None))
+        actor = get_user_model().objects.create_user("journal-actor")
+        ProductClassification.objects.filter(pk=entry.pk).update(resolved_by=actor)
+        ClassificationRun.objects.filter(pk=run.pk).update(requested_by=actor)
+        ClassificationRejection.objects.filter(pk=rejection.pk).update(created_by=actor)
+        before = snapshot(*CLASSIFICATION_MODELS)
+        self.assertEqual([row["requested_by_id"] for row in before["ClassificationRun"]], [actor.pk])
+        actor.delete()
+        cleared = {
+            "ProductClassification": "resolved_by_id", "ClassificationRun": "requested_by_id",
+            "ClassificationRejection": "created_by_id",
+        }
+        # Nothing but the reference changes: the journal outlives the account.
+        self.assertEqual(snapshot(*CLASSIFICATION_MODELS), {
+            name: [row | {cleared[name]: None} if name in cleared else row for row in rows]
+            for name, rows in before.items()
+        })
+
+    def test_actor_migration_only_adds_empty_references(self):
+        migration = MigrationLoader(connection).get_migration(*LATEST[0])
+        self.assertEqual(migration.dependencies[0], ("classification", "0001_initial"))
+        self.assertEqual(len(migration.dependencies), 2)
+        self.assertEqual({type(operation).__name__ for operation in migration.operations}, {"AddField"})
+        self.assertEqual(
+            [(operation.model_name, operation.name) for operation in migration.operations],
+            [
+                ("classificationrun", "requested_by"), ("productclassification", "resolved_by"),
+                ("classificationrejection", "created_by"),
+            ],
+        )
+        for operation in migration.operations:
+            self.assertTrue(operation.field.null)
+            self.assertEqual(operation.field.remote_field.on_delete.__name__, "SET_NULL")
+            self.assertEqual(operation.field.remote_field.related_name, "+")
 
 
 @tag("integration")
@@ -244,7 +285,7 @@ class ClassificationMigrationTests(TransactionTestCase):
             self.assertEqual(self.tables(), set())
             self.assertEqual(snapshot(*DOMAIN_MODELS), kept)
         finally:
-            MigrationExecutor(connection).migrate([("classification", "0001_initial")])
+            MigrationExecutor(connection).migrate(LATEST)
         self.assertEqual(self.tables(), CLASSIFICATION_TABLES)
         self.assertTrue(all(not model.objects.exists() for model in CLASSIFICATION_MODELS))
         self.assertEqual(snapshot(*DOMAIN_MODELS), kept)
@@ -266,7 +307,7 @@ class ClassificationMigrationTests(TransactionTestCase):
             self.assertEqual(self.tables(), set())
             self.assertEqual(snapshot(*DOMAIN_MODELS), applied)
         finally:
-            MigrationExecutor(connection).migrate([("classification", "0001_initial")])
+            MigrationExecutor(connection).migrate(LATEST)
         self.assertEqual(snapshot(*DOMAIN_MODELS), applied)
         # Nothing remembers that the values were suggestions: there is nothing to undo.
         self.assertEqual(services.cancel_pending()["cancelled"], [])

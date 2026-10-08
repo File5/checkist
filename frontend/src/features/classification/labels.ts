@@ -5,6 +5,7 @@ import type { ExecutorState } from '../../api/recognition-types'
 import type { BaseUnit, LocalApiFailure } from '../../api/types'
 import { formatQuantity } from '../../lib/format'
 import type { ClassificationQuery } from '../../navigation'
+import { getSession, permissionDeniedText } from '../../session'
 import { counted } from '../merges/labels'
 import type { AreaFate, OpenArea } from './state'
 
@@ -98,13 +99,14 @@ export function uncertain(error: LocalApiFailure): boolean {
   return ['network', 'timeout', 'server', 'database_unavailable', 'invalid_response'].includes(error.reason)
 }
 
+/** Refused access without accounts (`local_single`, or the session is not known yet); with accounts the text names the missing right. */
 export const apiOffText = 'Локальный API выключен или недоступен с этого адреса. Запустите сервер с ALLOW_LOCAL_RECOGNITION_API=1 и откройте приложение с этого компьютера.'
 
 /** Local translations only: a server message never reaches the screen. `choose` — the refusal of «Выбрать другой». */
 export function errorText(error: LocalApiFailure, context: 'read' | 'action' | 'choose' = 'read'): string {
   const mutation = context !== 'read'
   switch (error.reason) {
-    case 'permission_denied': return apiOffText
+    case 'permission_denied': return permissionDeniedText(getSession())
     case 'csrf_failed': return 'Токен безопасности устарел. Повторите действие.'
     case 'classification_busy': return 'Каталог сейчас изменяется: идёт импорт чека, слияние дублей или другое действие. Ничего не сохранено.'
     case 'classification_changed': return 'Предложение изменилось. Данные обновлены: проверьте запись и повторите действие.'

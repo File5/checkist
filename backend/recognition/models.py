@@ -1,5 +1,6 @@
 import uuid
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import RegexValidator
 from django.db import models
@@ -17,10 +18,12 @@ SHA256_VALIDATOR = RegexValidator(r"\A[0-9a-f]{64}\Z", "Expected a lowercase SHA
 
 
 class SourcePhoto(models.Model):
+    # No default: a forgotten owner is an error, not a silent "local".
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="source_photos")
     storage_uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     original_file = models.FileField(max_length=255)
     upright_file = models.FileField(max_length=255, null=True, blank=True)
-    sha256 = models.CharField(max_length=64, unique=True, validators=[SHA256_VALIDATOR])
+    sha256 = models.CharField(max_length=64, validators=[SHA256_VALIDATOR])
     content_type = models.CharField(max_length=16)
     bytes = models.PositiveIntegerField()
     raw_width = models.PositiveIntegerField()
@@ -32,8 +35,13 @@ class SourcePhoto(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        indexes = [models.Index(fields=["created_at", "id"], name="rec_photo_created_idx")]
+        indexes = [
+            models.Index(fields=["created_at", "id"], name="rec_photo_created_idx"),
+            models.Index(fields=["owner", "created_at", "id"], name="rec_photo_owner_created_idx"),
+        ]
         constraints = [
+            # The same file is one photo per owner; (owner, sha256) also serves lookups by sha256 of an owner.
+            models.UniqueConstraint(fields=["owner", "sha256"], name="rec_photo_owner_sha256_uniq"),
             models.CheckConstraint(condition=Q(bytes__gt=0, bytes__lte=20971520), name="rec_photo_bytes_check"),
             models.CheckConstraint(
                 condition=Q(raw_width__gt=0, raw_height__gt=0, width__gt=0, height__gt=0)

@@ -960,7 +960,7 @@ class ConfirmServiceTests(TestCase):
                 setattr(error.__cause__, key, value)
             return error
 
-        diag = type("Diag", (), {"constraint_name": "receipts_receipt_store_time_total_uniq"})()
+        diag = type("Diag", (), {"constraint_name": "receipts_receipt_owner_store_time_total_uniq"})()
         errors = [database_error(OperationalError, sqlstate=state) for state in ("55P03", "57014", "40P01")]
         errors.append(database_error(IntegrityError, sqlstate="23505", diag=diag))
         for error in errors:

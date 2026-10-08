@@ -55,6 +55,33 @@ class ReadOnlyTests(MergesAdminTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertNotContains(response, 'name="_save"')
 
+    def test_group_shows_who_decided_read_only(self):
+        group = pending_group(PIZZA[0])
+        decider = get_user_model().objects.create_user("synthetic-decider")
+        services.cancel(group.pk, actor=decider)
+        self.assertIn("resolved_by", admin.site._registry[ProductMerge].list_display)
+        self.assertContains(self.client.get(admin_url(ProductMerge)), "synthetic-decider")
+        response = self.client.get(admin_url(ProductMerge, group.pk, "change"))
+        self.assertContains(response, "synthetic-decider")
+        self.assertNotContains(response, 'name="resolved_by"')
+        before = snapshot()
+        response = self.client.post(admin_url(ProductMerge, group.pk, "change"), {"resolved_by": self.superuser.pk})
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(snapshot(), before)
+
+    def test_changelist_with_deciders_does_not_query_per_row(self):
+        def count():
+            with CaptureQueriesContext(connection) as queries:
+                self.assertEqual(self.client.get(admin_url(ProductMerge)).status_code, 200)
+            return len(queries)
+
+        first, second = (get_user_model().objects.create_user(f"synthetic-decider-{n}") for n in (1, 2))
+        services.cancel(pending_group(PIZZA[0]).pk, actor=first)
+        before = count()
+        for group_id in ProductMerge.objects.filter(status="pending").values_list("pk", flat=True):
+            services.cancel(group_id, actor=second)
+        self.assertEqual(count(), before)
+
     def test_changelists_do_not_query_per_row(self):
         def count(model):
             with CaptureQueriesContext(connection) as queries:

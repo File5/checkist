@@ -18,6 +18,7 @@ from merges import demo, services
 from merges.models import ProductMerge
 from receipts.dedup import name_key
 from receipts.models import ProductAlias, Receipt, ReceiptLine
+from receipts.ownership import local_user
 from stores.models import Merchant, Store
 
 NOW = datetime(2026, 10, 6, 10, 0, tzinfo=dt_timezone.utc)
@@ -64,9 +65,9 @@ def restart_group_ids():
         cursor.execute("SELECT setval(pg_get_serial_sequence('merges_productmerge', 'id'), 1, false)")
 
 
-def _receipt(pk, store, on, rows, names):
+def _receipt(pk, store, on, rows, names, owner=None):
     receipt = Receipt.objects.create(
-        id=pk, store=store, currency_id="EUR", operation=Receipt.Operation.SALE, purchased_on=on,
+        id=pk, owner=owner or local_user(), store=store, currency_id="EUR", operation=Receipt.Operation.SALE, purchased_on=on,
         purchased_at=datetime.combine(on, time(12, 0), tzinfo=ZoneInfo(store.timezone)),
         total=sum(Decimal(price) for _, _, price in rows), receipt_number=f"{PRIVATE} NUMBER {pk}",
         raw_text=f"{PRIVATE} TEXT", fiscal={"secret": f"{PRIVATE} FISCAL"}, extra={"stderr": f"{PRIVATE} EXTRA"},

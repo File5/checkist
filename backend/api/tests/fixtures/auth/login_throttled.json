@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "login_throttled",
+    "message": "Слишком много попыток входа. Повторите позже."
+  },
+  "retry_after": 900
+}

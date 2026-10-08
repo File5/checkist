@@ -1,6 +1,14 @@
+/// <reference types="node" />
+import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getProductPrices, getProductPriceSummary } from './prices'
-import { history, pageOf, point, store, summary, total } from './test-support'
+import { foreignPoint, history, pageOf, point, store, summary, total } from './test-support'
+
+/** The backend's own example of a page with a foreign point; never a second copy of it. */
+const foreignFixture = (): unknown => JSON.parse(readFileSync(
+  new URL('../../../backend/api/tests/fixtures/auth/prices_foreign_point.json', import.meta.url), 'utf8'))
+const withoutOwn = (item: object): object => Object.fromEntries(Object.entries(item).filter(([key]) => key !== 'own'))
+const receiptFields = ['observed_at', 'quantity', 'discount_amount', 'receipt_id', 'position'] as const
 
 const fetchMock = vi.fn<typeof fetch>()
 function reply(body: unknown, status = 200) { fetchMock.mockResolvedValue(new Response(JSON.stringify(body), { status })) }
@@ -68,6 +76,35 @@ describe('price history', () => {
   })
   it('keeps a malformed mandatory point as an error of the whole history block', async () => {
     reply({ ...history, ...pageOf([point, { ...point, position: -1 }], 200) })
+    expect(await getProductPrices(9)).toEqual({ kind: 'error', reason: 'invalid_response', status: 200 })
+  })
+  it('accepts the backend page with my and a foreign purchase and keeps the hidden receipt fields null', async () => {
+    const body = foreignFixture()
+    reply(body)
+    const result = await getProductPrices(71)
+    expect(result).toEqual({ kind: 'ok', data: body })
+    if (result.kind !== 'ok') return
+    expect(result.data.results.map((item) => item.own)).toEqual([true, false])
+    for (const field of receiptFields) {
+      expect(result.data.results[0][field], field).not.toBeNull()
+      expect(result.data.results[1][field], field).toBeNull()
+    }
+  })
+  it('accepts a page of foreign purchases only, even when they match in every visible field', async () => {
+    const body = { ...history, ...pageOf([foreignPoint, foreignPoint], 200) }
+    reply(body)
+    expect(await getProductPrices(9)).toEqual({ kind: 'ok', data: body })
+  })
+  it.each([
+    ['my purchase without own', withoutOwn(point)],
+    ['foreign purchase without own', withoutOwn(foreignPoint)],
+    ...['true', 1, 0, null].map((own) => [`own = ${JSON.stringify(own)}`, { ...point, own }] as [string, object]),
+    ['my purchase marked foreign', { ...point, own: false }],
+    ['foreign purchase marked mine', { ...foreignPoint, own: true }],
+    ...receiptFields.map((field) => [`my purchase with null ${field}`, { ...point, [field]: null }] as [string, object]),
+    ...receiptFields.map((field) => [`foreign purchase with ${field}`, { ...foreignPoint, [field]: point[field] }] as [string, object]),
+  ])('rejects %s', async (_name, item) => {
+    reply({ ...history, results: [item] })
     expect(await getProductPrices(9)).toEqual({ kind: 'error', reason: 'invalid_response', status: 200 })
   })
   it('sends all history filters, canonical path and descending ordering', async () => {
