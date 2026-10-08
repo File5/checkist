@@ -29,6 +29,11 @@ STATIC_ROOT = "/var/lib/checkist/static"
 DATA_MOUNT = "data:/var/lib/checkist"
 SCRATCH_MOUNT = "ocr_scratch:/var/lib/checkist-scratch"
 CODEX_HOME = "/home/checkist/.codex"
+GUIDE = ROOT / "docs" / "deployment-docker.md"
+# What deploy.sh prints after a failure that leaves web stopped; the guide repeats the commands.
+RECOVER = "deploy/docker/deploy.sh --no-pull --no-backup"
+ROLLBACK = 'deploy/docker/deploy.sh --ref $(cat "$previous_file") --no-backup'
+MANUAL_COPY = "deploy/docker/ck manage backup create --dir /backups --keep-days 14"
 SERVICES = {"postgres", "redis", "web", "celery", "proxy", "recognition"}
 VOLUMES = {"postgres_data", "redis_data", "data", "ocr_scratch", "codex_home", "caddy_data", "caddy_config"}
 # Read by Compose, the proxy or the scripts; Django settings never see them.
@@ -47,6 +52,11 @@ def code(name):
     return "\n".join(
         line for line in text(name).splitlines() if line.strip() and not line.lstrip().startswith("#")
     )
+
+
+def shell_function(source, name):
+    """Body of a top-level shell function."""
+    return re.search(rf"^{name}\(\) \{{\n(.*?)^\}}$", source, flags=re.MULTILINE | re.DOTALL).group(1)
 
 
 def env_example():
@@ -471,3 +481,104 @@ class DockerDeployFilesTests(SimpleTestCase):
         for flag in ("--no-pull)", "--no-backup)", "--ref)"):
             with self.subTest(flag=flag):
                 self.assertIn(flag, main)
+
+    # Recovery after a failure while web is stopped: the script, its copy step and the guide agree.
+
+    def test_deploy_script_recovery_commands_skip_the_copy_step(self):
+        source = code("deploy.sh")
+        main, on_exit = shell_function(source, "main"), shell_function(source, "on_exit")
+        self.assertIn(f'recover="{RECOVER}"', source)
+        self.assertIn(f'manual_copy="{MANUAL_COPY.replace("14", "$backup_keep_days")}"', source)
+        # The copy step refuses a stopped web, so every command the script offers names --no-backup.
+        offered = re.findall(r"deploy/docker/deploy\.sh --[^\n]*", source)
+        self.assertEqual(sorted(offered), sorted([f'{RECOVER}"', f'{ROLLBACK}" >&2']))
+        self.assertEqual(on_exit.count('echo "deploy:   $recover" >&2'), 2)
+        self.assertNotIn("up -d --wait web", source)
+        # --no-backup is decided before the state of web is read, and --ref passes it on.
+        flag, state, refusal = (
+            main.index('if [ "$backup" -eq 0 ]; then'), main.index('state="$(web_state)"'), main.index("stopped)"),
+        )
+        self.assertLess(flag, state)
+        self.assertLess(state, refusal)
+        self.assertRegex(main[refusal:main.index(";;", refusal)], r'web_before="stopped"\n\s+die "')
+        self.assertEqual(source.count('die "the web container exists but is not running'), 1)
+        self.assertIn('local again=(--no-pull)\n        [ "$backup" -eq 1 ] || again+=(--no-backup)', main)
+        self.assertLess(main.index("site_stopped=1"), main.index("compose stop web celery"))
+        self.assertLess(main.index("$health_probe"), main.index("site_stopped=0"))
+
+    def test_deploy_script_says_whether_the_copy_was_made(self):
+        source = code("deploy.sh")
+        main, on_exit = shell_function(source, "main"), shell_function(source, "on_exit")
+        note = shell_function(source, "no_copy_note")
+        # "made" is set only after a successful copy; a skipped step is reported as no copy.
+        self.assertEqual(re.findall(r'copy_state="([a-z-]+)"', main), ["no-backup", "made", "first-start"])
+        self.assertLess(main.index("backup create --dir /backups"), main.index('copy_state="made"'))
+        self.assertLess(main.index('copy_state="made"'), main.index("stopped)"))
+        self.assertLess(main.index('copy_state="no-backup"'), main.index('echo "skipped: --no-backup"'))
+        self.assertLess(main.index('copy_state="first-start"'), main.index('echo "skipped: no web container'))
+        self.assertIn('made) echo "deploy: The copy of this run is already made', on_exit)
+        self.assertIn('no-backup) no_copy_note "--no-backup was given" ;;', on_exit)
+        self.assertIn('*) no_copy_note "there was no web container to take it from" ;;', on_exit)
+        self.assertIn("This run made NO copy", note)
+        self.assertIn('echo "deploy:   $manual_copy" >&2', note)
+
+    def test_deploy_script_never_calls_a_stopped_site_untouched(self):
+        source = code("deploy.sh")
+        on_exit = shell_function(source, "on_exit")
+        stopped_now, stopped_before, untouched = (
+            on_exit.index('if [ "$site_stopped" -eq 1 ]; then'),
+            on_exit.index('if [ "$web_before" = stopped ]; then'),
+            on_exit.index("the running containers were not touched"),
+        )
+        self.assertLess(stopped_now, stopped_before)
+        self.assertLess(stopped_before, untouched)
+        self.assertEqual(source.count("the running containers were not touched"), 1)
+        # Each branch that leaves web stopped says so and names the command; "not touched" is the `else`.
+        for branch in (on_exit[stopped_now:stopped_before], on_exit[stopped_before:untouched]):
+            self.assertIn('echo "deploy:   $recover" >&2', branch)
+            self.assertEqual(branch.count("the site is down"), 1)
+            self.assertIn("$recover", branch)
+        self.assertIn("        return\n    fi\n", on_exit[stopped_now:stopped_before])
+        self.assertIn("$manual_copy", on_exit[stopped_before:untouched])
+        self.assertRegex(
+            on_exit[stopped_before:],
+            r'\n    else\n        echo "deploy: the running containers were not touched\." >&2\n    fi\n$',
+        )
+
+    def test_deploy_script_does_not_take_a_one_off_container_for_the_web_service(self):
+        # `compose ps --all` lists the containers of `compose run` as well: `ck manage` may leave one.
+        source = code("deploy.sh")
+        state = shell_function(source, "web_state")
+        self.assertEqual(source.count("ps --all"), 1)
+        self.assertIn('"$ck" compose ps --all --quiet web', state)
+        self.assertIn('"$ck" compose ps --quiet --status running web', state)
+        self.assertIn("com.docker.compose.oneoff", state)
+        self.assertLess(state.index("echo running"), state.index("ps --all"))
+        self.assertEqual(
+            re.findall(r"echo (running|stopped|absent)$", state, flags=re.MULTILINE),
+            ["running", "stopped", "absent"],
+        )
+        self.assertEqual(shell_function(source, "main").count('"$(web_state)"'), 2)
+        self.assertEqual(len(re.findall(r"compose ps [^\n]*\bweb\b", source)), 2)
+
+    def test_guide_names_the_commands_and_messages_of_the_script(self):
+        source, guide = code("deploy.sh"), GUIDE.read_text(encoding="utf-8")
+        update = guide[guide.index("\n## 4. "):guide.index("\n## 5. ")]
+        rollback = guide[guide.index("\n## 5. "):guide.index("\n## 6. ")]
+        for command in (RECOVER, MANUAL_COPY, "deploy/docker/deploy.sh --ref <прежний коммит> --no-backup"):
+            with self.subTest(command=command):
+                self.assertIn(f"./{command}", update)
+        self.assertIn('./deploy/docker/deploy.sh --ref "$(cat .deploy-previous)" --no-backup', rollback)
+        for message in (
+            "this run stopped web and celery and did not bring them back - the site is down",
+            "The copy of this run is already made", "This run made NO copy",
+            "this run stopped nothing, but web was stopped before it - the site is down",
+            "the running containers were not touched",
+        ):
+            with self.subTest(message=message):
+                self.assertIn(message, source)
+                self.assertIn(f"`{message}`", update)
+        # The advice that did not work: a repeat without --no-backup, and web started on the new image.
+        self.assertNotIn("up -d --wait web", guide)
+        self.assertNotIn("выполнить `./deploy/docker/deploy.sh --no-pull`", guide)
+        self.assertIsNone(re.search(r"`--no-pull` \|[^\n]*повтор после сбоя(?! до остановки)", guide))
