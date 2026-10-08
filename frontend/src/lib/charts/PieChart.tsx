@@ -1,7 +1,8 @@
-import { useId, useReducer } from 'react'
-import type { ComponentType, ReactNode } from 'react'
+import { useEffect, useId, useReducer, useRef, useState } from 'react'
+import type { ComponentType, CSSProperties, ReactNode } from 'react'
 import { layoutPieLabels, pieSlices, pieTones } from './pie.ts'
 import { seriesColors } from './line.ts'
+import { usePlotWidth } from './plot-width.ts'
 import { coordinate as c } from './scale.ts'
 import { activePieKey, noPieHighlight, pieHighlightReducer } from './selection.ts'
 import './Charts.css'
@@ -43,13 +44,38 @@ export interface PieChartProps {
   linkComponent?: ChartLinkComponent
 }
 
-const view = { width: 320, height: 240 }
-const geometry = { cx: 160, cy: 120, outer: 76, inner: 46 }
-const labelArea = { ...geometry, radius: 90, lineHeight: 15, top: 12, bottom: 228 }
+const base = { width: 320, height: 240, outer: 76, inner: 46 }
+const figureWidth = { fallback: base.width, min: 240, max: 380 }
+
+/**
+ * The drawing for a figure of the given width, one to one: the text stays 12px at any width. A figure narrower than
+ * the base keeps the ring and loses room beside the labels; a wider one grows the ring with it.
+ */
+function pieFrame(width: number) {
+  const scale = Math.max(1, width / base.width)
+  const height = base.height * scale
+  const geometry = { cx: width / 2, cy: height / 2, outer: base.outer * scale, inner: base.inner * scale }
+  return { width, height, geometry, labelArea: { ...geometry, radius: geometry.outer + 14, lineHeight: 15, top: 12, bottom: height - 12 } }
+}
 const defaultHeaders = { name: 'Название', value: 'Сумма', share: 'Доля' }
 
 function PlainLink({ to, ...props }: ChartLinkProps) {
   return <a href={to} {...props} />
+}
+
+/** A sum wider than the hole of the ring is left to the legend: cut or wrapped digits would read as another number. */
+function CenterValue({ text }: { text: string }) {
+  const ref = useRef<HTMLElement>(null)
+  const [fits, setFits] = useState(true)
+  useEffect(() => {
+    const node = ref.current
+    if (!node || typeof ResizeObserver === 'undefined') return undefined
+    // The box is as wide as its text up to the width of the hole, so every change of the answer changes its size.
+    const observer = new ResizeObserver(() => setFits(node.scrollWidth <= node.clientWidth))
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [])
+  return <strong ref={ref} className="ck-pie-center-value" data-fits={fits ? undefined : 'false'}>{text}</strong>
 }
 
 export default function PieChart({
@@ -59,12 +85,14 @@ export default function PieChart({
   linkComponent: LinkComponent = PlainLink,
 }: PieChartProps) {
   const patternId = useId()
+  const [figureRef, width] = usePlotWidth<HTMLDivElement>(figureWidth)
   const [highlight, dispatch] = useReducer(pieHighlightReducer, noPieHighlight)
   if (items.length === 0) return <p className="ck-chart ck-chart-empty">{emptyMessage}</p>
 
-  const slices = pieSlices(items, geometry)
+  const view = pieFrame(width)
+  const slices = pieSlices(items, view.geometry)
   const sliceByKey = new Map(slices.map((slice) => [slice.key, slice]))
-  const labels = layoutPieLabels(slices, labelArea)
+  const labels = layoutPieLabels(slices, view.labelArea)
   const active = activePieKey(highlight, items.map((item) => item.key))
   const activeItem = items.find((item) => item.key === active)
 
@@ -83,9 +111,9 @@ export default function PieChart({
       {slices.length === 0 ? (
         <p className="ck-chart-empty">Положительных сумм нет, диаграмма не построена. Все значения — в таблице.</p>
       ) : (
-        <div className="ck-pie-figure">
+        <div ref={figureRef} className="ck-pie-figure" style={{ '--ck-pie-hole': `${c(view.geometry.inner * 2)}px` } as CSSProperties}>
           {/* The legend table below is the accessible form; the drawing repeats it for the eye and the pointer. */}
-          <svg className="ck-pie-svg" viewBox={`0 0 ${view.width} ${view.height}`} aria-hidden="true" focusable="false">
+          <svg className="ck-pie-svg" viewBox={`0 0 ${view.width} ${c(view.height)}`} aria-hidden="true" focusable="false">
             <defs>
               <pattern id={patternId} width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
                 <rect className="ck-chart-hatch" width="2" height="6" />
@@ -121,50 +149,52 @@ export default function PieChart({
             {activeItem ? (
               <>
                 <span className="ck-pie-center-label">{activeItem.label}</span>
-                <strong>{activeItem.valueText}</strong>
+                <CenterValue text={activeItem.valueText} />
                 <span>{activeItem.shareText}</span>
               </>
             ) : (
               <>
                 {centerLabel && <span className="ck-pie-center-label">{centerLabel}</span>}
-                {centerValue && <strong>{centerValue}</strong>}
+                {centerValue && <CenterValue text={centerValue} />}
               </>
             )}
           </div>
         </div>
       )}
-      <table className="ck-pie-legend">
-        <caption>{title}</caption>
-        <thead>
-          <tr>
-            <th scope="col">{headers.name}</th>
-            <th scope="col" className="ck-chart-number">{headers.value}</th>
-            <th scope="col" className="ck-chart-number">{headers.share}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((item) => {
-            const drawn = sliceByKey.has(item.key)
-            const tone = tones.get(item.key)
-            return (
-              <tr key={item.key} data-state={state(item.key)} {...handlers(item.key)}>
-                <th scope="row">
-                  <span className="ck-pie-name">
-                    <span className={`ck-pie-swatch ${drawn ? tone?.className ?? '' : 'ck-pie-swatch-none'}`} data-hatched={drawn && tone?.hatched ? 'true' : undefined} aria-hidden="true" />
-                    <span className="ck-pie-name-text">
-                      {item.href ? <LinkComponent to={item.href}>{item.label}</LinkComponent> : item.label}
-                      {item.note && <span className="ck-chart-note">{item.note}</span>}
-                      {!drawn && <span className="ck-chart-note">{excludedNote}</span>}
+      <div className="ck-pie-legend-scroll" role="region" aria-label={`Таблица: ${title}`} tabIndex={0}>
+        <table className="ck-pie-legend">
+          <caption>{title}</caption>
+          <thead>
+            <tr>
+              <th scope="col">{headers.name}</th>
+              <th scope="col" className="ck-chart-number">{headers.value}</th>
+              <th scope="col" className="ck-chart-number">{headers.share}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item) => {
+              const drawn = sliceByKey.has(item.key)
+              const tone = tones.get(item.key)
+              return (
+                <tr key={item.key} data-state={state(item.key)} {...handlers(item.key)}>
+                  <th scope="row">
+                    <span className="ck-pie-name">
+                      <span className={`ck-pie-swatch ${drawn ? tone?.className ?? '' : 'ck-pie-swatch-none'}`} data-hatched={drawn && tone?.hatched ? 'true' : undefined} aria-hidden="true" />
+                      <span className="ck-pie-name-text">
+                        {item.href ? <LinkComponent to={item.href}>{item.label}</LinkComponent> : item.label}
+                        {item.note && <span className="ck-chart-note">{item.note}</span>}
+                        {!drawn && <span className="ck-chart-note">{excludedNote}</span>}
+                      </span>
                     </span>
-                  </span>
-                </th>
-                <td className="ck-chart-number">{item.valueText}</td>
-                <td className="ck-chart-number">{item.shareText}</td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
+                  </th>
+                  <td className="ck-chart-number">{item.valueText}</td>
+                  <td className="ck-chart-number">{item.shareText}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

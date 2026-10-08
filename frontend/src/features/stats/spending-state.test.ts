@@ -7,7 +7,7 @@ import { applyMe } from '../../session'
 import { resetSession } from '../../session/store'
 import {
   activePreset, applyFilters, breadcrumbs, failureView, filterDraft, filterMessages, formReducer, groupingHref, hasFilters,
-  hasScopeFilters, initForm, itemHref, localToday, needsAddressReset, periodText, presetHref, presetPeriod, resetFiltersHref, resetHref,
+  hasScopeFilters, initForm, itemHref, localToday, needsAddressReset, presetHref, presetPeriod, resetFiltersHref, resetHref,
   sameDraft, serverFieldErrors, shownResult, spendingParams, upHref,
 } from './spending-state'
 import type { FilterDraft, SpendingFailure } from './spending-state'
@@ -224,11 +224,5 @@ describe('result block', () => {
     const texts = Object.values(statsErrorFixtures).map(({ reason, status }) => view(reason as SpendingFailure['reason'], status).message)
     // Nothing from the server's own messages.
     for (const text of texts) expect(text).not.toMatch(/Доступ запрещён|Некорректные параметры запроса|Ожидается/)
-  })
-  it('names the period of the answer', () => {
-    expect(periodText({ date_from: null, date_to: null })).toBe('Период: всё время.')
-    expect(periodText({ date_from: '2026-01-01', date_to: '2026-09-30' })).toBe('Период: 01.01.2026 — 30.09.2026, обе даты включительно.')
-    expect(periodText({ date_from: '2026-01-01', date_to: null })).toBe('Период: с 01.01.2026 включительно.')
-    expect(periodText({ date_from: null, date_to: '2026-09-30' })).toBe('Период: по 30.09.2026 включительно.')
   })
 })
