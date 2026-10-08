@@ -18,13 +18,16 @@ h1, h2, p, dd { margin: 0; }
 h1, h2 { font-family: var(--ck-font-display); font-weight: 600; }
 h1 { font-size: clamp(1.75rem, 7vw, 3.7rem); letter-spacing: 0.01em; line-height: 1.1; }
 h2 { font-size: 1.35rem; letter-spacing: 0.01em; }
-.page { max-width: 920px; padding: 0 36px; margin: auto; overflow-wrap: anywhere; }
+.page { max-width: 1200px; padding: 0 36px; margin: auto; overflow-wrap: anywhere; }
+/* A date is one value and is never broken inside. :where keeps the rule weightless: a screen may still override it. */
+:where(time) { white-space: nowrap; }
 .skip-link { position: absolute; top: 8px; left: 8px; transform: translateY(-200%); padding: 10px 16px; min-height: 44px; border: 1px solid var(--ck-border-field); background: var(--ck-surface); color: var(--ck-text); border-radius: var(--ck-radius-sm); z-index: 1; }
 .skip-link:focus { transform: none; }
 /* The focused link lies over the header bar, dark in both themes. */
 .skip-link:focus-visible { outline-color: var(--ck-header-focus); }
-/* The header bar is dark in both themes and spans the window; its content keeps the width of .page. */
-.brand-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 16px; padding: 14px max(36px, calc(50% - 424px)) 13px; border-bottom: 1px solid var(--ck-header-accent); background: var(--ck-header-bg); box-shadow: inset 0 -3px 0 var(--ck-header-border); color: var(--ck-header-text); overflow-wrap: anywhere; }
+/* The header bar is dark in both themes and spans the window; its content keeps the width of .page:
+   the side padding is half the window minus half of .page's max-width, plus .page's own padding (600 - 36). */
+.brand-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 16px; padding: 14px max(36px, calc(50% - 564px)) 13px; border-bottom: 1px solid var(--ck-header-accent); background: var(--ck-header-bg); box-shadow: inset 0 -3px 0 var(--ck-header-border); color: var(--ck-header-text); overflow-wrap: anywhere; }
 .brand-bar :focus-visible { outline-color: var(--ck-header-focus); }
 .brand { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; border-radius: var(--ck-radius-sm); font-family: var(--ck-font-display); font-size: 1.6rem; font-weight: 600; letter-spacing: 0.08em; line-height: 1.1; text-decoration: none; text-transform: uppercase; }
 /* The emblem file is transparent: it lies straight on the header bar, with no backing and no rounded corners. */
