@@ -344,6 +344,7 @@ def seed_demo():
     from catalog.models import Category, GenericProduct, Product
     from receipts.dedup import name_key
     from receipts.models import ProductAlias, Receipt, ReceiptDiscount, ReceiptLine, ReceiptTax
+    from receipts.ownership import local_user
     from stores.models import Country, Currency, Merchant, Store, TaxRate
 
     if not allowed_database(settings.DATABASES["default"]["NAME"]):
@@ -353,6 +354,8 @@ def seed_demo():
         with transaction.atomic():
             if Merchant.objects.filter(tax_id__in=[spec["tax_id"] for spec in STORES.values()]).exists():
                 return {"created": False}
+            # Владелец всех чеков демо; отказ и повторный вызов до него не доходят.
+            owner = local_user()
             countries = {
                 code: Country.objects.get_or_create(code=code, defaults={"name": name})[0]
                 for code, name in (("DE", "Германия"), ("KZ", "Казахстан"))
@@ -400,8 +403,8 @@ def seed_demo():
 
             receipts = Receipt.objects.bulk_create(
                 Receipt(
-                    store=stores[sale.store], currency_id=STORES[sale.store]["currency"], operation=sale.operation,
-                    purchased_on=sale.on,
+                    owner=owner, store=stores[sale.store], currency_id=STORES[sale.store]["currency"],
+                    operation=sale.operation, purchased_on=sale.on,
                     purchased_at=datetime.combine(sale.on, sale.at, tzinfo=ZoneInfo(STORES[sale.store]["timezone"])),
                     receipt_number=sale.number, total=sale.total,
                     discount_total=sum(line.discount for line in sale.lines)

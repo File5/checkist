@@ -2,7 +2,7 @@
 
 ## Реализовано и планируется
 
-Локально запускаются Django/DRF, React/TypeScript/Vite SPA и host `recognition_worker`; Postgres, Redis и Celery worker — в Linux Docker. SPA пока показывает health через proxy ([frontend.md](frontend.md)). Реализованы stores/catalog/receipts, 13 GET каталога/цен и новый локальный recognition/receipts API: загрузка фото, очередь PostgreSQL, detect/crop/recognize/import, отмена и retry. Провайдеры — Codex CLI и явно выбранный FakeProvider. Данные также вводят через [Django admin](#админка). Серверная часть статистики (траты за период, походы, разложение среднего чека, ряды цен) реализована, [запуск с демо](#qa-статистика-для-клиента) — ниже; её клиент — экраны `/stats`, `/stats/receipts` и график цен в карточке товара — тоже ([frontend.md](frontend.md#статистика-траты-средний-чек-и-график-цен-ф1ф7)). Клиент загрузки/чеков, API ручных правок, авторизация пользователей, дашборд и серверные курсы валют ещё не реализованы.
+Локально запускаются Django/DRF, React/TypeScript/Vite SPA и host `recognition_worker`; Postgres, Redis и Celery worker — в Linux Docker. SPA пока показывает health через proxy ([frontend.md](frontend.md)). Реализованы stores/catalog/receipts, 13 GET каталога/цен и новый локальный recognition/receipts API: загрузка фото, очередь PostgreSQL, detect/crop/recognize/import, отмена и retry. Провайдеры — Codex CLI и явно выбранный FakeProvider. Данные также вводят через [Django admin](#админка). Серверная часть статистики (траты за период, походы, разложение среднего чека, ряды цен) реализована, [запуск с демо](#qa-статистика-для-клиента) — ниже; её клиент — экраны `/stats`, `/stats/receipts` и график цен в карточке товара — тоже ([frontend.md](frontend.md#статистика-траты-средний-чек-и-график-цен-ф1ф7)). Разделение пользователей реализовано: у чеков и фото есть владелец, режим доступа задаёт `CHECKIST_AUTH_MODE` — [режимы доступа и учётные записи](#режимы-доступа-и-учётные-записи); запуск на сервере — отдельный документ [deployment.md](deployment.md). API ручных правок, дашборд и серверные курсы валют ещё не реализованы.
 
 ## Версии и установка Windows
 
@@ -53,10 +53,12 @@ py -3.13 -m venv backend/.venv
 | `DJANGO_SECRET_KEY` | Известный dev-only placeholder из образца |
 | `DJANGO_DEBUG` | `1`; поддержаны `0`, `1`, `true`, `false` без учёта регистра |
 | `DJANGO_ALLOWED_HOSTS` | `127.0.0.1,localhost`; wildcard не разрешён |
+| `CHECKIST_AUTH_MODE` | В образце `local_single` — один пользователь `local`, без входа, только при `DJANGO_DEBUG=1`. **Без строки действует `accounts`** — вход обязателен. См. [режимы](#режимы-доступа-и-учётные-записи) |
+| `AUTH_LOGIN_FAILURE_LIMIT`, `AUTH_LOGIN_IP_FAILURE_LIMIT`, `AUTH_LOGIN_LOCK_SECONDS` | В образце не заданы; defaults кода 5 / 50 / 900: неудач входа на пару «логин и адрес», на адрес и длина окна в секундах. Границы 1..1000, 1..100000, 1..86400 |
 | `VITE_API_BASE_URL` | `/api`, публичный префикс browser-клиента |
 | `DEV_API_PROXY_TARGET` | `http://127.0.0.1:8000`, только Node-конфигурация Vite proxy |
 
-Backend валидирует порты (1–65535), hostnames/IP, Redis/rediss URL с `/db` без query/fragment, непустые значения и boolean. `DJANGO_DEBUG=0` с известным dev secret отвергается. Эти ограничения не заменяют production-настройку.
+Backend валидирует порты (1–65535), hostnames/IP, Redis/rediss URL с `/db` без query/fragment, непустые значения и boolean. `DJANGO_DEBUG=0` с известным dev secret отвергается, как и `DJANGO_DEBUG=0` вместе с `CHECKIST_AUTH_MODE=local_single` (`ImproperlyConfigured` при загрузке настроек: не стартуют `check`, `runserver`, воркер). Серверные переменные (`DJANGO_TRUST_PROXY`, `DJANGO_SECURE_COOKIES`, `DJANGO_HSTS_SECONDS`, `DJANGO_STATIC_ROOT`) в образце закомментированы, их значения по умолчанию следуют за `DJANGO_DEBUG` и локальный запуск не меняют; описание — [deployment.md](deployment.md).
 
 Vite читает тот же корневой `.env` через `envDir`, process environment имеет приоритет. `envPrefix: []` и `define` публикуют только `VITE_API_BASE_URL`, без DB-реквизитов, `DJANGO_SECRET_KEY` и `DEV_API_PROXY_TARGET`. Не помещайте секреты в публичный адрес. После изменения env перезапустите Vite; изменение browser-префикса требует новой сборки. Proxy `/api` сохраняет путь, CORS для внешнего origin не настроен.
 
@@ -105,6 +107,62 @@ npm.cmd run dev
 
 Для тестовых миграций, очереди и отключений сервисов используйте только [QA-блок и сквозной сценарий](verification.md#сквозная-проверка-клиента-через-vite-proxy): API 18000, Vite 15173, `DEV_API_PROXY_TARGET=http://127.0.0.1:18000`, `VITE_API_BASE_URL=/api`. Все npm-команды выше выполняются с QA environment; dev-команда — `npm.cmd run dev -- --port 15173`. Unit-тесты адаптера используют mocked fetch; реальный adapter/HTTP проверяет `node backend/scripts/check_health_proxy.mjs healthy` из корня при запущенных QA API и Vite. UI принимает человек.
 
+## Режимы доступа и учётные записи
+
+Контракт — [api-contract.md](api-contract.md#реализовано-пользователи-вход-и-доступ-по-владельцу), решение — [multi-user.md](multi-user.md). **Команды этого раздела разработчики не запускали**; их проверяет QA ([verification.md](verification.md#разделение-пользователей-проверки-qa)).
+
+| | `local_single` | `accounts` |
+| --- | --- | --- |
+| Когда | Обычная разработка и прежние проверки; значение образца `.env` и QA | Проверка входа и разделения; единственный режим сервера |
+| Вход | Нет: каждый запрос — пользователь `local` | Логин и пароль, сессионная cookie |
+| Нужно ещё | `DJANGO_DEBUG=1`; для чеков, распознавания, статистики, слияний и предположений — `ALLOW_LOCAL_RECOGNITION_API=1` и loopback | Учётная запись с паролем; `ALLOW_LOCAL_RECOGNITION_API` не действует |
+| Что видно | Чеки и фото пользователя `local` | Свои чеки и фото; каталог и цены общие |
+
+Значение читается при старте процесса: после смены перезапустите `runserver`. Environment процесса выше `.env`, поэтому режим одного запуска меняется переменной терминала. Воркеру распознавания режим безразличен: владельца он берёт из задания.
+
+### Запуск в `local_single`
+
+Ничего дополнительного: образец `.env` уже содержит `CHECKIST_AUTH_MODE=local_single`, последовательность [dev-запуска](#dev-запуск) прежняя, экрана входа в SPA нет. Если `.env` создан до появления переменной, добавьте строку вручную — иначе действует `accounts` и клиент покажет вход. Пользователя `local` создаёт `migrate` (а при его отсутствии — первый запрос); прежние чеки и фото миграции отдали ему.
+
+### Запуск в `accounts`
+
+```powershell
+$env:CHECKIST_AUTH_MODE = "accounts"
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py migrate --noinput
+# прежние данные принадлежат пользователю local: задайте ему пароль, чтобы под ним войти
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py changepassword local
+# либо отдельная учётная запись оператора (is_staff, все права, вход в /admin/)
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py createsuperuser
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py runserver 127.0.0.1:8000
+```
+
+- Обе команды интерактивные, пароль проверяют четыре стандартных валидатора Django. Пароли не записывайте в `.env`, документы, коммиты и отчёты.
+- До `changepassword local` войти под `local` нельзя: у записи нет пригодного пароля. Сама запись обычная — без `is_staff` и без права модератора.
+- Остальных пользователей заводит оператор в `/admin/` → Users. Регистрации и сброса пароля по почте нет: забытый пароль меняет оператор (`changepassword <логин>` либо админка). Пользователя не удаляют, а выключают (`Active` снят): `PROTECT` не даст удалить его вместе с чеками.
+- **Право модератора каталога** — `catalog | product | Can moderate the shared catalog` в User permissions пользователя либо его группы; у суперпользователя оно есть без выдачи. Без него слияния и предположения доступны только на чтение. `is_staff` модератору не нужен: staff видит в админке чеки всех.
+- Клиент: `npm.cmd run dev` как обычно; вход появляется на том адресе, который открыт. Origin Vite должен быть в `DJANGO_CSRF_TRUSTED_ORIGINS` (образец содержит 5173 и 15173), иначе вход ответит `403 csrf_failed`.
+- Вход в `/admin/` на том же хосте — это и вход в приложение: cookie сессии привязана к хосту, а не к порту. Выход в SPA завершает и сеанс админки.
+- Пять неверных паролей подряд для одного логина закрывают вход с этого адреса на 15 минут — и в приложении, и в `/admin/login/`. Для проверки срок сокращают переменной `AUTH_LOGIN_LOCK_SECONDS` до запуска сервера; снять блокировку раньше можно, удалив строки `accounts_loginfailure` (в админке они только для чтения).
+- Прежние proxy-скрипты (`check_recognition_proxy.mjs` и остальные) в `accounts` не работают и сами отказываются стартовать без `CHECKIST_AUTH_MODE=local_single` в своём терминале.
+
+### QA: две учётные записи для клиента
+
+Только пустая QA- либо тестовая база (`checkist_qa…` / `test_…`): команда отказывает, если в базе уже есть товары, чеки, фото или группы слияния.
+
+```powershell
+$env:CHECKIST_AUTH_MODE = "accounts"
+$env:ACCOUNTS_DEMO_MODERATOR_PASSWORD = "<пароль demo_moderator>"
+$env:ACCOUNTS_DEMO_USER_PASSWORD = "<пароль demo_user>"
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py migrate --noinput
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py seed_accounts_demo --moderator-password $env:ACCOUNTS_DEMO_MODERATOR_PASSWORD --user-password $env:ACCOUNTS_DEMO_USER_PASSWORD | Out-File -Encoding utf8 (Join-Path $env:TEMP "checkist-accounts-demo.json")
+```
+
+`seed_accounts_demo` создаёт вымышленных `demo_moderator` (с правом модератора) и `demo_user`: у каждого чек одного вымышленного магазина с общим товаром, своим товаром и написанием дубля, фото с заданием и вырезкой, файлы которых лежат в `MEDIA_ROOT`; два написания образуют одну ожидающую группу слияния со строками обоих. Печатает одну строку JSON с идентификаторами — её читает `frontend/scripts/check_accounts_proxy.mjs`; пароли не печатаются и хранятся только хэшами. Пароли придумывает QA: разные, проходящие валидаторы. Полный порядок с отдельным Compose-проектом, портами и ручным сценарием — [frontend/src/features/auth/ACCEPTANCE.md](../frontend/src/features/auth/ACCEPTANCE.md).
+
+### Откат миграций владельца
+
+Перед `migrate receipts 0002_alter_receipttax_options` и `migrate recognition 0001_initial` выполните `manage.py ownership check-rollback`: exit 0 и пустой список групп — откат допустим; exit 1 — у двух владельцев есть одинаковый чек либо файл, откат упадёт. Откат стирает владельцев; подробности — [data-model.md](data-model.md#откат-владельца).
+
 ## Распознавание: запуск для клиента
 
 API и OCR-worker должны использовать **одни и те же** DB и абсолютный MEDIA_ROOT. Private scratch — другой каталог, вне MEDIA; оба каталога доступны текущему host-пользователю. Задания выполняет `recognition_worker`, Celery нужен только прежним health-проверкам. Health 200 не означает, что OCR-worker запущен. Состояние воркера отдаёт `executor.state` в ответах recognition API: `absent` — воркер этой БД не запущен и ничего не выполняется, `idle` — запущен и ждёт заданий, `busy` — есть задание с действующей lease; `executor.available` = `state != "absent"`. Признак `idle` — сессионная advisory-блокировка, которую `recognition_worker` держит в своей БД: API с другой БД (dev вместо QA) этот воркер не увидит. Проверка: `curl.exe -sS --max-time 15 http://127.0.0.1:18000/api/recognition/csrf/` до и после запуска `recognition_worker --fake-scenario success2`; сценарий — [verification.md](verification.md#состояние-воркера-executorstate).
@@ -115,8 +173,8 @@ API и OCR-worker должны использовать **одни и те же*
 
 | Переменная | Default / граница |
 | --- | --- |
-| `ALLOW_LOCAL_RECOGNITION_API` | `0`; включить `1` вместе с `DJANGO_DEBUG=1`, peer должен быть loopback |
-| `DJANGO_CSRF_TRUSTED_ORIGINS` | Точные локальные origins с портом; образец включает Vite 5173/15173. Другой порт добавлять явно |
+| `ALLOW_LOCAL_RECOGNITION_API` | `0`; включить `1` вместе с `DJANGO_DEBUG=1`, peer должен быть loopback. Действует только в `CHECKIST_AUTH_MODE=local_single`; в `accounts` доступ даёт вход |
+| `DJANGO_CSRF_TRUSTED_ORIGINS` | Точные локальные origins с портом; образец включает Vite 5173/15173. Другой порт добавлять явно. Не локальный origin принимается только как `https://<хост из DJANGO_ALLOWED_HOSTS>` без порта и пути |
 | `MEDIA_ROOT`, `MEDIA_URL` | `<worktree>/media`, `/media/`; абсолютный root, URL в v1 фиксирован строго `/media/` |
 | `RECEIPT_OCR_TEMP_ROOT` | Приватный worktree-specific каталог системного temp; абсолютный путь, не пересекается с MEDIA |
 | `RECEIPT_OCR_PROVIDER` | `codex_cli` либо явно `fake`; fallback после ошибки отсутствует |
@@ -391,7 +449,7 @@ docker compose -p checkist_qa up -d --wait --wait-timeout 90 postgres redis
 - Эталонные ответы совпадают с ответами этого сервера только на **свежей** базе: id в них — категория «Продукты питания» 1, «Молоко» 1, товары молока 1 / 2 / 3, магазины 1 / 2 / 3. Если в базе до демо уже были товары или магазины, id сдвинутся, а одноимённые обобщённые продукты в других категориях изменят суммы по категориям. Список эталонов и запросов — [api-contract.md](api-contract.md#эталонные-ответы-статистики).
 - Эндпоинты только читают: одну базу можно использовать повторно. Воркер распознавания и Celery не нужны; `MEDIA_ROOT` и `DJANGO_CSRF_TRUSTED_ORIGINS` для статистики не требуются (POST нет).
 - `PRODUCT_MERGE_AUTO_DETECT=0` задавайте явно: значение из `.env` может быть другим. Демо слияния (`seed_product_merge_demo`) можно добавить в ту же базу, но id эталонов статистики верны только когда `seed_stats_demo` выполнен первым.
-- При `ALLOW_LOCAL_RECOGNITION_API=0` `/api/stats/*` отвечает `403 permission_denied`, а `/api/products/{id}/prices/series/` остаётся доступным.
+- В `local_single` при `ALLOW_LOCAL_RECOGNITION_API=0` `/api/stats/*` отвечает `403 permission_denied`, а `/api/products/{id}/prices/series/` остаётся доступным. Демо-чеки принадлежат пользователю `local`: в `accounts` их видит только он.
 
 Проверка без браузера во втором терминале:
 
@@ -420,7 +478,7 @@ $env:RECEIPT_OCR_CODEX_EXECUTABLE=Join-Path $env:LOCALAPPDATA 'Programs/OpenAI/C
 
 ## Админка
 
-Django admin работает на том же локальном Django, что и API, отдельного процесса нет. Открывайте его **напрямую**: dev — `http://127.0.0.1:8000/admin/`, QA — `http://127.0.0.1:18000/admin/`. Через Vite (5173/15173) админка недоступна: proxy передаёт только `/api`, а `/admin` и `/static` — нет.
+Django admin работает на том же локальном Django, что и API, отдельного процесса нет. Открывайте его **напрямую**: dev — `http://127.0.0.1:8000/admin/`, QA — `http://127.0.0.1:18000/admin/`. Через Vite (5173/15173) админка недоступна: proxy передаёт только `/api` и `/media`, а `/admin` и `/static` — нет.
 
 Нужны применённые миграции (таблицы `auth`, `sessions`, `admin` создаёт `migrate`) и пользователь с `is_staff`. Готовых пользователей в проекте нет — создайте суперпользователя один раз для каждой БД:
 
@@ -434,7 +492,9 @@ Django admin работает на том же локальном Django, что
 
 Что важно при работе:
 
-- Стили и скрипты админки отдаёт `runserver` только при `DJANGO_DEBUG=1`. При `DJANGO_DEBUG=0` страницы останутся без стилей: `STATIC_ROOT` и раздача статики не настроены. Secure cookies и HTTPS тоже не настроены — админка только для локальных dev/QA.
+- Стили и скрипты админки отдаёт `runserver` только при `DJANGO_DEBUG=1`. При `DJANGO_DEBUG=0` их собирает `collectstatic` и раздаёт обратный прокси, secure-cookie и HTTPS — тоже настройки сервера: [deployment.md](deployment.md).
+- У чека есть обязательное поле `Owner`: при добавлении подставлен текущий пользователь, при изменении оно только для чтения; в списке — колонка и фильтр владельца. Оператор видит чеки всех пользователей.
+- Вход в админку защищён тем же счётчиком неудач, что и вход в приложение, и в режиме `accounts` является входом в приложение.
 - `purchased_at` чека вводится в UTC, `purchased_on` — локальная дата магазина.
 - Строку с привязанными залогами или скидками перенести в другой чек нельзя: сначала удалите или отвяжите связи в исходном чеке. Пустые Attributes товара (включая JSON `null`) сохраняются как `{}`, при правке очищая прежнее значение.
 - Устаревший inline DELETE уже перенесённой/удалённой записи даёт HTTP 200 с общей ошибкой конфликта и просьбой открыть чек заново; весь POST не сохраняется. DELETE строки вместе с правкой/созданием залога или скидки, сохраняющей ссылку на удаляемую строку, даёт ошибку `parent`/`line`. В одном POST можно отвязать/перепривязать зависимость или удалить её; неизменённые зависимости удаляются каскадом. Ручные сценарии F4 — шаги 9–11 в [verification.md](verification.md#ручная-приёмка-админки-человеком).
@@ -449,7 +509,7 @@ Django admin работает на том же локальном Django, что
 
 ## Данные, остановка и восстановление
 
-`migrate` создаёт технические, предметные и recognition-таблицы, вносит справочники: KZ/RU/DE, KZT/RUB/EUR и четыре ставки. Пользователя admin создаёт человек. Чеки, магазины и товары вводятся через [админку](#админка), кодом либо автоимпортом OCR; произвольного API редактирования нет. На пустой БД списки пусты; новый receipts API показывает и несопоставленные строки. Тестовые записи — только QA. `postgres_data`/`redis_data` изолированы именем project, MEDIA/scratch — отдельными host-каталогами. Ни Compose down, ни откат recognition, ни ORM deletion не удаляют MEDIA. Перед откатом на ценных данных нужны pg_dump и копия MEDIA; crash может оставить orphan, cleanup исключён v1.
+`migrate` создаёт технические, предметные и recognition-таблицы, вносит справочники: KZ/RU/DE, KZT/RUB/EUR и четыре ставки, создаёт пользователя `local` без пароля — владельца прежних чеков и фото. Пользователя admin создаёт человек. Чеки, магазины и товары вводятся через [админку](#админка), кодом либо автоимпортом OCR; произвольного API редактирования нет. На пустой БД списки пусты; новый receipts API показывает и несопоставленные строки. Тестовые записи — только QA. `postgres_data`/`redis_data` изолированы именем project, MEDIA/scratch — отдельными host-каталогами. Ни Compose down, ни откат recognition, ни ORM deletion не удаляют MEDIA. Перед откатом на ценных данных нужны pg_dump и копия MEDIA; crash может оставить orphan, cleanup исключён v1.
 
 Остановите Vite/preview и Django через Ctrl+C, затем `docker compose -p checkist_dev down`. Это удаляет контейнеры/сеть, сохраняет тома. Для возобновления выполните последовательность запуска выше; повторный `migrate` применяет только недостающие миграции. Правки worker-кода видны через mount, но задачи исполняет долгоживущий процесс: перезапустите worker; изменения зависимостей требуют `up --build`.
 

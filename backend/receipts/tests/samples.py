@@ -50,6 +50,7 @@ from catalog.models import Brand, Category, GenericProduct, Product
 from catalog.units import BaseUnit, Unit
 from receipts.dedup import build_fiscal_key, find_alias, name_key
 from receipts.models import ProductAlias, Receipt, ReceiptDiscount, ReceiptLine, ReceiptTax
+from receipts.ownership import local_user
 from stores.models import Merchant, Store, TaxRate
 from stores.normalize import address_key
 
@@ -428,7 +429,7 @@ def _tax_rate(store, sample, code):
 
 
 @transaction.atomic
-def save_receipt(store, sample):
+def save_receipt(store, sample, owner=None):
     """Сохраняет образец целиком: чек, строки, скидки, итоги по ставкам.
 
     ``fiscal_key`` собирается из ``fiscal``, товар строки ищется по сопоставлениям
@@ -436,7 +437,7 @@ def save_receipt(store, sample):
     """
     fields = sample["receipt"]
     receipt = Receipt.objects.create(
-        store=store, currency_id=sample["currency"],
+        store=store, currency_id=sample["currency"], owner=owner or local_user(),
         fiscal_key=build_fiscal_key(store.country_id, fields.get("fiscal")), **fields,
     )
     saved = {}

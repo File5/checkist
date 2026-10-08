@@ -409,9 +409,13 @@ def _cleanup(generic_refs, session):
 # --- Reconciliation -------------------------------------------------------------------------------
 
 
-def _close(record, status, resolution, final):
-    """Resolve the record; ``final`` — the generic product left with the product, if any."""
+def _close(record, status, resolution, final, actor=None):
+    """Resolve the record; ``final`` — the generic product left with the product, if any.
+
+    ``actor`` — the user who decided; ``None`` for the automation and a command.
+    """
     record.status, record.resolution = status, resolution
+    record.resolved_by = actor
     record.active_product = None
     record.resolved_at = _db_now()
     record.final_generic_ref = final.pk if final else None
@@ -815,11 +819,14 @@ def apply(run, response, *, source):
 # --- Decisions of a human -------------------------------------------------------------------------
 
 
-def _remember(record, product):
-    """The rejected pair "product, suggested name": never suggested to this product again."""
+def _remember(record, product, actor=None):
+    """The rejected pair "product, suggested name": never suggested to this product again.
+
+    A pair refused before keeps its first author.
+    """
     ClassificationRejection.objects.get_or_create(
         product=product, generic_key=_rejection_key(record.suggested_generic_name),
-        defaults={"generic_name": record.suggested_generic_name, "classification": record},
+        defaults={"generic_name": record.suggested_generic_name, "classification": record, "created_by": actor},
     )
 
 
@@ -851,19 +858,21 @@ def _return_product(record, product, session):
     return previous
 
 
-def _confirm_suggested(record, product):
-    _close(record, Status.CONFIRMED, Resolution.CONFIRMED, product.generic)
+def _confirm_suggested(record, product, actor=None):
+    _close(record, Status.CONFIRMED, Resolution.CONFIRMED, product.generic, actor)
     _keep_generic(product.generic_id)
 
 
-def confirm(record_id, *, version, generic_id):
+def confirm(record_id, *, version, generic_id, actor=None):
     """Confirm the suggestion, or choose another existing generic product.
 
     ``generic_id`` is required: equal to the suggested one it confirms, any other
     one moves the product there and remembers the suggestion as rejected.
     Repeating the request on a record confirmed with the same ``generic_id``
     returns it unchanged at any ``version``. Order of checks: the record exists,
-    repeat, status, reconciliation, ``version``, the parameter.
+    repeat, status, reconciliation, ``version``, the parameter. ``actor`` — the
+    user who decided, kept in the record and the rejection; a record closed by
+    the reconciliation of this call stays without one.
     """
     with _mutation() as session:
         record = _lock_record(record_id)
@@ -879,7 +888,7 @@ def confirm(record_id, *, version, generic_id):
                 raise ClassificationChanged(record)
             product = _lock_products([record.active_product_id])[record.active_product_id]
             if valid and generic_id == record.suggested_generic_ref:
-                _confirm_suggested(record, product)
+                _confirm_suggested(record, product, actor)
             else:
                 chosen = None
                 if valid:
@@ -890,18 +899,19 @@ def confirm(record_id, *, version, generic_id):
                     raise ClassificationInvalidParameter({"generic_id": "service_generic"})
                 product.generic = chosen
                 product.save(update_fields=["generic"])
-                _remember(record, product)
-                _close(record, Status.CONFIRMED, Resolution.OTHER, chosen)
+                _remember(record, product, actor)
+                _close(record, Status.CONFIRMED, Resolution.OTHER, chosen, actor)
                 _keep_generic(chosen.pk)
                 _cleanup([record.suggested_generic_ref], session)
     return _after(record_id, outcome)
 
 
-def reject(record_id, *, version):
+def reject(record_id, *, version, actor=None):
     """Return the product to its previous generic product and remember the refusal.
 
     Created generic products and categories left empty are removed. Repeating on
-    a rejected record returns it unchanged at any ``version``.
+    a rejected record returns it unchanged at any ``version``. ``actor`` — the
+    user who decided, kept in the record and the rejection.
     """
     with _mutation() as session:
         record = _lock_record(record_id)
@@ -915,13 +925,13 @@ def reject(record_id, *, version):
                 raise ClassificationChanged(record)
             product = _lock_products([record.active_product_id])[record.active_product_id]
             previous = _return_product(record, product, session)
-            _remember(record, product)
-            _close(record, Status.REJECTED, Resolution.REJECTED, previous)
+            _remember(record, product, actor)
+            _close(record, Status.REJECTED, Resolution.REJECTED, previous, actor)
             _cleanup([record.suggested_generic_ref], session)
     return _after(record_id, outcome)
 
 
-def confirm_many(items):
+def confirm_many(items, *, actor=None):
     """Confirm the suggested value of 1–100 records ``(id, version)``: all or nothing.
 
     A record already confirmed with its suggested value counts as done. A
@@ -930,6 +940,7 @@ def confirm_many(items):
     an updated snapshot — ``ClassificationChanged``; both carry ``fields`` with
     every failed ``items.N``. Then nothing is confirmed (the reconciliation of
     the failed records stays). Returns the records in ascending id order.
+    ``actor`` — the user who decided, kept in the records confirmed by this call.
     """
     items = list(items)
     if not items:
@@ -965,7 +976,7 @@ def confirm_many(items):
         if not failed:
             products = _lock_products([record.active_product_id for record in todo])
             for record in todo:
-                _confirm_suggested(record, products[record.active_product_id])
+                _confirm_suggested(record, products[record.active_product_id], actor)
     if failed:
         error = ClassificationResolved if _RESOLVED in failed.values() else ClassificationChanged
         raise error(fields=dict(sorted(failed.items(), key=lambda item: int(item[0].split(".")[1]))))
@@ -1094,7 +1105,7 @@ def lease_until(now):
     return now + timedelta(seconds=settings.PRODUCT_CLASSIFICATION_TIMEOUT_SECONDS + LEASE_MARGIN_SECONDS)
 
 
-def _new_run(*, trigger, scope, ids, limit, status=RunStatus.QUEUED, source=None):
+def _new_run(*, trigger, scope, ids, limit, status=RunStatus.QUEUED, source=None, actor=None):
     source = source or default_source()
     fields = {}
     if status == RunStatus.RUNNING:
@@ -1104,7 +1115,7 @@ def _new_run(*, trigger, scope, ids, limit, status=RunStatus.QUEUED, source=None
         status=status, trigger=trigger, scope=scope, product_ids=ids[:limit], requested_count=len(ids[:limit]),
         remaining_count=max(0, len(ids) - limit), provider=source.provider, model=source.model,
         prompt_version=source.prompt_version, schema_version=source.schema_version,
-        classifier_version=source.classifier_version, **fields,
+        classifier_version=source.classifier_version, requested_by=actor, **fields,
     )
 
 
@@ -1116,7 +1127,7 @@ def _finish(run, status, error_code=""):
     run.save()
 
 
-def request_run(*, trigger, product_ids=None):
+def request_run(*, trigger, product_ids=None, actor=None):
     """Queue "suggest for these products"; ``(run | None, created)``. The model is not called.
 
     ``manual`` / ``command``: no candidates — ``(None, False)``; an active run
@@ -1125,6 +1136,8 @@ def request_run(*, trigger, product_ids=None):
     record; they join the queued run of either scope behind its cursor or start
     a new one; what the run limit cuts off is counted as remaining. The import
     mutex is taken unless the trigger is ``import`` (the import already holds it).
+    ``actor`` — the user who asked, kept in the run this call creates; a run
+    returned or widened keeps what it had.
     """
     limit = settings.PRODUCT_CLASSIFICATION_RUN_LIMIT
     if trigger == Trigger.IMPORT:
@@ -1134,7 +1147,7 @@ def request_run(*, trigger, product_ids=None):
                 return None, False
             queued = ClassificationRun.objects.select_for_update().filter(status=RunStatus.QUEUED).first()
             if queued is None:
-                return _new_run(trigger=trigger, scope=Scope.PRODUCTS, ids=ids, limit=limit), True
+                return _new_run(trigger=trigger, scope=Scope.PRODUCTS, ids=ids, limit=limit, actor=actor), True
             # A run waiting between batches keeps the ids its cursor already passed.
             done = queued.product_ids[:queued.cursor]
             merged = done + sorted((set(queued.product_ids[queued.cursor:]) | set(ids)) - set(done))
@@ -1176,7 +1189,7 @@ def request_run(*, trigger, product_ids=None):
         if active:
             return queued or active[RunStatus.RUNNING], False
         scope = Scope.ALL if product_ids is None else Scope.PRODUCTS
-        return _new_run(trigger=trigger, scope=scope, ids=ids, limit=limit), True
+        return _new_run(trigger=trigger, scope=scope, ids=ids, limit=limit, actor=actor), True
 
 
 def start_run(*, product_ids=None, limit=None, source=None):

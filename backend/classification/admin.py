@@ -27,24 +27,24 @@ class ReadOnlyAdminMixin:
 class ProductClassificationAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
     list_display = (
         "id", "status", "resolution", "version", "product_name", "suggested_generic_name", "final_generic_name",
-        "created_at", "resolved_at",
+        "created_at", "resolved_at", "resolved_by",
     )
     list_filter = ("status", "resolution")
     search_fields = ("product_name", "suggested_generic_name")
     ordering = ("-id",)
-    # The list shows snapshots only.
-    list_select_related = False
+    # The list shows snapshots and who decided.
+    list_select_related = ("resolved_by",)
 
 
 @admin.register(ClassificationRun)
 class ClassificationRunAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
     list_display = (
         "id", "status", "trigger", "scope", "requested_count", "applied_count", "unknown_count", "skipped_count",
-        "error_code", "created_at", "finished_at",
+        "error_code", "created_at", "finished_at", "requested_by",
     )
     list_filter = ("status", "trigger")
     ordering = ("-id",)
-    list_select_related = False
+    list_select_related = ("requested_by",)
     exclude = ("run_token",)
 
 

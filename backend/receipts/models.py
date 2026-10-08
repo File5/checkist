@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 from django.db.models import F, Q
 
@@ -9,6 +10,8 @@ class Receipt(models.Model):
         SALE = "sale", "Продажа"
         REFUND = "refund", "Возврат"
 
+    # Значения по умолчанию нет: забытый владелец — ошибка, а не тихий local.
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="receipts")
     store = models.ForeignKey("stores.Store", on_delete=models.PROTECT, related_name="receipts")
     currency = models.ForeignKey("stores.Currency", on_delete=models.PROTECT, related_name="receipts")
     operation = models.CharField(max_length=8, choices=Operation.choices)
@@ -32,25 +35,27 @@ class Receipt(models.Model):
 
     class Meta:
         constraints = [
-            # Три уровня дедупликации. Между уровнями ищет receipts.dedup.find_duplicates.
+            # Три уровня дедупликации, каждый в пределах владельца. Между уровнями ищет
+            # receipts.dedup.find_duplicates.
             models.UniqueConstraint(
-                fields=["fiscal_key"],
+                fields=["owner", "fiscal_key"],
                 condition=~Q(fiscal_key=""),
-                name="receipts_receipt_fiscal_key_uniq",
+                name="receipts_receipt_owner_fiscal_key_uniq",
             ),
             models.UniqueConstraint(
-                fields=["store", "purchased_on", "shift_number", "register_code", "receipt_number"],
+                fields=["owner", "store", "purchased_on", "shift_number", "register_code", "receipt_number"],
                 condition=~Q(receipt_number=""),
-                name="receipts_receipt_store_number_uniq",
+                name="receipts_receipt_owner_store_number_uniq",
             ),
             models.UniqueConstraint(
-                fields=["store", "purchased_at", "total"],
+                fields=["owner", "store", "purchased_at", "total"],
                 condition=Q(receipt_number="", fiscal_key=""),
-                name="receipts_receipt_store_time_total_uniq",
+                name="receipts_receipt_owner_store_time_total_uniq",
             ),
         ]
         indexes = [
             models.Index(fields=["store", "purchased_at"], name="receipts_rcpt_store_at_idx"),
+            models.Index(fields=["owner", "purchased_on"], name="receipts_rcpt_owner_on_idx"),
         ]
 
     def __str__(self):

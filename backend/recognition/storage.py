@@ -75,14 +75,19 @@ def _chunks(upload):
         raise ImageError("invalid_image")
 
 
-def accept_upload(upload):
-    """accept_upload(file: UploadedFile|BinaryIO) -> (SourcePhoto, created).
+def accept_upload(upload, *, owner):
+    """accept_upload(file: UploadedFile|BinaryIO, *, owner: User|int) -> (SourcePhoto, created).
 
     Streams actual bytes, ignores declared size/name/MIME, validates fully, then
     commits the source row. Call outside another transaction (durable commit).
-    Duplicate uploads reuse the existing row/files, including concurrent uploads.
+    Duplicate uploads of the same owner reuse the existing row/files, including
+    concurrent uploads; created=False only for the owner's own photo. The same
+    bytes of another owner are a separate row and a separate directory.
     Preview preparation happens separately in the fenced worker.
     """
+    owner_id = getattr(owner, "pk", owner)
+    if type(owner_id) is not int:
+        raise TypeError("owner must be a saved user or its id")
     published = None
     try:
         with _staging() as directory:
@@ -100,7 +105,7 @@ def accept_upload(upload):
                     digest.update(chunk)
             info = inspect_image(staged)
             sha256 = digest.hexdigest()
-            existing = SourcePhoto.objects.filter(sha256=sha256).first()
+            existing = SourcePhoto.objects.filter(owner_id=owner_id, sha256=sha256).first()
             if existing:
                 media_path(existing.original_file.name)
                 return existing, False
@@ -108,7 +113,7 @@ def accept_upload(upload):
             name = f"originals/{storage_uuid}/source.{info.extension}"
             published = _publish(staged, name)
             with transaction.atomic(durable=True):
-                photo, created = SourcePhoto.objects.get_or_create(sha256=sha256, defaults={
+                photo, created = SourcePhoto.objects.get_or_create(owner_id=owner_id, sha256=sha256, defaults={
                     "storage_uuid": storage_uuid, "original_file": name, "content_type": info.content_type,
                     "bytes": info.bytes, "raw_width": info.raw_width, "raw_height": info.raw_height,
                     "width": info.width, "height": info.height, "exif_orientation": info.exif_orientation,

@@ -6,7 +6,7 @@ import type { MergeGroup, MergeGroupBrief, MergeLine } from './product-merges-ty
 import type { Page } from './types'
 
 const schemas: Record<string, (value: unknown) => boolean> = {
-  'groups.json': page(isMergeGroupBrief), 'lines.json': page(isMergeLine), 'detect.json': isMergeDetectResult,
+  'groups.json': page(isMergeGroupBrief), 'lines.json': page(isMergeLine), 'lines_foreign.json': page(isMergeLine), 'detect.json': isMergeDetectResult,
   'group-pending.json': isMergeGroup, 'group-pending-conflict.json': isMergeGroup,
   'group-confirmed.json': isMergeGroup, 'group-cancelled.json': isMergeGroup,
 }
@@ -128,8 +128,24 @@ describe('public product-merge contract fixtures', () => {
     ['zero origin', { origin_product_id: 0 }], ['string origin', { origin_product_id: '43' }], ['negative position', { position: -1 }],
     ['datetime as date', { purchased_on: '2026-06-09T00:00:00Z' }], ['null name', { name: null }], ['zero line id', { line_id: 0 }],
     ['long country', { store: { id: 51, name: 'Demomarkt', city: 'Musterstadt', country: 'DEU' } }],
+    ['zero receipt', { receipt_id: 0 }], ['string receipt', { receipt_id: '9' }], ['null position', { position: null }],
   ])('rejects a purchase with %s', (_name, patch) => {
     expect(isMergeLine({ ...line(), ...patch })).toBe(false)
+  })
+  it('accepts a foreign purchase: only receipt_id is null, there is no own field and the rest stays as is', () => {
+    const body = mergeFixture('lines_foreign.json') as Page<MergeLine>
+    const foreign = body.results.filter((item) => item.receipt_id === null)
+    expect(foreign.map((item) => item.line_id)).toEqual([104, 108])
+    expect(body.results.some((item) => item.receipt_id !== null)).toBe(true)
+    for (const item of body.results) expect('own' in item).toBe(false)
+    for (const item of foreign) {
+      expect(isMergeLine(item)).toBe(true)
+      expect(Object.entries(item).filter(([, value]) => value === null).map(([key]) => key)).toEqual(['receipt_id'])
+      const missing: Record<string, unknown> = { ...item }
+      delete missing.receipt_id
+      expect(isMergeLine(missing)).toBe(false)
+    }
+    expect(isMergeLine({ ...line(), receipt_id: null })).toBe(true)
   })
   it('accepts a purchase that came after the merge and decimals only as exact strings', () => {
     expect(isMergeLine({ ...line(), origin_product_id: null })).toBe(true)

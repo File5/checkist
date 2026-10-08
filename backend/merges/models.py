@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 from django.db.models import F, Q
 
@@ -18,6 +19,10 @@ class ProductMerge(models.Model):
     detector_version = models.PositiveSmallIntegerField()
     created_at = models.DateTimeField(auto_now_add=True)
     resolved_at = models.DateTimeField(null=True, blank=True)
+    # Who confirmed or cancelled; empty for a command, the detector and old records.
+    resolved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+",
+    )
 
     class Meta:
         constraints = [
@@ -109,6 +114,10 @@ class ProductMergeRejection(models.Model):
         ProductMerge, null=True, blank=True, on_delete=models.SET_NULL, related_name="rejections",
     )
     created_at = models.DateTimeField(auto_now_add=True)
+    # Who refused the pair; empty for a command and old records.
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+",
+    )
 
     class Meta:
         constraints = [

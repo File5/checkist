@@ -128,12 +128,20 @@ export function page<T>(check: Guard<T>, maximum = 200): Guard<Page<T>> {
 }
 
 const priceProduct = object<PriceProduct>({ id: isId, name: text, base_unit: baseUnit })
-const point: Guard<PricePoint> = (value): value is PricePoint => normalized(value)
-  && object<Omit<PricePoint, keyof NormalizedPrice>>({
-    observed_at: isISODateTime, purchased_on: isISODate, store: storeBrief, currency, quantity, unit,
-    list_unit_price: price, paid_unit_price: price, discount_amount: amount,
-    receipt_id: isId, position: nonNegativeInteger,
-  })(value)
+type PointShape = {
+  own: boolean; observed_at: string | null; purchased_on: string; store: StoreBrief; currency: string
+  quantity: string | null; unit: string; list_unit_price: string; paid_unit_price: string
+  discount_amount: string | null; receipt_id: number | null; position: number | null
+}
+const pointShape = object<PointShape>({
+  own: bool, observed_at: nullable(isISODateTime), purchased_on: isISODate, store: storeBrief, currency,
+  quantity: nullable(quantity), unit, list_unit_price: price, paid_unit_price: price,
+  discount_amount: nullable(amount), receipt_id: nullable(isId), position: nullable(nonNegativeInteger),
+})
+/** `own` is mandatory and decides the five receipt fields: all set for my purchase, all null for a foreign one. */
+const point: Guard<PricePoint> = (value): value is PricePoint => normalized(value) && pointShape(value)
+  && [value.observed_at, value.quantity, value.discount_amount, value.receipt_id, value.position]
+    .every((field) => (field !== null) === value.own)
 export const isPriceHistory: Guard<PriceHistory> = (value): value is PriceHistory => page(point, 500)(value)
   && object<{ product: PriceProduct }>({ product: priceProduct })(value)
   && value.results.every((item) => matchesBase(item, value.product.base_unit))

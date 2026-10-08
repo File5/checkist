@@ -14,6 +14,7 @@ from catalog.models import Brand, Category, GenericProduct
 from merges import services
 from receipts import basket
 from receipts.models import Receipt, ReceiptLine
+from receipts.ownership import local_user
 from receipts.tests import samples
 
 D = Decimal
@@ -297,9 +298,10 @@ class ReceiptSeriesAPITests(_StatsTestCase):
     def test_range_limit_is_1000_intervals(self):
         self.assertEqual(basket.MAX_BUCKETS, 1000)
         days = [date.fromordinal(date(1990, 1, 1).toordinal() + 7 * number) for number in range(1001)]  # понедельники
+        owner = local_user()
         Receipt.objects.bulk_create([
             Receipt(
-                store=self.data.lidl, currency_id="EUR", operation="sale", total=D("1.00"), purchased_on=day,
+                owner=owner, store=self.data.lidl, currency_id="EUR", operation="sale", total=D("1.00"), purchased_on=day,
                 purchased_at=datetime.combine(day, time(12, 0), tzinfo=ZoneInfo("Europe/Berlin")),
                 receipt_number=f"range-{number}",
             )

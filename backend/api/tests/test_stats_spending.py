@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from django.db import OperationalError
 from django.http import QueryDict
-from django.test import SimpleTestCase, TestCase, override_settings, tag
+from django.test import RequestFactory, SimpleTestCase, TestCase, override_settings, tag
 from rest_framework.test import APIClient
 
 from api import stats_common
@@ -594,5 +594,6 @@ class StatsParamsDatabaseTests(TestCase):
         make_receipt(store, "EUR", date(2026, 2, 28))
         make_receipt(store, "KZT", date(2026, 3, 1))
         make_receipt(samples.dns_store(), "EUR", date(2026, 3, 1))
-        self.assertEqual(list(stats_common.receipts(scope, period)), [inside])
-        self.assertEqual(stats_common.receipts(stats_common.Scope()).count(), 4)
+        request = RequestFactory().get(URL)
+        self.assertEqual(list(stats_common.receipts(request, scope, period)), [inside])
+        self.assertEqual(stats_common.receipts(request, stats_common.Scope()).count(), 4)

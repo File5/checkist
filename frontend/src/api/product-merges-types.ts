@@ -36,9 +36,12 @@ type MergeGroupBase = {
 export type MergeGroupBrief = MergeGroupBase & { members: MergeMemberBrief[]; has_conflicts: boolean }
 /** «Группа»: detail and every mutation response. */
 export type MergeGroup = MergeGroupBase & { members: MergeMember[]; conflicts: MergeConflict[] }
-/** Purchase of a group. `origin_product_id: null` — the line came after the merge. */
+/**
+ * Purchase of a group. `origin_product_id: null` — the line came after the merge.
+ * `receipt_id: null` — a purchase of another user (only a moderator gets such lines); there is no `own` field.
+ */
 export type MergeLine = {
-  line_id: number; receipt_id: number; position: number; purchased_on: ISODate; store: StoreBrief
+  line_id: number; receipt_id: number | null; position: number; purchased_on: ISODate; store: StoreBrief
   name: string; quantity: Decimal; unit: Unit; unit_price: Decimal; amount: Decimal; discount_amount: Decimal
   currency: CurrencyCode; origin_product_id: number | null
 }

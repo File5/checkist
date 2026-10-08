@@ -9,6 +9,7 @@ from datetime import date
 
 from django.db.models import BigIntegerField, Case, F, Q, When
 
+from accounts.access import owner_q
 from merges.models import ProductMergeMember
 from receipts.decimal_math import price_context
 from receipts.models import Receipt
@@ -66,9 +67,12 @@ def receipt_q(scope, period=None, prefix=""):
     return Q(**{f"{prefix}{field}": value for field, value in conditions.items() if value is not None})
 
 
-def receipts(scope, period=None):
-    """Чеки по фильтрам; закрытые поля не выбирайте — расчётам нужны только суммы и ключи."""
-    return Receipt.objects.filter(receipt_q(scope, period))
+def receipts(request, scope, period=None):
+    """Чеки пользователя запроса по фильтрам: статистика двух пользователей не складывается.
+
+    Закрытые поля не выбирайте — расчётам нужны только суммы и ключи.
+    """
+    return Receipt.objects.filter(owner_q(request), receipt_q(scope, period))
 
 
 # --- слитые товары ---

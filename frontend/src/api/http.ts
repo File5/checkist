@@ -1,3 +1,4 @@
+import { reportAuthSignal } from './auth-signal.ts'
 import { isRecognitionIssue } from './recognition-schema.ts'
 import type { ApiFailure, ApiResult, LocalApiFailure, LocalApiResult, RequestOptions } from './types.ts'
 
@@ -13,6 +14,16 @@ export function apiUrl(base: string, path: string, query: Query = {}): string {
   }
   const search = params.toString()
   return `${normalized}/${path}${search ? `?${search}` : ''}`
+}
+
+/** Code of a well-formed error envelope: `{"error": {"code", "message"}}` with a non-empty message. */
+export function readErrorCode(body: unknown): string | undefined {
+  if (typeof body !== 'object' || body === null || Array.isArray(body) || !('error' in body)) return undefined
+  const error = body.error
+  if (typeof error !== 'object' || error === null || Array.isArray(error)
+    || !('code' in error) || !('message' in error)
+    || typeof error.message !== 'string' || !error.message.trim()) return undefined
+  return typeof error.code === 'string' ? error.code : undefined
 }
 
 export function readError(status: number, body: unknown, local: boolean): LocalApiFailure {
@@ -57,6 +68,19 @@ export function readError(status: number, body: unknown, local: boolean): LocalA
   return invalid
 }
 
+/** The session ended or the right is gone: the shell is told once, the screen keeps its own result types.
+ * `401 not_authenticated` is not an error of the screen: the shell replaces the page with the sign-in.
+ */
+function refuse(status: number, body: unknown, local: boolean): LocalApiFailure | { kind: 'aborted' } {
+  if (status === 401 && readErrorCode(body) === 'not_authenticated') {
+    reportAuthSignal('unauthenticated')
+    return { kind: 'aborted' }
+  }
+  const failure = readError(status, body, local)
+  if (failure.reason === 'permission_denied') reportAuthSignal('forbidden')
+  return failure
+}
+
 /** Local unsafe IDs are rejected before a rounded number can be sent to the server. */
 export function invalidIds(query: Query, signal?: AbortSignal): ApiFailure | { kind: 'aborted' } | undefined {
   if (signal?.aborted) return { kind: 'aborted' }
@@ -81,8 +105,12 @@ export type JsonRequest = {
   headers?: Record<string, string>
   credentials?: RequestCredentials
   successStatuses?: readonly number[]
+  /** Success statuses answered without a body (204): nothing is read, the validator receives `null`. */
+  emptyStatuses?: readonly number[]
   timeoutMs?: number
 }
+/** Failures the transport produces by itself; every result type of a caller includes them. */
+export type TransportFailure = { kind: 'error'; reason: 'network' | 'timeout' | 'invalid_response'; status?: number }
 
 /** A single deadline covers fetch and body, even when either ignores abort. */
 export function requestJson<T>(
@@ -94,24 +122,36 @@ export function requestJson<T>(
   requestOptions?: JsonRequest & { local?: false },
 ): Promise<ApiResult<T>>
 export async function requestJson<T>(
-  path: string, query: Query, validate: Validator<T>,
-  { signal, baseUrl = import.meta.env.VITE_API_BASE_URL || '/api' }: RequestOptions = {},
-  requestOptions: JsonRequest = {},
+  path: string, query: Query, validate: Validator<T>, options: RequestOptions = {}, requestOptions: JsonRequest = {},
 ): Promise<LocalApiResult<T>> {
+  const { local = false, ...rest } = requestOptions
+  return sendJson(path, query, validate, options, rest, (status, body) => refuse(status, body, local))
+}
+
+/** The transport itself. `refusal` reads a non-success answer: sign-in calls have their own codes
+ * and never raise the session signal for their own refusals.
+ */
+export async function sendJson<T, F extends { kind: 'error' } | { kind: 'aborted' }>(
+  path: string, query: Query, validate: Validator<T>,
+  { signal, baseUrl = import.meta.env.VITE_API_BASE_URL || '/api' }: RequestOptions,
+  requestOptions: Omit<JsonRequest, 'local'>,
+  refusal: (status: number, body: unknown) => F,
+): Promise<{ kind: 'ok'; data: T } | F | TransportFailure | { kind: 'aborted' }> {
+  type Result = { kind: 'ok'; data: T } | F | TransportFailure | { kind: 'aborted' }
   if (signal?.aborted) return { kind: 'aborted' }
-  const { timeoutMs = 15_000, successStatuses = [200], credentials = 'omit', headers = {}, local = false, ...init } = requestOptions
+  const { timeoutMs = 15_000, successStatuses = [200], emptyStatuses = [], credentials = 'same-origin', headers = {}, ...init } = requestOptions
   const controller = new AbortController()
   const deadline = Date.now() + timeoutMs
   let timedOut = false
-  let settleAbort!: (result: LocalApiResult<T>) => void
-  const stopped = new Promise<LocalApiResult<T>>((resolve) => { settleAbort = resolve })
+  let settleAbort!: (result: Result) => void
+  const stopped = new Promise<Result>((resolve) => { settleAbort = resolve })
   const cancel = () => {
     controller.abort()
     settleAbort(timedOut ? { kind: 'error', reason: 'timeout' } : { kind: 'aborted' })
   }
   signal?.addEventListener('abort', cancel, { once: true })
   const timeout = setTimeout(() => { timedOut = true; cancel() }, timeoutMs)
-  const interrupted = (): LocalApiResult<T> | undefined => {
+  const interrupted = (): Result | undefined => {
     if (controller.signal.aborted) return timedOut ? { kind: 'error', reason: 'timeout' } : { kind: 'aborted' }
     if (Date.now() >= deadline) {
       timedOut = true
@@ -119,16 +159,16 @@ export async function requestJson<T>(
       return { kind: 'error', reason: 'timeout' }
     }
   }
-  const request = async (): Promise<LocalApiResult<T>> => {
+  const request = async (): Promise<Result> => {
     try {
       const response = await fetch(apiUrl(baseUrl, path, query), {
         ...init, headers: { Accept: 'application/json', ...headers }, credentials, cache: 'no-store', signal: controller.signal,
       })
       const afterFetch = interrupted()
       if (afterFetch) return afterFetch
-      let body: unknown
+      let body: unknown = null
       try {
-        body = await response.json()
+        if (!emptyStatuses.includes(response.status)) body = await response.json()
       } catch (error) {
         const interruption = interrupted()
         if (interruption) return interruption
@@ -137,7 +177,7 @@ export async function requestJson<T>(
       }
       const afterBody = interrupted()
       if (afterBody) return afterBody
-      if (!successStatuses.includes(response.status)) return readError(response.status, body, local)
+      if (!successStatuses.includes(response.status) && !emptyStatuses.includes(response.status)) return refusal(response.status, body)
       try {
         return validate(body) ? { kind: 'ok', data: body } : { kind: 'error', reason: 'invalid_response', status: response.status }
       } catch {

@@ -16,6 +16,9 @@ class ApiError(exceptions.APIException):
     status_code = status.HTTP_400_BAD_REQUEST
     code = "invalid_parameter"
     message = "Некорректные параметры запроса."
+    # Поля ответа рядом с ``error`` и заголовки; задаёт наследник.
+    extra = None
+    headers = None
 
     def __init__(self, message=None, *, fields=None):
         if message is not None:
@@ -82,14 +85,43 @@ class RecognitionApiError(ApiError):
         super().__init__()
 
 
+class AuthApiError(ApiError):
+    """Отказы входа. ``401`` без ``WWW-Authenticate``: это ответ на попытку, а не запрос входа.
+
+    ``login_throttled`` несёт срок блокировки в секундах: рядом с ``error`` — ``retry_after``,
+    в заголовке — ``Retry-After``.
+    """
+
+    ERRORS = {
+        "invalid_credentials": (401, "Неверный логин или пароль."),
+        "login_throttled": (429, "Слишком много попыток входа. Повторите позже."),
+    }
+
+    def __init__(self, code, *, retry_after=None):
+        self.code = code
+        self.status_code, self.message = self.ERRORS[code]
+        if retry_after is not None:
+            self.extra = {"retry_after": retry_after}
+            self.headers = {"Retry-After": str(retry_after)}
+        super().__init__()
+
+
+class PasswordRejected(InvalidParameter):
+    """400: новый пароль не прошёл проверку; рядом с ``error`` — коды причин ``password_issues``."""
+
+    def __init__(self, fields, issues):
+        super().__init__(fields)
+        self.extra = {"password_issues": list(issues)}
+
+
 REQUEST_ERRORS = (SuspiciousOperation, BadRequest, UnreadablePostError, MultiPartParserError)
 
 
-def _error(code, message, http_status, *, fields=None, headers=None):
+def _error(code, message, http_status, *, fields=None, headers=None, extra=None):
     error = {"code": code, "message": message}
     if fields:
         error["fields"] = fields
-    return Response({"error": error}, status=http_status, headers=headers)
+    return Response({"error": error, **(extra or {})}, status=http_status, headers=headers)
 
 
 def _validation_fields(detail):
@@ -113,7 +145,9 @@ def exception_handler(exc, context):
         exc = exceptions.PermissionDenied()
 
     if isinstance(exc, ApiError):
-        return _error(exc.code, exc.message, exc.status_code, fields=exc.fields)
+        return _error(
+            exc.code, exc.message, exc.status_code, fields=exc.fields, headers=exc.headers, extra=exc.extra,
+        )
     if isinstance(exc, exceptions.MethodNotAllowed):
         return _error("method_not_allowed", "Метод не поддерживается.", status.HTTP_405_METHOD_NOT_ALLOWED)
     if isinstance(exc, exceptions.NotAcceptable):

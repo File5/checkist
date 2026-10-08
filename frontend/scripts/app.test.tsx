@@ -8,6 +8,11 @@ vi.mock('../src/navigation', async (importOriginal) => ({
   ...await importOriginal<typeof import('../src/navigation')>(),
   useNavigation: () => navigation.snapshot,
 }))
+// The shell needs to know who works: these tests check the unchanged interface of local_single.
+vi.mock('../src/session', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../src/session')>(),
+  useSession: () => ({ kind: 'user', mode: 'local_single', user: { id: 1, username: 'local', is_staff: false }, permissions: { moderate_catalog: true } }),
+}))
 
 beforeEach(() => { navigation.snapshot = { href: '/catalog', route: { kind: 'catalog', query: { page: 1 } } } })
 
@@ -57,30 +62,29 @@ describe('App feature connections (Node server markup, not browser behavior)', (
     expect(html).not.toContain('Распознавание магазина и адреса, товаров и их стоимостей')
   })
 
-  it('draws the header bar with the brand, five sections, the login link and the theme switch', () => {
+  it('draws the header bar with the brand, five sections and the theme switch; local_single has no sign-in link', () => {
     const html = renderToStaticMarkup(<App />)
     const header = html.slice(html.indexOf('<header'), html.indexOf('</header>'))
     expect(header).toContain('<span>Чекист</span>')
     expect(header).toMatch(/<img class="brand-mark" src="[^"]*emblem-96[^"]*" srcSet="[^"]*emblem-96[^"]* 1x, [^"]*emblem-192[^"]* 2x" width="44" height="44" alt=""\/>/)
     expect(header.match(/<a\b[^>]*href="[^"]*"/g)).toEqual([
-      '<a class="brand" aria-label="Чекист — каталог" href="/catalog"', '<a href="/login"', '<a aria-current="page" href="/catalog"',
+      '<a class="brand" aria-label="Чекист — каталог" href="/catalog"', '<a aria-current="page" href="/catalog"',
       '<a href="/receipts"', '<a href="/stats"', '<a href="/recognition/jobs"', '<a href="/health"',
     ])
-    expect(header).toContain('<a href="/login">Вход</a>')
+    expect(html).not.toContain('href="/login"')
     expect(header.match(/<button\b[^>]*class="ck-theme-toggle ck-theme-toggle-header"/g)).toHaveLength(1)
     expect(html).toContain('<a class="skip-link" href="#page-heading">К содержимому</a>')
     expect(html).toContain('<h1 id="page-heading" tabindex="-1">Каталог продуктов</h1>')
   })
 
-  it('opens /login without the application shell: no header, menu, footer or heading of its own', () => {
+  it('has no sign-in address in local_single: /login is a missing page inside the shell', () => {
+    // The sign-in itself, drawn without the shell, is checked in src/pages/session-shell.test.tsx.
     navigation.snapshot = { href: '/login', route: { kind: 'login' } }
     const html = renderToStaticMarkup(<App />)
-    expect(html).toContain('class="ck-login"')
-    for (const part of ['<header', 'brand-bar', 'main-navigation', '<nav', '<footer', 'skip-link', 'class="page"', 'class="intro"', 'Доверяй, но проверяй чек']) {
-      expect(html, part).not.toContain(part)
-    }
-    // The screen itself owns the only heading; the shell must not add a second one.
-    expect(html.match(/<h1\b/g) ?? []).toHaveLength((html.match(/id="page-heading"/g) ?? []).length)
+    expect(html).toContain('Страница не найдена</h1>')
+    expect(html).toContain('<header class="brand-bar">')
+    for (const part of ['ck-login', 'ck-auth', 'login-username']) expect(html, part).not.toContain(part)
+    expect(html.match(/<h1\b/g)).toHaveLength(1)
   })
 
   it('keeps the old text of the missing page and adds one line under it', () => {

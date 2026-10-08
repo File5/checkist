@@ -54,7 +54,7 @@
 .ck-class .pagination { padding: 0; }
 /* Marks outside the screen: the catalog list and the product card. */
 .ck-class-badge { margin-top: 8px; }
-.ck-class-badge a { display: inline-flex; align-items: center; min-height: 44px; padding: 6px 12px; border: 1px solid var(--ck-warning-border); border-radius: var(--ck-radius-sm); background: var(--ck-warning-bg); color: var(--ck-warning-text); font-size: 0.9rem; font-weight: 600; text-underline-offset: 3px; }
+.ck-class-badge a, .ck-class-badge span { display: inline-flex; align-items: center; min-height: 44px; padding: 6px 12px; border: 1px solid var(--ck-warning-border); border-radius: var(--ck-radius-sm); background: var(--ck-warning-bg); color: var(--ck-warning-text); font-size: 0.9rem; font-weight: 600; text-underline-offset: 3px; }
 .ck-class-notice { margin: 16px 0; overflow-wrap: anywhere; }
 .ck-class-notice p { margin: 0; }
 @media (max-width: 720px) {

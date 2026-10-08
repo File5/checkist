@@ -83,6 +83,7 @@ try {
   assert.ok(['127.0.0.1', 'localhost', '::1'].includes(process.env.POSTGRES_HOST), 'QA Postgres must be on loopback')
   assert.ok(process.env.POSTGRES_PORT && !['5432', '15432'].includes(process.env.POSTGRES_PORT), 'Do not use the dev Postgres port')
   assert.equal(process.env.VITE_API_BASE_URL, '/api', 'QA must use the /api prefix')
+  assert.equal(process.env.CHECKIST_AUTH_MODE, 'local_single', 'This script needs a server without a sign-in: set CHECKIST_AUTH_MODE=local_single in this terminal and in the terminal of the API, then restart the API (in the accounts mode every request here answers 401; that mode is checked by check_accounts_proxy.mjs)')
   // The script starts recognition_worker itself: with codex_cli a batch would be a real model request.
   assert.equal(process.env.RECEIPT_OCR_PROVIDER, 'fake', 'Never invoke Codex from this script: set RECEIPT_OCR_PROVIDER=fake')
   assert.ok(existsSync(python), `No ${python}: prepare backend/.venv as docs/development.md says`)

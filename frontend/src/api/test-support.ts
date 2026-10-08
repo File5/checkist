@@ -1,5 +1,5 @@
 import type {
-  Category, CategoryDetail, GenericProduct, Page, PriceHistory, PricePoint, PriceSummary,
+  Category, CategoryDetail, ForeignPricePoint, GenericProduct, OwnPricePoint, Page, PriceHistory, PriceSummary,
   PriceTotal, Product, ProductDetail, Store, StoreEntry,
 } from './types'
 
@@ -35,11 +35,15 @@ export const detail: ProductDetail = {
   aliases: [{ store_name: store.name, raw_name: 'МОЛОКО', store_item_code: '' }],
   stores: [{ ...store, observations: 2, last_purchased_on: '2026-10-04' }], alternatives_count: 0,
 }
-export const point: PricePoint = {
+export const point: OwnPricePoint = {
   observed_at: '2026-10-03T22:30:00Z', purchased_on: '2026-10-04',
   store: { id: 7, name: store.name, city: '', country: 'DE' }, currency: 'EUR', quantity: '1.000', unit: 'pcs',
   list_unit_price: '0.0000', paid_unit_price: '-1.0500', discount_amount: '1.05',
-  normalized_price: null, normalized_unit: null, comparable: false, receipt_id: 12, position: 2,
+  normalized_price: null, normalized_unit: null, comparable: false, receipt_id: 12, position: 2, own: true,
+}
+/** The same price seen by another user: the receipt behind it is hidden. */
+export const foreignPoint: ForeignPricePoint = {
+  ...point, own: false, observed_at: null, quantity: null, discount_amount: null, receipt_id: null, position: null,
 }
 export function pageOf<T>(results: T[], page_size = 50): Page<T> {
   return { count: results.length, page: 1, page_size, pages: results.length ? Math.ceil(results.length / page_size) : 0, results }

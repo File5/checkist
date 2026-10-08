@@ -1,3 +1,4 @@
+import { Link } from '../../navigation'
 import type { HistoryQuery, NavigationTarget } from '../../navigation'
 import type { PriceHistory as HistoryData, Store } from '../../api/types'
 import RequestState from '../../components/RequestState'
@@ -32,17 +33,20 @@ export default function PriceHistory({ state, query, stores, retry, reset, build
                 <th scope="col" className="product-number">Цена до скидки</th>
                 <th scope="col" className="product-number">Цена после скидки и единица</th>
                 <th scope="col" className="product-number">Цена за базовую единицу</th><th scope="col">Валюта</th>
+                <th scope="col">Покупка</th>
               </tr></thead>
-              <tbody>{state.data.results.map((point) => {
+              {/* A foreign purchase has no receipt or position: the row is identified by its place on the page. */}
+              <tbody>{state.data.results.map((point, index) => {
                 const store = knownStores.get(point.store.id)
-                return <tr key={`${point.receipt_id}:${point.position}`}>
-                  <td><time dateTime={point.purchased_on}>{formatPurchasedOn(point.purchased_on)}</time><span className="product-subtext">{formatObservedAt(point.observed_at, store?.timezone)}</span></td>
+                return <tr key={index}>
+                  <td><time dateTime={point.purchased_on}>{formatPurchasedOn(point.purchased_on)}</time>{point.own && <span className="product-subtext">{formatObservedAt(point.observed_at, store?.timezone)}</span>}</td>
                   <th scope="row">{storeLabel(store ?? point.store)}</th>
                   <td className="product-number">{formatPrice(point.list_unit_price, point.currency, point.unit)}</td>
                   <td className="product-number">{formatPrice(point.paid_unit_price, point.currency, point.unit)}</td>
                   <td className="product-number">{point.normalized_price === null ? 'Нет данных для пересчёта' : formatPrice(point.normalized_price, point.currency, point.normalized_unit)}
                     {!point.comparable && <span className="product-subtext">Не сопоставимо с базовой единицей товара</span>}
                   </td><td>{point.currency}</td>
+                  <td>{point.own ? <>Моя · <Link to={{ kind: 'receipt', receiptId: point.receipt_id }}>Чек №{point.receipt_id}</Link></> : 'Чужая'}</td>
                 </tr>
               })}</tbody>
             </table>

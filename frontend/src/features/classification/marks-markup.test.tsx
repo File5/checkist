@@ -2,7 +2,10 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getProductClassifications } from '../../api/product-classifications'
 import type { Classification } from '../../api/product-classifications'
+import type { Me } from '../../api/session'
 import { detail, pageOf as productsOf, product } from '../../api/test-support'
+import { applyMe } from '../../session'
+import { resetSession } from '../../session/store'
 import ProductList from '../catalog/ProductList'
 import ProductsSection from '../catalog/ProductsSection'
 import { pendingTargets } from '../merges/state'
@@ -22,8 +25,15 @@ vi.mock('../recognition/useRequest', () => ({ useRequest: (...parameters: unknow
     request: { pause: vi.fn(), resume: vi.fn(), setData: vi.fn(), refresh: vi.fn(), queueRefresh: vi.fn() },
   }
 } }))
-beforeEach(() => { mocked.states = []; mocked.loads = [] })
-afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
+// «Я» as the server answers: without accounts everyone moderates, with them — only the holder of the right.
+const me = (mode: Me['mode'], moderate_catalog: boolean): Me =>
+  ({ mode, user: { id: 3, username: 'anna', is_staff: false }, permissions: { moderate_catalog }, csrf_token: 'token' })
+const local = me('local_single', true)
+const moderator = me('accounts', true)
+const reader = me('accounts', false)
+// The former markup is the markup of local_single: the real store of the session holds it in every test.
+beforeEach(() => { mocked.states = []; mocked.loads = []; applyMe(local) })
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); resetSession() })
 
 const noop = () => {}
 const loading = { kind: 'loading' as const }
@@ -73,6 +83,30 @@ describe('catalog list marks', () => {
     expect(html.match(/class="ck-class-badge"/g)).toHaveLength(1)
     expect(html).toContain(`Demo Kefir mild 500g</a></h3><p class="ck-class-badge"><a href="/catalog/classification?product=11">${badge}</a></p>`)
     expect(html).toContain('href="/catalog/products/77"')
+  })
+  it('keeps the link for a moderator of accounts: the markup is the one of local_single', () => {
+    const render = () => renderToStaticMarkup(<ProductList products={[kefir, plain]} classifications={pendingMarks(records().results)} />)
+    const former = render()
+    applyMe(moderator)
+    expect(render()).toBe(former)
+    expect(former).toContain(`<a href="/catalog/classification?product=11">${badge}</a>`)
+  })
+  it.each([
+    ['a user without the right', () => applyMe(reader)], ['a guest', () => applyMe(null)], ['an unknown session', resetSession],
+  ])('shows the mark as text without a link to %s', (_name, enter) => {
+    enter()
+    const html = renderToStaticMarkup(<ProductList products={[kefir, plain]} classifications={pendingMarks(records().results)} />)
+    expect(html).toContain(`Demo Kefir mild 500g</a></h3><p class="ck-class-badge"><span>${badge}</span></p>`)
+    expect(html).not.toContain('/catalog/classification')
+    expect(html).toContain('href="/catalog/products/11"'); expect(html).toContain('href="/catalog/products/77"')
+  })
+  it('shows both marks as text to a user without the right', () => {
+    applyMe(reader)
+    const both = { ...kefir, id: 5 }
+    const classifications = pendingMarks(records().results.map((item): Classification => item.product.id === 11 ? { ...item, product: { ...item.product, id: 5 } } : item))
+    const html = renderToStaticMarkup(<ProductList products={[both]} merges={pendingTargets(groups().results)} classifications={classifications} />)
+    expect(html).toContain(`<p class="ck-merge-badge"><span>Дубли: требует подтверждения</span></p><p class="ck-class-badge"><span>${badge}</span></p>`)
+    expect(html).not.toContain('/catalog/merges'); expect(html).not.toContain('/catalog/classification')
   })
   it('shows no mark when the catalog product has another generic product than the suggested one', () => {
     const moved = { ...kefir, generic: { id: 92, name: 'Молоко', base_unit: 'l' as const } }
@@ -156,6 +190,22 @@ describe('product card marks', () => {
     const { urls, parameters } = await sent(1)
     expect(urls).toEqual(['/api/product-classifications/?product=13&status=pending'])
     expect(parameters).toHaveLength(1)
+  })
+  it('keeps the notice and its link for a moderator of accounts', () => {
+    const render = () => { mocked.states = [loading, success(own(13))]; return section(card(sausageCard, 13)) }
+    const former = render()
+    applyMe(moderator)
+    expect(render()).toBe(former)
+    expect(former).toContain('href="/catalog/classification?product=13">Открыть в списке категорий</a>')
+  })
+  it('announces the suggested category to a user without the right as text without a link', () => {
+    applyMe(reader)
+    mocked.states = [loading, success(own(13))]
+    const html = section(card(sausageCard, 13))
+    expect(html).toContain('<p>Категория предложена автоматически: „Колбаса“ (Продукты питания → Мясные продукты) — требует подтверждения. '
+      + 'Товар уже участвует в сравнении цен по этому обобщённому продукту.</p></div>')
+    expect(html).not.toContain('/catalog/classification'); expect(html).not.toContain('Открыть в списке категорий')
+    expect(html).toContain('<dt>Бренд</dt>'); expect(html).toContain('Назад в категорию')
   })
   it('names a missing category and an empty name in words', () => {
     const damaged = own(13).results.map((item): Classification => ({ ...item, suggested: { ...item.suggested, category: null, generic: { ...item.suggested.generic, name: ' ' } } }))

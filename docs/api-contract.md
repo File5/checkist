@@ -2,7 +2,7 @@
 
 ## Реализовано: `GET /api/health/`
 
-Публичный endpoint Django/DRF для состояния инфраструктуры. Канонический путь имеет завершающий `/`; клиенту следует использовать его напрямую. GET не требует body или query-параметров; неизвестные параметры, включая `format`, игнорируются. `AllowAny`, `authentication_classes=[]`: анонимный доступ без cookies/token; Authorization header не проверяется. CSRF для этого GET не требуется. Глобальная permission для будущих DRF views — `IsAuthenticated`, но пользовательский вход в SPA сейчас не реализован. Так же явно открыты эндпоинты [API чтения](#реализовано-api-чтения-каталога-и-цен).
+Публичный endpoint Django/DRF для состояния инфраструктуры. Канонический путь имеет завершающий `/`; клиенту следует использовать его напрямую. GET не требует body или query-параметров; неизвестные параметры, включая `format`, игнорируются. `AllowAny`, `authentication_classes=[]`: анонимный доступ без cookies/token; Authorization header не проверяется. CSRF для этого GET не требуется. Health анонимен в обоих режимах доступа; остальные маршруты `/api/` в режиме `accounts` требуют входа — [пользователи, вход и доступ](#реализовано-пользователи-вход-и-доступ-по-владельцу). Глобальная permission для DRF views без своих правил — `IsAuthenticated`.
 
 `/admin/` — HTML-интерфейс Django admin для пользователей с `is_staff`, а не часть этого контракта: формат его страниц и адресов не фиксируется и клиентом SPA не используется. Он описан в [data-model.md](data-model.md#админка). Для будущих API важно одно следствие: классы аутентификации DRF не переопределены, действуют Session и Basic, поэтому сессия и пароль пользователя админки пройдут `IsAuthenticated`, пока эндпоинт не задаст свои правила.
 
@@ -87,6 +87,116 @@ Probes запускаются параллельно, поэтому их обы
 
 Адаптер `frontend/src/api/health.ts` реализует этот разбор; описание клиента — [frontend.md](frontend.md). Vite dev/preview используют same-origin proxy с сохранением `/api`. Произвольный внешний API origin и CORS не настроены. Не-JSON 502/504 от недоступного proxy upstream обрабатываются как ошибка соединения; схема Django 200/503/405/406/500 остаётся прежней.
 
+## Реализовано: пользователи, вход и доступ по владельцу
+
+Код — `backend/accounts/` (правила доступа `access.py`, защита от перебора `backends.py` и `throttle.py`, MEDIA `media.py`) и `backend/api/views/auth.py`. Решение и его обоснование — [multi-user.md](multi-user.md). **Разработчиками не запускалось**: раздел написан по коду; проверки QA — [verification.md](verification.md#разделение-пользователей-проверки-qa). Эталонные JSON для клиента — `backend/api/tests/fixtures/auth/` (`me.json`, `me_local_single.json`, `login_invalid.json`, `login_throttled.json`, `password_invalid.json`, `prices_foreign_point.json`).
+
+### Режимы
+
+Режим задаёт `CHECKIST_AUTH_MODE`; вью читают его только через `accounts.access`.
+
+| | `accounts` (по умолчанию) | `local_single` |
+| --- | --- | --- |
+| Назначение | Сервер и любой запуск с несколькими людьми | Разработка и локальные проверки; только при `DJANGO_DEBUG=1`, иначе настройки не загружаются (`ImproperlyConfigured`) |
+| Чей запрос | Активный пользователь сессии Django (cookie `sessionid`, общая с `/admin/`) | Всегда пользователь `local`; сессия для API не читается |
+| Без входа | `401 not_authenticated` с заголовком `WWW-Authenticate: Session` | Входа нет |
+| 13 GET каталога и цен, `prices/series/` | Нужен вход | Открыты анонимно, как раньше |
+| Чеки, распознавание, статистика, слияния, предположения | Нужен вход; `DEBUG`, `ALLOW_LOCAL_RECOGNITION_API` и адрес запроса не читаются | `DEBUG` + `ALLOW_LOCAL_RECOGNITION_API=1` + loopback `REMOTE_ADDR`, иначе `403 permission_denied` — как раньше |
+| Право модератора каталога | `catalog.moderate_catalog` у пользователя либо его группы; у суперпользователя есть всегда | Есть всегда |
+| `/media/…` | Только владельцу фото, [ниже](#media) | Любой файл под `MEDIA_ROOT` при `DEBUG` |
+
+Анонимны в обоих режимах: `GET /api/health/`, `GET /api/auth/csrf/` и запасной `404 not_found` неизвестного пути под `/api/`. Выключенный пользователь (`is_active=False`) считается не вошедшим: его открытые сессии отвечают `401`.
+
+Тесты идут в `local_single`: его ставит `config.test_runner.Runner` независимо от окружения; тесты режима `accounts` включают его через `override_settings`.
+
+### Вход, выход, смена пароля, «кто я»
+
+| Маршрут | `accounts` | `local_single` |
+| --- | --- | --- |
+| `GET /api/auth/csrf/` | `200 {"csrf_token"}`, анонимно, без запросов к базе | то же |
+| `POST /api/auth/login/` | `200` «Я» \| `401 invalid_credentials` \| `429 login_throttled` | `404 not_found` |
+| `POST /api/auth/logout/` | `204` без тела | `404 not_found` |
+| `POST /api/auth/password/` | `200` «Я» \| `400 invalid_parameter` \| `429 login_throttled`; без входа — `401 not_authenticated` | `404 not_found` |
+| `GET /api/me/` | `200` «Я»; без входа — `401 not_authenticated` | `200` «Я» с пользователем `local` |
+
+Объект «Я»:
+
+```json
+{"mode": "accounts",
+ "user": {"id": 1, "username": "synthetic-reader", "is_staff": false},
+ "permissions": {"moderate_catalog": false},
+ "csrf_token": "…"}
+```
+
+`mode` — `accounts` либо `local_single`; `permissions.moderate_catalog` — можно ли менять общий каталог (в `local_single` всегда `true`); `csrf_token` — токен текущей сессии. Вход меняет ключ сессии и токен CSRF: дальше клиент берёт токен из ответа входа.
+
+Правила трёх POST:
+
+- Обязателен CSRF: cookie и заголовок `X-CSRFToken`, токен — из `GET /api/auth/csrf/` либо из «Я»; отказ — `403 csrf_failed`. У `password` порядок отказов: `404` (`local_single`) → `401` → `403 csrf_failed`.
+- Тело — только `Content-Type: application/json`, иначе `415 unsupported_media_type`; JSON-объект до 4096 байт без повторяющихся ключей. Пустое тело, не объект, лишний ключ — `400 invalid_request`.
+- `login`: ровно `{"username", "password"}`; `password`: ровно `{"current_password", "new_password"}`; `logout`: ровно `{}`. Значения — непустые строки без NUL; отсутствующий ключ либо другое значение — `400 invalid_parameter` с `fields` («Обязательное поле.» / «Ожидается непустая строка.»).
+- Ответы несут `Cache-Control: no-store`.
+
+Отказы:
+
+| HTTP | `code` | Когда | Что рядом с `error` |
+| --- | --- | --- | --- |
+| 401 | `invalid_credentials` | Неверный логин или пароль, несуществующий либо выключенный пользователь — ответ один и тот же. Без `WWW-Authenticate`: это ответ на попытку, а не запрос входа | — |
+| 429 | `login_throttled` | Достигнут порог неудач; пароль при этом не проверяется | `retry_after` — секунды до конца блокировки; тот же срок в заголовке `Retry-After` |
+| 400 | `invalid_parameter` | `password`: неверный текущий пароль — `fields.current_password` | — |
+| 400 | `invalid_parameter` | `password`: новый пароль не прошёл валидаторы Django — `fields.new_password` с текстами причин | `password_issues` — коды причин из набора `too_short`, `too_common`, `entirely_numeric`, `too_similar`; список пуст, если причина вне набора |
+
+```json
+{"error": {"code": "login_throttled", "message": "Слишком много попыток входа. Повторите позже."},
+ "retry_after": 900}
+```
+
+Успешная смена пароля оставляет текущую сессию и завершает остальные сессии пользователя. Выход завершает сессию; так как cookie общая, он завершает и сеанс админки. Регистрации, сброса пароля и входа через внешних провайдеров нет: учётные записи заводит администратор (`createsuperuser`, админка), пароль `local` задаёт `manage.py changepassword local`.
+
+### Защита от перебора пароля
+
+Счётчик неудач — таблица `accounts.LoginFailure` в PostgreSQL; проверяет его `accounts.backends.ThrottledModelBackend`, единственный в `AUTHENTICATION_BACKENDS`, поэтому правило одно для `POST /api/auth/login/`, проверки текущего пароля в `POST /api/auth/password/` и формы `/admin/login/`.
+
+- Окно начинается с первой неудачи и длится `AUTH_LOGIN_LOCK_SECONDS` (900). Порог — `AUTH_LOGIN_FAILURE_LIMIT` (5) на пару «логин и адрес клиента» и `AUTH_LOGIN_IP_FAILURE_LIMIT` (50) на адрес. Достигнут порог — отказ до конца окна, верный пароль тоже отклоняется.
+- Отклонённая попытка счётчик не увеличивает и окно не продлевает. Успешный вход обнуляет счётчик пары; счётчик адреса остаётся.
+- Логин без адреса не блокируется: чужие неудачи не закрывают вход с другого адреса. Регистр логина не различается; сам логин не хранится — только SHA-256.
+- Адрес клиента — `config.proxy.client_address`: `REMOTE_ADDR`, а при `DJANGO_TRUST_PROXY=1` — последний элемент `X-Forwarded-For`. IPv6 сводится к сети /64.
+- Вызовы без запроса (`Client.login`, команды) счётчик не трогают.
+
+### Что видит пользователь
+
+| Маршруты | Правило в `accounts` |
+| --- | --- |
+| `receipts/` и четыре вложенных | Только свои чеки; чужой id — `404 not_found` тем же телом, что несуществующий |
+| `recognition/photos/`, `jobs/`, `receipt-images/` и детали | Только свои, по владельцу фото; `POST photos/` делает владельцем пользователя запроса; повтор файла (`reused: true`) ищется только среди своих фото — тот же файл у другого пользователя даёт новое фото и новое задание |
+| `jobs/{id}/cancel/`, `retry/`, `receipt-images/{id}/confirm/` | Чужой объект — `404 not_found`; подтверждение создаёт чек владельца вырезки, существующий чек ищется только среди его чеков |
+| `recognition/csrf/` | Нужен вход; форма ответа прежняя |
+| `stats/*` | Только по своим чекам; фильтр `store` — общий справочник |
+| Фильтры списков с чужим id (`?photo=`, `?job=`, `?receipt=`) | Пустая страница, не ошибка |
+| `product-merges/*`, `product-classifications/*`, чтение | Любой вошедший |
+| Те же, любой POST (включая `detect/` и `runs/`) | Право модератора, иначе `403 permission_denied`; сначала проверяются вход и CSRF. Сервисы записывают, кто принял решение |
+| `product-merges/{id}/lines/` | Не модератор — только свои строки; модератор — все, у чужих `receipt_id: null` ([покупка](#группа-краткая-форма-покупка)) |
+| 13 GET каталога и цен, `prices/series/` | Каталог и цены общие для вошедших; у чужого наблюдения скрыты личные поля ([история цен](#история-цен)); `stores.receipts_count` — число своих чеков; `products.last_observed_at` — `null`, если последнее наблюдение чужое |
+
+`404` на чужое, а не `403`: id последовательные, ответ не должен подтверждать существование объекта. `403 permission_denied` означает «объект общий и виден, но действие требует права». В `local_single` все объекты — пользователя `local`, поэтому ответы совпадают с прежними; чеки и фото других пользователей в этом режиме не видны.
+
+Проекция не затрагивает `alternatives`, `comparison`, `prices/summary/` и `prices/series/`: агрегаты и последняя покупка (день и магазин) в них считаются по наблюдениям всех пользователей.
+
+### MEDIA
+
+`/media/<путь>` обслуживает вью `accounts.media.serve`, маршрут не зависит от `DEBUG`; методы — `GET` и `HEAD`.
+
+- `accounts`: файл отдаётся, только если путь имеет вид `originals|prepared|crops/{storage_uuid}/…` и фото с этим `storage_uuid` принадлежит пользователю сессии. `DEBUG` не читается.
+- `local_single`: любой файл под `MEDIA_ROOT`, пока `DEBUG` включён, — как раньше.
+- Любой отказ — одинаковый пустой ответ `404` с `Content-Type: text/plain` и `Cache-Control: private, no-store`, не JSON: чужой файл, запрос без входа, отсутствующий файл, каталог `demo/`, путь с `..`, обратной косой чертой либо двоеточием. Ответы неотличимы, поэтому путь нельзя проверить на существование.
+- Успешный ответ тоже несёт `Cache-Control: private, no-store`.
+
+Vite dev и preview проксируют `/media` на тот же Django; на сервере обратный прокси каталог MEDIA сам не раздаёт ([deployment.md](deployment.md)).
+
+### Индексация
+
+`config.robots.NoIndexMiddleware` ставит `X-Robots-Tag: noindex, nofollow` на каждый ответ Django, включая отказы, и сам отвечает на `GET` и `HEAD /robots.txt` (`User-agent: *` / `Disallow: /`). Это просьба к поисковикам, а не защита: данные защищает вход.
+
 ## Реализовано: API чтения каталога и цен
 
 13 эндпоинтов только на чтение в приложении `backend/api/` (без моделей и миграций): справочники, категории, обобщённые продукты, товары, история цен и сравнение альтернативных товаров между странами. Потребитель — будущие экраны SPA; текущая страница клиента их не вызывает.
@@ -109,11 +219,11 @@ Probes запускаются параллельно, поэтому их обы
 
 ### Доступ и границы
 
-- **Эндпоинты открыты анонимно на чтение**: `AllowAny`, `authentication_classes = []`, как health. Cookies, token и заголовок `Authorization` не проверяются и игнорируются. Глобальная `IsAuthenticated` остаётся для будущих API.
-- **Перед любым внешним развёртыванием доступ нужно закрыть.** База покупок читается любым, кто достанет до API. Сейчас это только loopback: `DJANGO_ALLOWED_HOSTS` — `127.0.0.1,localhost`, CORS не настроен. Пользовательского входа и разграничения чеков нет: у данных нет владельца.
+- **Доступ зависит от режима** ([режимы](#режимы)): в `local_single` эндпоинты открыты анонимно на чтение, как health; в `accounts` нужен вход, без него — `401 not_authenticated`. Доступ — `accounts.access.SignedIn`, аутентификация — только сессия Django; token и заголовок `Authorization` не читаются.
+- **Каталог и цены общие для вошедших, чеки личные.** В `accounts` наблюдение цены из чужого чека отдаётся без id чека, позиции, момента, количества и скидки ([история цен](#история-цен)); `local_single` остаётся режимом одной машины: `DJANGO_ALLOWED_HOSTS` по умолчанию — `127.0.0.1,localhost`, CORS не настроен.
 - Записи через API нет: `POST/PUT/PATCH/DELETE` дают `405`.
 - **Несопоставленные позиции чеков в API не видны.** API показывает только товары каталога и строки, у которых заполнен `ReceiptLine.product`. Сопоставление делается через Django admin (поле `product` строки чека, [data-model.md](data-model.md#админка)) или кодом, HTTP API для него нет, поэтому на новых данных каталог и история пусты, пока позиции не сопоставлены.
-- В ответы не попадают `Receipt.raw_text`, `fiscal`, `fiscal_key`, `extra`, `Merchant.legal_name`, `tax_id`, `extra`, номера чека, смены и кассы. Из чека наружу идут только `receipt_id`, дата и момент покупки. Название магазина — `Merchant.brand_name`, иначе `Store.name`, иначе `"Магазин №<id>"`: юридическое название у предпринимателя — это ФИО.
+- В ответы не попадают `Receipt.raw_text`, `fiscal`, `fiscal_key`, `extra`, `Merchant.legal_name`, `tax_id`, `extra`, номера чека, смены и кассы. Из чека наружу идут только `receipt_id`, дата и момент покупки — `receipt_id` и момент только владельцу чека. Название магазина — `Merchant.brand_name`, иначе `Store.name`, иначе `"Магазин №<id>"`: юридическое название у предпринимателя — это ФИО.
 
 ### Общие правила
 
@@ -169,7 +279,7 @@ Probes запускаются параллельно, поэтому их обы
            "fields": {"page_size": ["Допустимо от 1 до 200."]}}}
 ```
 
-В сообщения попадают только фиксированные тексты и допустимые значения, но не присланное значение. Обработчик также умеет `401 not_authenticated` и `403 permission_denied` в том же формате; текущие эндпоинты их не отдают, потому что открыты.
+В сообщения попадают только фиксированные тексты и допустимые значения, но не присланное значение. В том же формате отдаются `401 not_authenticated` («Требуется вход.», заголовок `WWW-Authenticate: Session`) — в режиме `accounts` без входа — и `403 permission_denied`.
 
 Всё семейство Django `SuspiciousOperation` (включая `TooManyFieldsSent`, `RequestDataTooBig`, `TooManyFilesSent`, `DisallowedHost`), `BadRequest`, `UnreadablePostError` и `MultiPartParserError` преобразуется общим handler в `400 invalid_request`. `ParseError` DRF остаётся `400 invalid_parameter` без деталей. На текущих view исключения чтения/разбора body недостижимы при обычном запросе: ни GET, ни 405 не читают body/form/files; защитная ветка покрыта отдельными регрессиями. Неизвестные исключения, включая `ValueError`, `LookupError` и `UnicodeDecodeError` из реализации view, сохраняют `500 internal_error` — эти типы не перехватываются глобально как клиентские.
 
@@ -209,6 +319,8 @@ Probes запускаются параллельно, поэтому их обы
 ```
 
 **`GET /api/brands/`** — пагинация; `q` по названию; порядок `name, id`. Элемент: `{"id", "name", "manufacturer", "products_count"}`.
+
+`stores[].receipts_count` — число чеков **пользователя запроса** в магазине, не всех пользователей; магазин без своих чеков остаётся в списке с `0`.
 
 ### Категории
 
@@ -280,6 +392,7 @@ Probes запускаются параллельно, поэтому их обы
 
 - `package` — `null`, если фасовка не задана. `brand` — `{"id", "name"}` или `null`.
 - `prices` — по записи на пару «страна, валюта», по `country, currency`; `[]` и `last_observed_at: null`, если наблюдений нет.
+- `last_observed_at` — `null` и тогда, когда самое позднее наблюдение товара принадлежит чеку другого пользователя: точное время чужой покупки не отдаётся, её день остаётся в `prices[].last.purchased_on`. «Самое позднее» — по порядку истории цен: момент, чек, позиция. Сортировка `ordering=last_observed_at` по-прежнему идёт по моменту последнего наблюдения любого пользователя.
 - `comparable` — `normalized_unit` совпадает с `generic.base_unit`. При `normalized_price: null` — `normalized_unit: null`, `comparable: false`.
 
 **`GET /api/products/{id}/`** — те же поля и дополнительно:
@@ -305,7 +418,9 @@ Probes запускаются параллельно, поэтому их обы
 | `currency` | Код валюты чека |
 | `store` | id магазина |
 
-**`GET /api/products/{id}/prices/`** — точки. Пагинация 200, максимум 500. `ordering`: `observed_at` (по умолчанию) или `-observed_at`; вторичные ключи `receipt_id, position`.
+**`GET /api/products/{id}/prices/`** — точки. Пагинация 200, максимум 500. `ordering`: `observed_at` (по умолчанию) или `-observed_at`; вторичные ключи `receipt_id, position`. Порядок считается по настоящим значениям и у чужих точек, хотя в ответе они скрыты.
+
+Каждая точка несёт обязательное `own: bool` — наблюдение из своего чека. У чужой точки (`own: false`) пять полей равны `null`: `observed_at`, `quantity`, `discount_amount`, `receipt_id`, `position`; магазин, `purchased_on`, валюта, единица, цены и `comparable` отдаются как у своей. Ключи не убираются: форма объекта одна. В `local_single` свои — чеки пользователя `local`. Эталон — `backend/api/tests/fixtures/auth/prices_foreign_point.json`. В примере ниже у обеих точек подразумевается `"own": true`.
 
 ```json
 {"product": {"id": 2, "name": "GQ EgSB H-Milch 1,5%", "base_unit": "l"},
@@ -453,7 +568,7 @@ D1 меняет прежние 500/HTML-отказы клиентского вв
 - `page` больше 1 при пустом наборе — `404 page_out_of_range`; проект оговаривал только случай `count > 0`.
 - Неизвестный путь внутри `/api/` отвечает `404 not_found` на любой метод, а не `405`.
 - Несуществующие `category`, `generic`, `brand` в фильтрах списков дают пустой список; `400` за несуществующий объект — только у `store` в истории цен и у кодов стран и валют.
-- Обработчик ошибок дополнительно определяет `401 not_authenticated` и `403 permission_denied`.
+- Обработчик ошибок дополнительно определяет `401 not_authenticated` и `403 permission_denied`; с разделением пользователей `401` стал рабочим ответом режима `accounts`.
 - Идентификаторы, даты и время в примерах — фактические из QA-прогона на образцах; в проекте они были условными.
 
 ## Реализовано: task и `check_services`
@@ -474,13 +589,13 @@ D1 меняет прежние 500/HTML-отказы клиентского вв
 
 ## Реализовано: локальный API распознавания и чеков (облегчённая v1, С5)
 
-Потребитель — клиент загрузки фото, опроса заданий и просмотра чеков. HTTP-слой использует модели и сервисы `recognition`; провайдер из HTTP не вызывается. Pipeline/импорт выполняет host recognition_worker, сквозной путь с FakeProvider проверен в С6 ([результаты](verification.md#фактические-результаты-с6)). Существующие 13 GET каталога/цен и health сохраняют свои формы и анонимный доступ.
+Потребитель — клиент загрузки фото, опроса заданий и просмотра чеков. HTTP-слой использует модели и сервисы `recognition`; провайдер из HTTP не вызывается. Pipeline/импорт выполняет host recognition_worker, сквозной путь с FakeProvider проверен в С6 ([результаты](verification.md#фактические-результаты-с6)). Существующие 13 GET каталога/цен и health сохраняют свои формы; доступ к 13 GET зависит от [режима](#режимы).
 
 В v1 `MEDIA_URL` фиксирован строго `/media/` (также default при отсутствии переменной). Иной префикс, пустое значение, отсутствие завершающего `/` или абсолютный URL вызывают `ImproperlyConfigured` при загрузке настроек, до старта API/worker. Непустые `photo.original_url`, `photo.preview_url`, `receipt-image.image_url` и `receipt.preview_image_url` начинаются с `/media/`; nullable поля сохраняют `null`. Клиентские проверки URL и Vite dev/preview proxy рассчитаны только на этот префикс; его изменение требует согласованной правки клиента и proxy. Формы JSON и правила доступа не меняются.
 
 ### Доступ, CSRF, тело и пагинация
 
-Все новые маршруты доступны только при `DEBUG=True`, `ALLOW_LOCAL_RECOGNITION_API=True` и loopback `REMOTE_ADDR` (`127.0.0.1`, `::1`); иначе `403 permission_denied`. `X-Forwarded-For` не учитывается. Это единое локальное пространство данных: пользователей, владельцев объектов и разграничения чеков нет. Session/Basic не используются (`authentication_classes=[]`).
+Доступ — `accounts.access.LocalOrSignedIn`, зависит от [режима](#режимы). В `local_single` маршруты доступны только при `DEBUG=True`, `ALLOW_LOCAL_RECOGNITION_API=True` и loopback `REMOTE_ADDR` (`127.0.0.1`, `::1`); иначе `403 permission_denied`; `X-Forwarded-For` не учитывается; все данные — пользователя `local`. В `accounts` нужен вход (иначе `401 not_authenticated`), флаг, `DEBUG` и адрес не читаются, а каждый запрос видит только объекты своего пользователя: чужой id отвечает `404 not_found` ([что видит пользователь](#что-видит-пользователь)). Аутентификация — только сессия Django, Basic не используется.
 
 Любой небезопасный метод проходит явную CSRF-проверку **для анонимного запроса тоже**, до разбора тела: Django проверяет cookie, заголовок `X-CSRFToken`, Origin и HTTPS Referer. Token в multipart-поле не принимается. Отказ — `403 csrf_failed` без причины Django и пользовательских значений. Получить token и cookie: `GET /api/recognition/csrf/`. Клиент отправляет `credentials: "same-origin"`, `Accept: application/json`, `X-CSRFToken`; Vite Origin должен входить в `DJANGO_CSRF_TRUSTED_ORIGINS`. CORS не добавлен.
 
@@ -758,7 +873,8 @@ List и detail `/api/recognition/receipt-images/` отдают у **каждог
 | --- | --- | --- |
 | 400 | `invalid_request` | пустое тело, не объект, неизвестный или повторный ключ на любом уровне, `NaN`/`Infinity`, неверная кодировка, больше 1 MiB, запрос без завершающего `/` |
 | 400 | `invalid_parameter` | отсутствующий обязательный ключ, неверный тип или формат, значение вне перечня или диапазона, неизвестные код страны или валюты, несуществующий `store_id`, повтор `position` или `source_position`, ссылка на отсутствующую либо неподходящую позицию. В `fields` — все ошибки сразу, по одной фиксированной фразе на путь: `{"receipt.total": ["…"], "lines.0.quantity": ["…"], "taxes.1.tax_rate.rate": ["…"]}`; пути через точку, индексы массивов тела с нуля |
-| 403 | `permission_denied` / `csrf_failed` | локальный режим либо CSRF |
+| 401 | `not_authenticated` | режим `accounts`, нет входа |
+| 403 | `permission_denied` / `csrf_failed` | `local_single` вне локальных условий либо CSRF |
 | 404 | `not_found` | вырезки нет, id вне диапазона |
 | 405 / 406 / 415 | `method_not_allowed` / `not_acceptable` / `unsupported_media_type` | как у остальных действий |
 | 409 | `job_active` | задание этой вырезки ещё не завершено (`queued`, `running`, `cancel_requested`) |
@@ -830,7 +946,8 @@ Line.product=null → matching_status=unmatched; ambiguous здесь отсут
 | 400 | unsupported_format | фактический формат вне JPEG/PNG/WebP, включая HEIC |
 | 400 | invalid_image | битое, пустое, анимированное/multipage изображение |
 | 400 | image_too_large | более 40 MP |
-| 403 | permission_denied / csrf_failed | локальный режим/peer либо CSRF/Origin |
+| 401 | not_authenticated | режим `accounts`, нет входа |
+| 403 | permission_denied / csrf_failed | `local_single`: локальный режим/peer; оба режима: CSRF/Origin |
 | 404 | not_found / page_out_of_range | маршрут/объект/родитель либо страница |
 | 405 | method_not_allowed | неподдерживаемый метод; Allow по маршруту |
 | 406 | not_acceptable | неподходящий Accept |
@@ -895,7 +1012,7 @@ Line.product=null → matching_status=unmatched; ambiguous здесь отсут
 
 ### Доступ и тело
 
-Префикс `/api/product-merges/`, завершающий `/` обязателен. Доступ как у API распознавания: `DEBUG` + `ALLOW_LOCAL_RECOGNITION_API=1` + loopback, иначе `403 permission_denied`; POST требует CSRF и от анонима (`403 csrf_failed`), токен — `GET /api/recognition/csrf/`, заголовок `X-CSRFToken`; каждый ответ несёт `Cache-Control: no-store`; только JSON. Нет `Idempotency-Key`, `MutationRequest`, владельца.
+Префикс `/api/product-merges/`, завершающий `/` обязателен. Чтение — как у API распознавания ([режимы](#режимы)): в `local_single` `DEBUG` + `ALLOW_LOCAL_RECOGNITION_API=1` + loopback, иначе `403 permission_denied`; в `accounts` — любой вошедший, иначе `401 not_authenticated`. Любой POST (`detect/`, `confirm/`, `cancel/`, `exclude/`) требует ещё CSRF (`403 csrf_failed`; токен — `GET /api/recognition/csrf/` либо объект «Я», заголовок `X-CSRFToken`) и права модератора каталога `catalog.moderate_catalog`, иначе `403 permission_denied`; в `local_single` право есть всегда. Каждый ответ несёт `Cache-Control: no-store`; только JSON. Нет `Idempotency-Key`, `MutationRequest`. Группы и решения общие для всех пользователей; кто подтвердил, отменил либо исключил — записывается в журнал (`resolved_by`, `created_by`) и в API не отдаётся.
 
 Тело POST — JSON-объект UTF-8 до 4096 байт, `Content-Type: application/json` (иначе `415 unsupported_media_type`). Пустое тело, не объект, повторный или неизвестный ключ, `NaN`/`Infinity`, превышение размера — `400 invalid_request`. Отсутствующий обязательный ключ и неверный тип значения — `400 invalid_parameter` с `fields`. Идентификаторы и `version` — целые от 1 (не строки и не `true`).
 
@@ -936,7 +1053,7 @@ Line.product=null → matching_status=unmatched; ambiguous здесь отсут
 - `lines_count` группы: у ожидающей — все строки оставляемого товара, `new_lines_count` — те из них, которых нет в журнале (пришли после слияния); у подтверждённой — размер журнала и `0`; у отменённой — `0`.
 - `actions` — все три `true` только у ожидающей группы. `version` растёт при изменении состава (добавление записи поиском, исключение); подтверждение и отмена её не меняют.
 - **Краткая форма** в списке — те же поля, у записей нет `aliases`, вместо `conflicts` — булево `has_conflicts`.
-- **Покупка** в `/lines/`: `{"line_id", "receipt_id", "position", "purchased_on", "store": {"id", "name", "city", "country"}, "name", "quantity", "unit", "unit_price", "amount", "discount_amount", "currency", "origin_product_id"}`. `name` — напечатанное `raw_name`; `origin_product_id: null` — строка пришла после слияния. У отменённой группы список пуст. Десятичные — строками по общим правилам.
+- **Покупка** в `/lines/`: `{"line_id", "receipt_id", "position", "purchased_on", "store": {"id", "name", "city", "country"}, "name", "quantity", "unit", "unit_price", "amount", "discount_amount", "currency", "origin_product_id"}`. `name` — напечатанное `raw_name`; `origin_product_id: null` — строка пришла после слияния. У отменённой группы список пуст. Десятичные — строками по общим правилам. Чеки личные: не модератор получает только строки своих чеков (`count` и страницы считаются по ним); модератор — строки всех пользователей, но у строки чужого чека `receipt_id: null`, остальные поля, включая `position`, как есть. Поля `own` нет: чужая строка — та, у которой `receipt_id` равен `null`; эталон `lines.json` не менялся.
 - Закрытые поля (`raw_text`, `fiscal`, `extra`, юридическое название, налоговый номер, номера чека, кассы и смены) не отдаются; название магазина — вывеска продавца либо название магазина.
 
 ### Подтверждение, отмена, исключение
@@ -1013,7 +1130,7 @@ Line.product=null → matching_status=unmatched; ambiguous здесь отсут
 
 ### Предположения: доступ и тело
 
-Префикс `/api/product-classifications/`, завершающий `/` обязателен. Доступ — тот же флаг и те же правила, что у API распознавания и слияний: `DEBUG` + `ALLOW_LOCAL_RECOGNITION_API=1` + loopback, иначе `403 permission_denied`; отдельного флага нет. Любой POST требует CSRF и от анонима (`403 csrf_failed`): cookie и заголовок `X-CSRFToken`, токен — `GET /api/recognition/csrf/`. Каждый ответ несёт `Cache-Control: no-store`; только JSON. Нет `Idempotency-Key` (заголовок игнорируется), `MutationRequest`, владельца.
+Префикс `/api/product-classifications/`, завершающий `/` обязателен. Доступ — те же правила, что у API распознавания и слияний ([режимы](#режимы)): в `local_single` `DEBUG` + `ALLOW_LOCAL_RECOGNITION_API=1` + loopback, иначе `403 permission_denied`, отдельного флага нет; в `accounts` чтение — любому вошедшему, иначе `401 not_authenticated`. Любой POST (подтверждение, отклонение, массовое подтверждение, `runs/`) требует CSRF (`403 csrf_failed`): cookie и заголовок `X-CSRFToken`, токен — `GET /api/recognition/csrf/` либо объект «Я», — и права модератора каталога `catalog.moderate_catalog`, иначе `403 permission_denied`; в `local_single` право есть всегда. Каждый ответ несёт `Cache-Control: no-store`; только JSON. Нет `Idempotency-Key` (заголовок игнорируется), `MutationRequest`. Записи общие для всех пользователей; кто решил и кто поставил запуск — в журнале (`resolved_by`, `created_by`, `requested_by`), в API не отдаётся.
 
 Тело POST — JSON-объект UTF-8, `Content-Type: application/json` (иначе `415 unsupported_media_type`), до 4096 байт; у массового подтверждения — до 8192. Пустое тело, не объект, повторный или неизвестный ключ на любом уровне, `NaN` / `Infinity`, превышение размера — `400 invalid_request`. Отсутствующий обязательный ключ и неверный тип значения — `400 invalid_parameter` с `fields`. Идентификаторы и `version` — целые от 1 до 2^63 − 1, не строки и не `true`. Идентификатор в пути вне диапазона — `404 not_found`; id в фильтре, которого нет в базе, — пустой список.
 
@@ -1176,7 +1293,8 @@ Line.product=null → matching_status=unmatched; ambiguous здесь отсут
 | --- | --- | --- | --- | --- |
 | 400 | `invalid_request` | «Некорректный запрос.» | нет | Пустое тело, не объект, неизвестный или повторный ключ, `NaN`, превышение размера, POST без завершающего `/` |
 | 400 | `invalid_parameter` | «Некорректные параметры запроса.» | да | Query: недопустимые `status`, `ordering`, `page`, `page_size`, нечисловой id. Тело: нет обязательного ключа («Обязательное поле.»), не целое от 1 («Ожидается целое положительное число.»), `generic_id` не найден («Обобщённый продукт не найден.»), `generic_id` служебный («Нельзя выбрать «Не разобрано».»), `items` не массив либо пуст («Нужна хотя бы одна запись.»), больше 100 («Не больше 100 записей.»), элемент `items.N` не объект («Ожидается объект.»), `items.N.id` повторяется («Значение повторяется.») |
-| 403 | `permission_denied` | «Доступ запрещён.» | нет | Локальный API выключен: нет `DEBUG`, нет флага либо запрос не с loopback |
+| 401 | `not_authenticated` | «Требуется вход.» | нет | Режим `accounts`, нет входа |
+| 403 | `permission_denied` | «Доступ запрещён.» | нет | `local_single`: нет `DEBUG`, нет флага либо запрос не с loopback. `accounts`: POST без права модератора каталога |
 | 403 | `csrf_failed` | «Проверка CSRF не пройдена.» | нет | POST без cookie, токена либо с чужим Origin |
 | 404 | `not_found` | «Не найдено.» | нет | Записи или запуска нет; id вне диапазона; неизвестный путь; в массовом подтверждении нет хотя бы одной записи |
 | 404 | `page_out_of_range` | «Страница за пределами диапазона.» | нет | Страница дальше последней |
@@ -1322,15 +1440,15 @@ Line.product=null → matching_status=unmatched; ambiguous здесь отсут
 | `GET /api/stats/spending/` | Траты за период по категориям, обобщённым продуктам, товарам или магазинам | локальный |
 | `GET /api/stats/receipts/series/` | Походы по времени: число чеков, средний и медианный чек, позиций на чек | локальный |
 | `GET /api/stats/receipts/compare/` | Разложение изменения среднего чека между двумя периодами | локальный |
-| `GET /api/products/{id}/prices/series/` | Ряды цен товара по магазинам и похожих товаров по странам | анонимный, как 13 GET |
+| `GET /api/products/{id}/prices/series/` | Ряды цен товара по магазинам и похожих товаров по странам | как 13 GET |
 
 Расчёты — `backend/receipts/spending.py` и `backend/receipts/basket.py` (арифметика без БД), views — `backend/api/views/stats_spending.py`, `stats_receipts.py`, `price_series.py`, общие фильтры — `backend/api/stats_common.py`.
 
 ### Доступ к статистике
 
-- `/api/stats/*` — как `/api/receipts/`: `DEBUG` + `ALLOW_LOCAL_RECOGNITION_API=1` + loopback, иначе `403 permission_denied` (в том числе на неизвестный путь под `/api/stats/`). Ответы несут `Cache-Control: no-store`. CSRF для чтения не нужен. Причина: эндпоинты раскрывают суммы всех чеков и несопоставленные строки. Ошибка БД (таймаут, разрыв) — `503 database_unavailable`.
-- `/api/products/{id}/prices/series/` — как остальные 13 GET: `AllowAny`, анонимно, флаг не проверяется; ошибка БД — `500 internal_error`. Он отдаёт то же, что уже открытые `/prices/` и `/comparison/`, и карточка товара не должна зависеть от флага.
-- Пользователей и владельца данных нет: перед любым внешним развёртыванием доступ нужно закрыть, как и для остальных API.
+- `/api/stats/*` — как `/api/receipts/` ([режимы](#режимы)): в `local_single` `DEBUG` + `ALLOW_LOCAL_RECOGNITION_API=1` + loopback, иначе `403 permission_denied` (в том числе на неизвестный путь под `/api/stats/`); в `accounts` — вход, иначе `401 not_authenticated`. Считаются только чеки пользователя запроса: статистика двух пользователей на одной базе не складывается. Ответы несут `Cache-Control: no-store`. CSRF для чтения не нужен. Причина: эндпоинты раскрывают суммы всех чеков и несопоставленные строки. Ошибка БД (таймаут, разрыв) — `503 database_unavailable`.
+- `/api/products/{id}/prices/series/` — как остальные 13 GET: в `local_single` анонимно, в `accounts` нужен вход; флаг не проверяется; ряды строятся по наблюдениям всех пользователей, личных полей в них нет; ошибка БД — `500 internal_error`. Он отдаёт то же, что уже открытые `/prices/` и `/comparison/`, и карточка товара не должна зависеть от флага.
+- На сервере работает только режим `accounts`: `local_single` при `DJANGO_DEBUG=0` не запускается.
 
 ### Общие правила статистики
 
@@ -1428,7 +1546,8 @@ Line.product=null → matching_status=unmatched; ambiguous здесь отсут
 | --- | --- | --- |
 | 400 | `invalid_parameter` | дата, код, id, `group_by` / `interval` / `price` / `similar` / `limit` вне допустимого, пропущена обязательная дата, пересечение периодов |
 | 400 | `range_too_large` | больше 1000 интервалов или точек |
-| 403 | `permission_denied` | `/api/stats/*` вне локального режима |
+| 401 | `not_authenticated` | режим `accounts`, нет входа |
+| 403 | `permission_denied` | `/api/stats/*` в `local_single` вне локальных условий |
 | 404 | `not_found` | товар в пути рядов цен; неизвестный путь |
 | 405 / 406 | как у соседних API | метод, `Accept`; небезопасный метод на `/api/stats/*` отвечает так же, как на `/api/receipts/` |
 | 503 | `database_unavailable` | только `/api/stats/*` |
@@ -1486,4 +1605,4 @@ Line.product=null → matching_status=unmatched; ambiguous здесь отсут
 
 ## Планируется
 
-Пользовательская авторизация и разграничение данных, API ручного редактирования/сопоставления, клиент статистики (серверная часть — [выше](#реализовано-статистика-трат-походы-и-ряды-цен-серверная-часть)) и дашборд на главной, хранение курсов и production hosting не реализованы. Сквозное выполнение HTTP/worker/import с fake проверено С6; исторический реальный smoke С6 сохранил needs_review без автоимпорта. В И4 реальный Codex на single/double создал 2 Receipt, 6 строк и 5 товаров без дублей ([результаты](verification.md#фактические-результаты-и4)). Реальные фото и новый UI требуют [ручной приёмки](verification.md#ручная-приёмка-ocr-человеком); формы HTTP-слоя С5 не изменены.
+Вход через внешних провайдеров, регистрация и сброс пароля по почте, API ручного редактирования/сопоставления, клиент статистики (серверная часть — [выше](#реализовано-статистика-трат-походы-и-ряды-цен-серверная-часть)) и дашборд на главной, хранение курсов и production hosting не реализованы. Сквозное выполнение HTTP/worker/import с fake проверено С6; исторический реальный smoke С6 сохранил needs_review без автоимпорта. В И4 реальный Codex на single/double создал 2 Receipt, 6 строк и 5 товаров без дублей ([результаты](verification.md#фактические-результаты-и4)). Реальные фото и новый UI требуют [ручной приёмки](verification.md#ручная-приёмка-ocr-человеком); формы HTTP-слоя С5 не изменены.
