@@ -79,7 +79,7 @@ export default function JobPage({ jobId, returnTo }: JobPageProps) {
   return <div className="ck-rec">
     <div className="ck-rec-actions"><Link className="action-link" to={returnTo ?? '/recognition/jobs'}>{returnTo?.startsWith('/receipts/') ? 'К чеку' : 'К обработке'}</Link><Link className="action-link" to="/receipts/upload">Загрузить другое фото</Link></div>
     {notice && <p role="status" className="ck-rec-warning">{notice}</p>}
-    <RequestBlock title={<span className="ck-rec-pair">Задание №{jobId}</span>} id="recognition-job-title" state={state} retry={request.refresh}>
+    <RequestBlock title={<span className="ck-rec-pair">{numbered('Задание', jobId)}</span>} id="recognition-job-title" state={state} retry={request.refresh}>
       {(job) => { const executorNote = state.kind === 'ok' && !state.refreshError ? jobExecutorNote(job) : undefined; return <>
         <JobSummary job={job} announce />
         {job.retry_of !== null && <p>Повтор <Link to={{ kind: 'job', jobId: job.retry_of }} className="ck-rec-pair">{numbered('задания', job.retry_of)}</Link>.</p>}

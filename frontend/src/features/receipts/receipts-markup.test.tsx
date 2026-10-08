@@ -96,7 +96,7 @@ describe('receipt screens (Vitest/SSR, not browser visual acceptance)', () => {
     expect(list).toContain('Страница 2')
     expect(list).toContain('Загружаем')
     const detail = renderToStaticMarkup(<ReceiptPage receiptId={71} returnTo="/receipts?q=MILCH&amp;page=2" />)
-    expect(detail).toContain('Страница чека №71')
+    expect(detail).toContain('Страница чека\u00a0№71')
     expect(detail.match(/class="request-state request-state-loading"/g)).toHaveLength(5)
     for (const html of [list, detail]) { expect(html).not.toContain('<h1'); expect(html).not.toContain('<main') }
   })
