@@ -50,7 +50,13 @@ export function formatAxisTick(value: number, step?: number, money = false): str
   return /^-[0,]*$/.test(text) ? text.slice(1) : text
 }
 
-/** Axis divisions on a 1 / 2 / 2.5 / 5 × 10ⁿ step, not finer than `minStep`, that cover [min, max]. */
+const niceFactors = [1, 2, 2.5, 5, 10]
+
+/**
+ * Axis divisions on a 1 / 2 / 2.5 / 5 × 10ⁿ step that cover [min, max]. `minStep` is the grid of the axis texts
+ * (a power of ten): the step is neither finer than it nor off it, so 0,025 gives way to 0,05 on a grid of 0,01
+ * and every division is written exactly.
+ */
 export function niceTicks(min: number, max: number, target = 5, includeZero = false, minStep = 0): Ticks {
   let low = Number.isFinite(min) ? min : 0
   let high = Number.isFinite(max) ? max : low
@@ -66,8 +72,10 @@ export function niceTicks(min: number, max: number, target = 5, includeZero = fa
   const exponent = Math.floor(Math.log10(raw))
   const magnitude = 10 ** exponent
   const normalized = raw / magnitude
-  const factor = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 2.5 ? 2.5 : normalized <= 5 ? 5 : 10
-  const coarse = Number.isFinite(minStep) && minStep > factor * magnitude
+  const grid = Number.isFinite(minStep) && minStep > 0 ? minStep : 0
+  const onGrid = (size: number) => grid === 0 || Math.abs(size / grid - Math.round(size / grid)) < 1e-6
+  const factor = niceFactors.find((nice) => normalized <= nice && onGrid(nice * magnitude)) ?? 10
+  const coarse = grid > factor * magnitude
   const step = coarse ? minStep : factor * magnitude
   const decimals = Math.min(20, Math.max(0, 1 - (coarse ? Math.floor(Math.log10(minStep)) : exponent)))
   const round = (value: number) => Number(value.toFixed(decimals))
