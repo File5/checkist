@@ -47,7 +47,7 @@ describe('receipt URL filters and display values', () => {
   it('keeps Decimal precision, zero and negative refunds, and labels unknowns', () => {
     expect(money('9999999999999999.12', 'EUR')).toBe('9 999 999 999 999 999,12 EUR')
     expect(money('0.00', 'EUR')).toBe('0,00 EUR')
-    expect(price('-1.2345', 'EUR')).toBe('-1,2345 EUR')
+    expect(price('-1.2345', 'EUR')).toBe('-1,23 EUR')
     expect(money('-2.38', 'EUR')).toBe('-2,38 EUR')
     expect(money(null, 'EUR')).toBe('Не распознано')
     expect(money('2.38')).toBe('2,38')

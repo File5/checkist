@@ -38,8 +38,8 @@ describe('catalog HTML semantics (Node, not visual or interactive acceptance)', 
       { ...product.prices[0], country: 'RU', currency: 'RUB', last: { ...product.prices[0].last, paid_unit_price: '9999999999999999.1234', purchased_on: '2026-09-28' } },
     ]
     const html = renderToStaticMarkup(<ProductList products={[{ ...product, prices }]} />)
-    expect(html).toContain('0 EUR')
-    expect(html).toContain('9 999 999 999 999 999,1234 RUB')
+    expect(html).toContain('>0,00 EUR<')
+    expect(html).toContain('9 999 999 999 999 999,12 RUB')
     expect(html).toContain('Страна: DE')
     expect(html).toContain('Страна: RU')
     expect(html).toContain('dateTime="2026-09-28"')

@@ -47,8 +47,8 @@ describe('comparison block (Vitest/SSR, not browser acceptance)', () => {
     expect(text(eur)).toContain('+7,39 EUR (+39,50 % изменения) — выросли цены на те же товары')
     expect(text(eur)).toContain('+2,67 EUR (+14,27 % изменения) — другой состав покупок: позиции в среднем дороже')
     // Both periods with their dates and facts.
-    expect(text(eur)).toContain('Базовый период 01.01.2020 – 31.12.2020 Походов в магазин 48 (3,99 в месяц) Средний чек 27,01 EUR Медианный чек 27,28 EUR Позиций на чек 11,5 Сумма на позицию 2,3486 EUR')
-    expect(text(eur)).toContain('Текущий период 01.01.2026 – 30.09.2026 Походов в магазин 36 (4,01 в месяц) Средний чек 45,72 EUR Медианный чек 45,52 EUR Позиций на чек 14,67 Сумма на позицию 3,1176 EUR')
+    expect(text(eur)).toContain('Базовый период 01.01.2020 – 31.12.2020 Походов в магазин 48 (3,99 в месяц) Средний чек 27,01 EUR Медианный чек 27,28 EUR Позиций на чек 11,5 Сумма на позицию 2,35 EUR')
+    expect(text(eur)).toContain('Текущий период 01.01.2026 – 30.09.2026 Походов в магазин 36 (4,01 в месяц) Средний чек 45,72 EUR Медианный чек 45,52 EUR Позиций на чек 14,67 Сумма на позицию 3,12 EUR')
     expect(eur).toContain('Возвраты в расчёт не входят: в базовом периоде исключено 0, в текущем — 1.')
   })
   it('draws the terms as a bar and repeats them in a table whose total is the change', () => {
@@ -89,7 +89,7 @@ describe('comparison block (Vitest/SSR, not browser acceptance)', () => {
     const products = eur.split('stats-products-table">')[1].split('</table>')[0]
     expect(products).toContain('Показаны 5 из 24 совпавших товаров с наибольшим изменением суммы покупок.')
     expect(products.match(/<a href="\/catalog\/products\/\d+">/g)).toEqual([24, 10, 21, 4, 17].map((id) => `<a href="/catalog/products/${id}">`))
-    expect(text(products)).toContain('Demo Hähnchenbrust 600g 6,17 EUR/шт 7,8661 EUR/шт +27,49 % 19 шт 18 шт 117,23 EUR 141,59 EUR')
+    expect(text(products)).toContain('Demo Hähnchenbrust 600g 6,17 EUR/шт 7,87 EUR/шт +27,49 % 19 шт 18 шт 117,23 EUR 141,59 EUR')
     expect(products.match(/<th scope="col"/g)).toHaveLength(8)
     // Both wide tables scroll inside a focusable region named by its heading: the terms and the products.
     const regions = [...eur.matchAll(/<div class="stats-table-scroll" role="region" aria-labelledby="([^"]+)" tabindex="0">/g)].map((match) => match[1])

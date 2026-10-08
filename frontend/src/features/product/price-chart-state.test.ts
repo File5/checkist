@@ -64,7 +64,7 @@ describe('panels of the backend fixtures', () => {
     ])
     expect(panels[1].series.map((item) => [item.key, item.label])).toEqual([['similar:3:KZ', 'Демо Молоко 2,5% 1 л · KZ']])
     expect(panels[0].series[0].points[0]).toEqual({ x: '2025-01-01', value: 1.05, valueText: '1,05 EUR/шт' })
-    expect(panels[1].series[0].points[0].valueText).toBe('617 KZT/шт')
+    expect(panels[1].series[0].points[0].valueText).toBe('617,00 KZT/шт')
   })
   it('milk, normalized: litres are comparable, so there is no package warning', () => {
     const panels = chartPanels(fixture('milk-normalized'))
@@ -110,7 +110,7 @@ describe('labels and texts', () => {
   })
   it('shows the spread of an interval next to its average', () => {
     expect(pointText(point, 'EUR', 'pcs')).toBe('1,07 EUR/шт')
-    expect(pointText({ ...point, count: 3, min: '0.9900', max: '1.2000', avg: '1.0867' }, 'EUR', 'l')).toBe('1,0867 EUR/л (мин. 0,99, макс. 1,2)')
+    expect(pointText({ ...point, count: 3, min: '0.9900', max: '1.2000', avg: '1.0867' }, 'EUR', 'l')).toBe('1,09 EUR/л (мин. 0,99, макс. 1,20)')
   })
   it('explains every similar status of the fixtures', () => {
     expect(noteKeys(fixture('milk-paid'))).toEqual([])

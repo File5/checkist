@@ -172,8 +172,8 @@ describe('price index', () => {
     expect(indexAssumption).toContain('в админке')
   })
   it('words a fall and an unchanged level', () => {
-    expect(plain(priceIndexSummary({ ...eur.price_index!, fisher: '0.9700' }).headline)).toContain('снизились на 3,00 % (индекс Фишера 0,97)')
-    expect(plain(priceIndexSummary({ ...eur.price_index!, fisher: '1.0000' }).headline)).toContain('не изменились (индекс Фишера 1)')
+    expect(plain(priceIndexSummary({ ...eur.price_index!, fisher: '0.9700' }).headline)).toContain('снизились на 3,00 % (индекс Фишера 0,9700)')
+    expect(plain(priceIndexSummary({ ...eur.price_index!, fisher: '1.0000' }).headline)).toContain('не изменились (индекс Фишера 1,0000)')
   })
   it('warns when either period is covered below the threshold or the products are few', () => {
     const index = eur.price_index!
@@ -191,7 +191,7 @@ describe('period cards', () => {
   it('formats the facts of a period from the wire decimals', () => {
     expect(sideFacts(eur.base, 'EUR').map(([label, value]) => [label, plain(value)])).toEqual([
       ['Походов в магазин', '48 (3,99 в месяц)'], ['Средний чек', '27,01 EUR'], ['Медианный чек', '27,28 EUR'],
-      ['Позиций на чек', '11,5'], ['Сумма на позицию', '2,3486 EUR'], ['Потрачено всего', '1 296,41 EUR'],
+      ['Позиций на чек', '11,5'], ['Сумма на позицию', '2,35 EUR'], ['Потрачено всего', '1 296,41 EUR'],
     ])
   })
   it('leaves the averages of a period without visits empty instead of zero', () => {

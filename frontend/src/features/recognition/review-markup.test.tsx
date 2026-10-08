@@ -223,7 +223,7 @@ describe('crop card around the confirmation', () => {
     const html = cards(image(), { kind: 'done', imageId: 42, image: confirmed().image, message: 'Подтверждено. Чек №72 сохранён.' })
     expect(html).toContain('<h3>Чек 2 · Чек сохранён</h3>'); expect(html).toContain('href="/receipts/72">Открыть чек №72</a>')
     expect(html).toContain('<p tabindex="-1" role="status" class="ck-rec-result">Подтверждено. Чек №72 сохранён.</p>')
-    expect(html).toContain('Подтверждено вручную: <time dateTime="2026-10-04T12:35:00Z">04.10.2026, 12:35 UTC</time>')
+    expect(html).toContain('Подтверждено вручную: <time dateTime="2026-10-04T12:35:00Z">04.10.2026,\u00a012:35\u00a0UTC</time>')
     expect(html).not.toContain('Исправление и подтверждение'); expect(html).not.toContain('Причины проверки')
     expect(html).toContain('Тип операции определён автоматически · Операция')
   })

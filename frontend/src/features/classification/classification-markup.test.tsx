@@ -389,7 +389,7 @@ describe('states of the list', () => {
     expect(html).toContain('<dt>Предложено</dt><dd>Кефир (л) · <span>Продукты питания</span><span> → Молочные продукты</span></dd>')
     expect(html).toContain('<dt>Итог</dt><dd>Творог (кг)</dd>')
     expect(html).toContain('<dt>Итог</dt><dd>Не разобрано (шт)</dd>')
-    expect(html).toContain('<dt>Решено</dt><dd><time dateTime="2026-10-06T10:05:00Z">06.10.2026, 10:05 UTC</time></dd>')
+    expect(html).toContain('<dt>Решено</dt><dd><time dateTime="2026-10-06T10:05:00Z">06.10.2026,\u00a010:05\u00a0UTC</time></dd>')
     expect(html).toContain('<dt>Итог</dt><dd>—</dd>')
     expect(html).toContain('<a href="/catalog/classification?product=13">Открыть среди ожидающих<span class="ck-class-hidden">: Demo Mettwurst fein</span></a>')
     expect(html).not.toMatch(/<h3 /)
