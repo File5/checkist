@@ -40,7 +40,7 @@ describe('what the shell shows in place of the page', () => {
     { kind: 'receipts', query: { page: 1 } }, { kind: 'upload' }, { kind: 'receipt', receiptId: 7 },
     { kind: 'jobs', query: { page: 1 } }, { kind: 'job', jobId: 9 },
     { kind: 'merges', query: { page: 1 } }, { kind: 'merge', groupId: 2 }, { kind: 'classification', query: { page: 1 } },
-    { kind: 'account' }, { kind: 'not-found', path: '/missing' },
+    { kind: 'account' }, { kind: 'login' }, { kind: 'not-found', path: '/missing' },
     { kind: 'invalid-query', path: '/catalog', fields: ['page'], resetTo: '/catalog' },
   ]
   const moderated = ['merges', 'merge', 'classification']
@@ -58,8 +58,8 @@ describe('what the shell shows in place of the page', () => {
       expect(shellView(reader, route), route.kind).toBe(moderated.includes(route.kind) ? 'forbidden' : 'page')
     }
   })
-  it('keeps local_single as before: every page, and no account page', () => {
-    for (const route of routes) expect(shellView(local, route), route.kind).toBe(route.kind === 'account' ? 'not-found' : 'page')
+  it('keeps local_single as before: every page, and neither an account page nor a sign-in address', () => {
+    for (const route of routes) expect(shellView(local, route), route.kind).toBe(route.kind === 'account' || route.kind === 'login' ? 'not-found' : 'page')
     expect(shellView(local, { kind: 'health' })).toBe('page')
   })
   it('creates the page again for another person, another mode and after a sign-in, but not for a changed right', () => {

@@ -1,23 +1,23 @@
-/* Shared chart styles. App.css has no custom properties and no dark theme yet, so the palette lives here as
-   variables with the values of the project's light theme; a theme overrides them on .ck-chart or above. */
+/* Shared chart styles. The charts know nothing about themes: the --ck-chart-* variables keep their names and take
+   their values from the theme tokens (theme/tokens.css), so both themes arrive through them. */
 .ck-chart {
-  --ck-chart-surface: #fff;
-  --ck-chart-ink: #20332c;
-  --ck-chart-muted: #526158;
-  --ck-chart-grid: #e8ede5;
-  --ck-chart-axis: #cbd7c7;
-  --ck-chart-highlight: #e5ede2;
-  --ck-chart-focus: #236ad0;
-  --ck-chart-series-1: #2a78d6;
-  --ck-chart-series-2: #eb6834;
-  --ck-chart-series-3: #1baf7a;
-  --ck-chart-series-4: #eda100;
-  --ck-chart-series-5: #e87ba4;
-  --ck-chart-series-6: #008300;
-  --ck-chart-series-7: #4a3aa7;
-  --ck-chart-series-8: #e34948;
-  --ck-chart-other: #8b958d;
-  --ck-chart-special: #b9c2ba;
+  --ck-chart-surface: var(--ck-surface);
+  --ck-chart-ink: var(--ck-text);
+  --ck-chart-muted: var(--ck-text-muted);
+  --ck-chart-grid: var(--ck-plot-grid);
+  --ck-chart-axis: var(--ck-plot-axis);
+  --ck-chart-highlight: var(--ck-surface-raised);
+  --ck-chart-focus: var(--ck-focus);
+  --ck-chart-series-1: var(--ck-series-1);
+  --ck-chart-series-2: var(--ck-series-2);
+  --ck-chart-series-3: var(--ck-series-3);
+  --ck-chart-series-4: var(--ck-series-4);
+  --ck-chart-series-5: var(--ck-series-5);
+  --ck-chart-series-6: var(--ck-series-6);
+  --ck-chart-series-7: var(--ck-series-7);
+  --ck-chart-series-8: var(--ck-series-8);
+  --ck-chart-other: var(--ck-series-other);
+  --ck-chart-special: var(--ck-series-special);
   display: grid;
   gap: 12px;
   min-width: 0;
@@ -79,12 +79,12 @@
 .ck-line-legend { display: flex; flex-wrap: wrap; gap: 4px 18px; min-width: 0; margin: 0; padding: 0; border: 0; }
 .ck-line-legend legend { padding: 0; color: var(--ck-chart-muted); font-size: 0.85rem; }
 .ck-line-legend-item { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; min-width: 0; cursor: pointer; }
-.ck-line-legend-item input { flex: 0 0 auto; width: 18px; height: 18px; min-height: 0; margin: 0; accent-color: #246044; }
+.ck-line-legend-item input { flex: 0 0 auto; width: 18px; height: 18px; min-height: 0; margin: 0; accent-color: var(--ck-brand); }
 .ck-line-legend-item input:not(:checked) ~ * { opacity: 0.55; }
 .ck-line-legend-text { min-width: 0; }
-.ck-line-badge { display: inline-block; min-width: 1.5em; margin-right: 6px; padding: 0 5px; border: 1px solid var(--ck-chart-axis); border-radius: 6px; font-size: 0.8rem; font-weight: 600; text-align: center; }
+.ck-line-badge { display: inline-block; min-width: 1.5em; margin-right: 6px; padding: 0 5px; border: 1px solid var(--ck-chart-axis); border-radius: var(--ck-radius-sm); font-size: 0.8rem; font-weight: 600; text-align: center; }
 .ck-line-swatch { flex: 0 0 34px; width: 34px; height: 14px; }
-.ck-line-plot { position: relative; min-width: 0; border-radius: 8px; touch-action: pan-y; }
+.ck-line-plot { position: relative; min-width: 0; border-radius: var(--ck-radius); touch-action: pan-y; }
 .ck-line-plot:focus-visible { outline: 3px solid var(--ck-chart-focus); outline-offset: 4px; }
 .ck-line-svg { display: block; width: 100%; height: auto; }
 .ck-line-path { fill: none; stroke: var(--ck-c); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
@@ -96,8 +96,8 @@
 .ck-line-overlay { position: absolute; inset: 0; display: grid; place-items: center; padding: 16px; color: var(--ck-chart-muted); text-align: center; }
 .ck-line-tooltip {
   position: absolute; top: 4px; z-index: 1; display: grid; gap: 4px; max-width: min(260px, 70%);
-  padding: 8px 10px; border: 1px solid var(--ck-chart-axis); border-radius: 8px;
-  background: var(--ck-chart-surface); box-shadow: 0 4px 16px #263e2a1f; font-size: 0.85rem; line-height: 1.3; pointer-events: none;
+  padding: 8px 10px; border: 1px solid var(--ck-popover-border); border-radius: var(--ck-radius);
+  background: var(--ck-chart-surface); box-shadow: 0 4px 16px var(--ck-popover-shadow); font-size: 0.85rem; line-height: 1.3; pointer-events: none;
 }
 /* The side decides the anchoring edge (inline `left` or `right`, see lineTooltipAnchor) and the gap is a margin,
    not a transform: the width is then fitted to the room on that side of the crosshair and stays inside the plot. */
@@ -107,7 +107,7 @@
 .ck-line-tooltip-row { display: grid; grid-template-columns: 34px auto; column-gap: 8px; align-items: center; }
 .ck-line-tooltip-row > span { grid-column: 2; color: var(--ck-chart-muted); font-size: 0.8rem; }
 .ck-line-live { min-height: 1.5em; font-variant-numeric: tabular-nums; }
-.ck-line-table summary { cursor: pointer; min-height: 44px; padding-block: 10px; border-radius: 4px; font-weight: 600; }
+.ck-line-table summary { cursor: pointer; min-height: 44px; padding-block: 10px; border-radius: var(--ck-radius-sm); font-weight: 600; }
 .ck-line-table summary:focus-visible { outline: 3px solid var(--ck-chart-focus); outline-offset: 2px; }
 .ck-line-table-scroll { overflow-x: auto; max-width: 100%; }
 .ck-line-table-scroll:focus-visible { outline: 3px solid var(--ck-chart-focus); outline-offset: 2px; }

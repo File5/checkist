@@ -22,13 +22,23 @@ describe('route parsing', () => {
     expect(parseRoute(href)).toEqual({ kind: 'not-found', path: href })
   })
 
+  it('opens the sign-in at /login and leaves the neighbouring addresses alone', () => {
+    expect(parseRoute('/login')).toEqual({ kind: 'login' })
+    expect(parseRoute('/login/')).toEqual({ kind: 'login' })
+    expect(parseRoute('http://localhost/login?next=%2Freceipts#form')).toEqual({ kind: 'login' })
+    expect(buildRoute({ kind: 'login' })).toBe('/login')
+    for (const href of ['/Login', '/login/reset', '/logins', '/catalog/login']) expect(parseRoute(href)).toEqual({ kind: 'not-found', path: href })
+    expect(parseRoute('/')).toEqual({ kind: 'catalog', query: { page: 1 } })
+    expect(parseRoute('/catalog')).toEqual({ kind: 'catalog', query: { page: 1 } })
+  })
+
   it('opens the account page and ignores its query, like health', () => {
     expect(parseRoute('/account')).toEqual({ kind: 'account' })
     expect(parseRoute('/account/?next=https://example.test/')).toEqual({ kind: 'account' })
     expect(buildRoute({ kind: 'account' })).toBe('/account')
   })
 
-  it.each(['/login', '/account/password', '/Account', '/accounts'])('has no separate sign-in route: %s is unknown', (href) => {
+  it.each(['/account/password', '/Account', '/accounts'])('has no neighbours of the account page: %s is unknown', (href) => {
     expect(parseRoute(href)).toEqual({ kind: 'not-found', path: href })
   })
 

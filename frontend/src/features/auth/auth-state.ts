@@ -16,7 +16,8 @@ export function shellView(session: Session, route: Route): ShellView {
   if (session.kind === 'loading') return 'loading'
   if (session.kind === 'error') return 'error'
   if (session.kind === 'guest') return 'login'
-  if (route.kind === 'account') return session.mode === 'accounts' ? 'page' : 'not-found'
+  // In local_single there is neither an account page nor a sign-in address.
+  if (route.kind === 'account' || route.kind === 'login') return session.mode === 'accounts' ? 'page' : 'not-found'
   if ((route.kind === 'merges' || route.kind === 'merge' || route.kind === 'classification') && !canModerate(session)) return 'forbidden'
   return 'page'
 }

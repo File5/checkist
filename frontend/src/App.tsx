@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useLayoutEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
-import { buildRoute, Link, useNavigation } from './navigation'
+import { buildRoute, Link, navigate, useNavigation } from './navigation'
 import type { NavigationSnapshot, Route } from './navigation'
 import HealthPage from './pages/HealthPage'
 import CatalogPage from './features/catalog/CatalogPage'
@@ -17,6 +17,10 @@ import { pageKey, shellView, watchSession } from './features/auth/auth-state'
 import type { ShellView } from './features/auth/auth-state'
 import { moderatorOnlyText } from './features/auth/labels'
 import { canModerate, loadSession, useSession } from './session'
+import { menuKey, useCurrentItemInView } from './menu-view'
+import { ThemeToggle } from './theme'
+import emblem from './assets/brand/emblem-96.webp'
+import emblem2x from './assets/brand/emblem-192.webp'
 
 function pageTitle(route: Route) {
   switch (route.kind) {
@@ -34,6 +38,7 @@ function pageTitle(route: Route) {
     case 'merges': return 'Дубли товаров'
     case 'merge': return 'Группа дублей'
     case 'classification': return 'Категории товаров'
+    case 'login': return 'Вход'
     case 'account': return 'Аккаунт'
     case 'invalid-query': return 'Некорректная ссылка'
     case 'not-found': return 'Страница не найдена'
@@ -52,7 +57,7 @@ function shellTitle(view: ShellView, route: Route) {
   }
 }
 
-const notFound = <RequestState kind="empty" message="Такой страницы нет. Перейдите в каталог продуктов." action={<Link className="action-link" to="/catalog">В каталог</Link>} />
+const notFound = <RequestState kind="empty" message="Такой страницы нет. Перейдите в каталог продуктов." action={<><p className="request-state-note">Наружное наблюдение результатов не дало.</p><Link className="action-link" to="/catalog">В каталог</Link></>} />
 
 function pageContent({ route, returnTo }: NavigationSnapshot, username: string) {
   switch (route.kind) {
@@ -70,6 +75,8 @@ function pageContent({ route, returnTo }: NavigationSnapshot, username: string) 
     case 'merges': return <MergesPage query={route.query} />
     case 'merge': return <MergePage groupId={route.groupId} returnTo={returnTo} />
     case 'classification': return <ClassificationPage query={route.query} />
+    // A signed-in person has nothing to do at the sign-in address: the shell sends them to the catalog.
+    case 'login': return null
     case 'account': return <AccountPage username={username} />
     case 'invalid-query': return <RequestState kind="empty" message="В адресе указаны некорректные фильтры или номер страницы. Сбросьте параметры и попробуйте снова." action={<Link className="action-link" to={route.resetTo} replace>Сбросить параметры</Link>} />
     case 'not-found': return notFound
@@ -128,9 +135,17 @@ export default function App() {
     return stop
   }, [navigation, pathname, route, shell])
 
+  const leaveLogin = route.kind === 'login' && view === 'page'
+  useLayoutEffect(() => {
+    // After the sign-in on /login, and for a signed-in person who opens it: the catalog, without a history entry.
+    if (leaveLogin) navigate('/catalog', { replace: true })
+  }, [leaveLogin])
+
   useEffect(() => {
-    document.title = `Checkist — ${title}`
+    document.title = `Чекист — ${title}`
   }, [title])
+
+  const mainNavigation = useCurrentItemInView(menuKey(view, session, route))
 
   const mergesActive = route.kind === 'merges' || route.kind === 'merge'
   const classificationActive = route.kind === 'classification'
@@ -138,27 +153,32 @@ export default function App() {
   const statsActive = route.kind === 'spending' || route.kind === 'receipts-stats'
   const signedIn = session.kind === 'user'
   const username = signedIn ? session.user.username : ''
+  // The sign-in is drawn alone, on the address the person opened: no header, menu or footer.
+  // Its form is labelled by this heading, so the heading goes into the screen, which draws its own <main>.
+  if (view === 'login') return (
+    <LoginPage expired={session.kind === 'guest' && session.expired}
+      heading={<h1 id="page-heading" ref={heading} tabIndex={-1}>{title}</h1>} />
+  )
   let body: ReactNode
   switch (view) {
     case 'page': body = <Fragment key={contentKey}>{pageContent(navigation, username)}</Fragment>; break
     case 'loading': body = <RequestState kind="loading" message="Проверяем вход…" />; break
     case 'error': body = <RequestState kind="error" message="Не удалось проверить вход. Проверьте соединение и повторите попытку." onRetry={() => { void loadSession() }} />; break
-    case 'login': body = <LoginPage expired={session.kind === 'guest' && session.expired} />; break
     case 'forbidden': body = <RequestState kind="empty" message={`${moderatorOnlyText}.`} action={<Link className="action-link" to="/catalog">В каталог</Link>} />; break
     case 'not-found': body = notFound; break
   }
   return (
-    <div className="page">
+    <>
       <a className="skip-link" href="#page-heading">К содержимому</a>
       <header className="brand-bar">
-        <Link className="brand" to="/catalog" aria-label="Checkist — каталог">
-          <svg className="brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
-            <path d="M9 5h14v23l-3-2-4 2-4-2-3 2V5Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
-            <path d="m12 12 3 3 5-5M12 20h8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          <span>Checkist</span>
+        <Link className="brand" to="/catalog" aria-label="Чекист — каталог">
+          <img className="brand-mark" src={emblem} srcSet={`${emblem} 1x, ${emblem2x} 2x`} width={44} height={44} alt="" />
+          <span>Чекист</span>
         </Link>
-        <nav className="main-navigation" aria-label="Основная навигация">
+        <div className="brand-actions">
+          <ThemeToggle placement="header" />
+        </div>
+        <nav className="main-navigation" aria-label="Основная навигация" ref={mainNavigation}>
           {signedIn && <>
             <Link to="/catalog" aria-current={catalogActive ? 'page' : undefined}>Каталог</Link>
             <Link to="/receipts" aria-current={['receipts', 'upload', 'receipt'].includes(route.kind) ? 'page' : undefined}>Чеки</Link>
@@ -166,31 +186,33 @@ export default function App() {
             <Link to="/recognition/jobs" aria-current={['jobs', 'job'].includes(route.kind) ? 'page' : undefined}>Обработка</Link>
           </>}
           <Link to="/health" aria-current={route.kind === 'health' ? 'page' : undefined}>Состояние сервисов</Link>
-          {/* The sign-in has no address of its own: it opens in place of any page except this one. */}
-          {session.kind === 'guest' && <Link to="/catalog" aria-current={view === 'login' ? 'page' : undefined}>Войти</Link>}
+          {/* A guest sees the shell only here, on the health page: everywhere else the sign-in replaces it. */}
+          {session.kind === 'guest' && <Link to="/login">Войти</Link>}
           {signedIn && session.mode === 'accounts' && <Link className="account-link" to="/account" aria-label={`Аккаунт: ${username}`}
             aria-current={route.kind === 'account' ? 'page' : undefined}>{username}</Link>}
         </nav>
       </header>
 
-      <main id="main" ref={content}>
-        <div className="intro">
-          <p className="eyebrow">От чека к понятным покупкам</p>
-          <h1 id="page-heading" ref={heading} tabIndex={-1}>{title}</h1>
-          {route.kind === 'health' && <p className="intro-note">Техническая страница проверки соединения с сервером.</p>}
-        </div>
-        {catalogActive && view === 'page' && canModerate(session) && <nav className="main-navigation section-navigation" aria-label="Раздел каталога">
-          <Link to="/catalog" aria-current={mergesActive || classificationActive ? undefined : 'page'}>Товары</Link>
-          <Link to="/catalog/merges" aria-current={mergesActive ? 'page' : undefined}>Дубли</Link>
-          <Link to="/catalog/classification" aria-current={classificationActive ? 'page' : undefined}>Категории</Link>
-        </nav>}
-        {statsActive && view === 'page' && <nav className="main-navigation section-navigation" aria-label="Раздел статистики">
-          <Link to="/stats" aria-current={route.kind === 'spending' ? 'page' : undefined}>Траты</Link>
-          <Link to="/stats/receipts" aria-current={route.kind === 'receipts-stats' ? 'page' : undefined}>Средний чек</Link>
-        </nav>}
-        {body}
-      </main>
-      <footer>Checkist · Каркас приложения</footer>
-    </div>
+      <div className="page">
+        <main id="main" ref={content}>
+          <div className="intro">
+            <p className="eyebrow">Доверяй, но проверяй чек</p>
+            <h1 id="page-heading" ref={heading} tabIndex={-1}>{title}</h1>
+            {route.kind === 'health' && <p className="intro-note">Сводка о состоянии служб.</p>}
+          </div>
+          {catalogActive && view === 'page' && canModerate(session) && <nav className="main-navigation section-navigation" aria-label="Раздел каталога">
+            <Link to="/catalog" aria-current={mergesActive || classificationActive ? undefined : 'page'}>Товары</Link>
+            <Link to="/catalog/merges" aria-current={mergesActive ? 'page' : undefined}>Дубли</Link>
+            <Link to="/catalog/classification" aria-current={classificationActive ? 'page' : undefined}>Категории</Link>
+          </nav>}
+          {statsActive && view === 'page' && <nav className="main-navigation section-navigation" aria-label="Раздел статистики">
+            <Link to="/stats" aria-current={route.kind === 'spending' ? 'page' : undefined}>Траты</Link>
+            <Link to="/stats/receipts" aria-current={route.kind === 'receipts-stats' ? 'page' : undefined}>Средний чек</Link>
+          </nav>}
+          {body}
+        </main>
+        <footer>Чекист · Продуктовая разведка · Совершенно несекретно</footer>
+      </div>
+    </>
   )
 }

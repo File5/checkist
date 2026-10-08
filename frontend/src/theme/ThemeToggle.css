@@ -1,0 +1,26 @@
+/* Theme switch. Selectors outweigh the global `button` rules of App.css; colours come from tokens.css only. */
+.ck-theme-toggle {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-width: 44px; min-height: 44px; padding: 8px 14px;
+  border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm);
+  background: var(--ck-surface); color: var(--ck-text);
+  font: inherit; line-height: 1.2; text-align: left; cursor: pointer;
+}
+.ck-theme-toggle:hover:not(:disabled) { background: var(--ck-surface-raised); border-color: var(--ck-text-muted); }
+.ck-theme-toggle:active:not(:disabled) { background: var(--ck-accent-bg); }
+.ck-theme-toggle:focus-visible { outline: 3px solid var(--ck-focus); outline-offset: 3px; }
+.ck-theme-icon { flex: 0 0 20px; fill: var(--ck-accent-text); }
+.ck-theme-label { min-width: 0; overflow-wrap: anywhere; }
+
+/* On the header bar, dark in both themes: header tokens instead of the page ones. */
+.ck-theme-toggle.ck-theme-toggle-header { border-color: var(--ck-header-text-muted); background: var(--ck-header-bg); color: var(--ck-header-text); }
+.ck-theme-toggle.ck-theme-toggle-header:hover:not(:disabled) { background: var(--ck-header-hover-bg); border-color: var(--ck-header-text); }
+.ck-theme-toggle.ck-theme-toggle-header:active:not(:disabled) { background: var(--ck-header-hover-bg); border-color: var(--ck-header-accent); }
+.ck-theme-toggle.ck-theme-toggle-header:focus-visible { outline-color: var(--ck-header-focus); }
+.ck-theme-toggle-header .ck-theme-icon { fill: var(--ck-header-accent); }
+
+@media (forced-colors: active) {
+  .ck-theme-toggle, .ck-theme-toggle.ck-theme-toggle-header { border-color: ButtonText; background: ButtonFace; color: ButtonText; }
+  .ck-theme-toggle:focus-visible, .ck-theme-toggle.ck-theme-toggle-header:focus-visible { outline-color: Highlight; }
+  .ck-theme-icon, .ck-theme-toggle-header .ck-theme-icon { fill: ButtonText; }
+}

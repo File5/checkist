@@ -53,6 +53,11 @@ const other: [Route, string][] = [
   [{ kind: 'invalid-query', path: '/catalog', fields: ['page'], resetTo: '/catalog' }, '/catalog?page=0'],
 ]
 const everywhere = [...pages, ...moderated, ...other]
+const loginRoute: [Route, string] = [{ kind: 'login' }, '/login']
+/** What only the application shell draws: the sign-in is shown without any of it. */
+const shellParts = ['<header', 'brand-bar', 'main-navigation', '<nav', '<footer', 'skip-link', 'ck-theme-toggle', 'Доверяй, но проверяй чек']
+/** The sign-in keeps one thing of the shell: the theme switch, drawn on the page and not on the header bar. */
+const signInShellParts = [...shellParts.filter((part) => part !== 'ck-theme-toggle'), 'ck-theme-toggle-header']
 
 function render(session: Session, route: Route, href: string) {
   state.session = session
@@ -73,7 +78,7 @@ beforeEach(() => { fetchMock.mockReset(); vi.stubGlobal('fetch', fetchMock) })
 afterEach(() => { expect(fetchMock).not.toHaveBeenCalled(); vi.unstubAllGlobals() })
 
 describe('session gate of the shell (SSR only, no browser interaction)', () => {
-  it.each(everywhere)('a guest at %j sees the sign-in on that very address and no data screen', (route, href) => {
+  it.each([...everywhere, loginRoute])('a guest at %j sees the sign-in alone on that very address: no shell and no data screen', (route, href) => {
     const html = render(guest, route, href)
     expect(html.match(/<h1\b/g)).toHaveLength(1)
     expect(h1(html)).toBe('Вход')
@@ -83,18 +88,26 @@ describe('session gate of the shell (SSR only, no browser interaction)', () => {
     expect(html).not.toContain('Сеанс завершён')
     // No redirect and no `next`: the address stays, so the page opens by itself after the sign-in.
     expect(html).not.toContain('next=')
-    expect(mainNav(html)).toEqual(['Состояние сервисов', 'Войти'])
-    expect(navLink(html, 'Войти')).toBe('<a aria-current="page" href="/catalog">Войти</a>')
-    expect(html).not.toContain('aria-label="Раздел каталога"')
-    expect(html).not.toContain('aria-label="Раздел статистики"')
+    // Without the header, the menu and the footer; the only heading is the one the form is labelled by.
+    for (const part of signInShellParts) expect(html, part).not.toContain(part)
+    expect(html).toContain('<h1 id="page-heading" tabindex="-1">Вход</h1>')
+    expect(html).toContain('<section class="ck-auth" aria-labelledby="page-heading">')
+    // The only sign-in: the real form in the layout of the redesign, inside its own <main>, with the page theme switch.
+    expect(html.match(/<main\b[^>]*>/g)).toEqual(['<main id="main" class="ck-login">'])
+    expect(html.match(/<form\b/g)).toHaveLength(1)
+    expect(html).toContain('data-auth-submit="true"')
+    expect(html).not.toContain('Вход пока не подключён')
+    expect(html.match(/<button\b[^>]*class="ck-theme-toggle[^"]*"/g)).toEqual(['<button type="button" class="ck-theme-toggle"'])
+    expect(html.match(/<a\b/g)).toBeNull()
   })
   it('explains a session that ended in the middle of work', () => {
     const html = render({ kind: 'guest', expired: true }, { kind: 'receipt', receiptId: 7 }, '/receipts/7')
     expect(h1(html)).toBe('Вход')
     expect(html.split('Сеанс завершён. Войдите снова.')).toHaveLength(2)
     expect(screens(html)).toEqual([])
+    for (const part of signInShellParts) expect(html, part).not.toContain(part)
   })
-  it.each(everywhere)('waits for «Я» at %j without mounting the page', (route, href) => {
+  it.each([...everywhere, loginRoute])('waits for «Я» at %j without mounting the page', (route, href) => {
     const html = render({ kind: 'loading' }, route, href)
     expect(h1(html)).toBe('Проверяем вход')
     expect(html).toContain('Проверяем вход…')
@@ -102,7 +115,7 @@ describe('session gate of the shell (SSR only, no browser interaction)', () => {
     expect(mainNav(html)).toEqual(['Состояние сервисов'])
     expect(html).not.toContain('login-username')
   })
-  it.each(everywhere)('offers a retry at %j when «Я» could not be read', (route, href) => {
+  it.each([...everywhere, loginRoute])('offers a retry at %j when «Я» could not be read', (route, href) => {
     const html = render({ kind: 'error' }, route, href)
     expect(h1(html)).toBe('Вход не проверен')
     expect(html).toContain('Не удалось проверить вход.')
@@ -125,7 +138,10 @@ describe('session gate of the shell (SSR only, no browser interaction)', () => {
     expect(screens(html)).toEqual(['health'])
     expect(mainNav(html)).toEqual(menu)
     expect(navLink(html, 'Состояние сервисов')).toContain('aria-current="page"')
-    if (session.kind === 'guest') expect(navLink(html, 'Войти')).toBe('<a href="/catalog">Войти</a>')
+    // The only place where a guest sees the shell: its one sign-in link leads to the sign-in address.
+    if (session.kind === 'guest') expect(navLink(html, 'Войти')).toBe('<a href="/login">Войти</a>')
+    else expect(html).not.toContain('href="/login"')
+    expect(html).toContain('<header class="brand-bar">')
     expect(html).not.toContain('login-username')
   })
 })
@@ -181,6 +197,17 @@ describe('signed-in shell (SSR only, no browser interaction)', () => {
       expect(screens(html)).toEqual([])
     }
   })
+  it('mounts nothing at /login for a signed-in person: the shell sends them to the catalog', () => {
+    // The transition itself is a layout effect and is not run here; the person checks it by hand.
+    for (const session of [reader, moderator]) {
+      const html = render(session, { kind: 'login' }, '/login')
+      expect(screens(html)).toEqual([])
+      expect(html.match(/<h1\b/g)).toHaveLength(1)
+      expect(html).not.toContain('login-username')
+      expect(html).not.toContain('href="/login"')
+      expect(html).toContain('<header class="brand-bar">')
+    }
+  })
   it('renders a name that looks like markup as text', () => {
     const tricky: Session = { kind: 'user', mode: 'accounts', user: { id: 3, username: '<i>x</i>', is_staff: false }, permissions: { moderate_catalog: false } }
     const html = render(tricky, { kind: 'catalog', query: { page: 1 } }, '/catalog')
@@ -207,6 +234,13 @@ describe('local_single keeps the previous interface (SSR only, no browser intera
     const html = render(local, { kind: 'catalog', query: { page: 1 } }, '/catalog')
     expect(html).toContain('<a href="/catalog/merges">Дубли</a>')
     expect(html).toContain('<a href="/catalog/classification">Категории</a>')
+  })
+  it('has no sign-in address', () => {
+    const html = render(local, { kind: 'login' }, '/login')
+    expect(h1(html)).toBe('Страница не найдена')
+    expect(html).toContain('Такой страницы нет.')
+    expect(html).not.toContain('login-username')
+    expect(mainNav(html)).toEqual(fullMenu)
   })
   it('has no account page', () => {
     const html = render(local, { kind: 'account' }, '/account')
