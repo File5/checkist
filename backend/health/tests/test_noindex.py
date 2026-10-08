@@ -111,11 +111,17 @@ class NoIndexHeaderTests(SimpleTestCase):
 
     def test_robots_txt_other_methods_and_paths_are_ordinary_requests(self):
         for method, target in (("post", "/robots.txt"), ("put", "/robots.txt"), ("delete", "/robots.txt"),
-                               ("get", "/robots.txt/"), ("get", "/api/robots.txt"), ("get", "/Robots.txt")):
+                               ("get", "/robots.txt/"), ("get", "/api/robots.txt/"), ("get", "/Robots.txt")):
             with self.subTest(method=method, target=target):
                 response = getattr(self.client, method)(target)
                 self.assert_noindex(response, 404)
                 self.assertNotIn(ROBOTS, response.content)
+        # /api without the trailing slash keeps its former contract: a redirect to the path with it.
+        with self.subTest(method="get", target="/api/robots.txt"):
+            response = self.client.get("/api/robots.txt")
+            self.assert_noindex(response, 301)
+            self.assertEqual(response["Location"], "/api/robots.txt/")
+            self.assertNotIn(ROBOTS, response.content)
 
     @override_settings(**TRUSTED)
     def test_robots_txt_is_answered_before_the_https_redirect(self):

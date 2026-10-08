@@ -297,7 +297,7 @@ class ReviewConfirmHttpTests(TransactionTestCase):
                 "observed_at": "2026-10-04T12:35:20Z", "purchased_on": "2026-10-04", "store": short, "currency": "EUR",
                 "quantity": "2.000", "unit": "pcs", "list_unit_price": "1.2900", "paid_unit_price": "1.1900",
                 "discount_amount": "0.20", "normalized_price": None, "normalized_unit": None, "comparable": False,
-                "receipt_id": receipts[1]["id"], "position": 1}]})
+                "receipt_id": receipts[1]["id"], "position": 1, "own": True}]})
         self.assertEqual(self.get(f"/api/products/{milk['id']}/prices/summary/"), {
             "product": {"id": milk["id"], "name": "MILCH 1 L", "base_unit": generic["base_unit"]},
             "price": "paid", "group_by": "country", "interval": "none", "groups": [{

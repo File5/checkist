@@ -93,9 +93,11 @@ class AuthMixin:
         self.assertRegex(expected["csrf_token"], r"^[A-Za-z0-9]{64}$")
         self.assertIs(type(body["user"]["id"]), int)
         self.assertEqual(body["user"]["id"], account.pk)
-        body["csrf_token"] = expected["csrf_token"]
-        body["user"]["id"] = expected["user"]["id"]
-        self.assertEqual(body, expected)
+        # Копия: клиент хранит разобранное тело, и запись в него подменила бы токен
+        # следующему ``response.json()``.
+        self.assertEqual({
+            **body, "csrf_token": expected["csrf_token"], "user": {**body["user"], "id": expected["user"]["id"]},
+        }, expected)
 
     def assert_error(self, response, status, body):
         self.assertEqual(response.status_code, status, response.content)
