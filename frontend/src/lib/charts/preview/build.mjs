@@ -1,6 +1,8 @@
 // Builds frontend/charts-preview/index.html: one self-contained page (inline CSS and script, no network)
 // with the real PieChart and LineChart on synthetic data. Run from frontend/:
 //   node src/lib/charts/preview/build.mjs
+// `node src/lib/charts/preview/build.mjs pie-legend` builds frontend/pie-legend-preview/index.html instead: the legend
+// rows of an item's parts (PieChartItem.action / children / childrenStatus) in the current theme tokens.
 // The page is a snapshot: rebuild it after changing the components. It is not part of the application build.
 import { mkdir, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
@@ -10,14 +12,20 @@ import react from '@vitejs/plugin-react'
 import { build, createServer } from 'vite'
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url))
-const outDir = fileURLToPath(new URL('../../../../charts-preview/', import.meta.url))
+const targets = {
+  charts: { demo: 'demo.tsx', entry: 'entry.tsx', out: 'charts-preview', title: 'Checkist — предпросмотр графиков (Ф1)' },
+  'pie-legend': { demo: 'legend-demo.tsx', entry: 'legend-entry.tsx', out: 'pie-legend-preview', title: 'Checkist — состав «Прочего» в легенде диаграммы' },
+}
+const target = targets[process.argv[2] ?? 'charts']
+if (!target) throw new Error(`Unknown preview: ${process.argv[2]}. Known: ${Object.keys(targets).join(', ')}.`)
+const outDir = fileURLToPath(new URL(`../../../../${target.out}/`, import.meta.url))
 const shared = { root, configFile: false, envFile: false, plugins: [react()], logLevel: 'error' }
 
 // Server markup first: the page shows the charts even where scripts are not allowed to run.
 const server = await createServer({ ...shared, server: { middlewareMode: true }, appType: 'custom' })
 let markup
 try {
-  const { default: ChartsDemo } = await server.ssrLoadModule('/src/lib/charts/preview/demo.tsx')
+  const { default: ChartsDemo } = await server.ssrLoadModule(`/src/lib/charts/preview/${target.demo}`)
   markup = renderToStaticMarkup(createElement(ChartsDemo))
 } finally {
   await server.close()
@@ -29,7 +37,7 @@ const result = await build({
   build: {
     write: false,
     cssCodeSplit: false,
-    lib: { entry: 'src/lib/charts/preview/entry.tsx', formats: ['iife'], name: 'ChartsPreview', fileName: 'preview' },
+    lib: { entry: `src/lib/charts/preview/${target.entry}`, formats: ['iife'], name: 'ChartsPreview', fileName: 'preview' },
   },
 })
 const output = (Array.isArray(result) ? result : [result]).flatMap((item) => item.output)
@@ -42,7 +50,7 @@ const html = `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Checkist — предпросмотр графиков (Ф1)</title>
+<title>${target.title}</title>
 <style>
 ${styles.replaceAll('</style', '<\\/style')}
 </style>
@@ -57,4 +65,4 @@ ${script.replaceAll('</script', '<\\/script')}
 `
 await mkdir(outDir, { recursive: true })
 await writeFile(new URL('index.html', `file:///${outDir.replaceAll('\\', '/')}`), html, 'utf8')
-console.log(`charts-preview/index.html: ${html.length} characters, markup ${markup.length}, script ${script.length}, styles ${styles.length}`)
+console.log(`${target.out}/index.html: ${html.length} characters, markup ${markup.length}, script ${script.length}, styles ${styles.length}`)
