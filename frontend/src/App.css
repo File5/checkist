@@ -42,6 +42,9 @@ h2 { font-size: 1.35rem; letter-spacing: 0.01em; }
 .brand-bar .main-navigation a[aria-current] { color: var(--ck-header-accent); background: var(--ck-header-hover-bg); }
 .section-navigation { margin-bottom: 20px; }
 .account-link { max-width: 100%; font-weight: 600; overflow-wrap: anywhere; }
+/* The account link lies on the header bar, dark in both themes: its text is the header text; hover, the current
+   page and the focus ring come from the header rules above, which weigh more than this one. */
+.brand-bar .account-link { color: var(--ck-header-text); }
 .intro { max-width: 650px; padding: 52px 0 36px; }
 .eyebrow { color: var(--ck-text-muted); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; margin-bottom: 12px; }
 .intro-text { font-size: 1.2rem; margin-top: 18px; }
