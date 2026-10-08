@@ -2,6 +2,7 @@ import type { PriceSeries, PriceSeriesInterval, PriceSeriesKind, PriceSeriesLine
 import type { ApiFailure, CurrencyCode, Unit } from '../../api/types'
 import { chartNumber } from '../../lib/charts'
 import type { LineChartPoint, LineChartSeries } from '../../lib/charts'
+import { formatAxisTick } from '../../lib/charts/scale'
 import { formatPrice, formatPurchasedOn, formatUnit } from '../../lib/format'
 import type { ProductQuery } from '../../navigation/routes'
 import { counted } from '../merges/labels'
@@ -42,8 +43,8 @@ export const periodFormats: Record<PriceSeriesInterval, { full: (x: string) => s
   day: { full: formatPurchasedOn, tick: shortDate, header: 'День' },
 }
 
-/** Divisions of the value axis; drawing numbers only, never money arithmetic. */
-export const formatAxisValue = (value: number) => value.toLocaleString('ru-RU', { maximumFractionDigits: 4 })
+/** Divisions of the price axis: whole or with two decimals, the same for every division of one axis. */
+export const formatAxisValue = (value: number, step?: number) => formatAxisTick(value, step, true)
 
 const named = (value: string) => value.trim() || 'Не указано'
 const bare = (value: string) => formatPrice(value, '').trim()

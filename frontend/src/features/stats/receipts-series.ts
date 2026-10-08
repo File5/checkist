@@ -4,6 +4,7 @@ import type { ReceiptBucket, ReceiptInterval, ReceiptSeriesCurrency } from '../.
 import type { Decimal } from '../../api/types'
 import { formatAmount, formatPurchasedOn, formatQuantity } from '../../lib/format'
 import type { LineChartPoint, LineChartSeries } from '../../lib/charts'
+import { formatAxisTick } from '../../lib/charts/scale'
 
 const months = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь']
 const shortMonths = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек']
@@ -47,4 +48,5 @@ export function trendCharts(block: ReceiptSeriesCurrency): TrendCharts {
     ],
   }
 }
-export const axisNumber = (value: number) => value.toLocaleString('ru-RU', { maximumFractionDigits: 2 })
+/** Divisions of both value axes: as many decimals as the step of the axis has, at most two. */
+export const axisNumber = (value: number, step?: number) => formatAxisTick(value, step)

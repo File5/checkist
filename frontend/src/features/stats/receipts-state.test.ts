@@ -7,7 +7,7 @@ import { parseReceiptsStatsQuery } from '../../navigation'
 import type { ReceiptsStatsQuery } from '../../navigation'
 import { applyMe } from '../../session'
 import { resetSession } from '../../session/store'
-import { intervalName, trendCharts } from './receipts-series'
+import { axisNumber, intervalName, trendCharts } from './receipts-series'
 import {
   appliedErrors, applyFilters, canRetry, coarserIntervals, comparePlan, failureMessage, filterDraft, filterMessages, formErrors, hasPeriods, hasScope,
   intervalChoices, intervalHref, isActivePreset, localToday, periodPresets, periodProblems, presetHref, seriesParams, withoutScope,
@@ -209,4 +209,11 @@ describe('chart series from the server fixtures', () => {
     ['2026-10-01', 'quarter', true, '4 кв. 2026'], ['2026-01-01', 'year', false, '2026'], ['2026-03-02', 'week', false, 'неделя с 02.03.2026'],
     ['2026-03-02', 'week', true, '02.03.2026'], ['soon', 'month', false, 'soon'],
   ] as const)('names the interval %s (%s, short=%s) as «%s»', (x, interval, short, name) => expect(intervalName(x, interval, short)).toBe(name))
+  it('writes the divisions of one axis with the decimals of its step, at most two', () => {
+    expect([2.5, 3, 3.5].map((value) => axisNumber(value, 0.5))).toEqual(['2,5', '3,0', '3,5'])
+    expect([2.75, 3, 3.25].map((value) => axisNumber(value, 0.25))).toEqual(['2,75', '3,00', '3,25'])
+    expect([1.005, 1.01].map((value) => axisNumber(value, 0.005))).toEqual(['1,01', '1,01'])
+    expect([0, 5000, 15000].map((value) => axisNumber(value, 5000))).toEqual(['0', '5 000', '15 000'])
+    expect(axisNumber(4.5)).toBe('4,5')
+  })
 })
