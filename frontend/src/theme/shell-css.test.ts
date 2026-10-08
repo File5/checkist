@@ -65,6 +65,33 @@ describe('account link of the header (text of the rules, not rendering)', () => 
   })
 })
 
+describe('emblem of the header (text of the rules and headers of the files, not rendering)', () => {
+  const bytes = (path: string) => readFileSync(new URL(path, source))
+
+  it('lies straight on the header bar: no backing, no frame, only the size', () => {
+    const own = rules(app).filter((item) => /\.brand-mark(?![\w-])/.test(item.selector))
+    expect(own.map((item) => item.body)).toEqual(['flex: none; width: 44px; height: 44px;', 'width: 40px; height: 40px;'])
+    // The bar under the transparent emblem is dark in both themes: the light block does not redefine it.
+    expect(rule('.brand-bar', app)).toContain('background: var(--ck-header-bg);')
+    expect(tokens.match(/^\s*--ck-header-bg:/gm)).toHaveLength(1)
+  })
+
+  it.each([['emblem-96.webp', 96], ['emblem-192.webp', 192]])('%s is a square WebP with an alpha channel', (name, side) => {
+    const file = bytes(`assets/brand/${name}`)
+    expect(file.toString('latin1', 0, 4) + file.toString('latin1', 8, 16)).toBe('RIFFWEBPVP8X')
+    expect(file[20] & 0x10, 'alpha flag of the extended header').toBe(0x10)
+    expect([file.readUIntLE(24, 3) + 1, file.readUIntLE(27, 3) + 1]).toEqual([side, side])
+  })
+
+  it('keeps the touch icon opaque: iOS paints transparency black', () => {
+    const file = bytes('../public/apple-touch-icon.png')
+    expect(file.toString('latin1', 12, 16)).toBe('IHDR')
+    expect([file.readUInt32BE(16), file.readUInt32BE(20)]).toEqual([180, 180])
+    expect(file[25], 'colour type 2 is RGB without alpha').toBe(2)
+    expect(file.includes(Buffer.from('tRNS', 'latin1'))).toBe(false)
+  })
+})
+
 describe('state rules of the shell (text of the rules, not rendering)', () => {
   const state = /:(hover|active|focus|focus-visible|focus-within|disabled|checked|visited)(?![\w-])|\[aria-(disabled|invalid|pressed|expanded|busy)/
 
