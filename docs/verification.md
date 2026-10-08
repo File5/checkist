@@ -381,6 +381,49 @@ P backend/manage.py test api.tests.test_stats_spending api.tests.test_stats_rece
 
 После прогона свой `runserver` остановлен, временная база `checkist_qa_c5_stale` удалена, `docker compose -p checkist_qa_c5 down` — exit 0; тома `checkist_qa_c5_postgres_data` / `checkist_qa_c5_redis_data` сохранены, в базе `checkist_qa_c5` осталось демо статистики.
 
+## Статистика: демо «длинных хвостов» для «Прочего» (Б2)
+
+`seed_stats_tail_demo` — данные для раскрытия строки «Прочее» на `/stats`: «Прочее» у категорий, подкатегорий, магазинов, обобщённых продуктов и товаров, остаток при `limit=500`, один товар с отрицательной суммой в хвосте, второй блок валюты и особые строки. Запуск, состав и таблица адресов с ожидаемыми счётчиками — [development.md](development.md#qa-статистика-длинные-хвосты-прочего). `seed_stats_demo`, эталоны `backend/api/tests/fixtures/stats/` и контракт не менялись; моделей и миграций нет.
+
+Только **отдельная пустая** QA-база (свой Compose-проект, например `checkist_qa_tail`), `CHECKIST_AUTH_MODE=local_single`, `RECEIPT_OCR_PROVIDER=fake`, `PRODUCT_MERGE_AUTO_DETECT=0`, `PRODUCT_CLASSIFICATION_AUTO_SUGGEST=0`. Команды после полного QA environment (`P` — `./backend/.venv/Scripts/python.exe -X utf8`):
+
+```powershell
+P backend/manage.py check
+P backend/manage.py makemigrations --check --dry-run
+P backend/manage.py migrate --noinput
+P backend/manage.py test receipts.tests.test_tail_demo --exclude-tag=integration --noinput --verbosity=2
+P backend/manage.py test receipts.tests.test_tail_demo --tag=integration --noinput --verbosity=2
+P backend/manage.py seed_stats_tail_demo
+P backend/manage.py seed_stats_tail_demo
+```
+
+Ожидается:
+
+- `makemigrations --check --dry-run` — `No changes detected`;
+- `receipts.tests.test_tail_demo` — 4 теста без БД и 14 integration: план и его числа, отказ на чужой и на непустой базе, владелец `local`, согласованность чеков (`validate_receipt`), счётчики каждой проверки настоящими ответами `/api/stats/spending/`, тождества пары запросов «без `limit`» и «с наибольшим допустимым `limit`, но не больше 500» (`Σ состав + остаток = «Прочее»` по сумме и по числу, совпадение первых строк и итогов), равные базы долей у всей разбивки «Товары» и разные — внутри «Сладости». Тесты читают границу `MAX_LIMIT` сервера и верны и до, и после её подъёма до 500;
+- первый запуск команды — JSON с `"created": true`, `merchants` 14, `categories` 27, `generics` 52, `products` 535, `receipts` 56, `lines` 557 и девятью проверками; второй — `"created": false` с теми же проверками;
+- на базе с данными (например, после `seed_stats_demo`) и на базе с другим именем (`checkist_dev`) — `CommandError`, записей нет.
+
+HTTP без браузера на сервере из development.md (после подъёма границы; до него вместо `limit=500` — `limit=50`):
+
+```powershell
+$B = 'http://127.0.0.1:18000'
+$Q = 'date_from=2025-01-01&date_to=2025-12-31&currency=EUR'
+curl.exe -s "$B/api/stats/spending/?$Q"
+curl.exe -s "$B/api/stats/spending/?$Q&limit=500"
+curl.exe -s "$B/api/stats/spending/?$Q&group_by=product&limit=500"
+curl.exe -s "$B/api/stats/spending/?$Q&group_by=product&category=10"
+curl.exe -s "$B/api/stats/spending/?$Q&group_by=product&category=10&limit=500"
+```
+
+Первый ответ — 10 категорий и `other.count` 4; второй — 14 категорий и `other: null`; третий — 500 товаров и `other` `{"count": 20, "amount": "46.31", "share_percent": "0.42"}`; четвёртый — `other` `{"count": 10, "amount": "113.82", "share_percent": "27.09"}`, доля первой строки `8.48`; пятый — 20 товаров, последний «Демо Шоколад 04» с `amount` `-22.66` и `share_percent: null`, доля первой строки `8.04`.
+
+### Фактические результаты Б2, 2026-10-08
+
+**Проверено и прошло** (разработчик, без БД и без запуска тестов): три новых файла Python разбираются (`ast.parse`); чистые функции плана `build_receipts` и `checks` вызваны отдельным расчётным скриптом вне репозитория — 56 чеков, 557 строк, 535 товаров; суммы товаров, обобщённых продуктов, корневых категорий, подкатегорий и магазинов за период попарно разные; отрицательная сумма у одного товара. Числа в тесте и в документах (суммы, доли, остатки) получены этим расчётом по формулам `receipts/spending.py`, а не ответами сервера.
+
+**Не проверено** (тесты, миграции и демо запускает только QA): `seed_stats_tail_demo` на базе, `receipts.tests.test_tail_demo`, `check`, `makemigrations --check`, ответы `/api/stats/spending/` на этих данных, полные backend-наборы, экран `/stats` в браузере. Команды — выше; экран принимает человек после клиентской части по адресам из вывода команды.
+
 ## Статистика: клиент (Ф7)
 
 Экраны — [frontend.md](frontend.md#статистика-траты-средний-чек-и-график-цен-ф1ф7), ручная приёмка человеком — [frontend/src/features/stats/ACCEPTANCE.md](../frontend/src/features/stats/ACCEPTANCE.md). Автоматически проверяются HTTP, адаптеры и статическая разметка; **экраны в браузере автоматически не проверяются**.
