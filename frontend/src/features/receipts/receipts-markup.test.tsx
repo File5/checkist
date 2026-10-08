@@ -44,7 +44,7 @@ describe('receipt screens (Vitest/SSR, not browser visual acceptance)', () => {
     expect(renderToStaticMarkup(<ReceiptImages images={[automatic]} receiptId={71} />)).not.toContain('Подтверждено вручную')
     const html = renderToStaticMarkup(<ReceiptImages images={[{ ...automatic, id: automatic.id + 1, status: 'imported', normalized_result: null, confirmed_at: '2026-10-04T12:35:00Z' }, automatic]} receiptId={71} />)
     expect(html.match(/Подтверждено вручную/g)).toHaveLength(1)
-    expect(html).toContain('Подтверждено вручную: <time dateTime="2026-10-04T12:35:00Z">04.10.2026, 12:35 UTC</time>')
+    expect(html).toContain('Подтверждено вручную: <time dateTime="2026-10-04T12:35:00Z">04.10.2026,\u00a012:35\u00a0UTC</time>')
   })
   it('shows the same three collapsed groups of 29 omissions as the job screen', () => {
     const image = { ...images.results[0], status: 'imported' as const, receipt_id: 71, normalized_result: null,

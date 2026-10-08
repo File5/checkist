@@ -2,7 +2,7 @@
 import { decimalNumber } from '../../api/stats'
 import type { CompareCurrency, ComparePeriod, ComparePriceIndex, CompareSide } from '../../api/stats'
 import type { CurrencyCode, Decimal } from '../../api/types'
-import { formatAmount, formatPercent, formatPrice, formatPurchasedOn, formatQuantity } from '../../lib/format'
+import { formatAmount, formatIndex, formatPercent, formatPrice, formatPurchasedOn, formatQuantity } from '../../lib/format'
 
 export type Sign = -1 | 0 | 1
 /** Sign of a wire decimal without turning money into a float; `null` for an absent or broken value. */
@@ -18,7 +18,6 @@ const plus = (value: Decimal | null, text: string) => (decimalSign(value) === 1 
 export const signedAmount = (value: Decimal | null, currency: CurrencyCode) => plus(value, formatAmount(value, currency))
 export const signedPercent = (value: Decimal | null) => plus(value, formatPercent(value))
 /** An index or a ratio with up to four places and no unit. */
-export const formatIndex = (value: Decimal | null) => formatPrice(value, '').trim()
 const count = (value: number) => value.toLocaleString('ru-RU')
 export function plural(value: number, forms: readonly [string, string, string]): string {
   const tens = Math.abs(value) % 100
