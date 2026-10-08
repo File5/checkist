@@ -5,10 +5,11 @@ import { useLocalRequestFocus } from '../../components/useLocalRequestFocus'
 import { formatAmount, formatPrice, formatQuantity } from '../../lib/format'
 import { Link, receiptsStatsHref } from '../../navigation'
 import type { ReceiptsStatsQuery } from '../../navigation'
+import { DateRange } from './period'
 import { canRetry, failureMessage, hasScope, withoutScope } from './receipts-state'
 import type { CompareState } from './receipts-state'
 import {
-  decompositionBar, indexAssumption, periodLabel, priceIndexSummary, refundsNote, sideFacts, signedAmount, signedPercent, verdict,
+  decompositionBar, indexAssumption, priceIndexSummary, refundsNote, sideFacts, signedAmount, signedPercent, verdict,
 } from './receipts-wording'
 import type { BarSegment, EffectPart, Verdict } from './receipts-wording'
 
@@ -37,12 +38,12 @@ function Decomposition({ block, result }: { block: CompareCurrency; result: Verd
         </div>
       </div>}
       <div className="stats-table-scroll" role="region" aria-labelledby={id} tabIndex={0}>
-        <table className="stats-table">
+        <table className="stats-table stats-effects-table">
           <caption>
             Слагаемые в сумме дают изменение среднего чека точно. Полоса над таблицей показывает те же числа: заштрихованные части уменьшают чек.
           </caption>
           <thead>
-            <tr><th scope="col">Слагаемое</th><th scope="col" className="stats-number">Вклад</th><th scope="col" className="stats-number">Доля изменения</th></tr>
+            <tr><th scope="col">Слагаемое</th><th scope="col" className="stats-number">Вклад</th><th scope="col" className="stats-number stats-effect-share">Доля изменения</th></tr>
           </thead>
           <tbody>
             {parts.map((part: EffectPart) => (
@@ -53,7 +54,7 @@ function Decomposition({ block, result }: { block: CompareCurrency; result: Verd
                   <span className="stats-effect-phrase">{part.phrase}{part.against && ' — действует против общего изменения'}</span>
                 </th>
                 <td className="stats-number">{signedAmount(part.amount, block.currency)}</td>
-                <td className="stats-number">{part.percent === null ? '—' : signedPercent(part.percent)}</td>
+                <td className="stats-number stats-effect-share">{part.percent === null ? '—' : signedPercent(part.percent)}</td>
               </tr>
             ))}
           </tbody>
@@ -61,7 +62,9 @@ function Decomposition({ block, result }: { block: CompareCurrency; result: Verd
             <tr>
               <th scope="row">Изменение среднего чека</th>
               <td className="stats-number">{signedAmount(block.change.avg_receipt, block.currency)}</td>
-              <td className="stats-number">{block.change.avg_receipt_percent === null ? '—' : `${signedPercent(block.change.avg_receipt_percent)} к базовому чеку`}</td>
+              <td className="stats-number stats-effect-share">
+                {block.change.avg_receipt_percent === null ? '—' : <>{signedPercent(block.change.avg_receipt_percent)} <span className="stats-number-note">к базовому чеку</span></>}
+              </td>
             </tr>
           </tfoot>
         </table>
@@ -136,7 +139,7 @@ export function CompareCurrencySection({ block, data }: { block: CompareCurrency
   const side = (title: string, key: 'base' | 'current') => (
     <section className="stats-side">
       <h5>{title}</h5>
-      <p className="stats-note">{periodLabel(data[key])}</p>
+      <p className="stats-note"><DateRange from={data[key].date_from} to={data[key].date_to} /></p>
       <dl className="stats-facts">
         {sideFacts(block[key], block.currency).map(([label, value]) => <div key={label}><dt>{label}</dt><dd className="stats-number">{value}</dd></div>)}
       </dl>

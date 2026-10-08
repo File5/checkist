@@ -4,7 +4,7 @@ import { statsFixture } from '../../api/stats-test-support'
 import type { CompareCurrency, CompareEffects, ReceiptCompare } from '../../api/stats'
 import {
   decimalSign, decompositionBar, effectParts, fewMatchedProducts, indexAssumption, indexChangePercent, lowCoveragePercent, noLinesNote, noMatchedNote,
-  periodLabel, plural, priceIndexSummary, refundsNote, sideFacts, signedAmount, signedPercent, verdict,
+  plural, priceIndexSummary, refundsNote, sideFacts, signedAmount, signedPercent, verdict,
 } from './receipts-wording'
 
 /** Non-breaking spaces of the number format read as ordinary ones in the expectations. */
@@ -202,5 +202,4 @@ describe('period cards', () => {
     expect(refundsNote(eur)).toBe('Возвраты в расчёт не входят: в базовом периоде исключено 0, в текущем — 1.')
     expect(refundsNote(kzt)).toBeNull()
   })
-  it('shows a period with both bounds', () => expect(periodLabel(main.base)).toBe('01.01.2020 – 31.12.2020'))
 })

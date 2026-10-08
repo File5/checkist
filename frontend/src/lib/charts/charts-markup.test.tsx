@@ -55,7 +55,7 @@ describe('PieChart markup (Node, not pointer or focus behaviour)', () => {
     expect(body[4]).toContain('-2,50 EUR')
   })
   it('shows the total in the middle until a sector is highlighted', () => {
-    expect(html).toContain('<span class="ck-pie-center-label">Всего</span><strong>1 986,40 EUR</strong>')
+    expect(html).toContain('<span class="ck-pie-center-label">Всего</span><strong class="ck-pie-center-value">1 986,40 EUR</strong>')
   })
   it('draws a single 100 % sector as a full ring', () => {
     const single = renderToStaticMarkup(<PieChart title="Одна категория" items={[items[0]]} />)

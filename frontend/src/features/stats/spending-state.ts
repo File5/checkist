@@ -280,11 +280,3 @@ export function failureView(failure: SpendingFailure): FailureView {
     default: return { retry: true, message: 'Сервер вернул неожиданный ответ. Повторите попытку.' }
   }
 }
-
-export function periodText(period: { date_from: string | null; date_to: string | null }): string {
-  const date = (value: string) => `${value.slice(8, 10)}.${value.slice(5, 7)}.${value.slice(0, 4)}`
-  if (period.date_from && period.date_to) return `Период: ${date(period.date_from)} — ${date(period.date_to)}, обе даты включительно.`
-  if (period.date_from) return `Период: с ${date(period.date_from)} включительно.`
-  if (period.date_to) return `Период: по ${date(period.date_to)} включительно.`
-  return 'Период: всё время.'
-}
