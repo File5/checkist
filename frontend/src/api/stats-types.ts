@@ -18,7 +18,7 @@ export type SpendingSpecialKind = typeof spendingSpecialKinds[number]
 export type SpendingParams = StatsFilters & {
   group_by?: SpendingGroupBy
   category?: number; generic?: number
-  /** Regular items before «прочее»: 1–50, the server default is 10. */
+  /** Regular items before «прочее»: 1–500, the server default is 10. */
   limit?: number
 }
 type SpendingItemBase = {

@@ -1,14 +1,14 @@
 import { useId, useReducer, useRef } from 'react'
 import type { CountryEntry } from '../../api/countries'
 import type { Page, Results, StoreEntry } from '../../api/types'
-import { buildSpendingQuery, Link, navigate, spendingHref } from '../../navigation'
+import { Link, navigate, spendingHref } from '../../navigation'
 import type { SpendingQuery } from '../../navigation'
 import { maxStatsStores } from '../../navigation/routes'
 import { storeLabel } from '../product/state'
 import type { RequestState } from '../product/state'
 import {
   activePreset, applyFilters, filterDraft, formReducer, hasScopeFilters, initForm, presetHref, presetLabels, presets,
-  resetFiltersHref, sameDraft, serverFieldErrors,
+  requestKey, resetFiltersHref, sameDraft, serverFieldErrors,
 } from './spending-state'
 import type { FilterField, SpendingFailure, TextField } from './spending-state'
 
@@ -24,7 +24,8 @@ const sorted = (values: Iterable<string>) => [...new Set(values)].sort()
 export default function SpendingFilters({ query, failure, reference, today }: {
   query: SpendingQuery; failure?: SpendingFailure; reference: SpendingReference; today: string
 }) {
-  const source = buildSpendingQuery(query)
+  // Without `other`: showing or hiding the composition of «Прочее» keeps the unsaved edits of the form.
+  const source = requestKey(query)
   const [state, dispatch] = useReducer(formReducer, query, initForm)
   if (state.source !== source) dispatch({ type: 'sync', query })
   const form = state.source === source ? state : initForm(query)
