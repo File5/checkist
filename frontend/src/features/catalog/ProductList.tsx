@@ -24,7 +24,7 @@ export default function ProductList({ products, merges, classifications }: {
         {classification && <ClassificationBadge mark={classification} />}
         <dl className="ck-catalog-metadata">
           <div><dt>Бренд</dt><dd>{product.brand?.name || 'Не указано'}</dd></div>
-          <div><dt>Фасовка</dt><dd>{product.package ? formatQuantity(product.package.quantity, product.package.unit) : 'Не указано'}</dd></div>
+          <div><dt>Фасовка</dt><dd>{product.package ? <span className="ck-catalog-value">{formatQuantity(product.package.quantity, product.package.unit)}</span> : 'Не указано'}</dd></div>
           <div><dt>Обобщённый продукт</dt><dd>{product.generic.name}</dd></div>
         </dl>
       </div>

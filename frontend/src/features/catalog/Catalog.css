@@ -18,7 +18,7 @@
 .ck-catalog-category-list [data-compact="true"] > .ck-catalog-category-list { padding-inline-start: 0; }
 .ck-catalog-category-link { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; min-height: 44px; padding-block: 10px; text-underline-offset: 3px; color: var(--ck-link); }
 .ck-catalog-category-link > span:first-child { flex: 1 1 180px; min-width: 0; }
-.ck-catalog-count { color: var(--ck-text-muted); font-size: 0.85rem; }
+.ck-catalog-count { color: var(--ck-text-muted); font-size: 0.85rem; white-space: nowrap; }
 .ck-catalog-breadcrumbs ol { display: flex; flex-wrap: wrap; list-style: none; padding: 0; margin: 0; }
 .ck-catalog-breadcrumbs li { min-width: 0; max-width: 100%; }
 .ck-catalog-breadcrumbs a, .ck-catalog-breadcrumbs [aria-current] { display: inline-block; min-height: 44px; padding-block: 10px; }
@@ -27,17 +27,21 @@
 .ck-catalog-observation-note { margin-bottom: 18px; }
 .ck-catalog-result-count { margin-bottom: 14px; color: var(--ck-text-muted); }
 .ck-catalog-products { display: grid; gap: 14px; list-style: none; padding: 0; margin: 0; }
-.ck-catalog-product { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 24px; padding: 24px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius); background: var(--ck-surface); }
+/* The price column is never narrower than its unbreakable price and date. */
+.ck-catalog-product { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(min-content, 1fr); gap: 24px; padding: 24px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius); background: var(--ck-surface); }
 .ck-catalog-product-description, .ck-catalog-product-prices { min-width: 0; }
 .ck-catalog-product h3 a { display: inline-block; min-height: 44px; padding-block: 6px; color: var(--ck-link); text-underline-offset: 3px; }
 .ck-catalog-metadata { margin: 12px 0 0; display: grid; gap: 8px; }
-.ck-catalog-metadata > div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 8px; }
-.ck-catalog-metadata dt { color: var(--ck-text-muted); font-size: 0.9rem; }
+/* The label column is never narrower than its longest word, and a label breaks only between words. */
+.ck-catalog-metadata > div { display: grid; grid-template-columns: minmax(min-content, 1fr) minmax(0, 1.4fr); gap: 8px; }
+.ck-catalog-metadata dt { color: var(--ck-text-muted); font-size: 0.9rem; overflow-wrap: normal; }
 .ck-catalog-metadata dd { min-width: 0; }
 .ck-catalog-product-prices ul { display: grid; gap: 14px; padding: 0; margin: 10px 0 0; list-style: none; }
 .ck-catalog-product-prices li { display: grid; gap: 4px; }
 .ck-catalog-price-label { font-weight: 600; margin-bottom: 8px; }
-.ck-catalog-price { font-weight: 600; font-variant-numeric: tabular-nums; }
+/* A price or a quantity is one value: it is never broken inside, at any width. */
+.ck-catalog-price { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ck-catalog-value { white-space: nowrap; }
 
 @media (max-width: 540px) {
   .ck-catalog-panel, .ck-catalog-product { padding: 18px; }
