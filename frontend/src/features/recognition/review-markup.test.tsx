@@ -220,9 +220,9 @@ describe('crop card around the confirmation', () => {
     expect(cards(image(), { kind: 'pending', imageId: 42 })).toContain('Сохраняем чек…')
   })
   it('shows the saved crop from the answer at once: status, receipt link, manual mark and announced result', () => {
-    const html = cards(image(), { kind: 'done', imageId: 42, image: confirmed().image, message: 'Подтверждено. Чек №72 сохранён.' })
-    expect(html).toContain('<h3>Чек 2 · Чек сохранён</h3>'); expect(html).toContain('href="/receipts/72">Открыть чек №72</a>')
-    expect(html).toContain('<p tabindex="-1" role="status" class="ck-rec-result">Подтверждено. Чек №72 сохранён.</p>')
+    const html = cards(image(), { kind: 'done', imageId: 42, image: confirmed().image, message: 'Подтверждено. Чек\u00a0№72 сохранён.' })
+    expect(html).toContain('<h3><span class="ck-rec-pair">Чек\u00a02</span> · Чек сохранён</h3>'); expect(html).toContain('href="/receipts/72">Открыть чек\u00a0№72</a>')
+    expect(html).toContain('<p tabindex="-1" role="status" class="ck-rec-result">Подтверждено. Чек\u00a0№72 сохранён.</p>')
     expect(html).toContain('Подтверждено вручную: <time dateTime="2026-10-04T12:35:00Z">04.10.2026,\u00a012:35\u00a0UTC</time>')
     expect(html).not.toContain('Исправление и подтверждение'); expect(html).not.toContain('Причины проверки')
     expect(html).toContain('Тип операции определён автоматически · Операция')
@@ -289,7 +289,7 @@ describe('crop card around the confirmation', () => {
       issue('receipt_structure_conflict', 'warning', { entity: 'discount', attribute: null }, { field: '/discounts' })] }
     const html = cards(linked, { kind: 'idle' })
     expect(html).toContain('Чек уже был сохранён раньше: вырезка привязана к нему. Заполненные значения этого чека не изменены — исправления к ним не применены.')
-    expect(html).toContain('Подтверждено вручную'); expect(html).toContain('href="/receipts/71">Открыть чек №71</a>')
+    expect(html).toContain('Подтверждено вручную'); expect(html).toContain('href="/receipts/71">Открыть чек\u00a0№71</a>')
     for (const text of ['Данные противоречат сохранённому чеку · Итого', 'Строка отличается от сохранённой · Сумма', 'Состав чека отличается от сохранённого · Скидки']) expect(html).toContain(text)
     expect(html).not.toContain('Исправление и подтверждение')
     // A crop linked automatically, without a confirmation, makes no claim about corrections.

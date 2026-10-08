@@ -1,5 +1,6 @@
 import type { PhotoUpload, RecognitionCsrf, RecognitionLimits } from '../../api/recognition'
 import type { LocalApiFailure, LocalApiResult } from '../../api/types'
+import { glue } from '../../lib/text'
 import { errorText } from './labels'
 
 const extensions: Record<string, string> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' }
@@ -10,7 +11,7 @@ export function validateFile(file: Pick<File, 'name' | 'size'>, limits?: Recogni
   if (file.size === 0) return 'Файл пуст. Выберите другое фото.'
   if (limits && file.size > limits.max_bytes) return 'Файл слишком большой. Уменьшите его размер до лимита сервера.'
 }
-export function formatBytes(bytes: number) { return `${(bytes / 1048576).toLocaleString('ru-RU', { maximumFractionDigits: 2 })} МиБ (${bytes.toLocaleString('ru-RU')} байт)` }
+export function formatBytes(bytes: number) { return `${glue((bytes / 1048576).toLocaleString('ru-RU', { maximumFractionDigits: 2 }), 'МиБ')} (${glue(bytes.toLocaleString('ru-RU'), 'байт')})` }
 /** Says only what happened to the photo. The worker line comes from the current job snapshot. */
 export function uploadMessage(result: PhotoUpload) {
   return result.reused ? 'Это фото уже было загружено. Открыто последнее задание этого фото.' : 'Фото загружено. Задание принято.'
