@@ -8,7 +8,7 @@
 
 Реализован `recognition`: фото/вырезки MEDIA, очередь PostgreSQL, host-worker, FakeProvider/Codex CLI, автоматический импорт, локальный HTTP upload/cancel/retry и чтение всех строк чеков. Новый сквозной набор — [ниже](#распознавание-сквозная-серверная-проверка). Предположения категорий новых товаров (`classification`, `/api/product-classifications/`, экран `/catalog/classification`) — [проверка и результаты](#предположения-категорий-http-без-браузера). Человек исправляет и подтверждает вырезку `needs_review` одним POST — [проверка и приёмка](#подтверждение-вырезки-needs_review-итог-интеграции). Пользовательского входа, HTTP правки сохранённого чека и дашборда пока нет. Каталог и цены SPA уже подключены к API ([frontend.md](frontend.md)); И4 не меняет клиентские экраны распознавания и не подтверждает их React/proxy/UI интеграцию. Админку проверяют отдельно [без браузера](#админка-проверки-без-браузера) и [человеком](#ручная-приёмка-админки-человеком).
 
-Реализовано разделение пользователей: владелец чеков и фото, режимы `accounts` / `local_single`, вход, право модератора каталога, проекция «своё / чужое» в ценах, серверные настройки. **Разработчиками ничего из этого не запускалось** — [команды для QA и место для результатов](#разделение-пользователей-проверки-qa).
+Реализовано разделение пользователей: владелец чеков и фото, режимы `accounts` / `local_single`, вход, право модератора каталога, проекция «своё / чужое» в ценах, серверные настройки. Разработчики ничего из этого не запускали; QA прогнал ветку 2026-10-08 (коммит 5d7295d): миграции, откат, HTTP двух учётных записей и прежние сценарии прошли, обязательные наборы тестов красные — 34 падения в самих тестах, дефектов продукта нет; исправления тестов не запускались, повторный прогон — за QA. [Команды](#разделение-пользователей-проверки-qa), [результаты](#фактические-результаты-разделение-пользователей).
 
 Ни сборка образа, ни `check`, ни mocked API tests не доказывают реальную HTTP/клиентскую интеграцию. Визуальную и интерактивную приёмку выполняет человек; автоматический обход browser UI запрещён. HTTP, CLI и unit tests можно автоматизировать.
 
@@ -57,7 +57,7 @@ docker compose -p checkist_qa up -d --build --wait --wait-timeout 120 worker
 ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py check_services
 ```
 
-В список приложений добавлено `accounts` (разделение пользователей). **Числа тестов и миграций ниже относятся к состоянию до разделения пользователей**: после него наборы не запускались, новые числа впишет QA в [результаты](#фактические-результаты-разделение-пользователей). Ожидается рост числа тестов и 37 миграций на пустой базе (18 стандартных и 19 собственных — посчитано по файлам, не запуском).
+В список приложений добавлено `accounts` (разделение пользователей). **Числа тестов и миграций ниже относятся к состоянию до разделения пользователей.** Прогон QA 2026-10-08 после него: 37 миграций на пустой базе, наборы красные — без БД 624 теста (1 failure), integration 2008 (9 failures + 22 errors), все падения в самих тестах; зелёные числа впишет повторный прогон QA в [результаты](#фактические-результаты-разделение-пользователей).
 
 Перед тестами задайте `$env:RECEIPT_OCR_PROVIDER='fake'`, `$env:PRODUCT_MERGE_AUTO_DETECT='0'` и `$env:PRODUCT_CLASSIFICATION_AUTO_SUGGEST='0'`: корневой `.env` может включать автопоиск дублей и `codex_cli`. **Осторожно:** если `codex.exe` есть в PATH и вход выполнен, любой запуск с `RECEIPT_OCR_PROVIDER=codex_cli`, дошедший до провайдера, делает настоящий модельный запрос; тесты с `codex_cli` обязаны задавать `RECEIPT_OCR_CODEX_EXECUTABLE="nonexistent-checkist-codex"` и подменять запуск процесса. Два набора запускайте по очереди: одновременные прогоны на одном Postgres дают `statement timeout` при удалении тестовой базы.
 
@@ -91,7 +91,7 @@ Unit/contract tests health покрывают точный 200, комбинац
 
 Что реализовано — [multi-user.md](multi-user.md#реализация-что-сделано-и-чем-отличается-от-проекта), контракт — [api-contract.md](api-contract.md#реализовано-пользователи-вход-и-доступ-по-владельцу), запуск — [development.md](development.md#режимы-доступа-и-учётные-записи).
 
-**Разработчиками не запускалось.** Ни один шаг этого раздела не выполнялся при разработке: backend- и frontend-тесты, lint, build, `makemigrations --check --dry-run`, `sqlmigrate`, `migrate`, откат, демо-команды, серверы, proxy-скрипты, `check --deploy`, `collectstatic`, `backup`. Исключение — проверки без серверов, перечисленные в [ACCEPTANCE.md клиента](../frontend/src/features/auth/ACCEPTANCE.md#проверено-без-браузера) (`node --check` скриптов и отказы до первого запроса). Ожидания ниже — из кода и тестов, а не из наблюдений; чисел тестов нет намеренно.
+**Разработчиками не запускалось; первый прогон QA — 2026-10-08, [результаты](#фактические-результаты-разделение-пользователей).** Ни один шаг этого раздела не выполнялся при разработке: backend- и frontend-тесты, lint, build, `makemigrations --check --dry-run`, `sqlmigrate`, `migrate`, откат, демо-команды, серверы, proxy-скрипты, `check --deploy`, `collectstatic`, `backup`. Исключение — проверки без серверов, перечисленные в [ACCEPTANCE.md клиента](../frontend/src/features/auth/ACCEPTANCE.md#проверено-без-браузера) (`node --check` скриптов и отказы до первого запроса). Ожидания ниже — из кода и тестов, а не из наблюдений; чисел тестов нет намеренно.
 
 ### Окружение
 
@@ -210,29 +210,72 @@ $env:DJANGO_DEBUG = "0"; $env:CHECKIST_AUTH_MODE = "local_single"
 
 ### Фактические результаты: разделение пользователей
 
-**Разработчиками не запускалось — раздел заполняет QA.** До заполнения ни одно утверждение о прохождении проверок разделения пользователей не действует; прежние числа этого документа (486 без БД / 1655 integration, 27 миграций, frontend 2741 тест / 72 файла) относятся к состоянию до него.
+Раздел заполнен по отчёту QA первого прогона. **Обязательные наборы тестов в нём красные: 34 падения, все — ошибки самих тестов, дефектов продукта QA не нашёл.** Исправления тестов (заход 2) разработчиками не запускались: повторный прогон — за QA, итоговые числа тестов впишет его результат. До повторного прогона утверждение «тесты разделения пользователей проходят» не действует; прежние числа этого документа (486 без БД / 1655 integration, 27 миграций, frontend 2741 тест / 72 файла) относятся к состоянию до разделения пользователей.
 
-Среда: дата, коммит, Windows / Node / Python, Compose-проект, база — вписать.
+#### Прогон QA 2026-10-08, коммит 5d7295d
+
+Среда: Windows, Python 3.13.9, Node 24.18.0, отдельный Compose-проект, `RECEIPT_OCR_PROVIDER=fake`, автозапуски 0 (`PRODUCT_MERGE_AUTO_DETECT=0`, `PRODUCT_CLASSIFICATION_AUTO_SUGGEST=0`). Имя Compose-проекта, базы и порты в отчёте QA не названы. Команды — по разделам 1–8 выше; exit указан там, где его назвал отчёт.
 
 **Проверено и прошло**
 
-| Шаг | Команда | Exit | Результат |
-| --- | --- | --- | --- |
-| | | | |
+| Шаг | Что запущено | Результат по отчёту QA |
+| --- | --- | --- |
+| 1 | `pip check`, `manage.py check` | Прошло |
+| 1 | `makemigrations --check --dry-run` | Изменений нет |
+| 1 | `sqlmigrate` десяти новых миграций | Прошло |
+| 1 | `migrate` на пустой базе | 37 миграций; пользователь `local` активен, без `is_staff` и без пароля |
+| 1 | `migrate` на копии dev-базы (17 чеков, 6 фото) | Всё у `local`, числа прежние; десять миграций — около 1,6 с |
+| 3 | Откат миграций владельца и повторный `migrate` | Прошло |
+| 3 | Дубль чека у второго владельца → `ownership check-rollback`, откат | `check-rollback` — exit 1, откат отказывает, база цела |
+| 6 | `seed_accounts_demo` + `check_accounts_proxy.mjs` через Vite dev и preview | Exit 0, 12 PASS, 125 запросов |
+| 6 | `curl` на сервере `accounts` без входа | `401`, health, csrf, MEDIA `404`, robots, `X-Robots-Tag` — по ожиданиям раздела 6 |
+| 6 | Один файл у двух пользователей | Два фото и два задания, `reused: false`; повтор своего — `reused: true` |
+| 6 | Перебор пароля | Шестая попытка — `429` с `Retry-After`; блокировка общая с `/admin/login/` |
+| 6 | Cookie сессии | Общая у админки и приложения |
+| 5 | `local_single`, proxy-скрипты через Vite dev: `check_stats_proxy.mjs`, `check_product_merges_proxy.mjs` (59 запросов), `check_product_classifications_proxy.mjs`, `check_recognition_proxy.mjs` (70), `check_review_proxy.mjs` (64) | Exit 0 |
+| 8 | `DJANGO_DEBUG=0` + `CHECKIST_AUTH_MODE=local_single` | `ImproperlyConfigured` |
+| 8 | `check --deploy` | Только предупреждения W005 и W021 |
+| 8 | `collectstatic` | 163 файла |
+| 8 | `backup create` / `verify` / `restore` | Прошло |
+| 2 | F4/F6 (42 теста) | Зелёные |
+| 2 | `recognition/resolution.py`, прежние эталонные JSON | Без диффа, эталоны не менялись |
+| 7 | `npm.cmd run lint`, `npm.cmd run build` | Exit 0 |
+
+По каждому из пунктов 1–7 ниже QA перепроверил поведение сервера настоящим HTTP: сервер верен, ошибаются тесты.
 
 **Проверено и не прошло**
 
-| Шаг | Команда | Ошибка, воспроизведение, причина (если установлена) |
+| Набор | Команда | Результат |
 | --- | --- | --- |
-| | | |
+| Backend без БД | `manage.py test catalog stores receipts health api recognition merges classification accounts --exclude-tag=integration --verbosity=2` | 624 теста, 1 failure |
+| Backend integration | та же команда с `--tag=integration` | 2008 тестов, 9 failures + 22 errors |
+| Frontend | `npm.cmd run test` | 3106 тестов / 78 файлов, 2 failed |
+
+Всего 34 падения. Причины — в тестах; правки захода 2 меняют только тесты: код продукта не тронут, ожидания не ослаблены, тесты не отключены. **После правок ни один набор не запускался.**
+
+| № | Где | Падения | Причина в тесте | Поведение сервера по HTTP |
+| --- | --- | --- | --- | --- |
+| 1 | `backend/health/tests/test_noindex.py:112-118`, `NoIndexHeaderTests.test_robots_txt_other_methods_and_paths_are_ordinary_requests`, subTest `get /api/robots.txt` | 1 failure (без БД) | Ждёт `404`, приходит `301` — прежний контракт `/api` без слэша (редирект на путь со слэшем) | Верно |
+| 2 | `backend/api/tests/test_auth_api.py`, `AuthMixin.assert_me` (стр. 88-97) | 3 failures: `LoginTests.test_sign_in_changes_the_csrf_token` (189), `PasswordTests.test_token_of_the_answer_opens_the_next_unsafe_request` (422), `CsrfTests.test_guest_token_opens_sign_in_and_the_whole_flow` (668) | Пишет в `response.json()` токен и id из эталона, а клиент Django кеширует разобранный JSON: следующий `response.json()["csrf_token"]` отдаёт токен эталона, запрос получает `403 csrf_failed` | `curl`: csrf → login → logout со старым токеном `403` → с токеном ответа `204` |
+| 3 | `backend/api/tests/test_owner_isolation.py:123-131`, `ReceiptIsolationTests.test_filters_by_shared_store_and_product_keep_only_own` | 1 failure | Параметра `search` у `/api/receipts/` нет (поиск — `q`), неизвестный параметр игнорируется: `search=ZWEI` возвращает свой чек (1 != 0), `search=SYNTH` и `search=молоко` ничего не проверяют | `q=<текст строки чужого чека>` — `count` 0, своего — 1 |
+| 4 | Там же, `RecognitionIsolationTests.setUpTestData` (172-184) и `test_owner_cancels_and_retries_own_job` (279) | 1 failure | Задание `queued` с вырезкой `imported`: отмена пишет строку, нарушающую check `rec_job_completed_count_check` (`IntegrityError` в `recognition/queue.py`, `_terminalize`) → `500` | Отмена и повтор своего задания — `200` / `202`, чужого — `404` |
+| 5 | `backend/api/tests/test_recognition_review_e2e.py:294`, `assert_catalog` | 4 failures `ReviewConfirmHttpTests`: `test_automatic_import_is_the_reference_state`, `test_inconsistent_total_…`, `test_partial_missing_quantity_…`, `test_partial_success_second_crop_…` | В ожидаемой точке `products/{id}/prices/` нет `"own": True` (как в `test_prices_points.py`) | Верно |
+| 6 | `backend/accounts/tests/test_media.py:26-31`, `body()` | 22 errors: `accounts.tests.test_demo.HttpTests` (7 тестов, первый — `test_media_goes_to_the_owner_only`) и весь `accounts.tests.test_media` (`MediaAccessTests`, `MediaLocalSingleTests`) | `response.close()` повторно шлёт `request_finished` → `close_old_connections` закрывает соединение внутри `TestCase` (autocommit выключен) → `psycopg.OperationalError: the connection is closed` во всех следующих запросах и тестах | MEDIA `404` без входа — верно. **Матрица MEDIA автотестами в этом прогоне фактически не исполнялась** |
+| 7 | `frontend/src/features/auth/auth-markup.test.tsx:27` и `:101` | 2 failed | Регулярное выражение ждёт `method="post"` сразу после `class`, а разметка — `<form class="ck-auth-panel" noValidate="" method="post">` | Не относится |
+
+Пункт 7 после правки: выражение не зависит от порядка атрибутов — тег формы берётся целиком и проверяются одна форма на странице, `class="ck-auth-panel"` и `method="post"`. Порядок задаёт серверный рендерер React 19.3.0: `method`, `action`, `encType` и `target` формы он пишет после остальных атрибутов, каким бы ни был их порядок в JSX. В двух упавших тестах проверки после упавшей строки не исполнялись (в первом — метки, поля, кнопка «Войти» и область сообщения, во втором — кнопка «Сменить пароль»): их впервые исполнит повторный прогон.
 
 **Не проверено и почему**
 
-| Что | Причина | Шаги для человека |
+| Что | Причина | Шаги для человека или QA |
 | --- | --- | --- |
+| Исправления тестов захода 2 (пункты 1–7): оба backend-набора целиком, `npm.cmd run test`, `lint`, `build` | Разработчики тесты не запускают; правки проверены только чтением кода | QA: обе команды из [локальных Windows-команд](#локальные-windows-команды) по очереди, затем в `frontend/` `npm.cmd run test`, `npm.cmd run lint`, `npm.cmd run build`; вписать сюда числа и exit |
+| Матрица MEDIA (`accounts.tests.test_media`, `accounts.tests.test_demo.HttpTests`) | 22 errors пункта 6: тесты не дошли до проверок | Тем же повторным прогоном integration-набора |
+| Прежние proxy-скрипты через Vite preview | Не запускались | Раздел 5 |
+| `check_catalog_proxy.mjs`, `check_services` | Не запускались: нужен Celery-worker в Compose | Раздел 5 |
 | Экраны входа, «Аккаунт», разделы модератора, «моя / чужая» покупка в браузере | Автоматический обход UI запрещён | [ACCEPTANCE.md клиента](../frontend/src/features/auth/ACCEPTANCE.md) |
 | Сервер, домен, сертификат, cookie `Secure`, HSTS, вход с другого устройства, Codex на сервере | Сервера нет; автотестами не закрывается | [deployment-acceptance.md](deployment-acceptance.md) |
-| Админка: поле и фильтр владельца, блокировка входа | Автоматический обход UI запрещён | Пункт «Админка» выше |
+| Админка: поле и фильтр владельца, блокировка входа в браузере | Автоматический обход UI запрещён | Пункт «Админка» выше |
 
 ## Статистика: серверная часть (С5)
 
