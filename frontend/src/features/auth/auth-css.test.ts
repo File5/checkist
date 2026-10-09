@@ -118,11 +118,12 @@ describe('auth stylesheet guards (text of the rules, not rendering)', () => {
   })
 
   it('draws the focus ring from the theme token, heavier than the ring of the shell', () => {
-    const mine = ['.ck-auth button:focus-visible', '.ck-auth input:focus-visible', '.ck-login-panel h1:focus-visible']
+    const mine = ['.ck-auth button:focus-visible', '.ck-auth input:focus-visible']
     for (const selector of mine) expect(rule(selector, base), selector).toBe('outline: 3px solid var(--ck-focus); outline-offset: 3px;')
     expect(heavier(mine[0], 'button:focus-visible')).toBe(true)
     expect(heavier(mine[1], 'input:focus-visible')).toBe(true)
-    expect(heavier(mine[2], '[tabindex]:focus-visible')).toBe(true)
+    // The heading «Вход» is focused by script only: the shell takes its ring off (theme/focus-ring-css.test.ts).
+    expect(rules(auth).filter((item) => /(^|[\s>+~])h1(?![\w-])[^,]*:focus/.test(item.selector))).toEqual([])
     expect(auth).not.toMatch(/outline:\s*(none|0)\b/)
   })
 
