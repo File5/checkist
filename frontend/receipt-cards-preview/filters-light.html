@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="ru" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Чеки</title>
+<link rel="stylesheet" href="./features/receipts/Receipts.css">
+<link rel="stylesheet" href="./lib/cards/Cards.css">
+<link rel="stylesheet" href="./theme/tokens.css">
+<link rel="stylesheet" href="./App.css">
+<link rel="stylesheet" href="./components/ActionBar.css">
+</head>
+<body>
+<div class="page"><main id="main"><div class="intro"><h1 id="page-heading">Чеки</h1></div>
+<div class="receipts-page"><div class="receipt-actions"><a class="action-link receipt-primary" href="/receipts/upload">Загрузить фото</a><a class="action-link" href="/recognition/jobs">Обработка</a></div><section class="receipt-panel" aria-labelledby="_R_2_-heading"><h2 id="_R_2_-heading">Найти чек</h2><form noValidate=""><div class="receipt-field"><label for="_R_2_-q">Магазин или товар в чеке</label><input id="_R_2_-q" type="search" aria-invalid="false" aria-describedby="_R_2_-help" name="q" value="МОЛОКО"/></div><div class="receipt-filter-grid"><div class="receipt-field"><label for="_R_2_-date_from">Период с</label><input id="_R_2_-date_from" type="date" aria-invalid="false" aria-describedby="_R_2_-help" name="date_from" value="2026-10-01"/></div><div class="receipt-field"><label for="_R_2_-date_to">Период по</label><input id="_R_2_-date_to" type="date" aria-invalid="false" aria-describedby="_R_2_-help" name="date_to" value="2026-10-04"/></div></div><p class="receipt-note" id="_R_2_-help">Поиск: от 2 до 100 символов. Обе даты включительно, по дате покупки в магазине.</p><div class="receipt-filter-grid"><div class="receipt-field"><label for="_R_2_-operation">Операция</label><select id="_R_2_-operation" name="operation" aria-invalid="false"><option value="" selected="">Все операции</option><option value="sale">Продажа</option><option value="refund">Возврат</option></select></div><div class="receipt-field"><label for="_R_2_-ordering">По дате покупки</label><select id="_R_2_-ordering" name="ordering" aria-invalid="false"><option value="-purchased_at" selected="">Новые первыми</option><option value="purchased_at">Старые первыми</option></select></div></div><p class="receipt-note">Фильтры из ссылки: магазин ID 5. Они сохраняются при поиске.</p><div class="receipt-actions ck-action-bar"><button type="submit">Применить фильтры</button><button type="button" class="receipt-secondary">Сбросить фильтры</button></div></form></section><section class="receipt-panel" aria-labelledby="_R_3_" aria-busy="false"><h2 id="_R_3_" data-request-focus-target="true" tabindex="-1">Список чеков</h2><div class="request-state request-state-empty" aria-live="polite" aria-busy="false"><p>По выбранным фильтрам чеков нет.</p><div class="request-state-action"><a class="action-link" href="/receipts">Сбросить фильтры</a></div></div></section></div>
+</main></div>
+</body>
+</html>

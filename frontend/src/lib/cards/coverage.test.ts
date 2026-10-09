@@ -10,7 +10,6 @@ const read = (path: string) => readFileSync(new URL(path, source), 'utf8')
  */
 const exceptions: Record<string, string> = {
   'features/product/PriceHistory.tsx': 'Т1: история цен — карточки делает подзадача товара',
-  'features/receipts/ReceiptContent.tsx': 'Т2: строки чека — карточки делает подзадача чеков',
   'features/merges/MergeGroupView.tsx': 'Т3: записи группы дублей — карточки делает подзадача дублей',
   'features/merges/MergeLines.tsx': 'Т3: покупки группы дублей — карточки делает подзадача дублей',
   'features/stats/receipts-compare.tsx': 'Т4: слагаемые и совпавшие товары — карточки делает подзадача статистики',

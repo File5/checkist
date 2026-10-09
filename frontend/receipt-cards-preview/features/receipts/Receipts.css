@@ -1,0 +1,76 @@
+.receipts-page { display: grid; gap: 24px; min-width: 0; }
+.receipt-panel { display: grid; gap: 18px; min-width: 0; padding: 24px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius); background: var(--ck-surface); }
+.receipt-panel h3 { margin: 0; font-size: 1.05rem; }
+.receipt-panel form { display: grid; gap: 16px; min-width: 0; }
+.receipt-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.receipt-actions > * { max-width: 100%; text-align: center; }
+.action-link.receipt-primary { background: var(--ck-brand); border-color: var(--ck-brand); color: var(--ck-on-brand); }
+.action-link.receipt-primary:hover { background: var(--ck-brand-hover); border-color: var(--ck-brand-hover); color: var(--ck-on-brand); }
+.action-link.receipt-primary:active { background: var(--ck-brand-active); border-color: var(--ck-brand-active); color: var(--ck-on-brand); }
+.receipt-secondary { background: var(--ck-surface); border-color: var(--ck-border-field); color: var(--ck-link); }
+.receipt-secondary:hover:not(:disabled) { background: var(--ck-surface-raised); }
+.receipt-filter-grid, .receipt-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.receipt-field { display: grid; gap: 6px; min-width: 0; }
+.receipt-field label { font-weight: 600; }
+.receipt-field input, .receipt-field select { width: 100%; padding: 8px 12px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-surface); color: inherit; }
+.receipt-field [aria-invalid="true"] { border-color: var(--ck-error-border); }
+.receipt-field-error { color: var(--ck-error-text); }
+.receipt-note { color: var(--ck-text-muted); font-size: 0.9rem; font-weight: 400; }
+.receipt-warning { color: var(--ck-warning-text); font-size: 0.95rem; }
+.receipt-number { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.receipt-total { font-size: 1.2rem; font-weight: 700; white-space: nowrap; }
+.receipt-facts { margin: 0; }
+.receipt-facts dt { color: var(--ck-text-muted); font-size: 0.9rem; }
+.receipt-facts dd { margin: 4px 0 0; }
+/* List card: as many columns as fit, so the total is never squeezed into a column narrower than the value. */
+.receipt-list-content .receipt-facts { grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); }
+.receipt-list, .receipt-images, .receipt-detail-list { display: grid; gap: 16px; list-style: none; padding: 0; margin: 0; }
+.receipt-list-card { display: flex; align-items: flex-start; gap: 18px; border-top: 1px solid var(--ck-divider); padding-top: 18px; min-width: 0; }
+.receipt-list-content { display: grid; gap: 12px; min-width: 0; flex: 1; }
+.receipt-list h3 a, .receipt-product-link, .receipt-line-relation a { text-underline-offset: 3px; color: var(--ck-link); }
+.receipt-list h3 a { display: inline-flex; align-items: center; min-height: 44px; }
+.receipt-media { display: grid; gap: 8px; min-width: 0; }
+.receipt-media > a { display: block; width: 100%; border-radius: var(--ck-radius-sm); }
+.receipt-media img { display: block; object-fit: contain; width: 100%; height: 320px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius-sm); background: var(--ck-bg); }
+.receipt-thumbnail { flex: 0 0 110px; width: 110px; }
+.receipt-thumbnail img { height: 150px; }
+.receipt-image-fallback { min-height: 150px; padding: 12px; background: var(--ck-bg); border: 1px solid var(--ck-border); border-radius: var(--ck-radius-sm); font-size: 0.9rem; display: grid; align-content: center; gap: 10px; }
+.receipt-media:not(.receipt-thumbnail) > .receipt-image-fallback { min-height: 320px; }
+.receipt-media.receipt-image-fallback:not(.receipt-thumbnail) { min-height: 320px; }
+.receipt-image-fallback button { padding: 8px; font-size: 0.85rem; overflow-wrap: anywhere; }
+.receipt-images { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.receipt-image-card { min-width: 0; display: grid; align-content: start; gap: 12px; }
+.receipt-image-card .receipt-warning { margin: 0; padding-left: 20px; }
+.receipt-table-scroll { max-width: 100%; overflow-x: auto; border: 1px solid var(--ck-border); border-radius: var(--ck-radius-sm); overscroll-behavior-x: contain; }
+/* The width of the table is the sum of its columns: the name column is at least 160px wide and wraps by words, the
+   numbers and their headings never wrap. Separate borders keep the divider on the pinned column while it scrolls. */
+.receipt-lines-table { border-collapse: separate; border-spacing: 0; width: 100%; }
+.receipt-lines-table caption { padding: 12px; text-align: left; color: var(--ck-text-muted); font-size: 0.9rem; }
+.receipt-lines-table th, .receipt-lines-table td { text-align: left; padding: 12px; vertical-align: top; border-top: 1px solid var(--ck-divider); }
+.receipt-lines-table thead { background: var(--ck-surface-raised); }
+.receipt-lines-table thead th + th { white-space: nowrap; }
+.receipt-lines-table th[scope="row"] { width: 32%; min-width: 160px; font-weight: 400; }
+.receipt-printed-name { display: block; margin: 6px 0; font-weight: 650; }
+.receipt-lines-table th[scope="row"] > .receipt-warning, .receipt-line-relation { display: block; margin-top: 8px; }
+.receipt-product-link { display: inline-block; min-height: 44px; padding-block: 8px; }
+.receipt-lines-table tr:target { background: var(--ck-accent-bg); }
+.receipt-detail-list > li { display: grid; gap: 10px; border-top: 1px solid var(--ck-divider); padding-top: 16px; }
+.receipt-pagination { padding-bottom: 0; }
+.receipt-pagination button { min-width: 44px; padding: 8px 12px; color: var(--ck-link); background: var(--ck-surface); border-color: var(--ck-border-field); }
+.receipt-pagination button:hover:not(:disabled) { background: var(--ck-surface-raised); }
+.receipt-pagination button[aria-current="page"] { color: var(--ck-on-brand); background: var(--ck-brand); border-color: var(--ck-brand); }
+/* Below the width where the table fits, it scrolls inside its frame and the name column stays in view. */
+@media (max-width: 1023px) {
+  .receipt-lines-table th:first-child { position: sticky; left: 0; z-index: 1; border-right: 1px solid var(--ck-divider); }
+  .receipt-lines-table thead th:first-child { background: var(--ck-surface-raised); }
+  .receipt-lines-table th[scope="row"] { background: var(--ck-surface); }
+  .receipt-lines-table tr:target > th[scope="row"] { background: var(--ck-accent-bg); }
+}
+@media (max-width: 540px) {
+  .receipt-panel { padding: 16px; }
+  .receipt-filter-grid, .receipt-facts, .receipt-images { grid-template-columns: minmax(0, 1fr); }
+  .receipt-list-card { flex-wrap: wrap; }
+  .receipt-thumbnail { flex-basis: auto; width: 100%; }
+  .receipt-thumbnail img { height: 160px; }
+  .receipt-actions > * { flex: 1 1 160px; }
+}
