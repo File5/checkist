@@ -9,9 +9,17 @@ export function moreMenuReducer(open: boolean, action: MoreMenuAction): boolean 
 }
 
 /** What else the menu hears: a press that began on the button or in the list, and the end of such a press
- * that brought no click (a cancelled touch, a key).
+ * (the pointer or the mouse button went up wherever it was, a cancelled touch, a key).
  */
 export type MoreMenuEvent = MoreMenuAction | 'press' | 'release'
+
+/** What ends a press wherever the pointer is by then, heard on the document: each of them is a `release`.
+ * A click is not needed for that: a finger that slid off the list, or a press of its empty place, brings none,
+ * and a press left behind would keep the list open through every later leave of the focus. The blur that
+ * WebKit sends before the click comes with the mousedown, so a touch whose pointerup is long over is pressed
+ * again by its own mousedown: the end of the pointer takes nothing from the click.
+ */
+export const PRESS_END_EVENTS = ['pointerup', 'pointercancel', 'mouseup'] as const
 
 /** The list and the press that is under way inside of `.main-more`. */
 export type MoreMenuState = { open: boolean; pressed: boolean }

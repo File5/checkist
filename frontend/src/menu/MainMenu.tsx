@@ -5,7 +5,7 @@ import type { Route } from '../navigation'
 import type { Session } from '../session'
 import { menuItems } from './menu-items'
 import type { MenuItem } from './menu-items'
-import { MORE_MENU_CLOSED, moreMenuStep } from './more-menu'
+import { MORE_MENU_CLOSED, PRESS_END_EVENTS, moreMenuStep } from './more-menu'
 
 const MORE_LIST_ID = 'main-more-list'
 
@@ -39,11 +39,16 @@ export default function MainMenu({ session, route, menuRef }: { session: Session
     const onPointerDown = (event: PointerEvent) => {
       if (event.target instanceof Node && !wrapper.current?.contains(event.target)) dispatch('outside')
     }
+    // The press ends where the pointer goes up, not only by a click inside: a finger that slid off the list
+    // leaves no press behind, and the next leave of the focus closes the list.
+    const onPressEnd = () => dispatch('release')
     document.addEventListener('keydown', onKeyDown)
     document.addEventListener('pointerdown', onPointerDown)
+    for (const type of PRESS_END_EVENTS) document.addEventListener(type, onPressEnd, true)
     return () => {
       document.removeEventListener('keydown', onKeyDown)
       document.removeEventListener('pointerdown', onPointerDown)
+      for (const type of PRESS_END_EVENTS) document.removeEventListener(type, onPressEnd, true)
     }
   }, [open])
 
