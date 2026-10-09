@@ -52,6 +52,8 @@
 .receipt-lines-table th[scope="row"] { width: 32%; min-width: 160px; font-weight: 400; }
 .receipt-printed-name { display: block; margin: 6px 0; font-weight: 650; }
 .receipt-lines-table th[scope="row"] > .receipt-warning, .receipt-line-relation { display: block; margin-top: 8px; }
+/* The phone card of a line: the same gap as in the row heading of the table. */
+.ck-card-title > .receipt-warning { display: block; margin-top: 8px; }
 .receipt-product-link { display: inline-block; min-height: 44px; padding-block: 8px; }
 .receipt-lines-table tr:target { background: var(--ck-accent-bg); }
 .receipt-detail-list > li { display: grid; gap: 10px; border-top: 1px solid var(--ck-divider); padding-top: 16px; }
