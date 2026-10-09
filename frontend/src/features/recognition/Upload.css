@@ -1,0 +1,25 @@
+/* The upload screen: picking a photo, its reduction and the progress of sending. Shared blocks of recognition
+   (.ck-rec-*) stay in Recognition.css. */
+
+/* The two file fields are pressed by their buttons: out of sight, out of the Tab order (tabindex in the markup). */
+.ck-rec .ck-upload-input { position: absolute; width: 1px; height: 1px; padding: 0; border: 0; opacity: 0; overflow: hidden; clip-path: inset(50%); pointer-events: none; }
+
+/* «Снять чек» opens the camera only where there is one to hold: a mouse gets the same dialog as «Выбрать файл». */
+.ck-rec .ck-upload-camera { display: none; }
+@media (pointer: coarse) {
+  .ck-rec .ck-upload-camera { display: block; }
+}
+
+/* An outline button: «Выбрать файл» and «Отменить отправку» stand next to a filled main action. */
+.ck-rec .ck-upload-secondary { background: var(--ck-surface); border-color: var(--ck-border-field); color: var(--ck-link); }
+.ck-rec .ck-upload-secondary:hover:not(:disabled) { background: var(--ck-surface-raised); }
+.ck-rec .ck-upload-secondary:disabled { background: var(--ck-disabled-bg); border-color: var(--ck-disabled-border); color: var(--ck-disabled-text); }
+
+/* The name of the file is free text and wraps anywhere; a size never splits. */
+.ck-upload-file { min-width: 0; overflow-wrap: anywhere; }
+.ck-upload-value { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ck-upload-reduced { padding: 14px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius-sm); background: var(--ck-neutral-bg); color: var(--ck-text); }
+
+.ck-upload-progress { display: grid; gap: 8px; min-width: 0; }
+.ck-upload-progress p { margin: 0; }
+.ck-upload-progress progress { display: block; width: 100%; height: 12px; accent-color: var(--ck-brand); }
