@@ -1,0 +1,55 @@
+# Checkist behind Caddy in Docker (compose.prod.yaml, service `proxy`). The rules are those of
+# deploy/Caddyfile; only the site address, the upstream and the HSTS value come from elsewhere.
+# The site address is CHECKIST_SITE_ADDRESS of the environment file: a domain gets an automatic
+# HTTPS certificate and the http -> https redirect; `localhost` gets an internal certificate (QA).
+#
+# No `log` directive: the access log would carry receipt and product ids; errors go to the container log.
+# No `trusted_proxies`: Caddy overwrites X-Forwarded-For / X-Forwarded-Proto sent by a client,
+# which is what DJANGO_TRUST_PROXY=1 relies on.
+{$CHECKIST_SITE_ADDRESS} {
+	encode zstd gzip
+
+	# An upload is at most 20 MiB of image (RECEIPT_IMAGE_MAX_BYTES) plus the multipart envelope.
+	request_body {
+		max_size 25MB
+	}
+
+	# On every response, including the files Caddy serves itself; replaces the values Django sent.
+	# max-age is DJANGO_HSTS_SECONDS, the same variable Django reads: raise it after acceptance.
+	header {
+		X-Robots-Tag "noindex, nofollow"
+		Strict-Transport-Security "max-age={$DJANGO_HSTS_SECONDS}"
+		-Server
+		defer
+	}
+
+	# Django: API, admin, robots.txt and uploaded files. Uploaded files are never read from
+	# disk by Caddy: only Django knows whose file it is, and this container has no such volume.
+	@django path /api/* /admin /admin/* /media/* /robots.txt
+	handle @django {
+		reverse_proxy web:8000
+	}
+
+	# `manage.py collectstatic` output, copied into the image: admin styles and scripts.
+	handle /static/* {
+		root * /var/lib/checkist/static
+		uri strip_prefix /static
+		file_server
+	}
+
+	# Built SPA (`npm run build`). Hashed assets never change; a missing one is a 404, not the page.
+	handle /assets/* {
+		root * /opt/checkist/frontend/dist
+		@built file
+		header @built Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
+	# Every other address is a client route: the page itself, always revalidated.
+	handle {
+		root * /opt/checkist/frontend/dist
+		header Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+}

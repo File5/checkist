@@ -15,3 +15,6 @@ htmlcov/
 media/
 .media-recognition-staging-*/
 staticfiles/
+# Server Docker deployment: the environment file and the commit before the last update.
+.env.prod
+.deploy-previous

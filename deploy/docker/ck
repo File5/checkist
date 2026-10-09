@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# Checkist in Docker: `docker compose` and `manage.py` with the server files already named.
+#
+#   deploy/docker/ck compose ps
+#   deploy/docker/ck compose logs -f web
+#   deploy/docker/ck manage createsuperuser
+#   deploy/docker/ck manage backup create --dir /backups --keep-days 14
+#
+# `ck compose ...` is `docker compose -f compose.prod.yaml --env-file <environment file> ...`.
+# `ck manage ...` runs `python manage.py ...` in a one-off `web` container (PostgreSQL and Redis
+# are started when needed); it works without a terminal, so it fits a cron line.
+# Environment file: .env.prod in the repository root, or CHECKIST_ENV_FILE (absolute or relative
+# to the repository root). May be called from any directory.
+set -euo pipefail
+
+# Git Bash on Windows would rewrite container paths such as /backups.
+export MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$root"
+
+usage() {
+    sed -n '2,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
+}
+
+env_file="${CHECKIST_ENV_FILE:-.env.prod}"
+if [ ! -f "$env_file" ]; then
+    echo "ck: environment file not found: $env_file" >&2
+    echo "ck: cp deploy/docker/checkist.env.example .env.prod && chmod 600 .env.prod, then fill it in." >&2
+    exit 2
+fi
+# compose.prod.yaml reads the same path for the containers.
+export CHECKIST_ENV_FILE="$env_file"
+compose=(docker compose -f compose.prod.yaml --env-file "$env_file")
+
+case "${1:-}" in
+    compose)
+        shift
+        exec "${compose[@]}" "$@"
+        ;;
+    manage)
+        shift
+        tty=()
+        if [ ! -t 0 ] || [ ! -t 1 ]; then
+            tty=(-T)
+        fi
+        # umask: a backup copy holds every user's receipts and photos.
+        exec "${compose[@]}" run --rm ${tty[@]+"${tty[@]}"} web \
+            sh -c 'umask 077 && exec python manage.py "$@"' manage "$@"
+        ;;
+    -h|--help|help)
+        usage
+        ;;
+    *)
+        usage
+        exit 2
+        ;;
+esac

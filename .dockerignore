@@ -1,0 +1,35 @@
+# Build context of the root Dockerfile (server images). backend/.dockerignore serves backend/Dockerfile.
+.git
+.gitignore
+.gitattributes
+.orca-attachments/
+.deploy-previous
+
+# Environment files and secrets never enter an image.
+.env*
+**/.env*
+
+**/node_modules
+**/.venv
+**/__pycache__
+**/*.pyc
+**/*.log
+**/.coverage*
+**/htmlcov
+**/coverage
+
+# Local data and build output.
+media/
+.media-recognition-staging-*/
+staticfiles/
+frontend/dist
+frontend/*-preview/
+
+# Not needed by any stage.
+docs/
+*.md
+compose.yaml
+compose.prod.yaml
+Dockerfile
+backend/Dockerfile
+deploy/systemd/

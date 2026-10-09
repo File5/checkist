@@ -4,6 +4,8 @@
 
 Нужны: развёрнутый сервер, домен, оператор с `sudo`, две учётные записи без `is_staff` (ниже — `anna` и `boris`; имена любые), два устройства в разных сетях (например, компьютер и телефон в мобильной сети), у `anna` — хотя бы одно загруженное фото. `<домен>` — заполнитель. Команды `curl` выполняются с внешней машины, если не сказано «на сервере»; `ck` — помощник из [deployment.md](deployment.md#помощник-для-команд-django).
 
+Сервер развёрнут в Docker ([deployment-docker.md](deployment-docker.md), основной путь) — шаги те же, но команды сервера другие: замены и дополнительный шаг — в разделе [«М. Docker-вариант»](#м-docker-вариант). Прочитайте его до начала. Статус выше — о настоящем сервере: локально Docker-стек поднимал ревьюер на коммите `1f29843` (fake-распознавание; не QA, полный прогон QA впереди), что прошло — [deployment-docker.md, раздел 13](deployment-docker.md#13-что-проверено-а-что-нет); шаги приёмки при этом не выполнялись.
+
 Результат записывайте по каждому шагу: прошло / не прошло (что наблюдалось) / не проверено и почему. Автоматический обход интерфейса в браузере запрещён правилами проекта: шаги с браузером выполняет человек руками.
 
 ## А. HTTPS и заголовки
@@ -139,6 +141,55 @@ rm jar
 | 59 | Поднять HSTS по [deployment.md](deployment.md#12-hsts-3600--31536000-после-приёмки); `curl -sI https://<домен>/ \| grep -i strict` и то же для `/api/health/` | `max-age=31536000` в обоих ответах, по одному заголовку |
 | 60 | Сохранить `/etc/checkist/checkist.env` в надёжном месте вне сервера | файл сохранён; в репозиторий и переписку не попал |
 | 61 | Каждому пользователю сообщено, что видно остальным и оператору ([deployment.md](deployment.md#8-первичная-установка-учётные-записи), пункт 5) | сообщено |
+
+## М. Docker-вариант
+
+Для сервера, развёрнутого по [deployment-docker.md](deployment-docker.md). **На сервере ни одна команда раздела не выполнялась:** ожидаемые результаты выведены из `compose.prod.yaml`, `Dockerfile` и скриптов `deploy/docker/`. Локально стек поднимал ревьюер на коммите `1f29843` (fake-распознавание; не QA, полный прогон QA впереди) — что прошло и что нет, [deployment-docker.md, раздел 13](deployment-docker.md#13-что-проверено-а-что-нет); шаги этого раздела как приёмка не проходились. Разделы А–Е выполняются без изменений. В остальных вместо `systemctl`, `journalctl` и функции `ck` используется скрипт `deploy/docker/ck`; команды — из каталога `/opt/checkist`.
+
+Общие замены:
+
+| В шагах выше | В Docker-варианте |
+| --- | --- |
+| `ck <команда>` | `./deploy/docker/ck manage <команда>` |
+| `systemctl is-active <служба>` | `./deploy/docker/ck compose ps` — у сервиса состояние `running` и `healthy` |
+| `journalctl -u checkist-<служба> -e` | `./deploy/docker/ck compose logs --tail 200 <сервис>` (`web`, `celery`, `proxy`, `recognition`) |
+| `sudo systemctl stop` / `start checkist-recognition` | `./deploy/docker/ck compose stop recognition` / `./deploy/docker/ck compose up -d recognition` |
+| путь копии `/var/backups/checkist/checkist-<метка>` в аргументах `backup` | `/backups/checkist-<метка>` — путь внутри контейнера; на сервере каталог тот же |
+| `/etc/checkist/checkist.env` | `/opt/checkist/.env.prod` |
+
+Шаги, которые выполняются иначе:
+
+| № | Действие в Docker-варианте | Ожидается |
+| --- | --- | --- |
+| 39 | На сервере: `sudo ss -tlnp` | на внешних адресах только `:22`, `:80`, `:443`; портов `5432`, `6379`, `8000` в списке нет вообще — они не опубликованы |
+| 40 | На сервере: `curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8000/api/health/` | `000` (соединение отклонено): мимо прокси Django с сервера недоступен |
+| 41 | `sudo reboot`; после загрузки `systemctl is-active docker` и `./deploy/docker/ck compose ps` | `active`; `postgres`, `redis`, `web`, `celery`, `proxy` — `running` и `healthy` (и `recognition` — `running`, если профиль включён) |
+| 43 | `./deploy/docker/ck compose ps --all` | сервисов в состоянии `exited` либо `restarting` нет |
+| 45 | На следующий день после добавления строки cron: `tail ~/checkist-backup.log`, `sudo ls /var/backups/checkist` | в журнале JSON с `copy` без ошибок; есть каталог `checkist-<метка>` с `db.dump`, `media.tar.gz`, `manifest.json` |
+| 46 | `./deploy/docker/ck manage backup verify /backups/checkist-<метка>` | exit 0, JSON с `manifest` |
+| 47 | `./deploy/docker/ck compose exec postgres sh -c 'psql -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "select count(*) from receipts_receipt" -c "select count(*) from recognition_sourcephoto"'` и `./deploy/docker/ck compose exec web sh -c 'find "$MEDIA_ROOT" -type f \| wc -l'` | три числа |
+| 48 | `./deploy/docker/ck manage backup restore /backups/checkist-<метка> --database checkist_check --media-root /var/lib/checkist/media-check` (каталог заранее не создаётся) | exit 0, JSON с `database`, `media_root`, `media_files` |
+| 49 | Запрос шага 47 с `-d checkist_check` вместо `-d "$POSTGRES_DB"` и `./deploy/docker/ck compose exec web sh -c 'find /var/lib/checkist/media-check -type f \| wc -l'` | числа совпали с шагом 47; `media_files` равно числу файлов |
+| 51 | `./deploy/docker/ck compose exec postgres sh -c 'dropdb -U "$POSTGRES_USER" checkist_check'`, `./deploy/docker/ck compose exec web rm -r /var/lib/checkist/media-check` | рабочий сайт работает как прежде |
+| 52 | Вывезти копию командой из [deployment-docker.md](deployment-docker.md#6-резервные-копии) | каталог копии на своей машине |
+| 53 | `./deploy/docker/ck compose run --rm recognition codex login status; echo "exit $?"` | `exit 0` |
+| 54 | `./deploy/docker/ck compose ps recognition`; `./deploy/docker/ck compose logs --tail 50 recognition` | `running`; в журнале `Recognition worker ready.`; в приложении исполнитель показан доступным |
+| 56 | Пока задание выполняется: `./deploy/docker/ck compose stop recognition`; затем журнал | `Recognition worker stopped; active work released.`; задание снова ждёт в очереди |
+| 57 | `./deploy/docker/ck compose up -d recognition` | задание из шага 56 выполняется и завершается |
+| 58 | `./deploy/docker/ck compose exec web ls -A /home/checkist/.codex` | пустой вывод: том со входом Codex смонтирован только в `recognition` |
+| 59 | Поднять HSTS по [deployment-docker.md](deployment-docker.md#11-hsts-3600--31536000-после-приёмки) | `max-age=31536000` в обоих ответах, по одному заголовку |
+| 60 | Сохранить `/opt/checkist/.env.prod` в надёжном месте вне сервера | файл сохранён; в репозиторий и переписку не попал |
+
+Дополнительные шаги — только для Docker-варианта:
+
+| № | Действие | Ожидается |
+| --- | --- | --- |
+| 62 | Сразу после шага 32 (пять неудачных входов с компьютера) оператор открывает `https://<домен>/admin/` → «Login failures» и читает столбец `key` | в ключах `a:<адрес>` и `p:<адрес>:…` стоит **внешний адрес компьютера** — тот же, что показывает компьютеру любой сервис «мой IP»; адреса вида `172.x`, `10.x`, `192.168.x` либо `127.0.0.1` там нет |
+| 63 | То же после неудачного входа с телефона в мобильной сети | у записей телефона другой адрес, чем у компьютера |
+| 64 | `dig +short AAAA <домен>` с любой машины | пустой вывод: записи `AAAA` у домена нет |
+| 65 | На сервере: `cd /opt/checkist && ./deploy/docker/deploy.sh` при отсутствии новых коммитов | скрипт проходит все шаги, пишет `no new commits` и `deploy: done`; в `/var/backups/checkist` появилась новая копия; вошедший пользователь после обновления страницы остаётся вошедшим |
+
+Шаг 62 — главный для этого варианта. Если в ключах адрес `172.x`, сервер считает всех клиентов одним адресом: шаг 34 тоже откажет, а пять чужих ошибок закроют вход всем. Что делать — [deployment-docker.md, раздел 13](deployment-docker.md#13-что-проверено-а-что-нет): это требует отдельной задачи, а не правки на сервере.
 
 ## Что этой приёмкой не закрывается
 
