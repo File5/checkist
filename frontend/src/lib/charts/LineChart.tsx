@@ -1,7 +1,8 @@
-import { useEffect, useId, useMemo, useReducer, useRef, useState } from 'react'
+import { Fragment, useId, useMemo, useReducer } from 'react'
 import type { KeyboardEvent, PointerEvent } from 'react'
 import { cleanPoints, layoutLineChart, markerPath, periodStarts, seriesStyle } from './line.ts'
 import type { SeriesStyle } from './line.ts'
+import { usePlotWidth } from './plot-width.ts'
 import { coordinate as c, nearestIndex } from './scale.ts'
 import type { ChartInterval } from './scale.ts'
 import { activeLineX, initialLineSelection, lineKeyCommand, lineReadout, lineSelectionReducer, lineTooltipAnchor } from './selection.ts'
@@ -50,25 +51,15 @@ export interface LineChartProps {
   intervalHeader?: string
 }
 
-const fallbackWidth = 640
-const clampWidth = (width: number) => Math.min(1200, Math.max(240, Math.round(width)))
+const plotWidth = { fallback: 640, min: 240, max: 1200 }
 const heightFor = (width: number) => (width < 420 ? 240 : 300)
 
-/** Follows the real width, so the text keeps its size on a narrow screen instead of shrinking with the viewBox. */
-function usePlotWidth() {
-  const ref = useRef<HTMLDivElement>(null)
-  const [width, setWidth] = useState(fallbackWidth)
-  useEffect(() => {
-    const node = ref.current
-    if (!node || typeof ResizeObserver === 'undefined') return undefined
-    const observer = new ResizeObserver((entries) => {
-      const next = entries[0]?.contentRect.width ?? 0
-      if (next > 0) setWidth(clampWidth(next))
-    })
-    observer.observe(node)
-    return () => observer.disconnect()
-  }, [])
-  return [ref, width] as const
+/** A text wraps only at its ordinary spaces: «2,99 EUR/кг» and «01.09.2026» stay whole, though «/» and the
+    inherited `overflow-wrap: anywhere` would allow a break inside them. */
+function wholeWords(text: string) {
+  return text.split(' ').map((word, index) => (
+    <Fragment key={index}>{index > 0 && ' '}<span className="ck-chart-whole">{word}</span></Fragment>
+  ))
 }
 
 function Swatch({ style }: { style: SeriesStyle }) {
@@ -85,7 +76,7 @@ export default function LineChart({
   defaultHiddenKeys, onHiddenChange, emptyMessage = 'Нет данных для графика.', intervalHeader = 'Интервал',
 }: LineChartProps) {
   const hintId = useId()
-  const [plotRef, width] = usePlotWidth()
+  const [plotRef, width] = usePlotWidth<HTMLDivElement>(plotWidth)
   const [selection, dispatch] = useReducer(lineSelectionReducer, defaultHiddenKeys, initialLineSelection)
 
   const described = useMemo(() => series.map((item, index) => ({
@@ -210,19 +201,23 @@ export default function LineChart({
         </svg>
         {visible.length === 0 && <p className="ck-line-overlay">Все серии скрыты. Включите серию в списке над графиком.</p>}
         {activeX !== null && tooltip !== null && (
-          <div className="ck-line-tooltip" data-side={tooltip.side} style={tooltip.style} aria-hidden="true">
-            <span className="ck-line-tooltip-title">{formatX(activeX)}</span>
-            {readoutSeries.map((entry, index) => {
-              const value = entry.values.get(activeX)
-              if (value === undefined) return null
-              return (
-                <span key={visible[index].item.key} className="ck-line-tooltip-row">
-                  <Swatch style={entry.style} />
-                  <strong>{value}</strong>
-                  <span>{entry.label}</span>
-                </span>
-              )
-            })}
+          <div className="ck-line-tooltip-track" data-side={tooltip.side} aria-hidden="true">
+            {/* The distance from the plot edge of the tooltip's side to the crosshair; it gives way when a whole value needs the room. */}
+            <span className="ck-line-tooltip-gap" style={{ flexBasis: 'left' in tooltip.style ? tooltip.style.left : tooltip.style.right }} />
+            <div className="ck-line-tooltip" data-side={tooltip.side}>
+              <span className="ck-line-tooltip-title">{wholeWords(formatX(activeX))}</span>
+              {readoutSeries.map((entry, index) => {
+                const value = entry.values.get(activeX)
+                if (value === undefined) return null
+                return (
+                  <span key={visible[index].item.key} className="ck-line-tooltip-row">
+                    <Swatch style={entry.style} />
+                    <strong>{wholeWords(value)}</strong>
+                    <span>{entry.label}</span>
+                  </span>
+                )
+              })}
+            </div>
           </div>
         )}
       </div>

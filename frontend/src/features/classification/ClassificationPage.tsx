@@ -6,10 +6,11 @@ import type { Page } from '../../api/types'
 import { focusOwnerAttribute } from '../../components/local-request-focus'
 import Pagination from '../../components/Pagination'
 import RequestState from '../../components/RequestState'
+import { numbered } from '../../lib/text'
 import { Link } from '../../navigation'
 import type { ClassificationQuery } from '../../navigation'
 import type { ClassificationPageProps } from '../../pages/types'
-import { counted } from '../merges/labels'
+import { countedWhole } from '../merges/labels'
 import type { RequestState as State } from '../recognition/polling'
 import { useRequest } from '../recognition/useRequest'
 import { retryable } from './actions'
@@ -50,7 +51,7 @@ export function ClassificationView({ query, state, list, action, open, notice, o
   const panelResult = runAction && notice === undefined
   const stateData = state.kind === 'ok' ? state.data : undefined
   const area = list.kind === 'ok' ? openArea(open, list.data.results) : undefined
-  const title = `${query.product === undefined ? filter.label : `Записи товара №${query.product} · ${filter.label}`} · Страница ${query.page.toLocaleString('ru-RU')}`
+  const title = `${query.product === undefined ? filter.label : `${numbered('Записи товара', query.product)} · ${filter.label}`} · Страница ${query.page.toLocaleString('ru-RU')}`
   return <div className="ck-class" ref={rootRef}>
     <StatePanel state={state} action={action} unavailable={unavailable} onRun={onRun} onRetry={onRetryState} resultRef={panelResult ? resultRef : undefined} />
     <nav className="ck-class-filter" aria-label="Состояние записей">
@@ -80,7 +81,7 @@ export function ClassificationView({ query, state, list, action, open, notice, o
           : <RequestState kind="empty" message="Записей с таким состоянием нет."
             action={<Link className="action-link" to={{ kind: 'classification', query: { ...(query.product !== undefined && { product: query.product }), page: 1 } }}>Показать ожидающие</Link>} />)
         : <div className="ck-class-list" {...ownFocus}>
-          <p>Всего: {counted(data.count, 'запись', 'записи', 'записей')}. Страница {data.page.toLocaleString('ru-RU')} из {(data.pages || 1).toLocaleString('ru-RU')}.</p>
+          <p>Всего: {countedWhole(data.count, 'запись', 'записи', 'записей')}. Страница {data.page.toLocaleString('ru-RU')} из {(data.pages || 1).toLocaleString('ru-RU')}.</p>
           {pendingFilter
             ? <GroupList records={data.results} product={query.product !== undefined} action={action} open={area} unavailable={unavailable} optionsReload={optionsReload} {...handlers} />
             : <FlatList records={data.results} />}

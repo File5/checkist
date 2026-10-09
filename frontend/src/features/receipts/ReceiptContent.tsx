@@ -3,6 +3,7 @@ import type { ReceiptImage } from '../../api/recognition'
 import RecognitionIssues from '../../components/RecognitionIssues'
 import { imageLabels } from '../../lib/recognition-labels'
 import { formatObservedAt, formatPercent, formatQuantity } from '../../lib/format'
+import { glue, numbered } from '../../lib/text'
 import { Link } from '../../navigation'
 import ReceiptMedia from './ReceiptMedia'
 import { money, price, recognizedText, recognizedValue, unknown } from './state'
@@ -30,19 +31,19 @@ export function ReceiptHeader({ receipt }: { receipt: Receipt }) {
 
 export function ReceiptImages({ images, receiptId }: { images: ReceiptImage[]; receiptId: number }) {
   return <ul className="receipt-images">{images.map((image) => <li className="receipt-image-card" key={image.id}>
-    <h3>Фото №{image.photo_id} · вырезка {image.position}</h3>
+    <h3>{numbered('Фото', image.photo_id)} · {glue('вырезка', image.position)}</h3>
     <ReceiptMedia url={image.image_url} alt={`Вырезка ${image.position} с фото №${image.photo_id}, чек №${receiptId}`} />
     <p>{imageLabels[image.status]}</p>
     {image.confirmed_at !== null && <p className="receipt-note">Подтверждено вручную: <time dateTime={image.confirmed_at}>{formatObservedAt(image.confirmed_at)}</time></p>}
     <RecognitionIssues issues={image.issues} status={image.status} />
-    <Link className="action-link" to={`/recognition/jobs/${image.job_id}`}>Задание №{image.job_id}</Link>
+    <Link className="action-link" to={`/recognition/jobs/${image.job_id}`}>{numbered('Задание', image.job_id)}</Link>
   </li>)}</ul>
 }
 
 export function LineReference({ lineId, lines }: { lineId: number; lines: Line[] }) {
   const line = lines.find((candidate) => candidate.id === lineId)
-  return line ? <a href={`#receipt-line-${line.id}`}>Строка {line.position}: {recognizedText(line.name)}</a>
-    : <span>Строка ID {lineId} (на другой странице строк)</span>
+  return line ? <a href={`#receipt-line-${line.id}`}>{glue('Строка', line.position)}: {recognizedText(line.name)}</a>
+    : <span>{glue('Строка', 'ID', lineId)} (на другой странице строк)</span>
 }
 
 export function CurrencyNote({ currency }: { currency?: string }) {
@@ -59,7 +60,7 @@ export function ReceiptLines({ lines, currency }: { lines: Line[]; currency?: st
         <thead><tr>{['Строка и товар каталога', 'Количество', 'Цена', 'Сумма', 'Скидка', 'Оплачено'].map((label) => <th scope="col" key={label}>{label}</th>)}</tr></thead>
         <tbody>{lines.map((line) => <tr id={`receipt-line-${line.id}`} key={line.id} tabIndex={-1}>
           <th scope="row">
-            <span className="receipt-note">Строка {line.position} · {lineKinds[line.kind]}</span>
+            <span className="receipt-note">{glue('Строка', line.position)} · {lineKinds[line.kind]}</span>
             <span className="receipt-printed-name">{recognizedText(line.name)}</span>
             {line.product ? <Link className="receipt-product-link" to={`/catalog/products/${line.product.id}`}>Товар каталога: {recognizedText(line.product.name)}</Link>
               : <span className="receipt-warning">Товар не сопоставлен</span>}

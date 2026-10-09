@@ -64,7 +64,7 @@ describe('panels of the backend fixtures', () => {
     ])
     expect(panels[1].series.map((item) => [item.key, item.label])).toEqual([['similar:3:KZ', 'Демо Молоко 2,5% 1 л · KZ']])
     expect(panels[0].series[0].points[0]).toEqual({ x: '2025-01-01', value: 1.05, valueText: '1,05 EUR/шт' })
-    expect(panels[1].series[0].points[0].valueText).toBe('617 KZT/шт')
+    expect(panels[1].series[0].points[0].valueText).toBe('617,00 KZT/шт')
   })
   it('milk, normalized: litres are comparable, so there is no package warning', () => {
     const panels = chartPanels(fixture('milk-normalized'))
@@ -106,11 +106,18 @@ describe('labels and texts', () => {
     expect([periodFormats.month.full('2026-09-01'), periodFormats.month.tick('2026-09-01'), periodFormats.month.header]).toEqual(['сентябрь 2026', 'сен 26', 'Месяц'])
     expect([periodFormats.week.full('2026-09-07'), periodFormats.week.tick('2026-09-07')]).toEqual(['неделя с 07.09.2026', '07.09.26'])
     expect([periodFormats.day.full('2026-01-31'), periodFormats.day.tick('2026-01-31')]).toEqual(['31.01.2026', '31.01.26'])
-    expect(formatAxisValue(1.0725)).toBe('1,0725')
+  })
+  it('writes the divisions of the price axis whole or with two decimals, the same along one axis', () => {
+    expect([2.5, 3, 3.5].map((value) => formatAxisValue(value, 0.5))).toEqual(['2,50', '3,00', '3,50'])
+    expect([2.75, 3, 3.25].map((value) => formatAxisValue(value, 0.25))).toEqual(['2,75', '3,00', '3,25'])
+    expect([1.05, 1.06].map((value) => formatAxisValue(value, 0.01))).toEqual(['1,05', '1,06'])
+    expect([1.005, 2.9905].map((value) => formatAxisValue(value, 0.005))).toEqual(['1,01', '2,99'])
+    expect([0, 1000, 189000].map((value) => formatAxisValue(value, 1000))).toEqual(['0', '1 000', '189 000'])
+    expect(formatAxisValue(1.0725)).toBe('1,07')
   })
   it('shows the spread of an interval next to its average', () => {
     expect(pointText(point, 'EUR', 'pcs')).toBe('1,07 EUR/шт')
-    expect(pointText({ ...point, count: 3, min: '0.9900', max: '1.2000', avg: '1.0867' }, 'EUR', 'l')).toBe('1,0867 EUR/л (мин. 0,99, макс. 1,2)')
+    expect(pointText({ ...point, count: 3, min: '0.9900', max: '1.2000', avg: '1.0867' }, 'EUR', 'l')).toBe('1,09 EUR/л (мин. 0,99, макс. 1,20)')
   })
   it('explains every similar status of the fixtures', () => {
     expect(noteKeys(fixture('milk-paid'))).toEqual([])

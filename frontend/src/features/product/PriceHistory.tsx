@@ -5,6 +5,7 @@ import RequestState from '../../components/RequestState'
 import { useLocalRequestFocus } from '../../components/useLocalRequestFocus'
 import Pagination from '../../components/Pagination'
 import { formatObservedAt, formatPrice, formatPurchasedOn } from '../../lib/format'
+import { numbered } from '../../lib/text'
 import ProductRequestState from './ProductRequestState'
 import { hasFilters, storeLabel } from './state'
 import type { RequestState as LoadState } from './state'
@@ -24,29 +25,30 @@ export default function PriceHistory({ state, query, stores, retry, reset, build
         ? <RequestState kind="empty" message={hasFilters(query) ? 'Нет записей по выбранным фильтрам' : 'Покупок этого товара пока нет'} action={hasFilters(query) && <button type="button" onClick={reset}>Сбросить фильтры</button>} />
         : <>
           <p className="product-note" role="status">Наблюдений: {state.data.count.toLocaleString('ru-RU')}. Сначала новые покупки.</p>
-          <p className="product-note" id="product-history-scroll">Таблица прокручивается по горизонтали. Выберите её клавишей Tab и используйте стрелки.</p>
+          <p className="product-note" id="product-history-scroll">Если таблица не помещается по ширине, она прокручивается внутри рамки: выберите её клавишей Tab и используйте стрелки. Магазин остаётся на месте.</p>
           <div className="product-table-scroll" role="region" aria-label="История цен по магазинам" aria-describedby="product-history-scroll" tabIndex={0}>
             <table className="product-table">
               <caption>Наблюдения покупок из чеков</caption>
               <thead><tr>
-                <th scope="col">Дата</th><th scope="col">Магазин и адрес</th>
-                <th scope="col" className="product-number">Цена до скидки</th>
-                <th scope="col" className="product-number">Цена после скидки и единица</th>
-                <th scope="col" className="product-number">Цена за базовую единицу</th><th scope="col">Валюта</th>
+                <th scope="col">Магазин и адрес</th><th scope="col">Дата</th>
+                <th scope="col" className="product-number">До скидки</th>
+                <th scope="col" className="product-number">После скидки</th>
+                <th scope="col" className="product-number">За базовую единицу</th>
                 <th scope="col">Покупка</th>
               </tr></thead>
-              {/* A foreign purchase has no receipt or position: the row is identified by its place on the page. */}
+              {/* The store is the row header and the first column: it stays in place while the table scrolls sideways.
+                  A foreign purchase has no receipt or position: the row is identified by its place on the page. */}
               <tbody>{state.data.results.map((point, index) => {
                 const store = knownStores.get(point.store.id)
                 return <tr key={index}>
-                  <td><time dateTime={point.purchased_on}>{formatPurchasedOn(point.purchased_on)}</time>{point.own && <span className="product-subtext">{formatObservedAt(point.observed_at, store?.timezone)}</span>}</td>
                   <th scope="row">{storeLabel(store ?? point.store)}</th>
+                  <td><time dateTime={point.purchased_on}>{formatPurchasedOn(point.purchased_on)}</time>{point.own && <span className="product-subtext"><time dateTime={point.observed_at}>{formatObservedAt(point.observed_at, store?.timezone)}</time></span>}</td>
                   <td className="product-number">{formatPrice(point.list_unit_price, point.currency, point.unit)}</td>
                   <td className="product-number">{formatPrice(point.paid_unit_price, point.currency, point.unit)}</td>
-                  <td className="product-number">{point.normalized_price === null ? 'Нет данных для пересчёта' : formatPrice(point.normalized_price, point.currency, point.normalized_unit)}
-                    {!point.comparable && <span className="product-subtext">Не сопоставимо с базовой единицей товара</span>}
-                  </td><td>{point.currency}</td>
-                  <td>{point.own ? <>Моя · <Link to={{ kind: 'receipt', receiptId: point.receipt_id }}>Чек №{point.receipt_id}</Link></> : 'Чужая'}</td>
+                  <td className="product-number">{point.normalized_price === null ? <span className="product-cell-text">Нет данных для пересчёта</span> : formatPrice(point.normalized_price, point.currency, point.normalized_unit)}
+                    {!point.comparable && <span className="product-subtext product-cell-text">Не сопоставимо с базовой единицей товара</span>}
+                  </td>
+                  <td>{point.own ? <>Моя · <Link to={{ kind: 'receipt', receiptId: point.receipt_id }}>{numbered('Чек', point.receipt_id)}</Link></> : 'Чужая'}</td>
                 </tr>
               })}</tbody>
             </table>

@@ -68,3 +68,82 @@ describe('filled action link guards (text of the rules, not rendering)', () => {
     expect(states.map((item) => weight(item.selector))).toEqual([0, 0, 1])
   })
 })
+
+/** Rules that stand inside `@media (max-width: …)` blocks, with the width of their block. */
+const media = /@media\s*\(max-width:\s*(\d+)px\)\s*\{((?:[^{}]*\{[^{}]*\})*)\s*\}/g
+const narrow = [...receipts.matchAll(media)].flatMap((match) => rules(match[2]).map((item) => ({ ...item, width: Number(match[1]) })))
+const outside = receipts.replace(media, '')
+const value = (body: string, property: string) => new RegExp(`(?:^|[;\\s])${property}\\s*:\\s*([^;]+)`).exec(body)?.[1].trim()
+
+describe('whole values and the lines table (text of the rules, not rendering)', () => {
+  it('never wraps a number, a sum or a total', () => {
+    for (const selector of ['.receipt-number', '.receipt-total']) expect(value(rule(selector, outside), 'white-space'), selector).toBe('nowrap')
+  })
+
+  it('does not give the wrap back on a narrow screen', () => {
+    expect(outside).not.toContain('@media')
+    expect(narrow.map((item) => item.width)).toContain(540)
+    const touched = narrow.filter((item) => ['white-space', 'overflow-wrap', 'word-break'].some((property) => declares(item.body, property)))
+    expect(touched.map((item) => `${item.width} ${item.selector}`)).toEqual([])
+  })
+
+  it('does not make any text of the screen smaller on a narrow screen', () => {
+    expect(narrow.filter((item) => declares(item.body, 'font-size') || declares(item.body, 'font')).map((item) => item.selector)).toEqual([])
+  })
+
+  it('keeps the name column of the lines table wide enough to wrap by words', () => {
+    const name = rule('.receipt-lines-table th[scope="row"]', outside)
+    const width = /^(\d+)px$/.exec(value(name, 'min-width') ?? '')
+    expect(width, name).not.toBeNull()
+    expect(Number(width![1])).toBeGreaterThanOrEqual(160)
+    expect(Number(width![1])).toBeLessThanOrEqual(220)
+    expect(declares(name, 'white-space')).toBe(false)
+    // The headings of the number columns stay whole too; the heading of the name column wraps with its column.
+    expect(value(rule('.receipt-lines-table thead th + th', outside), 'white-space')).toBe('nowrap')
+  })
+
+  it('takes the width of the table from its columns, not from a fixed number', () => {
+    const table = rule('.receipt-lines-table', receipts)
+    expect(value(table, 'width')).toBe('100%')
+    expect(declares(table, 'min-width')).toBe(false)
+    const resized = narrow.filter((item) => item.selector.startsWith('.receipt-lines-table') && (declares(item.body, 'min-width') || declares(item.body, 'width')))
+    expect(resized.map((item) => item.selector)).toEqual([])
+  })
+
+  it('scrolls the table inside its own frame only', () => {
+    const frame = rule('.receipt-table-scroll', outside)
+    expect(value(frame, 'overflow-x')).toBe('auto')
+    expect(value(frame, 'max-width')).toBe('100%')
+    expect(value(rule('.receipt-panel', outside), 'min-width')).toBe('0')
+  })
+
+  it('pins the name column on the left with a token background wherever the table can scroll', () => {
+    const pinned = narrow.filter((item) => item.selector.startsWith('.receipt-lines-table'))
+    const sticky = pinned.filter((item) => value(item.body, 'position') === 'sticky')
+    expect(sticky.map((item) => item.selector)).toEqual(['.receipt-lines-table th:first-child'])
+    expect(value(sticky[0].body, 'left')).toBe('0')
+    // Wider than the phone breakpoint: a tablet scrolls the table as well.
+    expect(sticky[0].width).toBeGreaterThan(540)
+    const backgrounds = pinned.filter((item) => declares(item.body, 'background'))
+    expect(backgrounds.map((item) => item.selector)).toEqual([
+      '.receipt-lines-table thead th:first-child', '.receipt-lines-table th[scope="row"]', '.receipt-lines-table tr:target > th[scope="row"]',
+    ])
+    for (const item of backgrounds) {
+      expect(item.width, item.selector).toBe(sticky[0].width)
+      expect(value(item.body, 'background'), item.selector).toMatch(/^var\(--ck-[\w-]+\)$/)
+    }
+    // Collapsed borders would stay behind while the pinned cell moves.
+    expect(value(rule('.receipt-lines-table', outside), 'border-collapse')).toBe('separate')
+    expect(value(rule('.receipt-lines-table', outside), 'border-spacing')).toBe('0')
+  })
+
+  it('lets the facts of a list card take as many columns as fit', () => {
+    expect(value(rule('.receipt-list-content .receipt-facts', outside), 'grid-template-columns')).toBe('repeat(auto-fit, minmax(min(100%, 180px), 1fr))')
+    // The narrow rule of the plain .receipt-facts weighs less and does not bring the fixed columns back.
+    expect(narrow.filter((item) => item.selector.includes('.receipt-list-content')).map((item) => item.selector)).toEqual([])
+  })
+
+  it('writes no colour of its own', () => {
+    expect(receipts).not.toMatch(/#[0-9a-f]{3,8}\b|\brgba?\(|\bhsla?\(/i)
+  })
+})

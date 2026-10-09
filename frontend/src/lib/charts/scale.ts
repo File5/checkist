@@ -1,4 +1,4 @@
-/** Pure chart arithmetic: linear scales, "nice" axis ticks and calendar periods. No DOM, no formatting. */
+/** Pure chart arithmetic: linear scales, "nice" axis ticks with their texts and calendar periods. No DOM. */
 
 export type Pair = readonly [number, number]
 export type ChartInterval = 'day' | 'week' | 'month' | 'quarter' | 'year'
@@ -22,8 +22,42 @@ export function linearScale([d0, d1]: Pair, [r0, r1]: Pair): (value: number) => 
 
 export interface Ticks { min: number; max: number; step: number; values: number[] }
 
-/** Axis divisions on a 1 / 2 / 2.5 / 5 × 10ⁿ step that cover [min, max]. */
-export function niceTicks(min: number, max: number, target = 5, includeZero = false): Ticks {
+/** Axis texts show at most this many decimals, so a finer step would print the same division twice. */
+export const axisMaxDecimals = 2
+export const minAxisStep = 10 ** -axisMaxDecimals
+
+/**
+ * Decimals shared by every division of one axis: as many as its step has, at most `axisMaxDecimals`.
+ * A money axis is either whole or written like an amount: «2,50 / 3,00 / 3,50», never «2,5 / 3 / 3,5».
+ */
+export function axisDecimals(step: number, money = false): number {
+  const size = Math.abs(step)
+  if (!Number.isFinite(size) || size === 0) return 0
+  let decimals = 0
+  while (decimals < axisMaxDecimals && Math.abs(size * 10 ** decimals - Math.round(size * 10 ** decimals)) > 1e-9 * 10 ** decimals) decimals += 1
+  return money && decimals > 0 ? axisMaxDecimals : decimals
+}
+
+/**
+ * Text of one axis division. With the `step` of its axis all divisions get the same number of decimals;
+ * without one the value stands alone and drops trailing zeros. Drawing numbers only, never money arithmetic.
+ */
+export function formatAxisTick(value: number, step?: number, money = false): string {
+  if (!Number.isFinite(value)) return '—'
+  const decimals = step === undefined ? undefined : axisDecimals(step, money)
+  const text = value.toLocaleString('ru-RU', { minimumFractionDigits: decimals ?? 0, maximumFractionDigits: decimals ?? axisMaxDecimals })
+  // A value that rounds to zero is not «-0».
+  return /^-[0,]*$/.test(text) ? text.slice(1) : text
+}
+
+const niceFactors = [1, 2, 2.5, 5, 10]
+
+/**
+ * Axis divisions on a 1 / 2 / 2.5 / 5 × 10ⁿ step that cover [min, max]. `minStep` is the grid of the axis texts
+ * (a power of ten): the step is neither finer than it nor off it, so 0,025 gives way to 0,05 on a grid of 0,01
+ * and every division is written exactly.
+ */
+export function niceTicks(min: number, max: number, target = 5, includeZero = false, minStep = 0): Ticks {
   let low = Number.isFinite(min) ? min : 0
   let high = Number.isFinite(max) ? max : low
   if (low > high) [low, high] = [high, low]
@@ -38,9 +72,12 @@ export function niceTicks(min: number, max: number, target = 5, includeZero = fa
   const exponent = Math.floor(Math.log10(raw))
   const magnitude = 10 ** exponent
   const normalized = raw / magnitude
-  const factor = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 2.5 ? 2.5 : normalized <= 5 ? 5 : 10
-  const step = factor * magnitude
-  const decimals = Math.min(20, Math.max(0, 1 - exponent))
+  const grid = Number.isFinite(minStep) && minStep > 0 ? minStep : 0
+  const onGrid = (size: number) => grid === 0 || Math.abs(size / grid - Math.round(size / grid)) < 1e-6
+  const factor = niceFactors.find((nice) => normalized <= nice && onGrid(nice * magnitude)) ?? 10
+  const coarse = grid > factor * magnitude
+  const step = coarse ? minStep : factor * magnitude
+  const decimals = Math.min(20, Math.max(0, 1 - (coarse ? Math.floor(Math.log10(minStep)) : exponent)))
   const round = (value: number) => Number(value.toFixed(decimals))
   const first = Math.floor(low / step + 1e-9)
   const last = Math.ceil(high / step - 1e-9)

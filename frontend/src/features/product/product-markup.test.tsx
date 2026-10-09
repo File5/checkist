@@ -137,9 +137,11 @@ describe('price content and semantic markup (SSR in Node, not browser acceptance
   it('marks my purchase with a link to its receipt and shows its moment', () => {
     const html = renderToStaticMarkup(<PriceHistory state={{ kind: 'ok', data: history }} query={{ page: 1 }} stores={[]} retry={noop} reset={noop} buildPageHref={buildPageHref} />)
     expect(html).toContain('<th scope="col">Покупка</th>')
-    expect(html).toMatch(/<td>Моя · <a [^>]*href="\/receipts\/12"[^>]*>Чек №12<\/a><\/td>/)
+    // The word and its number are glued: «Чек №12» is never split between lines.
+    expect(html).toMatch(/<td>Моя · <a [^>]*href="\/receipts\/12"[^>]*>Чек\u00a0№12<\/a><\/td>/)
     expect(html).not.toContain('Чужая')
-    expect(html).toMatch(/<time dateTime="2026-10-04">04\.10\.2026<\/time><span class="product-subtext">[^<]*UTC<\/span>/)
+    // Both the date and the moment are whole values inside <time>.
+    expect(html).toMatch(/<time dateTime="2026-10-04">04\.10\.2026<\/time><span class="product-subtext"><time dateTime="[^"]+">[^<]*UTC<\/time><\/span>/)
   })
   it('marks a foreign purchase without a receipt link or a moment and keeps its date, store and prices', () => {
     const foreign = { ...foreignPoint, list_unit_price: '1.1000', paid_unit_price: '1.2000',
@@ -159,7 +161,8 @@ describe('price content and semantic markup (SSR in Node, not browser acceptance
   it('renders my and foreign purchases side by side in the server order', () => {
     const html = renderToStaticMarkup(<PriceHistory state={{ kind: 'ok', data: { ...history, ...pageOf([foreignPoint, point], 200) } }} query={{ page: 1 }} stores={[]} retry={noop} reset={noop} buildPageHref={buildPageHref} />)
     expect(html.indexOf('<td>Чужая</td>')).toBeGreaterThan(-1)
-    expect(html.indexOf('<td>Чужая</td>')).toBeLessThan(html.indexOf('Чек №12'))
+    expect(html.indexOf('Чек\u00a0№12')).toBeGreaterThan(-1)
+    expect(html.indexOf('<td>Чужая</td>')).toBeLessThan(html.indexOf('Чек\u00a0№12'))
     expect(html.match(/href="\/receipts\//g)).toHaveLength(1)
     expect(html.match(/UTC/g)).toHaveLength(1)
   })
@@ -170,14 +173,23 @@ describe('price content and semantic markup (SSR in Node, not browser acceptance
       { ...point, receipt_id: 13, position: 0, paid_unit_price: '4.0000' },
     ], 200) })
     expect(rowLabels(html)).toHaveLength(3)
-    for (const price of ['2', '3', '4']) expect(html).toContain(`${price}\u00a0EUR/шт`)
+    for (const price of ['2', '3', '4']) expect(html).toContain(`${price},00\u00a0EUR/шт`)
     expect(keys).toEqual(['0', '1', '2'])
   })
   it('renders row prices, unknown normalization, UTC fallback and a keyboard scroll region', () => {
     const html = renderToStaticMarkup(<PriceHistory state={{ kind: 'ok', data: history }} query={{ page: 1 }} stores={[]} retry={noop} reset={noop} buildPageHref={buildPageHref} />)
     expect(html).toContain('<caption>Наблюдения покупок из чеков</caption>')
-    expect(html.match(/scope="col"/g)).toHaveLength(7)
-    expect(html).toContain('scope="row"')
+    // Six columns: the currency stands in every price and has no column of its own.
+    expect([...html.matchAll(/<th scope="col"[^>]*>([^<]+)<\/th>/g)].map((match) => match[1]))
+      .toEqual(['Магазин и адрес', 'Дата', 'До скидки', 'После скидки', 'За базовую единицу', 'Покупка'])
+    expect(html).not.toContain('Валюта')
+    expect(html).not.toContain('<td>EUR</td>')
+    // The store is the row header and the first cell of its row: that cell stays in place on a narrow screen.
+    expect(html).toMatch(/<tr><th scope="row">/)
+    expect(html.match(/<td/g)).toHaveLength(5)
+    // Words in a numeric cell wrap inside their own width instead of widening the column.
+    expect(html).toContain('<span class="product-cell-text">Нет данных для пересчёта</span>')
+    expect(html).toContain('<span class="product-subtext product-cell-text">Не сопоставимо с базовой единицей товара</span>')
     expect(html).toContain('role="region" aria-label="История цен по магазинам"')
     expect(html).toContain('tabindex="0"')
     expect(html).toContain('Нет данных для пересчёта')
@@ -191,7 +203,7 @@ describe('price content and semantic markup (SSR in Node, not browser acceptance
     const data = { ...history, results: [{ ...point, normalized_price: '12.3456', normalized_unit: 'm' as const }] }
     const html = renderToStaticMarkup(<PriceHistory state={{ kind: 'ok', data }} query={{ page: 1 }} stores={[store]} retry={noop} reset={noop} buildPageHref={buildPageHref} />)
     expect(html).toContain('Учебная улица, 1')
-    expect(html).toContain('12,3456 EUR/м')
+    expect(html).toContain('12,35 EUR/м')
     expect(html).not.toContain('UTC')
   })
   it('distinguishes no purchases from no matches and offers page recovery', () => {
@@ -223,6 +235,9 @@ describe('price content and semantic markup (SSR in Node, not browser acceptance
     expect(html).toContain('-5,25 %')
     expect(html).toContain('03.10.2026')
     expect(html).toContain('04.10.2026')
+    // Every date of the summary is inside <time>; every price and count is in a numeric cell.
+    expect(html.match(/<time dateTime="\d{4}-\d{2}-\d{2}">\d{2}\.\d{2}\.\d{4}<\/time>/g)).toHaveLength(6)
+    expect(html.match(/<dd class="product-number">/g)).toHaveLength(21)
   })
   it('offers correction/reset for HTTP 400 and local retry for a transport error', () => {
     const correction = renderToStaticMarkup(<PriceSummary state={{ kind: 'error', reason: 'invalid_parameter', status: 400, fields: ['currency'] }} retry={noop} reset={noop} />)

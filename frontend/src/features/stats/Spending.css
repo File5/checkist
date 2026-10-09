@@ -35,20 +35,20 @@
 .spending-blocks { display: grid; gap: 28px; min-width: 0; }
 .spending-blocks[data-stale] .spending-currency { opacity: 0.55; }
 .spending-currency { display: grid; gap: 16px; min-width: 0; padding-top: 20px; border-top: 1px solid var(--ck-divider); }
-.spending-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 0; }
+/* As many columns as fit 180px each: a total is not squeezed into a third of a narrow panel. */
+.spending-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 16px; margin: 0; }
 .spending-facts dt { color: var(--ck-text-muted); font-size: 0.9rem; }
-.spending-facts dd { margin: 4px 0 0; font-variant-numeric: tabular-nums; }
-.spending-total { font-size: 1.35rem; font-weight: 700; }
+.spending-facts dd { margin: 4px 0 0; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.spending-total { font-size: 1.35rem; font-weight: 700; white-space: nowrap; }
 /* Long names wrap inside the name column; sums keep their own width. */
 .spending-currency .ck-pie-legend { table-layout: auto; }
 .spending-currency .ck-pie-legend a { display: inline-block; padding-block: 6px; color: var(--ck-link); }
 @media (max-width: 540px) {
   .spending-panel { padding: 16px; }
-  .spending-grid, .spending-facts { grid-template-columns: minmax(0, 1fr); }
+  .spending-grid { grid-template-columns: minmax(0, 1fr); }
   .spending-actions > *, .spending-chips li { flex: 1 1 140px; }
   .spending-chips a { width: 100%; justify-content: center; text-align: center; }
   .spending-currency .ck-pie-legend th, .spending-currency .ck-pie-legend td { padding-inline: 6px; }
-  .spending-currency .ck-chart-number { white-space: normal; }
 }
 @media (prefers-reduced-motion: reduce) {
   .spending-currency .ck-pie-shape, .spending-currency .ck-pie-legend tbody tr { transition: none; }

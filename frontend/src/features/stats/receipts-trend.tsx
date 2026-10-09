@@ -3,12 +3,16 @@ import type { ReceiptInterval, ReceiptSeriesCurrency } from '../../api/stats'
 import RequestState from '../../components/RequestState'
 import { useLocalRequestFocus } from '../../components/useLocalRequestFocus'
 import { LineChart } from '../../lib/charts'
-import { formatPurchasedOn } from '../../lib/format'
+import { formatAxisTick } from '../../lib/charts/scale'
 import { Link, receiptsStatsHref } from '../../navigation'
 import type { ReceiptsStatsQuery } from '../../navigation'
+import { PeriodDate } from './period'
 import { axisNumber, intervalName, trendCharts } from './receipts-series'
 import { canRetry, coarserIntervals, failureMessage, hasPeriods, hasScope, intervalChoices, intervalHref, seriesParams, withoutScope } from './receipts-state'
 import type { SeriesState } from './receipts-state'
+
+/** Divisions of the money axis: whole or with two decimals, like an amount — «2,50 / 3,00 / 3,50». */
+const moneyAxisNumber = (value: number, step?: number) => formatAxisTick(value, step, true)
 
 function CurrencyTrend({ block, interval }: { block: ReceiptSeriesCurrency; interval: ReceiptInterval }) {
   const id = useId()
@@ -19,7 +23,7 @@ function CurrencyTrend({ block, interval }: { block: ReceiptSeriesCurrency; inte
     <article className="stats-currency" aria-labelledby={id}>
       <h4 id={id}>{block.currency}</h4>
       <LineChart title={`Средний и медианный чек, ${block.currency}`} series={charts.receipts} interval={interval} zeroBaseline
-        formatX={formatX} formatTick={formatTick} formatValue={axisNumber} valueAxisLabel={block.currency} />
+        formatX={formatX} formatTick={formatTick} formatValue={moneyAxisNumber} valueAxisLabel={block.currency} />
       <LineChart title="Позиций на чек" series={charts.lines} interval={interval} zeroBaseline
         formatX={formatX} formatTick={formatTick} formatValue={axisNumber} valueAxisLabel="товарных строк на один чек" />
       {block.refunds_excluded > 0 && <p className="stats-note">
@@ -70,8 +74,8 @@ export default function TrendBlock(props: TrendBlockProps) {
   const phase = useMemo(() => ({ kind: state.kind }), [state])
   const block = useLocalRequestFocus<HTMLElement>(phase)
   const { date_from, date_to } = seriesParams(query)
-  const span = date_from && date_to ? `с ${formatPurchasedOn(date_from)} по ${formatPurchasedOn(date_to)} — от начала базового периода до конца текущего`
-    : date_from ? `с ${formatPurchasedOn(date_from)}` : date_to ? `по ${formatPurchasedOn(date_to)}` : 'все сохранённые чеки'
+  const span = date_from && date_to ? <>с <PeriodDate date={date_from} /> по <PeriodDate date={date_to} /> — от начала базового периода до конца текущего</>
+    : date_from ? <>с <PeriodDate date={date_from} /></> : date_to ? <>по <PeriodDate date={date_to} /></> : 'все сохранённые чеки'
   return (
     <section ref={block} className="stats-panel" aria-labelledby={id} aria-busy={state.kind === 'loading'}>
       <h3 id={id} data-request-focus-target tabIndex={-1}>Средний чек по времени</h3>

@@ -28,13 +28,25 @@
 .product-store-search { display: flex; align-items: start; gap: 12px; min-width: 0; }
 .product-store-search input { flex: 1; }
 .product-table-scroll { max-width: 100%; overflow-x: auto; border: 1px solid var(--ck-border); border-radius: var(--ck-radius); }
-.product-table { width: 100%; min-width: 900px; border-collapse: collapse; font-size: 0.95rem; }
+/* No fixed min-width: the values do not break, so the table is as wide as its columns and scrolls only when they do not fit.
+   Separate borders: a collapsed border does not travel with a sticky cell. */
+.product-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.95rem; }
 .product-table caption { padding: 14px; text-align: left; font-weight: 600; }
 .product-table th, .product-table td { padding: 14px 12px; border-top: 1px solid var(--ck-divider); text-align: left; vertical-align: top; }
 .product-table thead th { background: var(--ck-surface-raised); }
-.product-table tbody th { min-width: 160px; max-width: 240px; font-weight: 500; overflow-wrap: anywhere; }
-.product-table a { display: inline-block; min-height: 44px; padding-block: 10px; color: var(--ck-link); text-underline-offset: 3px; }
-.product-number, .product-table .product-number { text-align: right; font-variant-numeric: tabular-nums; }
+/* The store is free text: it keeps a readable width and wraps by words; a word longer than the column still breaks. */
+.product-table tbody th { min-width: 200px; font-weight: 500; overflow-wrap: break-word; }
+/* The first column is the row header: it stays at the left edge while the rest scrolls under it. */
+.product-table tr > :first-child { position: sticky; left: 0; z-index: 1; border-right: 1px solid var(--ck-divider); }
+.product-table tbody tr > :first-child { background: var(--ck-surface); }
+.product-table a { display: inline-block; min-height: 44px; padding-block: 10px; color: var(--ck-link); text-underline-offset: 3px; white-space: nowrap; }
+/* A price, a count or a percent is one value: it is never broken inside, at any width. */
+.product-number, .product-table .product-number { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.product-value { white-space: nowrap; }
+/* A column heading is words, not a value: it wraps between words and does not widen its column. */
+.product-table thead .product-number { white-space: normal; overflow-wrap: normal; }
+/* Words inside a numeric cell: they wrap by words within a limited width and do not widen the column. */
+.product-cell-text { display: block; max-width: 11rem; margin-left: auto; white-space: normal; overflow-wrap: break-word; }
 .product-subtext { display: block; font-size: 0.85rem; color: var(--ck-text-muted); margin-top: 6px; }
 .product-summary-list { display: grid; gap: 18px; list-style: none; margin: 20px 0 0; padding: 0; }
 .product-summary-group { border: 1px solid var(--ck-border); border-radius: var(--ck-radius); padding: 18px; min-width: 0; }
@@ -64,4 +76,6 @@ p.product-chart-warning { margin: 10px 0 14px; }
   .product-store-search button { width: 100%; }
   .product-store-filter { padding: 12px; }
   .product-summary-group { padding: 14px; }
+  .product-table th, .product-table td { padding: 12px 8px; }
+  .product-table tbody th { min-width: 160px; max-width: 160px; }
 }

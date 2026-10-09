@@ -6,6 +6,7 @@ import type { Spending } from '../../api/stats'
 import type { Page, StoreEntry } from '../../api/types'
 import type { SpendingQuery } from '../../navigation'
 import type { SpendingReference } from './spending-filters'
+import { PeriodText } from './period'
 import { SpendingView } from './SpendingPage'
 import type { SpendingViewProps } from './SpendingPage'
 import type { SpendingRequestState } from './spending-state'
@@ -60,6 +61,14 @@ describe('spending screen markup (Vitest/SSR — not what the browser shows, foc
     expect(html).not.toMatch(/<a [^>]*>Строки без товара/)
     expect(html).not.toMatch(/<a [^>]*>(Услуги|Залог за тару)/)
   })
+  it('names the period of the answer with whole dates and one dash that never starts a line', () => {
+    const period = (date_from: string | null, date_to: string | null) => renderToStaticMarkup(<PeriodText period={{ date_from, date_to }} />)
+    expect(period(null, null)).toBe('Период: всё время.')
+    // A non-breaking space before the dash and an ordinary one after it; each date is a `<time>`, which never wraps.
+    expect(period('2026-01-01', '2026-09-30')).toBe('Период: <time dateTime="2026-01-01">01.01.2026</time>\u00a0— <time dateTime="2026-09-30">30.09.2026</time>, обе даты включительно.')
+    expect(period('2026-01-01', null)).toBe('Период: с <time dateTime="2026-01-01">01.01.2026</time> включительно.')
+    expect(period(null, '2026-09-30')).toBe('Период: по <time dateTime="2026-09-30">30.09.2026</time> включительно.')
+  })
   it('offers the four breakdowns as links of the same filters', () => {
     const html = render({ date_from: '2026-01-01', group_by: 'product' }, ok('spending-product.json'))
     expect(html).toContain('<nav aria-label="Разбивка трат">')
@@ -70,7 +79,7 @@ describe('spending screen markup (Vitest/SSR — not what the browser shows, foc
     expect(html).toMatch(/<h2 [^>]*data-request-focus-target[^>]*>Траты по товарам<\/h2>/)
     expect(html).toContain('<a href="/catalog/products/24">Demo Hähnchenbrust 600g</a>')
     expect(text(html)).toContain('Прочее Ещё 25 товаров с меньшими суммами, одной строкой. 1 200,33 EUR 73,17 %')
-    expect(text(html)).toContain('Период: 01.01.2026 — 30.09.2026, обе даты включительно.')
+    expect(html).toContain('Период: <time dateTime="2026-01-01">01.01.2026</time>\u00a0— <time dateTime="2026-09-30">30.09.2026</time>, обе даты включительно.')
     expect(html).not.toContain('aria-label="Путь в тратах"')
   })
   it('shows the way back inside a category', () => {
@@ -87,7 +96,7 @@ describe('spending screen markup (Vitest/SSR — not what the browser shows, foc
   it('names the generic product of the filter once it is known', () => {
     const query: SpendingQuery = { generic: 1, group_by: 'product' }
     expect(render(query, ok('spending-generic-filter.json'), { genericName: 'Молоко' })).toContain('<span aria-current="page">Молоко</span>')
-    expect(render(query, ok('spending-generic-filter.json'))).toContain('<span aria-current="page">Обобщённый продукт №1</span>')
+    expect(render(query, ok('spending-generic-filter.json'))).toContain('<span aria-current="page">Обобщённый продукт №1</span>')
   })
   it('keeps an amount that is not positive in the table only, with a mark', () => {
     const html = render({ date_from: '2026-03-14', date_to: '2026-03-14' }, ok('spending-refund-day.json'))

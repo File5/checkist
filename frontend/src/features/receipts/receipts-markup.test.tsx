@@ -44,7 +44,7 @@ describe('receipt screens (Vitest/SSR, not browser visual acceptance)', () => {
     expect(renderToStaticMarkup(<ReceiptImages images={[automatic]} receiptId={71} />)).not.toContain('Подтверждено вручную')
     const html = renderToStaticMarkup(<ReceiptImages images={[{ ...automatic, id: automatic.id + 1, status: 'imported', normalized_result: null, confirmed_at: '2026-10-04T12:35:00Z' }, automatic]} receiptId={71} />)
     expect(html.match(/Подтверждено вручную/g)).toHaveLength(1)
-    expect(html).toContain('Подтверждено вручную: <time dateTime="2026-10-04T12:35:00Z">04.10.2026, 12:35 UTC</time>')
+    expect(html).toContain('Подтверждено вручную: <time dateTime="2026-10-04T12:35:00Z">04.10.2026,\u00a012:35\u00a0UTC</time>')
   })
   it('shows the same three collapsed groups of 29 omissions as the job screen', () => {
     const image = { ...images.results[0], status: 'imported' as const, receipt_id: 71, normalized_result: null,
@@ -96,7 +96,7 @@ describe('receipt screens (Vitest/SSR, not browser visual acceptance)', () => {
     expect(list).toContain('Страница 2')
     expect(list).toContain('Загружаем')
     const detail = renderToStaticMarkup(<ReceiptPage receiptId={71} returnTo="/receipts?q=MILCH&amp;page=2" />)
-    expect(detail).toContain('Страница чека №71')
+    expect(detail).toContain('Страница чека\u00a0№71')
     expect(detail.match(/class="request-state request-state-loading"/g)).toHaveLength(5)
     for (const html of [list, detail]) { expect(html).not.toContain('<h1'); expect(html).not.toContain('<main') }
   })
@@ -120,18 +120,18 @@ describe('receipt screens (Vitest/SSR, not browser visual acceptance)', () => {
     const returned: Line = { ...deposit, id: 105, position: 5, kind: 'deposit_return', parent_id: null, quantity: '-1.000', amount: '-0.25', paid_amount: '-0.25' }
     const html = renderToStaticMarkup(<ReceiptLines lines={[parent, unmatched, deposit, service, returned]} currency="EUR" />)
     expect(html.match(/Товар не сопоставлен/g)).toHaveLength(4)
-    expect(html).toContain('Строка 3 · Залог')
-    expect(html).toContain('Залог к <a href="#receipt-line-101">Строка 1: MILCH 1 L</a>')
+    expect(html).toContain('Строка\u00a03 · Залог')
+    expect(html).toContain('Залог к <a href="#receipt-line-101">Строка\u00a01: MILCH 1 L</a>')
     expect(html).toContain('href="#receipt-line-103"')
-    expect(html).toContain('Строка 4 · Услуга')
+    expect(html).toContain('Строка\u00a04 · Услуга')
     expect(html).toContain('Возврат залога')
     expect(html).toContain('-0,25 EUR')
   })
   it('keeps parent identity visible when a deposit/discount references another page', () => {
     const deposit: Line = { ...lines.results[0], kind: 'deposit', parent_id: 999 }
-    expect(renderToStaticMarkup(<ReceiptLines lines={[deposit]} currency="EUR" />)).toContain('Строка ID 999 (на другой странице строк)')
+    expect(renderToStaticMarkup(<ReceiptLines lines={[deposit]} currency="EUR" />)).toContain('Строка\u00a0ID\u00a0999 (на другой странице строк)')
     const html = renderToStaticMarkup(<ReceiptDiscounts discounts={[...discounts.results, { ...discounts.results[0], id: 202, line_id: null }]} lines={[]} currency="EUR" />)
-    expect(html).toContain('Строка ID 101')
+    expect(html).toContain('Строка\u00a0ID\u00a0101')
     expect(html).toContain('Скидка на весь чек')
     expect(html).not.toContain('href="#receipt-line-101"')
   })
@@ -229,6 +229,34 @@ describe('receipt screens (Vitest/SSR, not browser visual acceptance)', () => {
     expect(html).toContain('aria-current="page" disabled')
     expect(html).toContain('Предыдущая')
     expect(html).toContain('Следующая')
+  })
+  it('glues a word to its number in the visible labels of the list and of the receipt', () => {
+    const list = renderToStaticMarkup(<ReceiptsView query={{ page: 1 }} state={{ kind: 'ok', data: { ...emptyPage<Receipt>(), count: 1, pages: 1, results: [receipt] } }} retry={noop} />)
+    expect(list).toContain('· чек\u00a0№71</a>')
+    const detail = renderToStaticMarkup(<ReceiptView {...view} />)
+    expect(detail).toMatch(/<h3>Фото\u00a0№\d+ · вырезка\u00a0\d+<\/h3>/)
+    expect(detail).toContain('>Задание\u00a0№31</a>')
+    expect(detail).toMatch(/<span class="receipt-note">Строка\u00a0\d+ · Товар<\/span>/)
+    // No visible label of these screens keeps an ordinary space between the word and its number.
+    for (const html of [list, detail]) expect(html.replace(/(alt|aria-label)="[^"]*"/g, '')).not.toMatch(/(чек|Фото|Задание) №|вырезка \d|Строка \d/)
+  })
+  it('puts every date of the list and of the receipt into <time>', () => {
+    const list = renderToStaticMarkup(<ReceiptsView query={{ page: 1 }} state={{ kind: 'ok', data: { ...emptyPage<Receipt>(), count: 1, pages: 1, results: [receipt] } }} retry={noop} />)
+    const confirmed = { ...images.results[0], receipt_id: 71, confirmed_at: '2026-10-04T12:35:00Z' }
+    const detail = renderToStaticMarkup(<ReceiptView {...view} images={loaded({ ...images, results: [confirmed] })} />)
+    for (const html of [list, detail]) {
+      expect(html).toMatch(/<time dateTime="[^"]+">\d{2}\.\d{2}\.\d{4}/)
+      expect(html.replace(/<time\b[^>]*>[^<]*<\/time>/g, '')).not.toMatch(/\d{2}\.\d{2}\.\d{4}/)
+    }
+    expect(detail.match(/<time\b/g)).toHaveLength(2)
+  })
+  it('marks the numbers of the lines table and the totals with the classes that keep a value whole', () => {
+    const html = renderToStaticMarkup(<ReceiptView {...view} />)
+    const row = /<tr id="receipt-line-101"[^>]*>([\s\S]*?)<\/tr>/.exec(html)![1]
+    expect(row.match(/<td\b/g)).toHaveLength(5)
+    expect(row.match(/<td class="receipt-number">/g)).toHaveLength(5)
+    expect(row.match(/<th scope="row">/g)).toHaveLength(1)
+    expect(html).toContain('<dd class="receipt-number receipt-total">')
   })
   it('keeps filtered return URL and recovers list page errors without clearing filters', () => {
     const detail = renderToStaticMarkup(<ReceiptView {...view} returnTo="/receipts?q=MILCH&page=2" />)

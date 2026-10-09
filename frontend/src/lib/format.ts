@@ -27,8 +27,13 @@ export function formatAmount(value: Decimal | null, currency: CurrencyCode): str
   const number = decimal(value, 2, 2)
   return number === missing ? missing : `${number}${space}${currency}`
 }
+/** Two places like a price tag; a non-zero price that would read 0,00 keeps up to four. */
 export function formatPrice(value: Decimal | null, currency: CurrencyCode, unit?: Unit | null): string {
-  const number = decimal(value, 4)
+  let number = decimal(value, 2, 2)
+  if (number === '0,00' && value !== null && /[1-9]/.test(value)) {
+    const precise = decimal(value, 4)
+    if (precise !== '0') number = precise
+  }
   return number === missing ? missing : `${number}${space}${currency}${unit == null ? '' : `/${formatUnit(unit)}`}`
 }
 export function formatQuantity(value: Decimal | null, unit?: Unit | null): string {
@@ -38,6 +43,10 @@ export function formatQuantity(value: Decimal | null, unit?: Unit | null): strin
 export function formatPercent(value: Decimal | null): string {
   const number = decimal(value, 2, 2)
   return number === missing ? missing : `${number}${space}%`
+}
+/** Price indices keep all four places, so that 1,0000 and 1,2404 line up. */
+export function formatIndex(value: Decimal | null): string {
+  return decimal(value, 4, 4)
 }
 /** A calendar date is rearranged directly, with no timezone conversion. */
 export function formatPurchasedOn(value: ISODate | null): string {
@@ -49,10 +58,13 @@ export function formatObservedAt(value: ISODateTime | null, timezone?: string | 
   const options: Intl.DateTimeFormatOptions = {
     year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
   }
+  // The date, the time and the UTC label stay on one line: Intl puts a plain space after the comma.
+  const format = (timeZone: string) =>
+    new Intl.DateTimeFormat('ru-RU', { ...options, timeZone }).format(moment).replace(', ', `,${space}`)
   if (timezone) {
     try {
-      return new Intl.DateTimeFormat('ru-RU', { ...options, timeZone: timezone }).format(moment)
+      return format(timezone)
     } catch { /* Unknown or invalid store timezone: use an explicitly labelled UTC moment. */ }
   }
-  return `${new Intl.DateTimeFormat('ru-RU', { ...options, timeZone: 'UTC' }).format(moment)} UTC`
+  return `${format('UTC')}${space}UTC`
 }

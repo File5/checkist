@@ -5,6 +5,7 @@ import type { Page } from '../../api/types'
 import Pagination from '../../components/Pagination'
 import RequestState from '../../components/RequestState'
 import { formatPurchasedOn } from '../../lib/format'
+import { numbered } from '../../lib/text'
 import { buildReceiptsQuery, Link } from '../../navigation'
 import type { ReceiptsQuery } from '../../navigation'
 import type { ReceiptsPageProps } from '../../pages/types'
@@ -20,7 +21,7 @@ export function ReceiptList({ receipts }: { receipts: Receipt[] }) {
   return <ul className="receipt-list">{receipts.map((receipt) => <li key={receipt.id} className="receipt-list-card">
     {receipt.preview_image_url && <ReceiptMedia url={receipt.preview_image_url} thumbnail alt={`Миниатюра чека №${receipt.id}`} />}
     <div className="receipt-list-content">
-      <h3><Link to={`/receipts/${receipt.id}`}>{recognizedText(receipt.store.name)} · чек №{receipt.id}</Link></h3>
+      <h3><Link to={`/receipts/${receipt.id}`}>{recognizedText(receipt.store.name)} · {numbered('чек', receipt.id)}</Link></h3>
       <p className="receipt-note">{recognizedText(receipt.store.city)} · {recognizedText(receipt.store.address)}</p>
       <dl className="receipt-facts">
         <div><dt>Дата покупки</dt><dd><time dateTime={receipt.purchased_on}>{recognizedValue(formatPurchasedOn(receipt.purchased_on))}</time></dd></div>

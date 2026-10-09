@@ -31,11 +31,11 @@ describe('crop confirmation state machine', () => {
     resolve({ kind: 'ok', data: confirmed() })
     expect(await pending).toBeUndefined()
     expect(life.success).toHaveBeenCalledExactlyOnceWith(confirmed()); expect(life.failure).not.toHaveBeenCalled()
-    expect(actions.getSnapshot()).toEqual({ kind: 'done', imageId: 42, image: confirmed().image, message: 'Подтверждено. Чек №72 сохранён.' })
+    expect(actions.getSnapshot()).toEqual({ kind: 'done', imageId: 42, image: confirmed().image, message: 'Подтверждено. Чек\u00a0№72 сохранён.' })
     expect(actions.getServerSnapshot()).toEqual({ kind: 'idle' })
   })
   it.each([
-    ['reused', 'привязана к уже сохранённому чеку №72: его значения не изменены, исправления к нему не применены'],
+    ['reused', 'привязана к уже сохранённому чеку\u00a0№72: его значения не изменены, исправления к нему не применены'],
     ['updated', 'дополнены только его пустые поля, заполненные значения не изменены'],
   ] as const)('says plainly that corrections were not applied to an existing receipt (%s)', async (status, text) => {
     const data = { ...confirmed(), image: { ...confirmed().image, status } }

@@ -1,5 +1,5 @@
 /** Pure line-chart layout: time axis by `period_start`, value axis with nice ticks, runs broken at gaps. */
-import { coordinate as c, dayNumber, linearScale, nextPeriodStart, niceTicks, pickTicks } from './scale.ts'
+import { coordinate as c, dayNumber, linearScale, minAxisStep, nextPeriodStart, niceTicks, pickTicks } from './scale.ts'
 import type { ChartInterval } from './scale.ts'
 
 export interface LineInputPoint { x: string; value: number }
@@ -18,7 +18,8 @@ export interface LineLayoutOptions {
   connectGaps?: boolean
   /** Start the value axis at zero. */
   zeroBaseline?: boolean
-  formatValue?: (value: number) => string
+  /** Text of a value-axis division; `step` is the step of that axis, the same for all its divisions. */
+  formatValue?: (value: number, step: number) => string
   formatTick?: (x: string) => string
 }
 
@@ -108,14 +109,14 @@ export function splitRuns<T extends { x: string }>(points: readonly T[], interva
 
 export function layoutLineChart(series: readonly LineInputSeries[], options: LineLayoutOptions): LineLayout {
   const { width, height, interval, connectGaps = false, zeroBaseline = false } = options
-  const formatValue = options.formatValue ?? String
+  const formatValue = options.formatValue ?? ((value: number) => String(value))
   const formatTick = options.formatTick ?? ((x: string) => x)
   const cleaned = series.map((item) => ({ item, points: cleanPoints(item.points) }))
   const values = cleaned.flatMap(({ points }) => points.map((point) => point.value))
   const xs = periodStarts(series)
 
-  const ticks = values.length ? niceTicks(Math.min(...values), Math.max(...values), height < 260 ? 4 : 5, zeroBaseline) : niceTicks(0, 1)
-  const tickTexts = ticks.values.map(formatValue)
+  const ticks = values.length ? niceTicks(Math.min(...values), Math.max(...values), height < 260 ? 4 : 5, zeroBaseline, minAxisStep) : niceTicks(0, 1)
+  const tickTexts = ticks.values.map((value) => formatValue(value, ticks.step))
   const endTexts = cleaned.map(({ item, points }) => (points.length ? item.endLabel ?? '' : ''))
   const longestEnd = Math.max(0, ...endTexts.map((text) => text.length))
   const plot = {

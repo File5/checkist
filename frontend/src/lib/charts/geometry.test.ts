@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { chartNumber, coordinate, dayNumber, linearScale, nearestIndex, nextPeriodStart, niceTicks, pickTicks } from './scale'
+import { axisDecimals, chartNumber, coordinate, dayNumber, formatAxisTick, linearScale, minAxisStep, nearestIndex, nextPeriodStart, niceTicks, pickTicks } from './scale'
 import { arcPath, fullTurn, layoutPieLabels, pieSlices, pieTones, polar } from './pie'
 import { cleanPoints, layoutLineChart, markerPath, markerShapes, periodStarts, seriesStyle, splitRuns } from './line'
 
@@ -28,6 +28,73 @@ describe('scales and axis divisions', () => {
     expect(ticks.values).toEqual([1.05, 1.06, 1.07, 1.08, 1.09])
     expect(ticks.step).toBe(0.01)
     expect(niceTicks(0.1, 0.3).values).toEqual([0.1, 0.15, 0.2, 0.25, 0.3])
+  })
+  it('does not make the step finer than the asked one', () => {
+    expect(niceTicks(1.05, 1.07).step).toBe(0.005)
+    expect(niceTicks(1.05, 1.07, 5, false, minAxisStep)).toEqual({ min: 1.05, max: 1.07, step: 0.01, values: [1.05, 1.06, 1.07] })
+    expect(niceTicks(1.052, 1.058, 5, false, minAxisStep).values).toEqual([1.05, 1.06])
+    expect(niceTicks(0.004, 0.004, 5, false, minAxisStep).values).toEqual([0, 0.01])
+    expect(niceTicks(27.4, 45.5, 5, false, minAxisStep)).toEqual(niceTicks(27.4, 45.5))
+    expect(niceTicks(1.05, 1.09, 5, false, minAxisStep)).toEqual(niceTicks(1.05, 1.09))
+  })
+  it.each([
+    [0.95, 1.05, 5, false, true, ['0,95', '1,00', '1,05']],
+    [2.1, 2.2, 5, false, false, ['2,10', '2,15', '2,20']],
+    [0, 0.09, 4, true, true, ['0,00', '0,05', '0,10']],
+    [0.95, 1.05, 4, false, false, ['0,95', '1,00', '1,05']],
+    [130.53, 130.64, 5, false, true, ['130,50', '130,55', '130,60', '130,65']],
+    [-0.06, 0.05, 5, false, false, ['-0,10', '-0,05', '0,00', '0,05']],
+    [9.4, 10.6, 5, false, true, ['9,25', '9,50', '9,75', '10,00', '10,25', '10,50', '10,75']],
+    [0.31, 0.39, 5, false, false, ['0,30', '0,32', '0,34', '0,36', '0,38', '0,40']],
+  ] as const)('writes every division of %s..%s exactly, on an even step', (low, high, target, zero, money, texts) => {
+    const ticks = niceTicks(low, high, target, zero, minAxisStep)
+    const axis = ticks.values.map((value) => formatAxisTick(value, ticks.step, money))
+    expect(axis).toEqual(texts)
+    const read = axis.map((text) => Number(text.replace(',', '.')))
+    expect(read).toEqual(ticks.values)
+    const gaps = read.slice(1).map((value, index) => Math.round((value - read[index]) * 1e6))
+    expect(new Set(gaps)).toEqual(new Set([Math.round(ticks.step * 1e6)]))
+  })
+  it('never rounds a division of a chart axis, whatever the range', () => {
+    for (let low = -0.4; low < 140; low = Math.abs(low) * 1.37 + 0.173) {
+      for (let span = 0.003; span < 60; span *= 1.31) {
+        for (const target of [4, 5]) {
+          const ticks = niceTicks(low, low + span, target, false, minAxisStep)
+          for (const money of [true, false]) {
+            const read = ticks.values.map((value) => Number(formatAxisTick(value, ticks.step, money).replace(/\s/g, '').replace(',', '.')))
+            expect(read).toEqual(ticks.values)
+          }
+        }
+      }
+    }
+  })
+  it('skips a step finer than the asked grid only when one is asked', () => {
+    expect(niceTicks(0.95, 1.05).step).toBe(0.025)
+    expect(niceTicks(0.95, 1.05, 5, false, minAxisStep).step).toBe(0.05)
+    expect(niceTicks(9.4, 10.6, 5, false, minAxisStep)).toEqual(niceTicks(9.4, 10.6))
+    expect(niceTicks(94, 106, 5, false, 1).step).toBe(5)
+    expect(niceTicks(940, 1060, 5, false, minAxisStep).step).toBe(25)
+  })
+  it.each([
+    [1000, 0, 0], [5, 0, 0], [1, 0, 0], [0.5, 1, 2], [0.2, 1, 2], [0.1, 1, 2], [0.25, 2, 2], [0.05, 2, 2], [0.01, 2, 2],
+    [0.005, 2, 2], [0.0025, 2, 2], [0, 0, 0], [NaN, 0, 0],
+  ])('counts the decimals of the step %s: %s, on a money axis %s', (step, plain, money) => {
+    expect(axisDecimals(step)).toBe(plain)
+    expect(axisDecimals(step, true)).toBe(money)
+  })
+  it.each([
+    [[2.5, 3, 3.5], 0.5, false, ['2,5', '3,0', '3,5']],
+    [[2.5, 3, 3.5], 0.5, true, ['2,50', '3,00', '3,50']],
+    [[2.75, 3, 3.25], 0.25, false, ['2,75', '3,00', '3,25']],
+    [[2.75, 3, 3.25], 0.25, true, ['2,75', '3,00', '3,25']],
+    [[0, 1000, 2000, 15000], 1000, true, ['0', '1 000', '2 000', '15 000']],
+    [[-0.5, 0, 0.5], 0.5, false, ['-0,5', '0,0', '0,5']],
+    [[2.9905, -0.001], 0.01, true, ['2,99', '0,00']],
+  ] as const)('writes the divisions %j of the step %s (money: %s) with the same decimals', (values, step, money, texts) => {
+    expect(values.map((value) => formatAxisTick(value, step, money))).toEqual(texts)
+  })
+  it('writes a value without an axis step with at most two decimals', () => {
+    expect([1.0725, 3, 2.5, NaN].map((value) => formatAxisTick(value))).toEqual(['1,07', '3', '2,5', '—'])
   })
   it('opens a band around a single value without crossing zero', () => {
     const flat = niceTicks(5, 5)
@@ -248,6 +315,27 @@ describe('line layout', () => {
     expect(one.xTicks).toEqual([{ x: '2026-06-01', position: one.xPositions[0], text: 'июнь', anchor: 'middle' }])
     expect(one.series[0].segments).toEqual([])
     expect(one.series[0].points[0].marker).toBe(true)
+  })
+  it('hands the axis step to the formatter and never repeats a division', () => {
+    const steps: number[] = []
+    const texts = (values: Record<string, number>, money: boolean) => layoutLineChart([{ key: 'a', points: months(values) }], {
+      ...size, formatValue: (value, step) => { steps.push(step); return formatAxisTick(value, step, money) },
+    }).yTicks.map((tick) => tick.text)
+    expect(texts({ '01': 2.6, '02': 4.4 }, true)).toEqual(['2,50', '3,00', '3,50', '4,00', '4,50'])
+    expect(texts({ '01': 2.6, '02': 4.4 }, false)).toEqual(['2,5', '3,0', '3,5', '4,0', '4,5'])
+    expect(new Set(steps)).toEqual(new Set([0.5]))
+    expect(texts({ '01': 2.9905, '02': 3.01 }, true)).toEqual(['2,99', '3,00', '3,01'])
+    // A step of 0,005 would print «1,05 / 1,06 / 1,06 / 1,07»: the axis stops at 0,01.
+    expect(texts({ '01': 1.05, '02': 1.07 }, true)).toEqual(['1,05', '1,06', '1,07'])
+    const cases: Record<string, number>[] = [{ '01': 1.0049, '02': 1.0051 }, { '01': 0.004 }, { '01': 1.2345 }, { '01': 130.5882, '02': 131.2 }, { '01': 900, '02': 5200 }]
+    for (const values of cases) {
+      for (const money of [true, false]) {
+        const axis = texts(values, money)
+        expect(new Set(axis).size).toBe(axis.length)
+        expect(new Set(axis.map((text) => (text.split(',')[1] ?? '').length)).size).toBe(1)
+      }
+    }
+    expect(texts({ '01': 900, '02': 5200 }, true)).toEqual(['0', '1 000', '2 000', '3 000', '4 000', '5 000', '6 000'])
   })
   it('lays out an empty chart and a narrow one without errors', () => {
     const empty = layoutLineChart([], size)

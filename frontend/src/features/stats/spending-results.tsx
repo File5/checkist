@@ -6,9 +6,9 @@ import { useLocalRequestFocus } from '../../components/useLocalRequestFocus'
 import { PieChart } from '../../lib/charts'
 import { Link } from '../../navigation'
 import type { SpendingQuery } from '../../navigation'
+import { PeriodText } from './period'
 import {
-  breadcrumbs, failureView, grouping, groupingCaptions, groupingHref, groupingLabels, hasFilters, needsAddressReset, periodText,
-  resetHref, shownResult, upHref,
+  breadcrumbs, failureView, grouping, groupingCaptions, groupingHref, groupingLabels, hasFilters, needsAddressReset, resetHref, shownResult, upHref,
 } from './spending-state'
 import type { Shown, SpendingFailure, SpendingRequestState } from './spending-state'
 import { blockView, unassignedHint } from './spending-view'
@@ -76,7 +76,7 @@ export default function SpendingResults({ query, state, retry, last, genericName
       {up && <Link className="action-link" to={up}>На уровень выше</Link>}
     </nav>}
     <p className="spending-status" role="status">
-      {shown && (shown.stale ? 'Обновляем данные по новым фильтрам…' : periodText(shown.data))}
+      {shown && (shown.stale ? 'Обновляем данные по новым фильтрам…' : <PeriodText period={shown.data} />)}
     </p>
     {state.kind === 'error' && <Failure failure={state} query={query} retry={retry} />}
     {loading && !shown && <RequestState kind="loading" message="Загружаем траты…" />}

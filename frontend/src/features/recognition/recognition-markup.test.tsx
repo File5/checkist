@@ -19,9 +19,25 @@ describe('recognition SSR markup (interactive UI remains manual)', () => {
   it.each(jobStatuses)('displays status %s with no invented percentages', (status) => {
     const data = { ...job(), status, stage: 'recognize' as const, progress: { ...job().progress, current_position: 2, detected: 3 } }
     const html = renderToStaticMarkup(<JobSummary job={data} announce />)
-    expect(html).toContain(jobLabels[status]); expect(html).toContain('чек 2 из 3')
+    expect(html).toContain(jobLabels[status]); expect(html).toContain('чек\u00a02\u00a0из\u00a03')
     expect(html).toContain('aria-live="polite"'); expect(html).not.toContain('%')
     expect(html).toContain('UTC'); expect(html).toContain('Сохранено')
+  })
+  it('prints the dates of a job whole, each inside <time>', () => {
+    const data = { ...job(), status: 'succeeded' as const, started_at: '2026-10-04T12:31:00Z', finished_at: '2026-10-04T12:35:00Z' }
+    const html = renderToStaticMarkup(<JobSummary job={data} />)
+    for (const [label, at] of [['Создано', data.created_at], ['Начато', data.started_at], ['Завершено', data.finished_at]]) {
+      expect(html).toContain(`<p>${label}: <time dateTime="${at}">`)
+    }
+    // Only non-breaking spaces inside a date; the shell stylesheet also keeps <time> on one line.
+    const dates = [...html.matchAll(/<time[^>]*>([^<]*)<\/time>/g)].map((match) => match[1])
+    expect(dates).toHaveLength(3)
+    for (const text of dates) { expect(text).toContain('\u00a0'); expect(text).not.toMatch(/[ \n]/) }
+  })
+  it('glues a word to its number in the cards of crops and of jobs', () => {
+    const html = renderToStaticMarkup(<ReceiptImages images={[{ ...image(), status: 'imported', normalized_result: null, issues: [], receipt_id: 72 }]} />)
+    expect(html).toMatch(/<h3><span class="ck-rec-pair">Чек\u00a0\d+<\/span> · /)
+    expect(html).toContain('>Открыть чек\u00a0№72</a>')
   })
   it('does not expose provider error messages', () => {
     const html = renderToStaticMarkup(<JobSummary job={{ ...job(), error: { code: 'provider_error', message: 'private provider message' }, stalled: true }} />)
@@ -144,6 +160,6 @@ describe('recognition SSR markup (interactive UI remains manual)', () => {
     const jobs = renderToStaticMarkup(<JobsPage query={{ page: 3, status: 'failed' }} />)
     expect(jobs).toContain('Страница 3'); expect(jobs).toContain('selected=""')
     const detail = renderToStaticMarkup(<JobPage jobId={31} returnTo="/recognition/jobs?page=3" />)
-    expect(detail).toContain('Задание №31'); expect(detail).toContain('href="/recognition/jobs?page=3"')
+    expect(detail).toContain('<span class="ck-rec-pair">Задание\u00a0№31</span>'); expect(detail).toContain('href="/recognition/jobs?page=3"')
   })
 })

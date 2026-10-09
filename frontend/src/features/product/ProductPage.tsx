@@ -136,7 +136,7 @@ function ProductScreen({ productId, query, returnTo }: ProductPageProps) {
             <div><dt>Бренд</dt><dd>{product.brand?.name.trim() || 'Не указано'}</dd></div>
             <div><dt>Модель</dt><dd>{product.model.trim() || 'Не указано'}</dd></div>
             <div><dt>GTIN</dt><dd>{product.gtin.trim() || 'Не указано'}</dd></div>
-            <div><dt>Фасовка</dt><dd>{product.package ? formatQuantity(product.package.quantity, product.package.unit) : 'Не указано'}</dd></div>
+            <div><dt>Фасовка</dt><dd>{product.package ? <span className="product-value">{formatQuantity(product.package.quantity, product.package.unit)}</span> : 'Не указано'}</dd></div>
             <div><dt>Обобщённый продукт</dt><dd>{product.generic.name.trim() || 'Не указано'}</dd></div>
           </dl>
           {merges.mark && <ProductMergeNotice mark={merges.mark} />}

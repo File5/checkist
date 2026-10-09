@@ -6,7 +6,7 @@ import type { BaseUnit, LocalApiFailure } from '../../api/types'
 import { formatQuantity } from '../../lib/format'
 import type { ClassificationQuery } from '../../navigation'
 import { getSession, permissionDeniedText } from '../../session'
-import { counted } from '../merges/labels'
+import { countedWhole } from '../merges/labels'
 import type { AreaFate, OpenArea } from './state'
 
 export const missing = 'Не указано'
@@ -36,7 +36,7 @@ export const filters: { value: NonNullable<ClassificationQuery['status']> | ''; 
 export function categoryText(category: Pick<ClassificationCategory, 'path'> | { path: { name: string }[] } | null): string {
   return category && category.path.length ? category.path.map(named).join(pathSeparator) : 'Категория не указана'
 }
-export const productsCount = (count: number) => counted(count, 'товар', 'товара', 'товаров')
+export const productsCount = (count: number) => countedWhole(count, 'товар', 'товара', 'товаров')
 /** Brand and package of a product; empty facts are left out. */
 export function productFacts(product: Pick<ClassificationProduct, 'brand' | 'package'>): string {
   return [

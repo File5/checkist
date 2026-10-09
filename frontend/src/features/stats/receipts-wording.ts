@@ -1,8 +1,8 @@
 /** Words and numbers of the comparison of two periods. Pure: wire decimals in, ready texts out. */
 import { decimalNumber } from '../../api/stats'
-import type { CompareCurrency, ComparePeriod, ComparePriceIndex, CompareSide } from '../../api/stats'
+import type { CompareCurrency, ComparePriceIndex, CompareSide } from '../../api/stats'
 import type { CurrencyCode, Decimal } from '../../api/types'
-import { formatAmount, formatPercent, formatPrice, formatPurchasedOn, formatQuantity } from '../../lib/format'
+import { formatAmount, formatIndex, formatPercent, formatPrice, formatQuantity } from '../../lib/format'
 
 export type Sign = -1 | 0 | 1
 /** Sign of a wire decimal without turning money into a float; `null` for an absent or broken value. */
@@ -18,7 +18,6 @@ const plus = (value: Decimal | null, text: string) => (decimalSign(value) === 1 
 export const signedAmount = (value: Decimal | null, currency: CurrencyCode) => plus(value, formatAmount(value, currency))
 export const signedPercent = (value: Decimal | null) => plus(value, formatPercent(value))
 /** An index or a ratio with up to four places and no unit. */
-export const formatIndex = (value: Decimal | null) => formatPrice(value, '').trim()
 const count = (value: number) => value.toLocaleString('ru-RU')
 export function plural(value: number, forms: readonly [string, string, string]): string {
   const tens = Math.abs(value) % 100
@@ -26,7 +25,6 @@ export function plural(value: number, forms: readonly [string, string, string]):
   return tens > 10 && tens < 20 ? forms[2] : ones === 1 ? forms[0] : ones >= 2 && ones <= 4 ? forms[1] : forms[2]
 }
 const visits = (value: number) => `${count(value)} ${plural(value, ['поход', 'похода', 'походов'])}`
-export const periodLabel = (period: ComparePeriod) => `${formatPurchasedOn(period.date_from)} – ${formatPurchasedOn(period.date_to)}`
 
 /** Facts of one period for its card; averages of a period without visits stay «—». */
 export function sideFacts(side: CompareSide, currency: CurrencyCode): [string, string][] {

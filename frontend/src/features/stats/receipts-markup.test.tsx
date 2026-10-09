@@ -47,9 +47,16 @@ describe('comparison block (Vitest/SSR, not browser acceptance)', () => {
     expect(text(eur)).toContain('+7,39 EUR (+39,50 % изменения) — выросли цены на те же товары')
     expect(text(eur)).toContain('+2,67 EUR (+14,27 % изменения) — другой состав покупок: позиции в среднем дороже')
     // Both periods with their dates and facts.
-    expect(text(eur)).toContain('Базовый период 01.01.2020 – 31.12.2020 Походов в магазин 48 (3,99 в месяц) Средний чек 27,01 EUR Медианный чек 27,28 EUR Позиций на чек 11,5 Сумма на позицию 2,3486 EUR')
-    expect(text(eur)).toContain('Текущий период 01.01.2026 – 30.09.2026 Походов в магазин 36 (4,01 в месяц) Средний чек 45,72 EUR Медианный чек 45,52 EUR Позиций на чек 14,67 Сумма на позицию 3,1176 EUR')
+    expect(text(eur)).toContain('Базовый период 01.01.2020 — 31.12.2020 Походов в магазин 48 (3,99 в месяц) Средний чек 27,01 EUR Медианный чек 27,28 EUR Позиций на чек 11,5 Сумма на позицию 2,35 EUR')
+    expect(text(eur)).toContain('Текущий период 01.01.2026 — 30.09.2026 Походов в магазин 36 (4,01 в месяц) Средний чек 45,72 EUR Медианный чек 45,52 EUR Позиций на чек 14,67 Сумма на позицию 3,12 EUR')
     expect(eur).toContain('Возвраты в расчёт не входят: в базовом периоде исключено 0, в текущем — 1.')
+  })
+  it('writes a period as two whole dates with one dash that never starts a line', () => {
+    const raw = renderToStaticMarkup(<CompareBlock state={loaded('compare-2020-2026.json')} query={{}} onRetry={noop} />)
+    // A non-breaking space before the dash and an ordinary one after it; each date is a `<time>`, which never wraps.
+    expect(raw).toContain('<p class="stats-note"><time dateTime="2020-01-01">01.01.2020</time>\u00a0— <time dateTime="2020-12-31">31.12.2020</time></p>')
+    expect(raw).toContain('<p class="stats-note"><time dateTime="2026-01-01">01.01.2026</time>\u00a0— <time dateTime="2026-09-30">30.09.2026</time></p>')
+    expect(raw).not.toContain('–')
   })
   it('draws the terms as a bar and repeats them in a table whose total is the change', () => {
     const eur = compare(loaded('compare-2020-2026.json')).split('<article')[1]
@@ -60,12 +67,15 @@ describe('comparison block (Vitest/SSR, not browser acceptance)', () => {
     ])
     expect(eur).toContain('<div class="stats-bar" aria-hidden="true">')
     expect(eur).not.toContain('← уменьшает чек')
-    const table = eur.split('<table class="stats-table">')[1].split('</table>')[0]
+    const table = eur.split('<table class="stats-table stats-effects-table">')[1].split('</table>')[0]
     expect(table.match(/<tr>/g)).toHaveLength(5)
     expect(text(table)).toContain('Количество позиций стал покупать больше позиций за поход +8,65 EUR +46,23 %')
     expect(text(table)).toContain('Цены на те же товары выросли цены на те же товары +7,39 EUR +39,50 %')
     expect(text(table)).toContain('Состав покупок другой состав покупок: позиции в среднем дороже +2,67 EUR +14,27 %')
     expect(text(table)).toContain('Изменение среднего чека +18,71 EUR +69,27 % к базовому чеку')
+    // The words stand on their own line under the number, and the whole column can be left out on a phone.
+    expect(table).toContain('<td class="stats-number stats-effect-share">+69,27 % <span class="stats-number-note">к базовому чеку</span></td>')
+    expect(table.match(/class="stats-number stats-effect-share"/g)).toHaveLength(5)
   })
   it('shows the price index with its coverage and the assumption of the method', () => {
     const [, eur, kzt] = compare(loaded('compare-2020-2026.json')).split('<article')
@@ -89,7 +99,7 @@ describe('comparison block (Vitest/SSR, not browser acceptance)', () => {
     const products = eur.split('stats-products-table">')[1].split('</table>')[0]
     expect(products).toContain('Показаны 5 из 24 совпавших товаров с наибольшим изменением суммы покупок.')
     expect(products.match(/<a href="\/catalog\/products\/\d+">/g)).toEqual([24, 10, 21, 4, 17].map((id) => `<a href="/catalog/products/${id}">`))
-    expect(text(products)).toContain('Demo Hähnchenbrust 600g 6,17 EUR/шт 7,8661 EUR/шт +27,49 % 19 шт 18 шт 117,23 EUR 141,59 EUR')
+    expect(text(products)).toContain('Demo Hähnchenbrust 600g 6,17 EUR/шт 7,87 EUR/шт +27,49 % 19 шт 18 шт 117,23 EUR 141,59 EUR')
     expect(products.match(/<th scope="col"/g)).toHaveLength(8)
     // Both wide tables scroll inside a focusable region named by its heading: the terms and the products.
     const regions = [...eur.matchAll(/<div class="stats-table-scroll" role="region" aria-labelledby="([^"]+)" tabindex="0">/g)].map((match) => match[1])
@@ -199,6 +209,23 @@ describe('chart block (Vitest/SSR, not browser acceptance)', () => {
     expect(markup).toContain('Возвраты в график не входят: исключено 1.')
     expect(markup.match(/Возвраты в график/g)).toHaveLength(1)
   })
+  it('writes the money axis like amounts and the lines axis by its step', () => {
+    const data = seriesFixture('series-month.json')
+    const [first] = data.currencies
+    const values = ['1.10', '1.40', '1.70']
+    const buckets = first.buckets.slice(0, 3).map((bucket, index) => ({
+      ...bucket, avg_receipt: values[index], median_receipt: values[index], lines_per_receipt: values[index],
+    }))
+    const markup = trend({ kind: 'ok', data: { ...data, currencies: [{ ...first, buckets }] } })
+    const axes = markup.split('<svg class="ck-line-svg"').slice(1)
+      .map((svg) => [...svg.matchAll(/<text [^>]*dominant-baseline="central"[^>]*>([^<]*)<\/text>/g)].map((match) => match[1]).filter((tick) => /^\d/.test(tick)))
+    expect(axes).toHaveLength(2)
+    const [money, lines] = axes
+    // Both axes share one scale here, so only the way of writing a division differs.
+    expect(lines).toContain('0,5')
+    expect(lines.every((tick) => /^\d+,\d$/.test(tick))).toBe(true)
+    expect(money).toEqual(lines.map((tick) => `${tick}0`))
+  })
   it('names months in the table of a monthly chart', () => {
     const markup = trend({ kind: 'ok', data: seriesFixture('series-month.json') })
     expect(text(markup)).toContain('январь 2026 45,12 EUR 45,85 EUR')
@@ -213,7 +240,9 @@ describe('chart block (Vitest/SSR, not browser acceptance)', () => {
       `<a class="stats-chip" href="${base}&amp;interval=year">Год`,
     ])
     expect(markup).toContain('Загружаем походы по времени…')
-    expect(markup).toContain('Охват графика: с 01.01.2020 по 30.09.2026 — от начала базового периода до конца текущего.')
+    expect(markup).toContain('Охват графика: с <time dateTime="2020-01-01">01.01.2020</time> по <time dateTime="2026-09-30">30.09.2026</time> — от начала базового периода до конца текущего.')
+    expect(trend({ kind: 'loading' }, { base_from: '2020-01-01' })).toContain('Охват графика: с <time dateTime="2020-01-01">01.01.2020</time>.')
+    expect(trend({ kind: 'loading' }, { current_to: '2026-09-30' })).toContain('Охват графика: по <time dateTime="2026-09-30">30.09.2026</time>.')
     expect(trend({ kind: 'loading' }, {})).toContain('Охват графика: все сохранённые чеки.')
     expect(trend({ kind: 'loading' }, { interval: 'week' })).toContain('>Неделя</a>')
   })
