@@ -92,6 +92,24 @@
      --ck-plot-axis        оси, выноски, рамка значка легенды
      поверхность, текст, подсветка и фокус графика — общие токены:
      --ck-surface, --ck-text, --ck-text-muted, --ck-surface-raised, --ck-focus
+   Раскладка телефона (не цвета; одинаковы в обеих темах, владелец — lib/cards
+   и components/ActionBar.css, см. lib/cards/README.md)
+     --ck-bottom-nav-height  высота нижней навигации без полосы жестов; здесь
+                           0px, навигация переопределяет в своём узком блоке
+                           App.css — обязательно на :root, иначе
+                           --ck-bottom-occupied не пересчитается
+     --ck-safe-bottom      полоса жестов телефона; 0px, пока в index.html нет
+                           viewport-fit=cover
+     --ck-bottom-occupied  всё занятое внизу окна: навигация + полоса жестов;
+                           от него отсчитывается низ панели действий
+     --ck-action-bar-room  место под панель действий для scroll-padding-bottom:
+                           две кнопки по 44px друг под другом, зазор 12px,
+                           поля панели 2 × 10px и запас
+     --ck-z-action-bar     10: панель действий (закреплённые ячейки таблиц и
+                           плашка результата остаются на 1)
+     --ck-z-bottom-nav     20: нижняя навигация
+     --ck-z-menu-sheet     30: раскрытое меню поверх навигации
+     --ck-z-skip-link      40: ссылка «к содержимому» поверх всего
 
    СООТВЕТСТВИЕ СТАРЫХ ЦВЕТОВ (в скобках — сколько раз встречается в src)
    #246044 (120) бренд и успех сразу, разнести по смыслу:
@@ -270,6 +288,16 @@
   --ck-radius: 6px;
   --ck-font-body: "Segoe UI", system-ui, sans-serif;
   --ck-font-display: "Oswald", "Arial Narrow", "Roboto Condensed", "Segoe UI", sans-serif;
+
+  /* Раскладка телефона: одинакова в обеих темах, в светлой не переопределяется. */
+  --ck-bottom-nav-height: 0px;
+  --ck-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --ck-bottom-occupied: calc(var(--ck-bottom-nav-height) + var(--ck-safe-bottom));
+  --ck-action-bar-room: 128px;
+  --ck-z-action-bar: 10;
+  --ck-z-bottom-nav: 20;
+  --ck-z-menu-sheet: 30;
+  --ck-z-skip-link: 40;
 
   --ck-series-1: #3987e5;
   --ck-series-2: #d95926;

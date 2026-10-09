@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import App from './App'
 import './theme/tokens.css'
 import './App.css'
+import './components/ActionBar.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

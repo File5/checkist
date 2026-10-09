@@ -187,6 +187,8 @@ describe('theme contract in the files', () => {
     expect(darkNames.filter((name) => !lightNames.includes(name))).toEqual([
       '--ck-header-bg', '--ck-header-text', '--ck-header-text-muted', '--ck-header-accent', '--ck-header-hover-bg', '--ck-header-border',
       '--ck-header-focus', '--ck-logo-bg', '--ck-radius-sm', '--ck-radius', '--ck-font-body', '--ck-font-display',
+      '--ck-bottom-nav-height', '--ck-safe-bottom', '--ck-bottom-occupied', '--ck-action-bar-room',
+      '--ck-z-action-bar', '--ck-z-bottom-nav', '--ck-z-menu-sheet', '--ck-z-skip-link',
     ])
   })
 
@@ -198,6 +200,7 @@ describe('theme contract in the files', () => {
       'disabled-bg', 'disabled-text', 'disabled-border', 'popover-border', 'popover-shadow', 'panel-shadow',
       'header-bg', 'header-text', 'header-accent', 'logo-bg', 'radius-sm', 'radius', 'font-body', 'font-display',
       ...Array.from({ length: 8 }, (_, index) => `series-${index + 1}`), 'series-other', 'series-special', 'plot-grid', 'plot-axis',
+      'bottom-nav-height', 'safe-bottom', 'bottom-occupied', 'action-bar-room', 'z-action-bar', 'z-bottom-nav', 'z-menu-sheet', 'z-skip-link',
     ]
     expect(required.filter((name) => !names(dark).includes(`--ck-${name}`))).toEqual([])
     expect(dark).toContain('--ck-radius-sm: 4px;')
