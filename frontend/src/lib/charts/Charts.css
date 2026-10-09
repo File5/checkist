@@ -108,7 +108,9 @@
 .ck-line-legend-text { min-width: 0; }
 .ck-line-badge { display: inline-block; min-width: 1.5em; margin-right: 6px; padding: 0 5px; border: 1px solid var(--ck-chart-axis); border-radius: var(--ck-radius-sm); font-size: 0.8rem; font-weight: 600; text-align: center; }
 .ck-line-swatch { flex: 0 0 34px; width: 34px; height: 14px; }
-.ck-line-plot { position: relative; min-width: 0; border-radius: var(--ck-radius); touch-action: pan-y; }
+/* A finger scrolls the page up and down over the plot and zooms it; sideways it leads the selection (touch.ts).
+   Never `touch-action: none`: the plot is tall enough to trap the page. */
+.ck-line-plot { position: relative; min-width: 0; border-radius: var(--ck-radius); touch-action: pan-y pinch-zoom; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .ck-line-plot:focus-visible { outline: 3px solid var(--ck-chart-focus); outline-offset: 4px; }
 .ck-line-svg { display: block; width: 100%; height: auto; }
 .ck-line-path { fill: none; stroke: var(--ck-c); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
@@ -136,6 +138,11 @@
 .ck-line-tooltip-title { color: var(--ck-chart-muted); font-weight: 600; }
 .ck-line-tooltip-row { display: grid; grid-template-columns: 34px auto; column-gap: 8px; align-items: center; }
 .ck-line-tooltip-row > span { grid-column: 2; color: var(--ck-chart-muted); font-size: 0.8rem; }
+/* The arrow keys and Escape of a phone: shown only where the pointer is a finger (the block at the end). */
+.ck-line-steps { display: none; grid-template-columns: repeat(3, auto); justify-content: start; gap: 8px; min-width: 0; }
+.ck-line-steps button { min-width: 0; min-height: 44px; padding: 8px 12px; border-color: var(--ck-border-field); background: var(--ck-chart-surface); color: var(--ck-chart-ink); overflow-wrap: break-word; }
+.ck-line-steps button:active:not(:disabled) { background: var(--ck-chart-highlight); }
+.ck-line-steps button:disabled { border-color: var(--ck-disabled-border); background: var(--ck-disabled-bg); color: var(--ck-disabled-text); }
 .ck-line-live { min-height: 1.5em; font-variant-numeric: tabular-nums; }
 .ck-line-table summary { cursor: pointer; min-height: 44px; padding-block: 10px; border-radius: var(--ck-radius-sm); font-weight: 600; }
 .ck-line-table summary:focus-visible { outline: 3px solid var(--ck-chart-focus); outline-offset: 2px; }
@@ -149,6 +156,14 @@
   /* Narrower than on a wide screen, so that the three columns with ordinary sums fit a phone without scrolling. */
   .ck-pie-legend tbody th { min-width: 104px; }
   .ck-pie-child .ck-pie-name, .ck-pie-child-status-body { margin-left: 12px; }
+  /* Two steps side by side, «Снять выделение» under them: three names do not fit one row of a phone. */
+  .ck-line-steps { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); justify-content: stretch; }
+  .ck-line-steps button:last-child { grid-column: 1 / -1; }
+}
+@media (pointer: coarse) {
+  .ck-line-steps { display: grid; }
+  /* Heavier than a screen's own `.ck-pie-legend a`: a finger gets a 44px link, the sector itself no longer leads away. */
+  .ck-chart .ck-pie-legend tbody a { display: inline-flex; align-items: center; min-height: 44px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .ck-pie-shape, .ck-pie-legend tbody tr { transition: none; }

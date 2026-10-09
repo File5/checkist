@@ -9,7 +9,6 @@ const read = (path: string) => readFileSync(new URL(path, source), 'utf8')
  * a table its cards removes its own line, and parallel removals of different lines merge without a conflict.
  */
 const exceptions: Record<string, string> = {
-  'features/product/PriceHistory.tsx': 'Т1: история цен — карточки делает подзадача товара',
   'features/merges/MergeGroupView.tsx': 'Т3: записи группы дублей — карточки делает подзадача дублей',
   'features/merges/MergeLines.tsx': 'Т3: покупки группы дублей — карточки делает подзадача дублей',
   'features/stats/receipts-compare.tsx': 'Т4: слагаемые и совпавшие товары — карточки делает подзадача статистики',

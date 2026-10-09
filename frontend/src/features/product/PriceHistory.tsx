@@ -6,9 +6,20 @@ import { useLocalRequestFocus } from '../../components/useLocalRequestFocus'
 import Pagination from '../../components/Pagination'
 import { formatObservedAt, formatPrice, formatPurchasedOn } from '../../lib/format'
 import { numbered } from '../../lib/text'
+import { useNarrow } from '../../lib/cards'
+import PriceHistoryCards from './PriceHistoryCards'
+import type { HistoryColumns } from './PriceHistoryCards'
 import ProductRequestState from './ProductRequestState'
 import { hasFilters, storeLabel } from './state'
 import type { RequestState as LoadState } from './state'
+
+/** One source of the texts for the table and for its phone view. */
+const historyColumns: HistoryColumns = {
+  store: 'Магазин и адрес', date: 'Дата', list: 'До скидки', paid: 'После скидки', normalized: 'За базовую единицу',
+  purchase: 'Покупка',
+}
+const historyCaption = 'Наблюдения покупок из чеков'
+const historyLabel = 'История цен по магазинам'
 
 export default function PriceHistory({ state, query, stores, retry, reset, buildPageHref }: {
   state: LoadState<HistoryData>; query: HistoryQuery; stores: Store[]; retry: () => void; reset: () => void
@@ -16,6 +27,7 @@ export default function PriceHistory({ state, query, stores, retry, reset, build
 }) {
   const block = useLocalRequestFocus(state)
   const knownStores = new Map(stores.map((store) => [store.id, store]))
+  const narrow = useNarrow()
   return (
     <section ref={block} className="product-panel" aria-labelledby="product-history-heading" aria-busy={state.kind === 'loading'}>
       <h2 id="product-history-heading" tabIndex={-1} data-request-focus-target>История цен</h2>
@@ -25,16 +37,18 @@ export default function PriceHistory({ state, query, stores, retry, reset, build
         ? <RequestState kind="empty" message={hasFilters(query) ? 'Нет записей по выбранным фильтрам' : 'Покупок этого товара пока нет'} action={hasFilters(query) && <button type="button" onClick={reset}>Сбросить фильтры</button>} />
         : <>
           <p className="product-note" role="status">Наблюдений: {state.data.count.toLocaleString('ru-RU')}. Сначала новые покупки.</p>
+          {/* A phone shows the same purchases as cards: no table, no sideways scroll and no note about it. */}
+          {narrow ? <PriceHistoryCards points={state.data.results} stores={knownStores} columns={historyColumns} caption={historyCaption} label={historyLabel} /> : <>
           <p className="product-note" id="product-history-scroll">Если таблица не помещается по ширине, она прокручивается внутри рамки: выберите её клавишей Tab и используйте стрелки. Магазин остаётся на месте.</p>
-          <div className="product-table-scroll" role="region" aria-label="История цен по магазинам" aria-describedby="product-history-scroll" tabIndex={0}>
+          <div className="product-table-scroll" role="region" aria-label={historyLabel} aria-describedby="product-history-scroll" tabIndex={0}>
             <table className="product-table">
-              <caption>Наблюдения покупок из чеков</caption>
+              <caption>{historyCaption}</caption>
               <thead><tr>
-                <th scope="col">Магазин и адрес</th><th scope="col">Дата</th>
-                <th scope="col" className="product-number">До скидки</th>
-                <th scope="col" className="product-number">После скидки</th>
-                <th scope="col" className="product-number">За базовую единицу</th>
-                <th scope="col">Покупка</th>
+                <th scope="col">{historyColumns.store}</th><th scope="col">{historyColumns.date}</th>
+                <th scope="col" className="product-number">{historyColumns.list}</th>
+                <th scope="col" className="product-number">{historyColumns.paid}</th>
+                <th scope="col" className="product-number">{historyColumns.normalized}</th>
+                <th scope="col">{historyColumns.purchase}</th>
               </tr></thead>
               {/* The store is the row header and the first column: it stays in place while the table scrolls sideways.
                   A foreign purchase has no receipt or position: the row is identified by its place on the page. */}
@@ -53,6 +67,7 @@ export default function PriceHistory({ state, query, stores, retry, reset, build
               })}</tbody>
             </table>
           </div>
+          </>}
           <Pagination page={state.data.page} pages={state.data.pages} buildPageHref={buildPageHref} label="Страницы истории цен" />
         </>)}
     </section>

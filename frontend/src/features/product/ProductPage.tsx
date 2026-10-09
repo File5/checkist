@@ -76,7 +76,7 @@ function FilterForm({ query, product, stores, selectedStore, failures, apply, re
         <div className="product-filter-grid">{date('date_from', 'Период с')}{date('date_to', 'Период по')}</div>
         <p className="product-note" id="product-period-note">ГГГГ-ММ-ДД. Обе границы включительно, по локальной дате покупки в чеке.</p>
         {Object.keys(errors).length > 0 && <p className="product-field-error" role="status">Исправьте поля фильтров и примените их снова.</p>}
-        <div className="product-actions">
+        <div className="product-actions ck-action-bar">
           <button type="submit">Применить фильтры</button>
           <button type="button" className="product-secondary" onClick={() => { setForm({ source: '', draft: filterDraft({ page: 1 }), errors: {} }); reset() }}>Сбросить фильтры</button>
         </div>
