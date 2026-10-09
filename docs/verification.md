@@ -524,6 +524,54 @@ node frontend/scripts/check_stats_proxy.mjs preview http://127.0.0.1:15173
 
 Не проверено: снимок и экраны в браузере не открывались (автоматический обход UI запрещён) — вид карточек с доводкой К3 смотрит человек в `frontend/receipt-cards-preview/index.html`; backend-тесты и proxy-скрипты не запускались, сервер не менялся.
 
+#### Заход 2 после проверки интерфейса (Р1–Р3), 2026-10-09
+
+Проверка интерфейса вернула работу с двумя замечаниями, найденными по коду (браузер и телефон ревьюер не открывал). Причина одна: в Safari на iPhone нажатие кнопки не переводит на неё фокус — элемент, державший фокус, получает `blur` с `relatedTarget = null` раньше, чем приходит `click`. В Chrome и в режиме устройства DevTools нажатая кнопка фокус получает, поэтому дефекты там не видны.
+
+| № | Замечание | Причина | Исправление |
+| --- | --- | --- | --- |
+| Р1 | Кнопки шага под линейным графиком («Предыдущий интервал», «Следующий интервал», «Снять выделение») в Safari гаснут раньше нажатия | `onBlur` поля без адресата слал `blur`, а он снимал выделение, поставленное пальцем; кнопка без выделения недоступна, и `click` до неё не доходил. К тому же шаг кнопкой делал выделение клавиатурным | Коммит `2956f54`, `src/lib/charts/selection.ts` и `LineChart.tsx`: адресат разбирает чистая `lineBlurAction` — на поле или кнопку шага ничего, на элемент вне графика `blur` (снимает и выделение пальца), иначе новое `focus-lost` (снимает только клавиатурное). Кнопки шлют новое действие `step` — выделение пальца остаётся за пальцем. `preventDefault` на `mousedown` у `.ck-line-steps`; фокус на поле после нажатия возвращается, только если его держала кнопка |
+| Р2 | Список «Ещё» в Safari закрывается раньше, чем нажатие доходит до пункта: страница не открывается | `onBlur` обёртки при уходе фокуса без адресата слал `focus-left`, список скрывался до `click` | Коммит `277d87b`, `src/menu/more-menu.ts` и `MainMenu.tsx`: чистая `moreMenuStep` хранит список и идущее нажатие; обёртка `.main-more` слушает `pointerdown` и `mousedown` (`press`), `pointercancel` и клавишу, кроме Esc (`release`). Уход фокуса во время нажатия ничего не закрывает — решает `click`: ссылка закрывает и ведёт, кнопка переключает один раз. Прежний `moreMenuReducer` не менялся |
+
+Существующие тесты, CSS, `touch.ts`, `PieChart.tsx` не менялись. Р3 (эта подзадача) правила только документы.
+
+Сверка исправлений с замечаниями (чтение `git show 2956f54 277d87b` и тестов, без запуска приложения):
+
+| Требование | Где в коде | Тест последовательности событий |
+| --- | --- | --- |
+| После касания интервала и `blur` без `relatedTarget` кнопки шага доступны и двигают выделение | `lineBlurAction('unknown')` → `focus-lost`; редьюсер снимает по нему только `source: 'keyboard'`; `step` оставляет `source: 'touch'` | `lib/charts/step-blur.test.ts`: «keeps what a finger selected when the blur names no destination, and the buttons go on stepping», «keeps it through a blur before every press…», «keeps a selection led by a finger the same way», «lets «Снять выделение» work after such a blur» |
+| Клавиатурное выделение по `blur` по-прежнему снимается | `focus-lost` и `blur` оба снимают `source: 'keyboard'` | там же: «drops a keyboard selection on any blur that leaves the plot and its buttons, as before», «steps by a button as an arrow key does and leaves a keyboard selection to the keyboard» |
+| Выделение пальца по-прежнему снимают касание вне графика и уход фокуса за график; мышь и пустое выделение не затронуты | `dismiss`, `blur` при адресате `outside` | там же: «still ends the selection of a finger by a tap outside the chart and by the focus leaving the chart», «leaves a mouse selection and an empty one alone, as before» |
+| Нажатие пункта открытого «Ещё» ведёт на страницу при `blur` без `relatedTarget` | `moreMenuStep`: `focus-left` при `pressed` оставляет список, `navigate` закрывает | `menu/more-menu-press.test.ts`: «stays open for the click when Safari takes the focus away with no relatedTarget», «survives both reports of one touch: pointerdown, later mousedown and the blur it causes» |
+| Остальные способы закрытия «Ещё» прежние | вне нажатия `moreMenuStep` отдаёт решение `moreMenuReducer` | там же: «is still closed by the focus that left with no relatedTarget and no press inside», «is closed once by a second press of «Ещё»…», «is closed by Tab out of the list after a press that brought no click», «agrees with the plain reducer while no press is under way» |
+| Подключение в компонентах | `LineChart.tsx` (`onBlur`, `onMouseDown`), `MainMenu.tsx` (`onPointerDown`, `onMouseDown`, `onPointerCancel`) | оба файла — блок проверок по тексту исходника: DOM в тестах нет |
+
+Тесты на оба случая есть, но это последовательности действий, поданные чистым редьюсерам, и проверки текста компонентов; настоящих событий браузера в них нет.
+
+Наблюдение сверки (не дефект замечаний, код не правился): `frontend/src/menu/more-menu.ts`, `moreMenuStep` — признак нажатия `pressed` сбрасывают `click`, `pointercancel`, клавиша и касание вне обёртки. Нажатие внутри `.main-more`, не закончившееся ни кликом, ни отменой (палец уведён с пункта и отпущен), оставляет `pressed`, и следующий уход фокуса без клавиатуры (смахивание VoiceOver) список не закроет; его закрывают касание мимо, Esc и нажатие «Ещё». Сценарий — шаг 49 приёмки.
+
+Проверено и прошло (окончательное состояние ветки после слияния Р1 и Р2; Windows 11, PowerShell, `frontend/`, Node v24.18.0, npm 11.16.0):
+
+| Команда | Результат |
+| --- | --- |
+| `npm.cmd ci` | exit 0 (в worktree не было `node_modules`), 0 уязвимостей |
+| `npm.cmd run lint` | exit 0 |
+| `npm.cmd run test` | exit 0, **3704 теста / 115 файлов** (было 3675 / 113): +13 в `lib/charts/step-blur.test.ts`, +16 в `menu/more-menu-press.test.ts`. Отчёты Р1 (3688 / 114) и Р2 (3691 / 114) — состояния их веток до слияния друг с другом |
+| `npm.cmd run build` | exit 0; `dist/assets`: CSS 79,48 kB, JS 630,31 kB; предупреждение Vite о чанке больше 500 kB — прежнее |
+
+Проверено и не прошло: ничего.
+
+Не проверено и почему:
+
+| Что | Причина | Шаги для человека |
+| --- | --- | --- |
+| **Само поведение Safari**: `blur` без `relatedTarget` при нажатии кнопки, порядок `pointerdown` → `mousedown` → `blur` → `click`, действие `preventDefault` на `mousedown` | Устройств нет, автоматизация браузера запрещена; последовательность взята из замечания ревью, не из замера | [MOBILE_ACCEPTANCE.md](../frontend/MOBILE_ACCEPTANCE.md), шаги 48 и 49 — только Safari на настоящем iPhone; в Chrome и DevTools шаги проходят и без исправлений |
+| Кнопки шага и «Ещё» с VoiceOver и с внешней клавиатурой | То же | Там же, шаги 48 (iPad с клавиатурой), 49 и 47 |
+| Экраны в Chrome и DevTools после исправлений (прежние способы закрытия «Ещё», кнопки шага при эмуляции касаний) | Браузер агентами не открывался | Там же, шаги 17 и 34 |
+| Backend-тесты, proxy-скрипты, снимки `frontend/*-preview/` | Сервер не менялся; снимки не пересобирались — `charts-touch-preview` и `bottom-nav-preview` показывают состояние до захода 2 | — |
+
+Документы захода: шаги 48 и 49 и пометка о Safari в `frontend/MOBILE_ACCEPTANCE.md`; шаг 7.1 `frontend/REDESIGN_ACCEPTANCE.md` больше не описывает ленту разделов на 320 / 375 px (там нижняя панель; лента — только в запасном режиме); правило «состояние, поставленное касанием, не снимать по `blur`» — [frontend.md](frontend.md#правила-для-новых-экранов).
+
 ### Фактические результаты: переносы, числа и ширина страницы, итог (И), 2026-10-08
 
 Ветка `orca/task_mv004eam28` поверх `feature/run_muzvywph3r-fiks-teksta-na-sayte` (коммит слияния `40e7e52` «Д: хвосты…»; в неё слиты этапы А и Б — числа, В0 — оболочка и `lib/text.ts`, В1–В5 — экраны, Д — хвосты). Жалоба человека: значения рвутся посередине («20» / «26»), таблицы дают горизонтальные полосы прокрутки, цена «130,5882 RUB/л» не округлена. Windows 11, PowerShell, каталог `frontend/`. Итоговый этап менял только документы (`docs/frontend.md`, этот файл, `frontend/WRAP_ACCEPTANCE.md`, `CLAUDE.md`, `AGENTS.md`); файлы `frontend/src/**` не правились — красных проверок и находок, требующих правки, не было. Правила — [frontend.md](frontend.md#значения-не-рвутся-числа-даты-ширина-страницы-и-таблицы-2026-10-08).
