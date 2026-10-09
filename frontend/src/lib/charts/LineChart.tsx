@@ -2,6 +2,8 @@ import { Fragment, useCallback, useId, useMemo, useReducer, useRef } from 'react
 import type { FocusEvent, KeyboardEvent, PointerEvent } from 'react'
 import { cleanPoints, layoutLineChart, markerPath, periodStarts, seriesStyle } from './line.ts'
 import type { SeriesStyle } from './line.ts'
+import { useNarrow } from '../cards'
+import LineValueCards from './LineValueCards.tsx'
 import { usePlotWidth } from './plot-width.ts'
 import { coordinate as c, nearestIndex } from './scale.ts'
 import type { ChartInterval } from './scale.ts'
@@ -84,6 +86,7 @@ export default function LineChart({
   const gesture = useRef(idleTouchGesture)
   const dismiss = useCallback(() => dispatch({ type: 'dismiss' }), [])
   useOutsideTouch(rootRef, selection.activeX !== null, dismiss)
+  const narrow = useNarrow()
 
   const described = useMemo(() => series.map((item, index) => ({
     item,
@@ -107,6 +110,7 @@ export default function LineChart({
   const readoutSeries = visible.map((entry) => ({ label: entry.item.label, style: entry.style, values: valuesOf(entry) }))
   const readout = lineReadout(activeX, readoutSeries, formatX)
   const allXs = periodStarts(described)
+  const tableLabel = `Таблица значений: ${title}`
 
   const toggle = (key: string) => {
     const next = lineSelectionReducer(selection, { type: 'toggle', key })
@@ -276,7 +280,9 @@ export default function LineChart({
       <p className="ck-line-live" aria-live="polite" aria-atomic="true">{readout || 'Интервал не выбран.'}</p>
       <details className="ck-line-table">
         <summary>Таблица значений</summary>
-        <div className="ck-line-table-scroll" role="region" aria-label={`Таблица значений: ${title}`} tabIndex={0}>
+        {/* A phone shows the same values as cards: an interval is a card, a series is a fact; no sideways scroll. */}
+        {narrow ? <LineValueCards label={tableLabel} caption={title} xs={allXs} columns={described} formatX={formatX} /> : (
+        <div className="ck-line-table-scroll" role="region" aria-label={tableLabel} tabIndex={0}>
           <table>
             <caption>{title}</caption>
             <thead>
@@ -297,6 +303,7 @@ export default function LineChart({
             </tbody>
           </table>
         </div>
+        )}
       </details>
     </div>
   )
