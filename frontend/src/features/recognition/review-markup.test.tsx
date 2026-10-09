@@ -68,7 +68,7 @@ describe('review form SSR markup (interaction in a browser stays manual)', () =>
     expect(html).toContain('<p id="review-42-lines-1-quantity-error" class="ck-review-error">Не удалось прочитать обязательное поле</p>')
     expect(html).toContain('<p tabindex="-1" role="status" class="ck-review-notice"></p>')
     // The live line of a refusal exists before any refusal, right before the button.
-    expect(html).toMatch(/<p role="status" class="ck-review-refusal"><\/p><div class="ck-rec-action-block"><div class="ck-rec-actions"><button type="button" data-review-confirm/)
+    expect(html).toMatch(/<p role="status" class="ck-review-refusal"><\/p><div class="ck-rec-action-block ck-action-bar"><div class="ck-rec-actions"><button type="button" data-review-confirm/)
   })
   it('labels every field of one record differently: the kind of a tax and its amount are not both «Налог»', () => {
     const state = apply(start(), { type: 'add', list: 'lines' }, { type: 'add', list: 'discounts' }, { type: 'add', list: 'taxes' }, { type: 'add', list: 'taxes' })
@@ -241,7 +241,7 @@ describe('crop card around the confirmation', () => {
   it('keeps the person in the form with the refusal announced next to the pressed button, once', () => {
     const error = readError(409, { error: { code: 'review_busy', message: 'Данные сейчас изменяются. Повторите позже.' } }, true)
     const html = cards(image(), { kind: 'failed', imageId: 42, error, message: 'Данные сейчас изменяются другой операцией, чек не сохранён.' })
-    expect(html).toContain('<p role="status" class="ck-review-refusal">Данные сейчас изменяются другой операцией, чек не сохранён.</p><div class="ck-rec-action-block"><div class="ck-rec-actions"><button type="button" data-review-confirm="true" aria-describedby="review-42-confirm-note">Подтвердить и сохранить чек</button>')
+    expect(html).toContain('<p role="status" class="ck-review-refusal">Данные сейчас изменяются другой операцией, чек не сохранён.</p><div class="ck-rec-action-block ck-action-bar"><div class="ck-rec-actions"><button type="button" data-review-confirm="true" aria-describedby="review-42-confirm-note">Подтвердить и сохранить чек</button>')
     // One live region speaks: the message of the card above the form stays empty while the form is shown.
     expect(html.match(/Данные сейчас изменяются другой операцией/g)).toHaveLength(1)
     expect(html).toContain('<p tabindex="-1" role="status" class="ck-rec-result"></p>')
@@ -260,7 +260,7 @@ describe('crop card around the confirmation', () => {
     expect(error.reason).toBe(code)
     const message = reviewErrorText(error)
     const html = cards(image(), { kind: 'failed', imageId: 42, error, message })
-    expect(html).toContain(`<p role="status" class="ck-review-refusal">${message}</p><div class="ck-rec-action-block">`)
+    expect(html).toContain(`<p role="status" class="ck-review-refusal">${message}</p><div class="ck-rec-action-block ck-action-bar">`)
     expect(html.split(message)).toHaveLength(2); expect(html).not.toContain('Фраза сервера')
   })
   it.each([
@@ -271,7 +271,7 @@ describe('crop card around the confirmation', () => {
   ] as const)('shows an answer that was lost or unreadable at the button: %s', (reason, text) => {
     const error = { kind: 'error' as const, reason }
     const html = cards(image(), { kind: 'failed', imageId: 42, error, message: reviewErrorText(error) })
-    expect(html).toContain(`<p role="status" class="ck-review-refusal">${text}</p><div class="ck-rec-action-block">`)
+    expect(html).toContain(`<p role="status" class="ck-review-refusal">${text}</p><div class="ck-rec-action-block ck-action-bar">`)
   })
   it('moves the refusal to the message of the card when a reread replaced the form by the saved state', () => {
     const error = readError(409, { error: { code: 'review_resolved', message: 'Фраза сервера' } }, true)

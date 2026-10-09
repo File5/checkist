@@ -17,7 +17,7 @@
 /* A request in flight: `aria-disabled`, never `disabled`. Heavier than the states above, so it holds under the pointer. */
 .ck-auth button[aria-disabled="true"], .ck-auth button[aria-disabled="true"]:hover, .ck-auth button[aria-disabled="true"]:active { background: var(--ck-disabled-bg); border-color: var(--ck-disabled-border); color: var(--ck-disabled-text); cursor: default; }
 /* The ring keeps an offset: in the light theme the blue ring is not seen right against the red fill. */
-.ck-auth button:focus-visible, .ck-auth input:focus-visible, .ck-login-panel h1:focus-visible { outline: 3px solid var(--ck-focus); outline-offset: 3px; }
+.ck-auth button:focus-visible, .ck-auth input:focus-visible { outline: 3px solid var(--ck-focus); outline-offset: 3px; }
 
 .ck-auth-message:empty { display: none; }
 .ck-auth-message p, .ck-auth-message ul { margin: 0; }
@@ -91,5 +91,5 @@
   .ck-auth-field input { border-color: FieldText; }
   .ck-auth-field input[aria-invalid="true"], .ck-auth-error, .ck-auth-notice { border-color: CanvasText; }
   .ck-auth button[aria-disabled="true"] { border-color: GrayText; color: GrayText; }
-  .ck-auth button:focus-visible, .ck-auth input:focus-visible, .ck-login-panel h1:focus-visible { outline-color: Highlight; }
+  .ck-auth button:focus-visible, .ck-auth input:focus-visible { outline-color: Highlight; }
 }

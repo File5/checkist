@@ -3,6 +3,8 @@ import { getLocalJson, mutate } from './local.ts'
 import { isJob, isJobDetail, isPhoto, isPhotoUpload, isReceiptImage, isReceiptImageDetail, isReviewConfirmResult } from './recognition-schema.ts'
 import { page } from './schema.ts'
 import type { LocalApiResult, Page, RequestOptions } from './types.ts'
+import { fileProgress } from './upload-transport.ts'
+import type { UploadProgress } from './upload-transport.ts'
 import type {
   Job, JobDetail, JobParams, Photo, PhotoParams, PhotoUpload, ReceiptImage, ReceiptImageDetail, ReceiptImageParams,
   ReviewConfirmInput, ReviewConfirmResult,
@@ -11,10 +13,19 @@ import type {
 export type * from './recognition-types.ts'
 export { clearRecognitionCsrf, getLocalJson, getRecognitionCsrf } from './local.ts'
 
-export function uploadPhoto(file: File, options: RequestOptions = {}): Promise<LocalApiResult<PhotoUpload>> {
+export type { UploadProgress }
+/** `onProgress(sent, total)` counts bytes of the file: `total` is `file.size`. */
+export type UploadOptions = RequestOptions & { onProgress?: UploadProgress }
+
+/** With `onProgress` the photo goes through XMLHttpRequest: progress, and «no movement» (30 s without a byte, 60 s for
+ * the answer) instead of the total deadline. Where XMLHttpRequest is missing the call is the plain `fetch` one and
+ * `onProgress` is never called.
+ */
+export function uploadPhoto(file: File, options: UploadOptions = {}): Promise<LocalApiResult<PhotoUpload>> {
+  const { onProgress, ...request } = options
   const body = new FormData()
   body.append('file', file)
-  return mutate('recognition/photos/', body, isPhotoUpload, options, true)
+  return mutate('recognition/photos/', body, isPhotoUpload, request, true, onProgress && fileProgress(file.size, onProgress))
 }
 export function getPhotos(params: PhotoParams = {}, options: RequestOptions = {}): Promise<LocalApiResult<Page<Photo>>> {
   return getLocalJson('recognition/photos/', params, page(isPhoto), options)

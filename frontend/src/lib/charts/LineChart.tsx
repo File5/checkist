@@ -1,11 +1,15 @@
-import { Fragment, useId, useMemo, useReducer } from 'react'
-import type { KeyboardEvent, PointerEvent } from 'react'
+import { Fragment, useCallback, useId, useMemo, useReducer, useRef } from 'react'
+import type { FocusEvent, KeyboardEvent, PointerEvent } from 'react'
 import { cleanPoints, layoutLineChart, markerPath, periodStarts, seriesStyle } from './line.ts'
 import type { SeriesStyle } from './line.ts'
+import { useNarrow } from '../cards'
+import LineValueCards from './LineValueCards.tsx'
 import { usePlotWidth } from './plot-width.ts'
 import { coordinate as c, nearestIndex } from './scale.ts'
 import type { ChartInterval } from './scale.ts'
-import { activeLineX, initialLineSelection, lineKeyCommand, lineReadout, lineSelectionReducer, lineTooltipAnchor } from './selection.ts'
+import { activeLineX, initialLineSelection, lineBlurAction, lineKeyCommand, lineReadout, lineSelectionReducer, lineTooltipAnchor, stepLineSelection } from './selection.ts'
+import { advanceTouchGesture, idleTouchGesture, pointerToPlotX, stepAvailability, useOutsideTouch } from './touch.ts'
+import type { TouchGestureEvent } from './touch.ts'
 import './Charts.css'
 
 export interface LineChartPoint {
@@ -78,6 +82,11 @@ export default function LineChart({
   const hintId = useId()
   const [plotRef, width] = usePlotWidth<HTMLDivElement>(plotWidth)
   const [selection, dispatch] = useReducer(lineSelectionReducer, defaultHiddenKeys, initialLineSelection)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const gesture = useRef(idleTouchGesture)
+  const dismiss = useCallback(() => dispatch({ type: 'dismiss' }), [])
+  useOutsideTouch(rootRef, selection.activeX !== null, dismiss)
+  const narrow = useNarrow()
 
   const described = useMemo(() => series.map((item, index) => ({
     item,
@@ -101,6 +110,7 @@ export default function LineChart({
   const readoutSeries = visible.map((entry) => ({ label: entry.item.label, style: entry.style, values: valuesOf(entry) }))
   const readout = lineReadout(activeX, readoutSeries, formatX)
   const allXs = periodStarts(described)
+  const tableLabel = `Таблица значений: ${title}`
 
   const toggle = (key: string) => {
     const next = lineSelectionReducer(selection, { type: 'toggle', key })
@@ -116,17 +126,58 @@ export default function LineChart({
     event.preventDefault()
     dispatch({ type: 'key', command, xs: layout.xs })
   }
+  const intervalAt = (event: PointerEvent<HTMLDivElement>) => {
+    const position = pointerToPlotX(event.clientX, event.currentTarget.getBoundingClientRect(), layout.width)
+    const index = position === null ? null : nearestIndex(layout.xPositions, position)
+    return index === null ? null : layout.xs[index]
+  }
+  // A finger selects nothing by going down: it taps, leads the selection sideways or scrolls the page (touch.ts).
+  const onTouch = (event: PointerEvent<HTMLDivElement>, step: TouchGestureEvent) => {
+    const { gesture: next, effect } = advanceTouchGesture(gesture.current, step)
+    gesture.current = next
+    if (effect === 'scrub-start') {
+      // The selection goes on following the finger past the edges of the plot.
+      try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* the pointer is already gone */ }
+    }
+    if (effect === 'tap') dispatch({ type: 'touch-commit', x: intervalAt(event) })
+    else if (effect !== null) dispatch({ type: 'pointer', x: intervalAt(event), touch: true })
+  }
   const onPointer = (event: PointerEvent<HTMLDivElement>) => {
-    const box = event.currentTarget.getBoundingClientRect()
-    if (!(box.width > 0)) return
-    const index = nearestIndex(layout.xPositions, ((event.clientX - box.left) / box.width) * layout.width)
-    dispatch({ type: 'pointer', x: index === null ? null : layout.xs[index], touch: event.pointerType === 'touch' })
+    const { pointerId, clientX: x, clientY: y } = event
+    if (event.pointerType === 'touch') {
+      if (event.type === 'pointerdown') onTouch(event, { type: 'down', pointerId, x, y })
+      else if (event.type === 'pointermove') onTouch(event, { type: 'move', pointerId, x, y })
+      else onTouch(event, { type: event.type === 'pointerup' ? 'up' : 'cancel', pointerId })
+      return
+    }
+    if (event.type === 'pointermove' || event.type === 'pointerdown') dispatch({ type: 'pointer', x: intervalAt(event) })
+  }
+  // The buttons under the plot belong to it: the focus moving between them and the plot keeps the selection. A
+  // blur that names no destination keeps what a finger selected: Safari sends one when a button is tapped.
+  const onBlur = (event: FocusEvent<HTMLDivElement>) => {
+    const next = event.relatedTarget
+    const destination = !(next instanceof Element) ? 'unknown'
+      : !rootRef.current?.contains(next) ? 'outside'
+        : next.closest('.ck-line-plot, .ck-line-steps') ? 'controls' : 'chart'
+    const action = lineBlurAction(destination)
+    if (action !== null) dispatch(action)
+  }
+  const steps = stepAvailability(activeX, layout.xs)
+  const onStep = (command: 'previous' | 'next' | 'clear') => {
+    const next = stepLineSelection(activeX, command, layout.xs)
+    dispatch(command === 'clear' ? { type: 'dismiss' } : { type: 'step', command, xs: layout.xs })
+    // The pressed button is switched off at an edge and after clearing: the focus it holds goes to the plot, not
+    // nowhere. A button pressed by a pointer holds none.
+    const root = rootRef.current
+    if (!stepAvailability(next, layout.xs)[command] && root?.querySelector('.ck-line-steps')?.contains(document.activeElement)) {
+      root.querySelector<HTMLElement>('.ck-line-plot')?.focus({ preventScroll: true })
+    }
   }
   const { plot } = layout
   const tooltip = activePosition === null ? null : lineTooltipAnchor(activePosition, layout.width)
 
   return (
-    <div className="ck-chart ck-line" role="group" aria-label={title}>
+    <div ref={rootRef} className="ck-chart ck-line" role="group" aria-label={title}>
       {described.length > 1 && (
         <fieldset className="ck-line-legend">
           <legend>Серии на графике</legend>
@@ -154,8 +205,10 @@ export default function LineChart({
         onKeyDown={onKeyDown}
         onPointerMove={onPointer}
         onPointerDown={onPointer}
+        onPointerUp={onPointer}
+        onPointerCancel={onPointer}
         onPointerLeave={() => dispatch({ type: 'pointer-leave' })}
-        onBlur={() => dispatch({ type: 'blur' })}
+        onBlur={onBlur}
       >
         {/* Values are read from the live line and the table; the drawing itself is not announced. */}
         <svg className="ck-line-svg" viewBox={`0 0 ${layout.width} ${layout.height}`} aria-hidden="true" focusable="false">
@@ -221,6 +274,14 @@ export default function LineChart({
           </div>
         )}
       </div>
+      {/* Shown where the pointer is a finger (Charts.css): the arrow keys and Escape of a phone. The group of the
+          chart already names them, so the panel is no group of its own. A pressed button takes no focus from the
+          plot, so a selection the keyboard made is not dropped under the finger; the click still comes. */}
+      <div className="ck-line-steps" onBlur={onBlur} onMouseDown={(event) => event.preventDefault()}>
+        <button type="button" disabled={!steps.previous} onClick={() => onStep('previous')}>Предыдущий интервал</button>
+        <button type="button" disabled={!steps.next} onClick={() => onStep('next')}>Следующий интервал</button>
+        <button type="button" disabled={!steps.clear} onClick={() => onStep('clear')}>Снять выделение</button>
+      </div>
       {valueAxisLabel && <p className="ck-chart-note">Вертикальная ось: {valueAxisLabel}.</p>}
       <p className="ck-chart-note" id={hintId}>
         Клавиши на графике: ← и → — соседний интервал, Home и End — первый и последний, Esc — снять выделение.
@@ -228,7 +289,9 @@ export default function LineChart({
       <p className="ck-line-live" aria-live="polite" aria-atomic="true">{readout || 'Интервал не выбран.'}</p>
       <details className="ck-line-table">
         <summary>Таблица значений</summary>
-        <div className="ck-line-table-scroll" role="region" aria-label={`Таблица значений: ${title}`} tabIndex={0}>
+        {/* A phone shows the same values as cards: an interval is a card, a series is a fact; no sideways scroll. */}
+        {narrow ? <LineValueCards label={tableLabel} caption={title} xs={allXs} columns={described} formatX={formatX} /> : (
+        <div className="ck-line-table-scroll" role="region" aria-label={tableLabel} tabIndex={0}>
           <table>
             <caption>{title}</caption>
             <thead>
@@ -249,6 +312,7 @@ export default function LineChart({
             </tbody>
           </table>
         </div>
+        )}
       </details>
     </div>
   )

@@ -1,0 +1,31 @@
+/* The phone view of a table. No width media queries here: the view is chosen by useNarrow() (narrow.ts).
+   Text sizes are inherited, colours are theme tokens only. */
+.ck-cards { display: grid; gap: 10px; min-width: 0; }
+.ck-cards-caption { margin: 0; color: var(--ck-text-muted); }
+.ck-cards-list { display: grid; gap: 10px; min-width: 0; margin: 0; padding: 0; list-style: none; }
+
+.ck-card { display: grid; gap: 8px; min-width: 0; padding: 12px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius); background: var(--ck-surface); }
+.ck-card:target { background: var(--ck-accent-bg); }
+.ck-card-title { min-width: 0; font-weight: 600; overflow-wrap: break-word; }
+/* The main line of the heading is its bare text or its first element. Whatever follows is as plain as it was in the
+   row heading of the table; :where() weighs nothing, so a class of the screen that sets its own weight still wins. */
+:where(.ck-card-title > :not(:first-child)) { font-weight: 400; }
+/* A link of a card looks like a link of the table it replaces: the rules of the screens name the table, not the card. */
+.ck-card-title a, .ck-card-fact a { color: var(--ck-link); text-underline-offset: 3px; }
+/* The touch target of the table links. It weighs nothing: a link class of the screen keeps its own box. */
+:where(.ck-card-title > a), :where(.ck-card-fact[data-kind="value"] dd a) { display: inline-block; min-height: 44px; padding-block: 10px; }
+
+.ck-card-facts { display: grid; gap: 6px; min-width: 0; margin: 0; }
+/* The label on the left, the value on the right; a value that does not fit beside the label goes under it as a whole. */
+.ck-card-fact { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 2px 16px; min-width: 0; padding-top: 6px; border-top: 1px solid var(--ck-divider); }
+.ck-card-fact dt { color: var(--ck-text-muted); }
+.ck-card-fact dd { min-width: 0; margin: 0; }
+.ck-card-fact[data-kind="value"] dd { margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums; text-align: right; }
+.ck-card-fact[data-kind="text"] dd { overflow-wrap: break-word; }
+/* Short text stands at the right edge like a value; long text takes the line under its label and wraps by words. */
+.ck-card-fact:not([data-kind="block"]) dd { margin-left: auto; text-align: right; }
+.ck-card-fact[data-kind="block"] { display: grid; justify-content: stretch; }
+.ck-card-fact[data-kind="block"] dd { overflow-wrap: break-word; }
+
+.ck-card[data-tone="total"] .ck-card-fact dd { font-weight: 700; }
+.ck-card-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; }

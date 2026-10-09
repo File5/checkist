@@ -7,7 +7,7 @@ import { applyMe } from '../../session'
 import { resetSession } from '../../session/store'
 import { errorText } from './labels'
 import { createPreview } from './preview'
-import { createUpload, getJobNotice, retryNotice, setJobNotice, uploadMessage, validateFile } from './upload-state'
+import { createUpload, fileFormat, getJobNotice, retryNotice, setJobNotice, uploadMessage, validateFile } from './upload-state'
 
 const fixture = <T,>(name: string, guard: (value: unknown) => value is T) => {
   const value = publicFixture(name); if (!guard(value)) throw new Error('Invalid fixture'); return value
@@ -25,6 +25,24 @@ describe('upload and object URL lifecycle', () => {
     expect(validateFile({ name: 'photo.png', size: 0 }, limits)).toContain('пуст')
     for (const name of ['photo.HEIC', 'photo.gif', 'photo.pdf', 'photo']) expect(validateFile({ name, size: 2 }, limits)).toContain('JPEG или PNG')
     expect(validateFile({ name: 'photo.webp', size: 2 }, { ...limits, formats: ['image/png'] })).toContain('не поддерживается')
+  })
+  it('judges the format by file.type only when the extension is unknown', () => {
+    const limits = csrf().limits
+    // A camera file may come without an extension, or with one nobody knows.
+    for (const [name, type] of [['image', 'image/jpeg'], ['IMG_0001', 'IMAGE/PNG'], ['photo.tmp', 'image/webp'], ['12345.jfif', 'image/jpeg']]) {
+      expect(validateFile({ name, type, size: 2 }, limits), `${name} ${type}`).toBeUndefined()
+    }
+    for (const [name, type] of [['IMG_0001.HEIC', 'image/heic'], ['image', 'image/heif'], ['image', ''], ['scan', 'application/pdf'], ['clip', 'image/gif']]) {
+      expect(validateFile({ name, type, size: 2 }, limits), `${name} ${type}`).toBe('Формат не поддерживается. HEIC и другие форматы сохраните в JPEG или PNG.')
+    }
+    // A known extension wins: the server checks the bytes anyway.
+    expect(validateFile({ name: 'photo.jpg', type: 'image/heic', size: 2 }, limits)).toBeUndefined()
+    expect(fileFormat({ name: 'photo.PNG', type: 'image/jpeg' })).toBe('image/png')
+    expect(fileFormat({ name: 'photo', type: 'image/webp' })).toBe('image/webp')
+    // The type is still held against the formats of the server.
+    expect(validateFile({ name: 'image', type: 'image/webp', size: 2 }, { ...limits, formats: ['image/png'] })).toContain('не поддерживается')
+    expect(validateFile({ name: 'image', type: 'image/jpeg', size: 0 }, limits)).toContain('пуст')
+    expect(validateFile({ name: 'image', type: 'image/jpeg', size: limits.max_bytes + 1 }, limits)).toContain('слишком большой')
   })
   it('does not send a file failing client validation', async () => {
     const send = vi.fn()

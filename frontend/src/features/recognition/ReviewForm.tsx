@@ -257,12 +257,13 @@ export default function ReviewForm({ imageId, state, dispatch, countries, countr
     </fieldset>
     <p ref={notice} tabIndex={-1} role="status" className="ck-review-notice">{state.notice.text}</p>
     <p role="status" className="ck-review-refusal">{refusal ?? ''}</p>
-    <div className="ck-rec-action-block">
+    {/* Pinned to the bottom of a phone while this form is longer than the screen: buttons only, the note stays in the flow below. */}
+    <div className="ck-rec-action-block ck-action-bar">
       <div className="ck-rec-actions">
         {/* Not `disabled` while its own request runs: the pressed button keeps focus, a second press does nothing. */}
         <button type="button" data-review-confirm disabled={unavailable !== undefined} aria-disabled={pending || undefined} aria-describedby={dom('confirm-note')} onClick={pending ? undefined : onConfirm}>{pending ? 'Сохраняем чек…' : 'Подтвердить и сохранить чек'}</button>
       </div>
-      <p id={dom('confirm-note')} className="ck-rec-note">{unavailable ?? 'Одно нажатие — один запрос. После сохранения чек через эту форму изменить нельзя.'}</p>
     </div>
+    <p id={dom('confirm-note')} className="ck-rec-note">{unavailable ?? 'Одно нажатие — один запрос. После сохранения чек через эту форму изменить нельзя.'}</p>
   </section>
 }

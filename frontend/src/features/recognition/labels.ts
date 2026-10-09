@@ -60,6 +60,24 @@ export function errorText(error: LocalApiFailure, mutation = false): string {
     default: return 'Запрос не выполнен. Проверьте данные и повторите действие.'
   }
 }
+/** Texts of the upload screen: picking, reduction, sending and its stop. */
+export const uploadLabels = {
+  pick: 'Выбрать файл', camera: 'Снять чек', cancel: 'Отменить отправку',
+  submit: 'Загрузить фото', retry: 'Повторить загрузку', sending: 'Отправляем фото…', reducing: 'Уменьшаем фото…',
+  progress: 'Отправка фото',
+  stageReducing: 'Уменьшаем фото перед отправкой. Это может занять несколько секунд.',
+  stageUploading: 'Отправляем файл. Дождитесь ответа сервера; распознавание начнётся отдельно.',
+  stageWaiting: 'Фото отправлено. Ждём ответ сервера.',
+  cancelled: 'Отправка остановлена. Если фото успело дойти, задание появится в „Обработке“.',
+  cancelledReducing: 'Подготовка фото остановлена. Фото не отправлялось.',
+  reduceFailed: 'Не удалось уменьшить фото на этом устройстве. Снимите чек с меньшим разрешением камеры и выберите фото заново.',
+  conditionsLoading: 'Кнопки выбора станут доступны, когда загрузятся условия загрузки.',
+  conditionsFailed: 'Условия загрузки не получены: выбор фото недоступен. Повторите запрос в блоке «Условия загрузки».',
+}
+/** «4096 × 3072»: one value, never split. */
+export function sizeText({ width, height }: { width: number; height: number }) {
+  return glue(width.toLocaleString('ru-RU', { useGrouping: false }), '×', height.toLocaleString('ru-RU', { useGrouping: false }))
+}
 /** Refusals of a crop confirmation. The server message is never shown; nothing is replayed automatically. */
 export function reviewErrorText(error: LocalApiFailure): string {
   switch (error.reason) {

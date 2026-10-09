@@ -10,10 +10,17 @@
 
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 280px; }
+/* The page reaches under the cut-out of a phone (viewport-fit=cover): a phone on its side keeps the content beside it.
+   Upright both insets are zero; the block of the bottom bar below takes this over for the header and the page. */
+body { padding-inline: env(safe-area-inset-left, 0px) env(safe-area-inset-right, 0px); }
 button, a, input, select { -webkit-tap-highlight-color: transparent; }
 button, input, select { font: inherit; }
 a { color: inherit; }
 button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible { outline: 3px solid var(--ck-focus); outline-offset: 4px; }
+/* The heading of the page is focused by script only (tabindex="-1": after a load, a transition, the sign-in), for the
+   screen reader and the order of Tab. No person reaches it with Tab, and a ring round the title reads as a fault:
+   it is not drawn. Everything a person can reach with Tab keeps the ring of the rule above. */
+h1[tabindex="-1"]:focus-visible { outline: none; }
 h1, h2, p, dd { margin: 0; }
 h1, h2 { font-family: var(--ck-font-display); font-weight: 600; }
 h1 { font-size: clamp(1.75rem, 7vw, 3.7rem); letter-spacing: 0.01em; line-height: 1.1; }
@@ -21,7 +28,7 @@ h2 { font-size: 1.35rem; letter-spacing: 0.01em; }
 .page { max-width: 1200px; padding: 0 36px; margin: auto; overflow-wrap: anywhere; }
 /* A date is one value and is never broken inside. :where keeps the rule weightless: a screen may still override it. */
 :where(time) { white-space: nowrap; }
-.skip-link { position: absolute; top: 8px; left: 8px; transform: translateY(-200%); padding: 10px 16px; min-height: 44px; border: 1px solid var(--ck-border-field); background: var(--ck-surface); color: var(--ck-text); border-radius: var(--ck-radius-sm); z-index: 1; }
+.skip-link { position: absolute; top: 8px; left: 8px; transform: translateY(-200%); padding: 10px 16px; min-height: 44px; border: 1px solid var(--ck-border-field); background: var(--ck-surface); color: var(--ck-text); border-radius: var(--ck-radius-sm); z-index: var(--ck-z-skip-link); }
 .skip-link:focus { transform: none; }
 /* The focused link lies over the header bar, dark in both themes. */
 .skip-link:focus-visible { outline-color: var(--ck-header-focus); }
@@ -42,6 +49,10 @@ h2 { font-size: 1.35rem; letter-spacing: 0.01em; }
 .brand-bar .main-navigation a { text-decoration: none; }
 .brand-bar .main-navigation a:hover { background: var(--ck-header-hover-bg); text-decoration: underline; }
 .brand-bar .main-navigation a[aria-current] { color: var(--ck-header-accent); background: var(--ck-header-hover-bg); }
+/* «Ещё» belongs to the bottom bar of a phone. Anywhere else its wrappers are not boxes at all: the links behind it
+   stand in the row of the menu like the others, and the button is not drawn. */
+.main-more, .main-more-list { display: contents; }
+.main-more-toggle { display: none; }
 .section-navigation { margin-bottom: 20px; }
 .account-link { max-width: 100%; font-weight: 600; overflow-wrap: anywhere; }
 /* The account link lies on the header bar, dark in both themes: its text is the header text; hover, the current
@@ -61,6 +72,11 @@ button:where(:hover:not(:disabled)) { border-color: var(--ck-brand-hover); backg
 button:where(:active:not(:disabled)) { border-color: var(--ck-brand-active); background: var(--ck-brand-active); }
 button:disabled { background: var(--ck-disabled-bg); border-color: var(--ck-disabled-border); color: var(--ck-disabled-text); cursor: default; }
 input, select { min-height: 44px; max-width: 100%; }
+/* iOS Safari draws a field of a date by its own look: the padding and the frame are added to `width: 100%`, so the
+   field leaves its panel, and the value stands in the middle. Without that look it is a box like any other field;
+   the height comes from the rule above. :where keeps the rule weightless: a screen may still override it. */
+:where(input[type="date"], input[type="datetime-local"], input[type="time"], input[type="month"], input[type="week"]) { -webkit-appearance: none; appearance: none; box-sizing: border-box; min-width: 0; max-width: 100%; }
+input::-webkit-date-and-time-value { text-align: left; }
 .action-link { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 10px 16px; border: 1px solid var(--ck-link); border-radius: var(--ck-radius-sm); color: var(--ck-link); text-underline-offset: 3px; }
 /* :where keeps the hover as weak as `.action-link`: a filled link of a screen (its class sets the fill and the text
    over it) keeps its own text and border while hovered instead of taking the link colour. */
@@ -140,8 +156,38 @@ footer { border-top: 1px solid var(--ck-divider); color: var(--ck-text-muted); p
   .service-state { font-size: 0.85rem; }
 }
 
+/* A phone held upright: the main menu is a bar pinned to the bottom of the window, three sections and «Ещё».
+   A window narrower than 300 px or lower than 480 px (200 % zoom, a phone on its side, the on-screen keyboard of
+   Android) has no room for it and keeps the row in the header from the block above. */
+@media (max-width: 540px) and (min-width: 300px) and (min-height: 480px) {
+  /* The height of the bar without the gesture strip: pinned action bars and the scroll padding count from it. */
+  :root { --ck-bottom-nav-height: 3.5rem; }
+  body { padding-inline: 0; }
+  .brand-bar { padding-inline: max(20px, env(safe-area-inset-left, 0px)) max(20px, env(safe-area-inset-right, 0px)); }
+  /* The end of the page stays above the bar. */
+  .page { padding: 0 max(20px, env(safe-area-inset-right, 0px)) var(--ck-bottom-occupied) max(20px, env(safe-area-inset-left, 0px)); }
+  .brand-bar .main-navigation { position: fixed; inset: auto 0 0; z-index: var(--ck-z-bottom-nav); align-items: stretch; gap: 2px; width: auto; min-height: calc(var(--ck-bottom-nav-height) + var(--ck-safe-bottom)); margin: 0; padding: 0 max(4px, env(safe-area-inset-right, 0px)) 0 max(4px, env(safe-area-inset-left, 0px)); padding-bottom: var(--ck-safe-bottom); overflow: visible; border-top: 1px solid var(--ck-header-accent); background: var(--ck-header-bg); color: var(--ck-header-text); }
+  /* Columns as wide as their words: «Статистика» does not fit an equal quarter of 320 px.
+     The focus ring is drawn closer than elsewhere, so the edge of the window does not cut it. */
+  .brand-bar .main-navigation > a, .brand-bar .main-more-toggle { flex: 1 1 auto; justify-content: center; margin-block: 5px; padding-inline: 6px; outline-offset: 1px; }
+  .brand-bar .main-more-toggle { display: inline-flex; align-items: center; border-color: transparent; background: transparent; color: inherit; white-space: nowrap; }
+  .brand-bar .main-more-toggle:where(:hover) { background: var(--ck-header-hover-bg); text-decoration: underline; }
+  .brand-bar .main-more-toggle[aria-expanded="true"] { background: var(--ck-header-hover-bg); }
+  /* The star does not fit four words on 320 px: in the bar the current section is marked by a line above the word
+     and by its weight, as well as by colour. «Ещё» takes the same mark while the current section is behind it. */
+  .brand-bar .main-navigation > a[aria-current]::before { content: none; }
+  .brand-bar .main-navigation > a[aria-current], .brand-bar .main-more-toggle[data-current] { box-shadow: inset 0 3px 0 var(--ck-header-accent); }
+  .brand-bar .main-more-toggle[data-current] { color: var(--ck-header-accent); background: var(--ck-header-hover-bg); font-weight: 600; }
+  /* The list behind «Ещё»: drawn only while open, above the bar, at once. Not a dialog: the page stays in reach. */
+  .brand-bar .main-more-list { display: none; }
+  .brand-bar .main-more[data-open] .main-more-list { display: flex; flex-direction: column; gap: 2px; position: absolute; right: max(4px, env(safe-area-inset-right, 0px)); bottom: 100%; z-index: var(--ck-z-menu-sheet); min-width: min(240px, calc(100% - 8px)); max-width: calc(100% - 8px); margin-bottom: 6px; padding: 6px; border: 1px solid var(--ck-header-accent); border-radius: var(--ck-radius); background: var(--ck-header-bg); }
+  /* A long name of the person wraps inside the list instead of leaving the window. */
+  .brand-bar .main-more-list a { white-space: normal; }
+}
+
 @media (forced-colors: active) {
   .brand-bar { border-bottom-color: CanvasText; }
   .main-navigation a[aria-current] { text-decoration: underline; text-decoration-thickness: 3px; }
   .main-navigation a[aria-current]::before { background: LinkText; forced-color-adjust: none; }
+  .main-more-toggle[data-current] { text-decoration: underline; text-decoration-thickness: 3px; }
 }

@@ -3,6 +3,8 @@
 //   node src/lib/charts/preview/build.mjs
 // `node src/lib/charts/preview/build.mjs pie-legend` builds frontend/pie-legend-preview/index.html instead: the legend
 // rows of an item's parts (PieChartItem.action / children / childrenStatus) in the current theme tokens.
+// `node src/lib/charts/preview/build.mjs touch` builds frontend/charts-touch-preview/index.html: the charts under a finger
+// (tap, leading sideways, the step buttons, the pinned sector) in the current theme tokens.
 // The page is a snapshot: rebuild it after changing the components. It is not part of the application build.
 import { mkdir, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
@@ -15,6 +17,7 @@ const root = fileURLToPath(new URL('../../../../', import.meta.url))
 const targets = {
   charts: { demo: 'demo.tsx', entry: 'entry.tsx', out: 'charts-preview', title: 'Checkist — предпросмотр графиков (Ф1)' },
   'pie-legend': { demo: 'legend-demo.tsx', entry: 'legend-entry.tsx', out: 'pie-legend-preview', title: 'Checkist — состав «Прочего» в легенде диаграммы' },
+  touch: { demo: 'touch-demo.tsx', entry: 'touch-entry.tsx', out: 'charts-touch-preview', title: 'Checkist — графики под палец' },
 }
 const target = targets[process.argv[2] ?? 'charts']
 if (!target) throw new Error(`Unknown preview: ${process.argv[2]}. Known: ${Object.keys(targets).join(', ')}.`)

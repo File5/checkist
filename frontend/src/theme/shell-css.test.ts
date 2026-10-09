@@ -102,10 +102,14 @@ describe('state rules of the shell (text of the rules, not rendering)', () => {
     const found = rules(app).filter((item) => state.test(item.selector)).map((item) => `${item.selector} = ${weight(item.selector)}`)
     expect(found).toEqual([
       'button:focus-visible = 1', 'a:focus-visible = 1', 'input:focus-visible = 1', 'select:focus-visible = 1', '[tabindex]:focus-visible = 2',
+      // The heading of the page takes the ring off itself: focused by script only (focus-ring-css.test.ts).
+      'h1[tabindex="-1"]:focus-visible = 2',
       '.skip-link:focus = 2', '.skip-link:focus-visible = 2', '.brand-bar :focus-visible = 2',
       '.brand-bar .main-navigation a:hover = 3',
       'button:where(:hover:not(:disabled)) = 0', 'button:where(:active:not(:disabled)) = 0', 'button:disabled = 1',
       '.action-link:where(:hover) = 1', '.rec-issues summary:focus-visible = 2',
+      // The button «Ещё» of the phone's bottom bar: the shell's own part, like the links of the header.
+      '.brand-bar .main-more-toggle:where(:hover) = 2', '.brand-bar .main-more-toggle[aria-expanded="true"] = 3',
     ])
   })
 

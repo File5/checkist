@@ -1,9 +1,11 @@
-import { apiUrl, requestJson } from './http.ts'
+import { apiUrl, refuse, requestJson } from './http.ts'
 import type { Query } from './http.ts'
 import { isRecognitionCsrf } from './recognition-schema.ts'
 import type { Guard } from './schema.ts'
 import type { LocalApiResult, RequestOptions } from './types.ts'
 import type { RecognitionCsrf } from './recognition-types.ts'
+import { canReportProgress, sendUpload } from './upload-transport.ts'
+import type { UploadProgress } from './upload-transport.ts'
 
 /** New local API always carries the anonymous CSRF cookie on this origin. */
 export function getLocalJson<T>(path: string, query: Query, validate: Guard<T>, options: RequestOptions = {}): Promise<LocalApiResult<T>> {
@@ -66,8 +68,13 @@ export function clearRecognitionCsrf(options: Pick<RequestOptions, 'baseUrl'> = 
   pending?.controller.abort()
 }
 
-/** One CSRF-protected POST of the local API, shared by recognition and product merges. */
-export async function mutate<T>(path: string, body: BodyInit, validate: Guard<T>, options: RequestOptions, multipart = false): Promise<LocalApiResult<T>> {
+/** One CSRF-protected POST of the local API, shared by recognition and product merges.
+ * `onProgress` moves a multipart body to XMLHttpRequest where it exists: same refusals and session signal, the deadline
+ * is «no movement» instead of the total 60 s. Without it, or without XMLHttpRequest (Node), the `fetch` path is unchanged.
+ */
+export async function mutate<T>(
+  path: string, body: BodyInit, validate: Guard<T>, options: RequestOptions, multipart = false, onProgress?: UploadProgress,
+): Promise<LocalApiResult<T>> {
   if (options.signal?.aborted) return { kind: 'aborted' }
   const key = csrfKey(options)
   let token = tokens.get(key)
@@ -76,10 +83,14 @@ export async function mutate<T>(path: string, body: BodyInit, validate: Guard<T>
     if (csrf.kind !== 'ok') return csrf
     token = csrf.data.csrf_token
   }
-  const result = await requestJson(path, {}, validate, options, {
-    local: true, method: 'POST', body, credentials: 'same-origin', timeoutMs: multipart ? 60_000 : 15_000,
-    successStatuses: [200, 202], headers: { 'X-CSRFToken': token, ...(!multipart && { 'Content-Type': 'application/json' }) },
-  })
+  const result: LocalApiResult<T> = onProgress && body instanceof FormData && canReportProgress()
+    ? await sendUpload(apiUrl(options.baseUrl ?? (import.meta.env.VITE_API_BASE_URL || '/api'), path), body, validate,
+      { signal: options.signal, headers: { 'X-CSRFToken': token }, successStatuses: [200, 202], onProgress },
+      (status, answer) => refuse(status, answer, true))
+    : await requestJson(path, {}, validate, options, {
+      local: true, method: 'POST', body, credentials: 'same-origin', timeoutMs: multipart ? 60_000 : 15_000,
+      successStatuses: [200, 202], headers: { 'X-CSRFToken': token, ...(!multipart && { 'Content-Type': 'application/json' }) },
+    })
   // Never replay a mutation implicitly. The next explicit attempt obtains a new token.
   if (result.kind === 'error' && result.reason === 'csrf_failed' && tokens.get(key) === token) tokens.delete(key)
   return result
