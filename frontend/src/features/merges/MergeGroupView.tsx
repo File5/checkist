@@ -1,10 +1,13 @@
 import type { FormEvent, Ref } from 'react'
 import type { MergeGroup, MergeMember } from '../../api/product-merges'
+import { useNarrow } from '../../lib/cards'
 import { formatPurchasedOn } from '../../lib/format'
 import { numbered } from '../../lib/text'
 import { Link } from '../../navigation'
 import type { ActionState } from './actions'
 import { factValue, fieldLabels, hasFact, memberName, periodJoint, statusLabels } from './labels'
+import MergeMemberCards from './MergeMemberCards'
+import type { MergeMemberColumns } from './MergeMemberCards'
 import { activeMembers, canConfirm, conflictOptions, missingResolutions, refusedFields, selectName, selectResolution, selectTarget } from './state'
 import type { MergeSelection } from './state'
 
@@ -14,6 +17,11 @@ function hasCard(group: MergeGroup, member: MergeMember): boolean {
 }
 
 const facts = ['generic', 'brand', 'package', 'gtin', 'model'] as const
+
+/** Column headings: the table and the cards of a phone read the same texts. */
+const columns: MergeMemberColumns = {
+  target: 'Оставляемая запись', name: 'Название', aliases: 'Написания в чеках', lines: 'Покупок', dates: 'Даты покупок', facts: 'Факты', action: 'Действие',
+}
 
 const day = (value: string) => <time dateTime={value}>{formatPurchasedOn(value)}</time>
 
@@ -63,6 +71,7 @@ export default function MergeGroupView({ group, selection, action, onSelection, 
   onSelection: (selection: MergeSelection) => void; onConfirm: () => void; onCancel: () => void; onExclude: (productId: number) => void
   resultRef?: Ref<HTMLParagraphElement>
 }) {
+  const narrow = useNarrow()
   const pending = group.status === 'pending'
   const busy = action.kind === 'pending'
   const running = busy ? action.action : undefined
@@ -74,23 +83,26 @@ export default function MergeGroupView({ group, selection, action, onSelection, 
   const failedAction = action.kind === 'failed' && action.error.reason === 'merge_busy' ? action.action : undefined
   const retry = failedAction?.type === 'confirm' ? onConfirm : failedAction?.type === 'cancel' ? onCancel
     : failedAction?.type === 'exclude' ? () => onExclude(failedAction.input.product_id) : undefined
+  const caption = pending ? 'Выберите запись, которая останется товаром каталога. Счётчики и написания показаны по исходной принадлежности.' : 'Записи группы на момент завершения.'
   const submit = (event: FormEvent) => { event.preventDefault(); if (confirmable && !busy) onConfirm() }
   return <section className="ck-merge-panel" aria-labelledby="merge-members-title">
     <h2 id="merge-members-title">Записи группы</h2>
     <form className="ck-merge-form" noValidate onSubmit={submit}>
-      <div className="ck-merge-table-scroll" role="region" aria-label="Таблица записей группы, прокручивается по горизонтали" tabIndex={0}>
+      {narrow ? <MergeMemberCards group={group} columns={columns} caption={caption} labelledBy="merge-members-title" selection={selection} busy={busy}
+        excludingId={running?.type === 'exclude' ? running.input.product_id : undefined} onSelection={onSelection} onExclude={onExclude} />
+      : <div className="ck-merge-table-scroll" role="region" aria-label="Таблица записей группы, прокручивается по горизонтали" tabIndex={0}>
         <table className={`ck-merge-table ck-merge-members${pending ? ' ck-merge-choosing' : ''}`}>
-          <caption>{pending ? 'Выберите запись, которая останется товаром каталога. Счётчики и написания показаны по исходной принадлежности.' : 'Записи группы на момент завершения.'}</caption>
+          <caption>{caption}</caption>
           <thead><tr>
-            {pending && <th scope="col">Оставляемая запись</th>}
-            <th scope="col" className="ck-merge-name-head">Название</th><th scope="col">Написания в чеках</th><th scope="col">Покупок</th>
-            <th scope="col">Даты покупок</th><th scope="col">Факты</th>
-            {pending && <th scope="col">Действие</th>}
+            {pending && <th scope="col">{columns.target}</th>}
+            <th scope="col" className="ck-merge-name-head">{columns.name}</th><th scope="col">{columns.aliases}</th><th scope="col">{columns.lines}</th>
+            <th scope="col">{columns.dates}</th><th scope="col">{columns.facts}</th>
+            {pending && <th scope="col">{columns.action}</th>}
           </tr></thead>
           <tbody>{group.members.map((member) => <MemberRow key={member.product_id} group={group} member={member} selection={selection} busy={busy}
             excluding={running?.type === 'exclude' && running.input.product_id === member.product_id} onSelection={onSelection} onExclude={onExclude} />)}</tbody>
         </table>
-      </div>
+      </div>}
       {pending && group.actions.can_confirm && <>
         <div className="ck-merge-field">
           <label htmlFor="merge-name">Название оставляемого товара</label>
