@@ -52,14 +52,36 @@ export interface LineSelection {
 export type LineKeyCommand = 'previous' | 'next' | 'first' | 'last' | 'clear'
 export type LineSelectionAction =
   | { type: 'key'; command: LineKeyCommand; xs: readonly string[] }
+  /** A button under the plot: the step of an arrow key, but a selection a finger made stays the finger's. */
+  | { type: 'step'; command: 'previous' | 'next'; xs: readonly string[] }
   | { type: 'pointer'; x: string | null; touch?: boolean }
   /** A finger tapped the interval: it is selected, and the same interval tapped again is released. */
   | { type: 'touch-commit'; x: string | null }
   /** «Снять выделение» and a tap outside the chart: whoever owns the selection, it goes. */
   | { type: 'dismiss' }
   | { type: 'pointer-leave' }
+  /** The focus moved to an element outside the chart (Tab). */
   | { type: 'blur' }
+  /** The focus left the plot and its buttons, and nothing says it left the chart (`lineBlurAction`). */
+  | { type: 'focus-lost' }
   | { type: 'toggle'; key: string }
+
+/**
+ * Where the focus went when the plot or a button under it lost it: `controls` — the plot or a button under it,
+ * `chart` — another part of the same chart, `outside` — an element outside the chart, `unknown` — the browser
+ * named none (Safari gives no focus to a tapped button, and a tap on plain text takes it nowhere).
+ */
+export type LineFocusDestination = 'controls' | 'chart' | 'outside' | 'unknown'
+
+/**
+ * What a lost focus does to the selection. Only a focus known to have left the chart ends a selection a finger
+ * made: a blur that names no destination is no evidence of leaving, and the buttons under the plot must go on
+ * working after it. A tap outside the chart ends that selection by itself (`useOutsideTouch`).
+ */
+export function lineBlurAction(destination: LineFocusDestination): LineSelectionAction | null {
+  if (destination === 'controls') return null
+  return { type: destination === 'outside' ? 'blur' : 'focus-lost' }
+}
 
 export function initialLineSelection(hidden: readonly string[] = []): LineSelection {
   return { activeX: null, source: null, hidden: [...new Set(hidden)] }
@@ -97,6 +119,12 @@ export function lineSelectionReducer(state: LineSelection, action: LineSelection
       const activeX = stepLineSelection(state.activeX, action.command, action.xs)
       return activeX === null ? cleared(state) : { ...state, activeX, source: 'keyboard' }
     }
+    case 'step': {
+      const activeX = stepLineSelection(state.activeX, action.command, action.xs)
+      if (activeX === null) return cleared(state)
+      // The next press of a button may blur the plot again (`focus-lost`): the selection must outlive it.
+      return { ...state, activeX, source: state.source === 'keyboard' ? 'keyboard' : 'touch' }
+    }
     case 'pointer': {
       if (action.x === null) return state
       const source = action.touch ? 'touch' : 'pointer'
@@ -108,9 +136,10 @@ export function lineSelectionReducer(state: LineSelection, action: LineSelection
     }
     case 'dismiss': return cleared(state)
     // The pointer leaving must not drop a selection the keyboard owns, and vice versa. A lifted finger also
-    // "leaves": its selection stays until another tap, Escape or the focus moving away.
+    // "leaves": its selection stays until another tap, Escape or the focus moving out of the chart.
     case 'pointer-leave': return state.source === 'pointer' ? cleared(state) : state
     case 'blur': return state.source === 'keyboard' || state.source === 'touch' ? cleared(state) : state
+    case 'focus-lost': return state.source === 'keyboard' ? cleared(state) : state
     case 'toggle': {
       const hidden = state.hidden.includes(action.key) ? state.hidden.filter((key) => key !== action.key) : [...state.hidden, action.key]
       return { ...state, hidden }

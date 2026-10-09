@@ -7,7 +7,7 @@ import LineValueCards from './LineValueCards.tsx'
 import { usePlotWidth } from './plot-width.ts'
 import { coordinate as c, nearestIndex } from './scale.ts'
 import type { ChartInterval } from './scale.ts'
-import { activeLineX, initialLineSelection, lineKeyCommand, lineReadout, lineSelectionReducer, lineTooltipAnchor, stepLineSelection } from './selection.ts'
+import { activeLineX, initialLineSelection, lineBlurAction, lineKeyCommand, lineReadout, lineSelectionReducer, lineTooltipAnchor, stepLineSelection } from './selection.ts'
 import { advanceTouchGesture, idleTouchGesture, pointerToPlotX, stepAvailability, useOutsideTouch } from './touch.ts'
 import type { TouchGestureEvent } from './touch.ts'
 import './Charts.css'
@@ -152,18 +152,26 @@ export default function LineChart({
     }
     if (event.type === 'pointermove' || event.type === 'pointerdown') dispatch({ type: 'pointer', x: intervalAt(event) })
   }
-  // The buttons under the plot belong to it: the focus moving between them and the plot keeps the selection.
+  // The buttons under the plot belong to it: the focus moving between them and the plot keeps the selection. A
+  // blur that names no destination keeps what a finger selected: Safari sends one when a button is tapped.
   const onBlur = (event: FocusEvent<HTMLDivElement>) => {
     const next = event.relatedTarget
-    if (next instanceof Element && rootRef.current?.contains(next) && next.closest('.ck-line-plot, .ck-line-steps')) return
-    dispatch({ type: 'blur' })
+    const destination = !(next instanceof Element) ? 'unknown'
+      : !rootRef.current?.contains(next) ? 'outside'
+        : next.closest('.ck-line-plot, .ck-line-steps') ? 'controls' : 'chart'
+    const action = lineBlurAction(destination)
+    if (action !== null) dispatch(action)
   }
   const steps = stepAvailability(activeX, layout.xs)
   const onStep = (command: 'previous' | 'next' | 'clear') => {
     const next = stepLineSelection(activeX, command, layout.xs)
-    dispatch(command === 'clear' ? { type: 'dismiss' } : { type: 'key', command, xs: layout.xs })
-    // The pressed button is switched off at an edge and after clearing: the focus goes to the plot, not nowhere.
-    if (!stepAvailability(next, layout.xs)[command]) rootRef.current?.querySelector<HTMLElement>('.ck-line-plot')?.focus({ preventScroll: true })
+    dispatch(command === 'clear' ? { type: 'dismiss' } : { type: 'step', command, xs: layout.xs })
+    // The pressed button is switched off at an edge and after clearing: the focus it holds goes to the plot, not
+    // nowhere. A button pressed by a pointer holds none.
+    const root = rootRef.current
+    if (!stepAvailability(next, layout.xs)[command] && root?.querySelector('.ck-line-steps')?.contains(document.activeElement)) {
+      root.querySelector<HTMLElement>('.ck-line-plot')?.focus({ preventScroll: true })
+    }
   }
   const { plot } = layout
   const tooltip = activePosition === null ? null : lineTooltipAnchor(activePosition, layout.width)
@@ -267,8 +275,9 @@ export default function LineChart({
         )}
       </div>
       {/* Shown where the pointer is a finger (Charts.css): the arrow keys and Escape of a phone. The group of the
-          chart already names them, so the panel is no group of its own. */}
-      <div className="ck-line-steps" onBlur={onBlur}>
+          chart already names them, so the panel is no group of its own. A pressed button takes no focus from the
+          plot, so a selection the keyboard made is not dropped under the finger; the click still comes. */}
+      <div className="ck-line-steps" onBlur={onBlur} onMouseDown={(event) => event.preventDefault()}>
         <button type="button" disabled={!steps.previous} onClick={() => onStep('previous')}>Предыдущий интервал</button>
         <button type="button" disabled={!steps.next} onClick={() => onStep('next')}>Следующий интервал</button>
         <button type="button" disabled={!steps.clear} onClick={() => onStep('clear')}>Снять выделение</button>
