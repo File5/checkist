@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ru" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Т2: строки чека карточками, панель фильтров — снимок</title>
+<link rel="stylesheet" href="./theme/tokens.css">
+<link rel="stylesheet" href="./preview.css">
+</head>
+<body>
+<h1>Т2: строки чека карточками и закреплённая панель фильтров</h1>
+<p>Статический снимок: разметка отрисована настоящими компонентами (<code>ReceiptView</code>, <code>ReceiptsView</code>) в телефонном виде
+на демонстрационных данных, стили — копии файлов клиента. Это не приёмка: скриптов нет, вид по ширине не переключается
+(страницы всегда показывают карточки; в приложении шире 540 px остаётся прежняя таблица), блок изображений чека показан пустым.
+Каждая рамка — отдельная страница со своей шириной окна, поэтому правила <code>max-width: 540px</code> в ней действуют.</p>
+
+<h2>Чек, 320 px</h2>
+<div class="frames">
+  <figure><figcaption>Тёмная тема · <a href="./receipt-dark.html">открыть страницу</a></figcaption><iframe src="./receipt-dark.html" width="320" height="640" title="Чек, 320 px, тёмная тема"></iframe></figure>
+  <figure><figcaption>Светлая тема · <a href="./receipt-light.html">открыть страницу</a></figcaption><iframe src="./receipt-light.html" width="320" height="640" title="Чек, 320 px, светлая тема"></iframe></figure>
+</div>
+
+<h2>Чек, 375 px</h2>
+<div class="frames">
+  <figure><figcaption>Тёмная тема</figcaption><iframe src="./receipt-dark.html" width="375" height="667" title="Чек, 375 px, тёмная тема"></iframe></figure>
+  <figure><figcaption>Светлая тема</figcaption><iframe src="./receipt-light.html" width="375" height="667" title="Чек, 375 px, светлая тема"></iframe></figure>
+</div>
+
+<h2>Фильтры списка чеков, 320 px (высота 480 px — панель закреплена у низа, пока форма длиннее окна)</h2>
+<div class="frames">
+  <figure><figcaption>Тёмная тема · <a href="./filters-dark.html">открыть страницу</a></figcaption><iframe src="./filters-dark.html" width="320" height="480" title="Фильтры, 320 px, тёмная тема"></iframe></figure>
+  <figure><figcaption>Светлая тема · <a href="./filters-light.html">открыть страницу</a></figcaption><iframe src="./filters-light.html" width="320" height="480" title="Фильтры, 320 px, светлая тема"></iframe></figure>
+</div>
+
+<h2>Фильтры списка чеков, 375 px</h2>
+<div class="frames">
+  <figure><figcaption>Тёмная тема</figcaption><iframe src="./filters-dark.html" width="375" height="667" title="Фильтры, 375 px, тёмная тема"></iframe></figure>
+  <figure><figcaption>Светлая тема</figcaption><iframe src="./filters-light.html" width="375" height="667" title="Фильтры, 375 px, светлая тема"></iframe></figure>
+</div>
+</body>
+</html>

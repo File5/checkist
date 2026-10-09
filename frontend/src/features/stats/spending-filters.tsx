@@ -135,7 +135,7 @@ export default function SpendingFilters({ query, failure, reference, today }: {
         <button type="button" className="spending-secondary" onClick={reference.retry}>Повторить загрузку списков</button>
       </div>}
       {Object.keys(errors).length > 0 && <p className="spending-field-error" role="alert">Исправьте отмеченные фильтры.</p>}
-      <div className="spending-actions">
+      <div className="spending-actions ck-action-bar">
         <button type="submit">Применить фильтры</button>
         {(hasScopeFilters(query) || !sameDraft(draft, applied)) && <button type="button" className="spending-secondary" onClick={() => {
           dispatch({ type: 'reset' })

@@ -163,7 +163,7 @@ export function ReceiptsFiltersForm({
         <ScopeSelects id={id} draft={draft} errors={errors} countries={countries} onChange={onChange} onRetry={onRetryCountries} />
         <StoresField id={id} draft={draft} error={errors.store} stores={stores} onToggle={onToggleStore} onRetry={onRetryStores} />
         {Object.keys(errors).length > 0 && <p className="stats-field-error" role="alert">Исправьте отмеченные поля.</p>}
-        <div className="stats-actions">
+        <div className="stats-actions ck-action-bar">
           <button type="submit">Сравнить периоды</button>
           {(hasPeriods(query) || hasScope(query) || changed) && <button type="button" className="stats-secondary" onClick={onReset}>Сбросить периоды и фильтры</button>}
         </div>

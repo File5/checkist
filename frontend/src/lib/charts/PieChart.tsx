@@ -1,11 +1,12 @@
-import { Fragment, memo, useEffect, useId, useReducer, useRef, useState } from 'react'
-import type { ComponentType, CSSProperties, Dispatch, ReactNode } from 'react'
+import { Fragment, memo, useCallback, useEffect, useId, useReducer, useRef, useState } from 'react'
+import type { ComponentType, CSSProperties, Dispatch, MouseEvent, PointerEvent, ReactNode } from 'react'
 import { layoutPieLabels, pieSlices, pieTones } from './pie.ts'
 import { seriesColors } from './line.ts'
 import { usePlotWidth } from './plot-width.ts'
 import { coordinate as c } from './scale.ts'
 import { activePieKey, noPieHighlight, pieHighlightReducer } from './selection.ts'
 import type { PieHighlightAction } from './selection.ts'
+import { useOutsideTouch } from './touch.ts'
 import './Charts.css'
 
 export interface ChartLinkProps {
@@ -122,9 +123,16 @@ function CenterValue({ text }: { text: string }) {
   return <strong ref={ref} className="ck-pie-center-value" data-fits={fits ? undefined : 'false'}>{text}</strong>
 }
 
-const highlightHandlers = (dispatch: Dispatch<PieHighlightAction>, key: string) => ({
-  onPointerEnter: () => dispatch({ type: 'enter', key }),
+/* A finger has no hover: its tap pins the highlight instead (a touch that scrolls the page ends with
+   `pointercancel`, never with `pointerup`). In a legend row a tap on a link is the link's own business. */
+const highlightHandlers = (dispatch: Dispatch<PieHighlightAction>, key: string, pinOnLinks = false) => ({
+  onPointerEnter: (event: PointerEvent) => { if (event.pointerType !== 'touch') dispatch({ type: 'enter', key }) },
   onPointerLeave: () => dispatch({ type: 'leave', key }),
+  onPointerUp: (event: PointerEvent) => {
+    if (event.pointerType !== 'touch') return
+    if (!pinOnLinks && event.target instanceof Element && event.target.closest('a, button')) return
+    dispatch({ type: 'pin', key })
+  },
   onFocus: () => dispatch({ type: 'focus', key }),
   onBlur: () => dispatch({ type: 'blur', key }),
 })
@@ -173,6 +181,10 @@ export default function PieChart({
   const patternId = useId()
   const [figureRef, width] = usePlotWidth<HTMLDivElement>(figureWidth)
   const [highlight, dispatch] = useReducer(pieHighlightReducer, noPieHighlight)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const lastPointerType = useRef('')
+  const unpin = useCallback(() => dispatch({ type: 'unpin' }), [])
+  useOutsideTouch(rootRef, (highlight.pinned ?? null) !== null, unpin)
   if (items.length === 0) return <p className="ck-chart ck-chart-empty">{emptyMessage}</p>
 
   const view = pieFrame(width)
@@ -186,9 +198,15 @@ export default function PieChart({
   const tones = new Map(items.map((item, index) => [item.key, toneList[index]]))
   const handlers = (key: string) => highlightHandlers(dispatch, key)
   const state = (key: string) => (active === null ? undefined : active === key ? 'active' : 'dim')
+  // A sector tapped by a finger shows its value and stays on the page; the link in the legend is the way through.
+  const sectorHandlers = (key: string) => ({
+    ...highlightHandlers(dispatch, key, true),
+    onPointerDown: (event: PointerEvent) => { lastPointerType.current = event.pointerType },
+    onClickCapture: (event: MouseEvent) => { if (lastPointerType.current === 'touch') event.preventDefault() },
+  })
 
   return (
-    <div className="ck-chart ck-pie">
+    <div ref={rootRef} className="ck-chart ck-pie">
       {slices.length === 0 ? (
         <p className="ck-chart-empty">Положительных сумм нет, диаграмма не построена. Все значения — в таблице.</p>
       ) : (
@@ -210,7 +228,7 @@ export default function PieChart({
                 </>
               )
               return (
-                <g key={slice.key} className={`ck-pie-slice ${tone?.className ?? ''}`} data-state={state(slice.key)} {...handlers(slice.key)}>
+                <g key={slice.key} className={`ck-pie-slice ${tone?.className ?? ''}`} data-state={state(slice.key)} {...sectorHandlers(slice.key)}>
                   {/* Out of the tab order: the same link in the legend is the keyboard stop. */}
                   {item.href ? <LinkComponent to={item.href} className="ck-pie-link" tabIndex={-1}>{shape}</LinkComponent> : shape}
                 </g>

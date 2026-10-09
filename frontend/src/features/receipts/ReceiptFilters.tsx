@@ -58,7 +58,7 @@ export default function ReceiptFilters({ query, failure }: { query: ReceiptsQuer
         ].filter(Boolean).join(' · ')}. Они сохраняются при поиске.
       </p>}
       {Object.keys(errors).length > 0 && <p className="receipt-field-error" role="alert">Исправьте поля фильтров.</p>}
-      <div className="receipt-actions">
+      <div className="receipt-actions ck-action-bar">
         <button type="submit">Применить фильтры</button>
         {(hasFilters(query) || JSON.stringify(draft) !== JSON.stringify(filterDraft(query))) &&
           <button type="button" className="receipt-secondary" onClick={() => {
