@@ -53,7 +53,7 @@ export function activePreset(query: Period, today: string): Preset | undefined {
   })
 }
 
-/** A preset changes only the period: the other filters and the place in the drill-down stay. */
+/** A preset changes only the period: the other filters, the place in the drill-down and an open «Прочее» stay. */
 export function presetHref(query: SpendingQuery, preset: Preset, today: string): string {
   return spendingHref({ ...query, date_from: undefined, date_to: undefined, ...presetPeriod(preset, today) })
 }
@@ -84,13 +84,14 @@ export function sameDraft(a: FilterDraft, b: FilterDraft): boolean {
   return filterFields.every((field) => String(a[field]) === String(b[field]))
 }
 
-/** Where the screen is in the drill-down; applying or resetting filters never moves it. */
-function drill(query: SpendingQuery): Pick<SpendingQuery, 'group_by' | 'category' | 'generic'> {
+/** Where the screen is in the drill-down and whether «Прочее» is open; applying or resetting filters never moves it. */
+function drill(query: SpendingQuery): Pick<SpendingQuery, 'group_by' | 'category' | 'generic' | 'other'> {
   return { ...(query.group_by && { group_by: query.group_by }), ...(query.category && { category: query.category }),
-    ...(query.generic && { generic: query.generic }) }
+    ...(query.generic && { generic: query.generic }), ...(query.other && { other: query.other }) }
 }
+/** Another level is another list: it opens with «Прочее» closed. */
 function scope(query: SpendingQuery): SpendingQuery {
-  return { ...query, group_by: undefined, category: undefined, generic: undefined }
+  return { ...query, group_by: undefined, category: undefined, generic: undefined, other: undefined }
 }
 
 /** The draft becomes an address through the route's own parser, so the form and a pasted link obey the same rules. */
@@ -121,7 +122,7 @@ export type FormAction =
   | { type: 'invalid'; errors: FilterErrors }
 
 export function initForm(query: SpendingQuery): FormState {
-  return { source: buildSpendingQuery(query), draft: filterDraft(query), errors: {} }
+  return { source: requestKey(query), draft: filterDraft(query), errors: {} }
 }
 
 /** Edits live in the draft until «Применить»; a new address (Back, a preset, a drill-down) replaces the draft. */
@@ -132,7 +133,7 @@ export function formReducer(state: FormState, action: FormAction): FormState {
     return errors
   }
   switch (action.type) {
-    case 'sync': return buildSpendingQuery(action.query) === state.source ? state : initForm(action.query)
+    case 'sync': return requestKey(action.query) === state.source ? state : initForm(action.query)
     case 'set': {
       // A date error always names the pair of bounds, so editing either bound clears both.
       const errors = without(action.field)
@@ -186,8 +187,33 @@ export function resetFiltersHref(query: SpendingQuery): string {
   return spendingHref(drill(query))
 }
 
+/** Regular items asked for the composition of «Прочее»: the most the server accepts. */
+export const spendingTailLimit = 500
+
+/** `other` is a state of the screen, not a parameter of the API. */
 export function spendingParams(query: SpendingQuery): SpendingParams {
-  return { ...query }
+  const params: SpendingQuery = { ...query }
+  delete params.other
+  return params
+}
+/** The same request with the long list: its items after the first ones are the composition of «Прочее». */
+export function spendingTailParams(query: SpendingQuery): SpendingParams {
+  return { ...spendingParams(query), limit: spendingTailLimit }
+}
+/**
+ * Whether the long answer is asked. Only for a shown answer with «Прочее» in at least one block and an address that
+ * says `other=open`; once it came for this very answer (`loadedFor`), hiding and showing does not ask again.
+ */
+export function needsTail(query: SpendingQuery, data: Spending | undefined, loadedFor?: Spending): boolean {
+  return data !== undefined && data.currencies.some((block) => block.other !== null) && (query.other === 'open' || loadedFor === data)
+}
+/** The address without `other`: showing or hiding the composition is the same request and the same form. */
+export function requestKey(query: SpendingQuery): string {
+  return buildSpendingQuery({ ...query, other: undefined })
+}
+/** Shows or hides the composition of «Прочее»; nothing else in the address changes. */
+export function otherHref(query: SpendingQuery, open: boolean): string {
+  return spendingHref({ ...query, other: open ? 'open' : undefined })
 }
 
 // ---- Breakdown and drill-down -----------------------------------------------------------------------------------
@@ -200,10 +226,13 @@ export const groupingCaptions: Record<SpendingGroupBy, string> = {
 }
 export const grouping = (query: SpendingQuery): SpendingGroupBy => query.group_by ?? 'category'
 
-/** One generic product split by categories or by generic products is a single sector, so that filter is dropped there. */
+/**
+ * One generic product split by categories or by generic products is a single sector, so that filter is dropped there.
+ * Another breakdown is another list: «Прочее» is closed in it.
+ */
 export function groupingHref(query: SpendingQuery, group_by: SpendingGroupBy): string {
   const { generic, ...rest } = query
-  return spendingHref({ ...rest, group_by, ...(generic && group_by !== 'category' && group_by !== 'generic' && { generic }) })
+  return spendingHref({ ...rest, other: undefined, group_by, ...(generic && group_by !== 'category' && group_by !== 'generic' && { generic }) })
 }
 
 /** Category → its subcategories; products lying directly in it → generic products → products → the product card. */

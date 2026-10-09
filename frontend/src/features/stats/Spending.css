@@ -43,6 +43,13 @@
 /* Long names wrap inside the name column; sums keep their own width. */
 .spending-currency .ck-pie-legend { table-layout: auto; }
 .spending-currency .ck-pie-legend a { display: inline-block; padding-block: 6px; color: var(--ck-link); }
+/* Under the composition of «Прочее»: loading, a refusal with its button, a remark. The status paragraph stays in
+   every state; when there is nothing to say to the eye it is kept for a screen reader only and its row takes no room. */
+.spending-tail { display: grid; gap: 10px; justify-items: start; min-width: 0; color: var(--ck-text-muted); font-size: 0.9rem; }
+.spending-tail[data-kind="failed"] .spending-tail-status { color: var(--ck-error-text); }
+.spending-tail[data-kind="changed"] .spending-tail-status { color: var(--ck-warning-text); }
+.spending-tail[data-quiet] .spending-tail-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.spending-currency .ck-pie-child-status:has(.spending-tail[data-quiet]) td { padding: 0; border: 0; }
 @media (max-width: 540px) {
   .spending-panel { padding: 16px; }
   .spending-grid { grid-template-columns: minmax(0, 1fr); }

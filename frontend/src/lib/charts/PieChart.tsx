@@ -1,15 +1,47 @@
-import { useEffect, useId, useReducer, useRef, useState } from 'react'
-import type { ComponentType, CSSProperties, ReactNode } from 'react'
+import { Fragment, memo, useEffect, useId, useReducer, useRef, useState } from 'react'
+import type { ComponentType, CSSProperties, Dispatch, ReactNode } from 'react'
 import { layoutPieLabels, pieSlices, pieTones } from './pie.ts'
 import { seriesColors } from './line.ts'
 import { usePlotWidth } from './plot-width.ts'
 import { coordinate as c } from './scale.ts'
 import { activePieKey, noPieHighlight, pieHighlightReducer } from './selection.ts'
+import type { PieHighlightAction } from './selection.ts'
 import './Charts.css'
 
-export interface ChartLinkProps { to: string; className?: string; tabIndex?: number; children?: ReactNode }
+export interface ChartLinkProps {
+  to: string
+  className?: string
+  tabIndex?: number
+  /** Set only on the toggle link of a legend row (`PieChartItem.action`). */
+  'aria-expanded'?: boolean
+  'aria-label'?: string
+  children?: ReactNode
+}
 /** The project `Link` fits; the default is a plain `<a href>`. */
 export type ChartLinkComponent = ComponentType<ChartLinkProps>
+
+/** Toggle link in the name cell of a legend row, e.g. «Показать состав» / «Скрыть состав». */
+export interface PieChartAction {
+  label: string
+  /** Accessible name when the visible text is not enough, e.g. «Показать состав „Прочего“, EUR». */
+  ariaLabel?: string
+  /** Address of the other state: the state lives in the address, the link is an ordinary navigation link. */
+  href: string
+  expanded: boolean
+}
+
+/** Legend row under its item: a part of the item, never a sector of its own. */
+export interface PieChartChild {
+  /** Unique among the children of one item. */
+  key: string
+  label: string
+  /** Drill-down address. Without it the name is plain (the «ещё M …» remainder row). */
+  href?: string
+  valueText: string
+  shareText: string
+  /** Small text under the name, as in the top rows; the hint of a remainder row goes here too. */
+  note?: string
+}
 
 export interface PieChartItem {
   key: string
@@ -28,6 +60,18 @@ export interface PieChartItem {
   tone?: 'series' | 'other' | 'muted'
   /** Small text under the name in the legend. */
   note?: string
+  /** Toggle link after the name and the notes; the same element in both states, so the focus stays on it. */
+  action?: PieChartAction
+  /**
+   * Rows right after the row of the item, in the given order. They add no sector and do not move the palette;
+   * the pointer or the focus on such a row highlights the sector of the item. Keep the array reference between
+   * renders: the rows are then not rendered again while the highlight moves.
+   */
+  children?: readonly PieChartChild[]
+  /** Visually hidden text before the name of every child row, e.g. «В составе „Прочего“: ». */
+  childrenPrefix?: string
+  /** Full-width row after the children: loading, a failure with its button, remarks. `role="status"` is the caller's. */
+  childrenStatus?: ReactNode
 }
 
 export interface PieChartProps {
@@ -78,6 +122,48 @@ function CenterValue({ text }: { text: string }) {
   return <strong ref={ref} className="ck-pie-center-value" data-fits={fits ? undefined : 'false'}>{text}</strong>
 }
 
+const highlightHandlers = (dispatch: Dispatch<PieHighlightAction>, key: string) => ({
+  onPointerEnter: () => dispatch({ type: 'enter', key }),
+  onPointerLeave: () => dispatch({ type: 'leave', key }),
+  onFocus: () => dispatch({ type: 'focus', key }),
+  onBlur: () => dispatch({ type: 'blur', key }),
+})
+
+interface ChildRowsProps {
+  parentKey: string
+  rows: readonly PieChartChild[]
+  prefix?: string
+  swatchClass: string
+  hatched: boolean
+  LinkComponent: ChartLinkComponent
+  dispatch: Dispatch<PieHighlightAction>
+}
+
+/* Memoised and without a highlight state of its own (the row under the pointer is marked by CSS): hundreds of
+   rows are not rendered again each time the pointer crosses from one row to the next. */
+const ChildRows = memo(function ChildRows({ parentKey, rows, prefix, swatchClass, hatched, LinkComponent, dispatch }: ChildRowsProps) {
+  // A child row highlights the item it belongs to.
+  const handlers = highlightHandlers(dispatch, parentKey)
+  return rows.map((child) => (
+    <tr key={child.key} className="ck-pie-child" {...handlers}>
+      <th scope="row">
+        <span className="ck-pie-name">
+          <span className={`ck-pie-swatch ${swatchClass}`} data-hatched={hatched ? 'true' : undefined} aria-hidden="true" />
+          <span className="ck-pie-name-text">
+            <span>
+              {prefix && <span className="ck-chart-hidden">{prefix}</span>}
+              {child.href ? <LinkComponent to={child.href}>{child.label}</LinkComponent> : child.label}
+            </span>
+            {child.note && <span className="ck-chart-note">{child.note}</span>}
+          </span>
+        </span>
+      </th>
+      <td className="ck-chart-number">{child.valueText}</td>
+      <td className="ck-chart-number">{child.shareText}</td>
+    </tr>
+  ))
+})
+
 export default function PieChart({
   title, items, headers = defaultHeaders, centerLabel, centerValue,
   excludedNote = 'Не входит в диаграмму: сумма не положительная.',
@@ -98,12 +184,7 @@ export default function PieChart({
 
   const toneList = pieTones(items.map((item) => item.tone), seriesColors)
   const tones = new Map(items.map((item, index) => [item.key, toneList[index]]))
-  const handlers = (key: string) => ({
-    onPointerEnter: () => dispatch({ type: 'enter', key }),
-    onPointerLeave: () => dispatch({ type: 'leave', key }),
-    onFocus: () => dispatch({ type: 'focus', key }),
-    onBlur: () => dispatch({ type: 'blur', key }),
-  })
+  const handlers = (key: string) => highlightHandlers(dispatch, key)
   const state = (key: string) => (active === null ? undefined : active === key ? 'active' : 'dim')
 
   return (
@@ -175,21 +256,45 @@ export default function PieChart({
             {items.map((item) => {
               const drawn = sliceByKey.has(item.key)
               const tone = tones.get(item.key)
-              return (
+              const swatchClass = drawn ? tone?.className ?? '' : 'ck-pie-swatch-none'
+              const hatched = Boolean(drawn && tone?.hatched)
+              const status = item.childrenStatus ?? false
+              const row = (
                 <tr key={item.key} data-state={state(item.key)} {...handlers(item.key)}>
                   <th scope="row">
                     <span className="ck-pie-name">
-                      <span className={`ck-pie-swatch ${drawn ? tone?.className ?? '' : 'ck-pie-swatch-none'}`} data-hatched={drawn && tone?.hatched ? 'true' : undefined} aria-hidden="true" />
+                      <span className={`ck-pie-swatch ${swatchClass}`} data-hatched={hatched ? 'true' : undefined} aria-hidden="true" />
                       <span className="ck-pie-name-text">
                         {item.href ? <LinkComponent to={item.href}>{item.label}</LinkComponent> : item.label}
                         {item.note && <span className="ck-chart-note">{item.note}</span>}
                         {!drawn && <span className="ck-chart-note">{excludedNote}</span>}
+                        {item.action && (
+                          <LinkComponent to={item.action.href} className="ck-pie-action" aria-expanded={item.action.expanded} aria-label={item.action.ariaLabel}>
+                            {item.action.label}
+                          </LinkComponent>
+                        )}
                       </span>
                     </span>
                   </th>
                   <td className="ck-chart-number">{item.valueText}</td>
                   <td className="ck-chart-number">{item.shareText}</td>
                 </tr>
+              )
+              // Always a fragment, so the row stays the same element when the children come and go and the focus
+              // stays on its toggle link.
+              return (
+                <Fragment key={item.key}>
+                  {row}
+                  {item.children && item.children.length > 0 && (
+                    <ChildRows parentKey={item.key} rows={item.children} prefix={item.childrenPrefix} swatchClass={swatchClass} hatched={hatched}
+                      LinkComponent={LinkComponent} dispatch={dispatch} />
+                  )}
+                  {status !== false && (
+                    <tr className="ck-pie-child-status" {...handlers(item.key)}>
+                      <td colSpan={3}><div className="ck-pie-child-status-body">{status}</div></td>
+                    </tr>
+                  )}
+                </Fragment>
               )
             })}
           </tbody>

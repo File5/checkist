@@ -7,7 +7,7 @@ from .. import common, stats_common
 from ..params import Params
 from .recognition_base import LocalAPIView
 
-MAX_LIMIT = 50
+MAX_LIMIT = 500
 
 
 def _item(item):

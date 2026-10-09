@@ -10,6 +10,7 @@ import { PeriodText } from './period'
 import { SpendingView } from './SpendingPage'
 import type { SpendingViewProps } from './SpendingPage'
 import type { SpendingRequestState } from './spending-state'
+import { shortAnswer } from './spending-tail-test-support'
 
 const read = (name: string) => statsFixture(name) as Spending
 const noop = () => {}
@@ -78,7 +79,7 @@ describe('spending screen markup (Vitest/SSR — not what the browser shows, foc
     expect(html).toContain('<a href="/stats?date_from=2026-01-01&amp;group_by=store">Магазины</a>')
     expect(html).toMatch(/<h2 [^>]*data-request-focus-target[^>]*>Траты по товарам<\/h2>/)
     expect(html).toContain('<a href="/catalog/products/24">Demo Hähnchenbrust 600g</a>')
-    expect(text(html)).toContain('Прочее Ещё 25 товаров с меньшими суммами, одной строкой. 1 200,33 EUR 73,17 %')
+    expect(text(html)).toContain('Прочее Ещё 25 товаров с меньшими суммами, одной строкой. Показать состав 1 200,33 EUR 73,17 %')
     expect(html).toContain('Период: <time dateTime="2026-01-01">01.01.2026</time>\u00a0— <time dateTime="2026-09-30">30.09.2026</time>, обе даты включительно.')
     expect(html).not.toContain('aria-label="Путь в тратах"')
   })
@@ -177,6 +178,144 @@ describe('spending screen markup (Vitest/SSR — not what the browser shows, foc
     const html = render({ date_from: '1000-01-01' }, { kind: 'error', reason: 'range_too_large', status: 400 })
     expect(html).toContain('Слишком большой период. Уменьшите его в фильтрах.')
     expect(html).toContain('<a class="action-link" href="/stats">Сбросить фильтры</a>')
+  })
+})
+
+describe('composition of «Прочее» (Vitest/SSR — not what the browser shows, focuses or announces)', () => {
+  const long = read('spending-product.json')
+  const short = shortAnswer(long, 1)
+  const closed: SpendingQuery = { date_from: '2026-01-01', date_to: '2026-09-30', group_by: 'product' }
+  const open: SpendingQuery = { ...closed, other: 'open' }
+  const base = '/stats?date_from=2026-01-01&amp;date_to=2026-09-30&amp;group_by=product'
+  const state: SpendingRequestState = { kind: 'ok', data: short }
+  const tail: SpendingRequestState = { kind: 'ok', data: long }
+  const sectors = (html: string) => count(html, /<g class="ck-pie-slice /g)
+  const topRows = (html: string) => count(html, /<tr><th scope="row">/g)
+  const children = (html: string) => count(html, /<tr class="ck-pie-child">/g)
+
+  it('offers «Показать состав» in every currency block with «Прочее», named by the currency', () => {
+    const html = render(closed, state)
+    expect(html).toContain(`<a class="ck-pie-action" aria-expanded="false" aria-label="Показать состав „Прочего“, EUR" href="${base}&amp;other=open">Показать состав</a>`)
+    expect(html).toContain(`<a class="ck-pie-action" aria-expanded="false" aria-label="Показать состав „Прочего“, KZT" href="${base}&amp;other=open">Показать состав</a>`)
+    expect(children(html)).toBe(0)
+    expect(html).not.toContain('ck-pie-child-status')
+    expect(html).not.toContain('spending-tail')
+    expect(text(html)).toContain('Прочее Ещё 27 товаров с меньшими суммами, одной строкой. Показать состав')
+  })
+  it('shows the composition of every block from the long answer and leaves the rest of the block as it was', () => {
+    const before = render(closed, state)
+    const html = render(open, state, { tail })
+    expect(html).toContain(`<a class="ck-pie-action" aria-expanded="true" aria-label="Скрыть состав „Прочего“, EUR" href="${base}">Скрыть состав</a>`)
+    expect(html).toContain(`<a class="ck-pie-action" aria-expanded="true" aria-label="Скрыть состав „Прочего“, KZT" href="${base}">Скрыть состав</a>`)
+    // Two regular items of the long answer and its remainder under «Прочее» of each currency.
+    expect(children(html)).toBe(6)
+    expect(sectors(html)).toBe(sectors(before))
+    expect(topRows(html)).toBe(topRows(before))
+    expect(html).toContain('<span class="ck-chart-hidden">В составе „Прочего“: </span><a href="/catalog/products/7">')
+    const plain = text(html)
+    expect(plain).toContain('Прочее 27 товаров с меньшими суммами. Скрыть состав')
+    expect(plain).toContain('130,61 EUR 7,96 %')
+    expect(plain).toContain('109,70 EUR 6,69 %')
+    expect(plain).toContain('В составе „Прочего“: Ещё 25 товаров с меньшими суммами, одной строкой Чтобы увидеть их, сузьте период или откройте обобщённый продукт. 1 200,33 EUR 73,17 %')
+    expect(plain).toContain('В составе „Прочего“: Ещё 8 товаров с меньшими суммами, одной строкой Чтобы увидеть их, сузьте период или откройте обобщённый продукт. 28 277,93 KZT 41,92 %')
+    // The totals and the row of «Прочее» itself are those of the usual answer.
+    for (const fact of ['Итого по чекам 1 638,94 EUR', 'Итого по чекам 67 312,93 KZT']) { expect(text(before)).toContain(fact); expect(plain).toContain(fact) }
+    // Order: regular rows, «Прочее», its composition, then the special rows.
+    const order = ['Demo Hähnchenbrust 600g', '>Прочее<', 'ck-pie-child"', 'Ещё 25 товаров', 'ck-pie-child-status', '>Строки без товара<'].map((part) => html.indexOf(part))
+    expect(order).toEqual([...order].sort((a, b) => a - b))
+    expect(order.every((index) => index >= 0)).toBe(true)
+    // Nothing to tell the eye: the status stays for a screen reader only.
+    expect(html).toContain('<div class="spending-tail" data-kind="ok" data-quiet="true"><p class="spending-tail-status" role="status">Состав показан, строк: 3.</p></div>')
+    expect(html).not.toContain('data-request-retry')
+  })
+  it('keeps the status paragraph while the composition loads and does not mark the block busy', () => {
+    for (const html of [render(open, state, { tail: { kind: 'loading' } }), render(open, state)]) {
+      expect(count(html, /<div class="spending-tail" data-kind="loading"><p class="spending-tail-status" role="status">Загружаем состав…<\/p><\/div>/g)).toBe(2)
+      expect(children(html)).toBe(0)
+      expect(html).toContain('aria-expanded="true"')
+      expect(html).not.toContain('aria-busy="true"')
+      expect(html).not.toContain('data-stale')
+      expect(sectors(html)).toBe(sectors(render(closed, state)))
+    }
+  })
+  it('reports a refusal of the composition under «Прочее» only, with a retry where it can help', () => {
+    for (const reason of ['network', 'timeout', 'database_unavailable'] as const) {
+      const html = render(open, state, { tail: { kind: 'error', reason }, retryTail: noop })
+      expect(count(html, /<div class="spending-tail" data-kind="failed">/g)).toBe(2)
+      expect(count(html, /<button type="button" class="spending-secondary">Повторить<\/button>/g)).toBe(2)
+      // The block, its chart and its rows stay; the failure of the whole screen is not shown.
+      expect(html).not.toContain('request-state-error')
+      expect(count(html, /<svg class="ck-pie-svg"/g)).toBe(2)
+      expect(topRows(html)).toBe(topRows(render(closed, state)))
+      expect(children(html)).toBe(0)
+    }
+    expect(render(open, state, { tail: { kind: 'error', reason: 'network' }, retryTail: noop }))
+      .toContain('<p class="spending-tail-status" role="status">Не удалось связаться с сервером. Проверьте соединение и повторите попытку.</p>')
+    expect(render(open, state, { tail: { kind: 'error', reason: 'timeout' }, retryTail: noop })).toContain('Сервер не ответил за 15 секунд.')
+    const denied = render(open, state, { tail: { kind: 'error', reason: 'permission_denied', status: 403 }, retryTail: noop })
+    expect(denied).toContain('<div class="spending-tail" data-kind="failed"><p class="spending-tail-status" role="status">Локальный режим выключен')
+    expect(denied).not.toContain('>Повторить<')
+    const refused = render(open, state, { tail: { kind: 'error', reason: 'invalid_parameter', status: 400, fields: ['limit'] }, retryTail: noop })
+    expect(refused).toContain('Сервер не принял параметры.')
+    expect(refused).not.toContain('>Повторить<')
+    expect(refused).not.toContain('aria-invalid="true"')
+  })
+  it('does not show a composition that no longer fits the block and offers to refresh', () => {
+    const moved = { ...long, currencies: long.currencies.map((block) => ({ ...block, totals: { ...block.totals, lines_paid: '1.00' } })) }
+    const html = render(open, state, { tail: { kind: 'ok', data: moved } })
+    expect(count(html, /<div class="spending-tail" data-kind="changed"><p class="spending-tail-status" role="status">Данные изменились\. Обновите\.<\/p><button type="button" class="spending-secondary">Обновить<\/button><\/div>/g)).toBe(2)
+    expect(children(html)).toBe(0)
+    // One currency of the long answer is gone: only that block is refused.
+    const partial = render(open, state, { tail: { kind: 'ok', data: { ...long, currencies: [long.currencies[0]] } } })
+    expect(count(partial, /data-kind="changed"/g)).toBe(1)
+    expect(count(partial, /data-kind="ok"/g)).toBe(1)
+    expect(children(partial)).toBe(3)
+  })
+  it('explains shares of another base under the composition', () => {
+    const other = { ...short, currencies: short.currencies.map((block) => ({ ...block, items: block.items.map((item, index) => index ? item : { ...item, share_percent: '9.99' }) })) }
+    const html = render(open, { kind: 'ok', data: other }, { tail })
+    expect(count(html, /<div class="spending-tail" data-kind="ok"><p class="spending-tail-status" role="status">В „Прочем“ есть строки с неположительной суммой: доли состава посчитаны от суммы положительных строк полного списка\.<\/p><\/div>/g)).toBe(2)
+    expect(children(html)).toBe(6)
+  })
+  it('ignores other=open where there is no «Прочее»: no link, no rows, no status', () => {
+    const html = render({ group_by: 'store', other: 'open' }, ok('spending-store.json'), { tail: { kind: 'loading' } })
+    expect(html).not.toContain('ck-pie-action')
+    expect(html).not.toContain('spending-tail')
+    expect(children(html)).toBe(0)
+    expect(count(html, /<section class="spending-currency"/g)).toBe(2)
+    // A block with «Прочее» next to a block without it: only the first one opens.
+    const mixed: Spending = { ...short, currencies: [short.currencies[0], { ...short.currencies[1], other: null }] }
+    const one = render(open, { kind: 'ok', data: mixed }, { tail })
+    expect(count(one, /class="ck-pie-action" aria-expanded="true"/g)).toBe(1)
+    expect(count(one, /class="ck-pie-action" aria-expanded="false"/g)).toBe(0)
+    expect(count(one, /class="spending-tail"/g)).toBe(1)
+    expect(count(one, /<tr class="ck-pie-child">/g)).toBe(3)
+  })
+  it('keeps other in the links that only change the data and drops it in the links to another list', () => {
+    const html = render({ ...open, country: 'DE' }, state, { tail })
+    expect(html).toContain('<a href="/stats?country=DE&amp;group_by=product&amp;other=open">Всё время</a>')
+    expect(html).toContain('<a href="/stats?date_from=2025-01-01&amp;date_to=2025-12-31&amp;country=DE&amp;group_by=product&amp;other=open">Прошлый год</a>')
+    expect(html).toContain('<a href="/stats?date_from=2026-01-01&amp;date_to=2026-09-30&amp;country=DE&amp;group_by=store">Магазины</a>')
+    expect(html).toContain('<a aria-current="true" href="/stats?date_from=2026-01-01&amp;date_to=2026-09-30&amp;country=DE&amp;group_by=product">Товары</a>')
+    const drill = render({ category: 1, currency: 'EUR', other: 'open' }, ok('spending-category-drilldown.json'))
+    expect(drill).toContain('<a class="action-link" href="/stats?currency=EUR">На уровень выше</a>')
+    expect(drill).toContain('<li><a href="/stats?currency=EUR">Все траты</a></li>')
+    expect(drill).toContain('<a href="/stats?currency=EUR&amp;category=2">')
+    const empty = render({ date_from: '2018-01-01', date_to: '2018-12-31', group_by: 'store', other: 'open' }, ok('spending-empty.json'))
+    expect(empty).toContain('<a class="action-link" href="/stats?group_by=store">Сбросить фильтры</a>')
+    expect(render({ category: 5, other: 'open' }, { kind: 'error', reason: 'invalid_parameter', status: 400, fields: ['category'] }))
+      .toContain('<a class="action-link" href="/stats">Сбросить фильтры</a>')
+  })
+  it('keeps the previous answer with its composition while new filters load, and shows no composition after a failure', () => {
+    const last = { query: open, data: short }
+    const html = render({ ...open, country: 'DE' }, { kind: 'loading' }, { last, tail })
+    expect(html).toContain('<div class="spending-blocks" data-stale="true">')
+    expect(children(html)).toBe(6)
+    expect(html).toContain(`aria-expanded="true" aria-label="Скрыть состав „Прочего“, EUR" href="${base}"`)
+    const failed = render(open, { kind: 'error', reason: 'network' }, { tail })
+    expect(failed).toContain('request-state-error')
+    expect(failed).not.toContain('spending-tail')
+    expect(failed).not.toContain('ck-pie-action')
   })
 })
 

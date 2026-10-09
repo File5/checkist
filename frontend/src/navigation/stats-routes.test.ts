@@ -53,6 +53,22 @@ describe('spending route /stats', () => {
     expect(parseSpendingQuery('?group_by=brand&group_by=generic&page=3&q=milk&limit=5&interval=week&base_from=2020-01-01'))
       .toEqual({ query: { group_by: 'generic' }, invalidFields: [] })
   })
+  it('keeps an open «Прочее» as the last parameter and writes nothing for a closed one', () => {
+    expect(parseRoute('/stats?other=open&group_by=generic')).toEqual({ kind: 'spending', query: { group_by: 'generic', other: 'open' } })
+    expect(spendingHref({ other: 'open' })).toBe('/stats?other=open')
+    expect(spendingHref({ other: 'open', ...allSpending })).toBe(`${spendingHref(allSpending)}&other=open`)
+    expect(buildRoute(parseRoute(`${spendingHref(allSpending)}&other=open`) as NavigableRoute)).toBe(`${spendingHref(allSpending)}&other=open`)
+    expect(spendingHref({ ...allSpending, other: undefined })).toBe(spendingHref(allSpending))
+  })
+  it.each(['1', 'true', 'OPEN', 'closed', 'open,open'])('drops other=%s silently: the canonical address does not hold it', (value) => {
+    expect(parseSpendingQuery(`?country=DE&other=${value}`)).toEqual({ query: { country: 'DE' }, invalidFields: ['other'] })
+    expect(buildRoute(parseRoute(`/stats?country=DE&other=${value}`) as NavigableRoute)).toBe('/stats?country=DE')
+    expect(buildSpendingQuery({ country: 'DE', other: value as 'open' })).toBe('?country=DE')
+  })
+  it('reads an empty other as absent and takes the last repeated value', () => {
+    expect(parseSpendingQuery('?other=')).toEqual({ query: {}, invalidFields: [] })
+    expect(parseSpendingQuery('?other=1&other=open').query).toEqual({ other: 'open' })
+  })
   it('drops wrong values when building instead of throwing', () => {
     expect(buildSpendingQuery({ date_from: 'yesterday', country: 'DE', store: [0], group_by: 'brand' as 'store', category: -1 })).toBe('?country=DE')
     expect(buildSpendingQuery({ ...allSpending, unexpected: 'drop' } as SpendingQuery)).toBe(buildSpendingQuery(allSpending))

@@ -8,7 +8,7 @@ import { resetSession } from '../../session/store'
 import {
   activePreset, applyFilters, breadcrumbs, failureView, filterDraft, filterMessages, formReducer, groupingHref, hasFilters,
   hasScopeFilters, initForm, itemHref, localToday, needsAddressReset, presetHref, presetPeriod, resetFiltersHref, resetHref,
-  sameDraft, serverFieldErrors, shownResult, spendingParams, upHref,
+  needsTail, otherHref, requestKey, sameDraft, serverFieldErrors, shownResult, spendingParams, spendingTailLimit, spendingTailParams, upHref,
 } from './spending-state'
 import type { FilterDraft, SpendingFailure } from './spending-state'
 
@@ -187,6 +187,77 @@ describe('breakdown and drill-down', () => {
     // An answer for another category (still on screen while the next one loads) does not lend its name.
     expect(breadcrumbs({ category: 77 }, drilldown.parent).at(-1)).toEqual({ label: 'Категория №77' })
     expect(breadcrumbs({ generic: 5, group_by: 'product' }, null).at(-1)).toEqual({ label: 'Обобщённый продукт №5' })
+  })
+})
+
+describe('open «Прочее» in the address', () => {
+  const query: SpendingQuery = { date_from: '2020-01-01', country: 'DE', store: [3, 5], group_by: 'generic', category: 2 }
+  const open: SpendingQuery = { ...query, other: 'open' }
+  it('shows and hides the composition without touching anything else', () => {
+    expect(otherHref(query, true)).toBe('/stats?date_from=2020-01-01&country=DE&store=3,5&group_by=generic&category=2&other=open')
+    expect(otherHref(open, false)).toBe('/stats?date_from=2020-01-01&country=DE&store=3,5&group_by=generic&category=2')
+    expect(otherHref(open, true)).toBe(otherHref(query, true))
+    expect(otherHref({}, true)).toBe('/stats?other=open')
+    expect(otherHref({ other: 'open' }, false)).toBe('/stats')
+  })
+  it('stays open when only the data change: a preset, applied filters, the reset of the form', () => {
+    expect(presetHref(open, 'last-year', '2026-10-07')).toBe('/stats?date_from=2025-01-01&date_to=2025-12-31&country=DE&store=3,5&group_by=generic&category=2&other=open')
+    expect(presetHref(open, 'all', '2026-10-07')).toBe('/stats?country=DE&store=3,5&group_by=generic&category=2&other=open')
+    expect(applyFilters(open, draft({ currency: 'EUR' })).query).toEqual({ currency: 'EUR', group_by: 'generic', category: 2, other: 'open' })
+    expect(applyFilters(query, draft({ currency: 'EUR' })).query).toEqual({ currency: 'EUR', group_by: 'generic', category: 2 })
+    expect(resetFiltersHref(open)).toBe('/stats?group_by=generic&category=2&other=open')
+    expect(resetFiltersHref({ other: 'open' })).toBe('/stats?other=open')
+  })
+  it('closes in another list: a breakdown, a level of the drill-down, the way back, the reset of the address', () => {
+    for (const group_by of ['category', 'generic', 'product', 'store'] as const) expect(groupingHref(open, group_by)).toBe(groupingHref(query, group_by))
+    expect(groupingHref(open, 'store')).toBe('/stats?date_from=2020-01-01&country=DE&store=3,5&group_by=store&category=2')
+    expect(itemHref({ other: 'open' }, { kind: 'category', id: 1, direct: false })).toBe('/stats?category=1')
+    expect(itemHref({ category: 1, other: 'open' }, { kind: 'category', id: 1, direct: true })).toBe('/stats?group_by=generic&category=1')
+    expect(itemHref(open, { kind: 'generic', id: 11, direct: false })).toBe(itemHref(query, { kind: 'generic', id: 11, direct: false }))
+    expect(itemHref({ group_by: 'product', other: 'open' }, { kind: 'product', id: 24, direct: false })).toBe('/catalog/products/24')
+    const crumbs = breadcrumbs({ category: 1, generic: 11, group_by: 'product', other: 'open' }, drilldown.parent, 'Курица')
+    expect(crumbs).toEqual(breadcrumbs({ category: 1, generic: 11, group_by: 'product' }, drilldown.parent, 'Курица'))
+    expect(crumbs.map((crumb) => crumb.href).join(' ')).not.toContain('other')
+    expect(upHref(crumbs)).toBe('/stats?group_by=generic&category=1')
+    expect(resetHref(open)).toBe('/stats?group_by=generic')
+    expect(resetHref({ other: 'open' })).toBe('/stats')
+  })
+  it('never sends other to the server: the usual request has no limit, the long one differs only by it', () => {
+    expect(spendingParams(open)).toEqual(query)
+    expect(spendingParams(open)).not.toHaveProperty('other')
+    expect(spendingParams(open)).not.toHaveProperty('limit')
+    expect(spendingTailLimit).toBe(500)
+    expect(spendingTailParams(open)).toEqual({ ...query, limit: 500 })
+    expect(spendingTailParams({ other: 'open' })).toEqual({ limit: 500 })
+  })
+  it('asks for the long answer only for an open «Прочее» of a shown answer', () => {
+    const generic = statsFixture('spending-generic.json') as Spending
+    const store = statsFixture('spending-store.json') as Spending
+    expect(generic.currencies.some((block) => block.other !== null)).toBe(true)
+    expect(store.currencies.every((block) => block.other === null)).toBe(true)
+    expect(needsTail({ group_by: 'generic', other: 'open' }, generic)).toBe(true)
+    // Closed, not answered yet (loading or refused), or nothing folded in any block: no second request.
+    expect(needsTail({ group_by: 'generic' }, generic)).toBe(false)
+    expect(needsTail({ group_by: 'generic', other: 'open' }, undefined)).toBe(false)
+    expect(needsTail({ group_by: 'store', other: 'open' }, store)).toBe(false)
+    expect(needsTail({ other: 'open' }, { ...store, currencies: [] })).toBe(false)
+    // One block with «Прочее» is enough for the screen.
+    expect(needsTail({ other: 'open' }, { ...generic, currencies: [...store.currencies, ...generic.currencies] })).toBe(true)
+    // Hidden again after the long answer came for this very answer: it is kept, not asked again on the next opening.
+    expect(needsTail({ group_by: 'generic' }, generic, generic)).toBe(true)
+    expect(needsTail({ group_by: 'generic' }, generic, { ...generic })).toBe(false)
+    expect(needsTail({ group_by: 'store' }, store, store)).toBe(false)
+  })
+  it('is the same request and the same form draft, open or closed', () => {
+    expect(requestKey(open)).toBe(requestKey(query))
+    expect(requestKey(open)).toBe('?date_from=2020-01-01&country=DE&store=3,5&group_by=generic&category=2')
+    expect(requestKey({ ...query, currency: 'EUR' })).not.toBe(requestKey(query))
+    // Unsaved edits of the form survive showing and hiding the composition.
+    const edited = formReducer(initForm(query), { type: 'set', field: 'currency', value: 'EUR' })
+    expect(formReducer(edited, { type: 'sync', query: open })).toBe(edited)
+    expect(formReducer(formReducer(initForm(open), { type: 'set', field: 'currency', value: 'EUR' }), { type: 'sync', query }).draft.currency).toBe('EUR')
+    expect(hasFilters({ other: 'open' })).toBe(false)
+    expect(hasScopeFilters({ other: 'open' })).toBe(false)
   })
 })
 
