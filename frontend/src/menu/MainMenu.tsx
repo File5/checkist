@@ -1,11 +1,11 @@
 import { useEffect, useLayoutEffect, useReducer, useRef } from 'react'
-import type { FocusEvent, RefObject } from 'react'
+import type { FocusEvent, MouseEvent, RefObject } from 'react'
 import { Link } from '../navigation'
 import type { Route } from '../navigation'
 import type { Session } from '../session'
 import { menuItems } from './menu-items'
 import type { MenuItem } from './menu-items'
-import { moreMenuReducer } from './more-menu'
+import { MORE_MENU_CLOSED, moreMenuStep } from './more-menu'
 
 const MORE_LIST_ID = 'main-more-list'
 
@@ -19,7 +19,7 @@ function item({ key, to, label, current, account }: MenuItem) {
  */
 export default function MainMenu({ session, route, menuRef }: { session: Session; route: Route; menuRef: RefObject<HTMLElement | null> }) {
   const { primary, more } = menuItems(session, route)
-  const [open, dispatch] = useReducer(moreMenuReducer, false)
+  const [{ open }, dispatch] = useReducer(moreMenuStep, MORE_MENU_CLOSED)
   const toggle = useRef<HTMLButtonElement>(null)
   const list = useRef<HTMLDivElement>(null)
   const wrapper = useRef<HTMLDivElement>(null)
@@ -28,7 +28,11 @@ export default function MainMenu({ session, route, menuRef }: { session: Session
   useEffect(() => {
     if (!open) return
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
+      if (event.key !== 'Escape') {
+        // The keyboard is in use again: a press that brought no click is over, Tab out of the list closes it.
+        dispatch('release')
+        return
+      }
       dispatch('escape')
       toggle.current?.focus()
     }
@@ -49,21 +53,28 @@ export default function MainMenu({ session, route, menuRef }: { session: Session
     if (!open && list.current?.contains(document.activeElement)) toggle.current?.focus()
   }, [open])
 
+  // The press comes before the blur it causes, whoever gets the focus afterwards (in Safari no one does):
+  // the reducer hears both in that order and leaves the list open for the click. A touch reports the press
+  // as pointerdown long before the blur and as mousedown right before it; both are listened to.
+  const onPress = () => dispatch('press')
+  const onRelease = () => dispatch('release')
   const onBlur = (event: FocusEvent<HTMLDivElement>) => {
-    if (open && !event.currentTarget.contains(event.relatedTarget)) dispatch('focus-left')
+    if (!event.currentTarget.contains(event.relatedTarget)) dispatch('focus-left')
+  }
+  const onListClick = (event: MouseEvent<HTMLDivElement>) => {
+    dispatch(event.target instanceof Element && event.target.closest('a') ? 'navigate' : 'release')
   }
 
   return (
     <nav className="main-navigation" aria-label="Основная навигация" ref={menuRef}>
       {primary.map(item)}
-      {more.length > 0 && <div className="main-more" ref={wrapper} data-open={open ? '' : undefined} onBlur={onBlur}>
+      {more.length > 0 && <div className="main-more" ref={wrapper} data-open={open ? '' : undefined} onBlur={onBlur}
+        onPointerDown={onPress} onMouseDown={onPress} onPointerCancel={onRelease}>
         {/* Hidden wherever the menu is a row of links. The current section is named: the mark alone is for the eye. */}
         <button type="button" className="main-more-toggle" ref={toggle} aria-expanded={open} aria-controls={MORE_LIST_ID}
           aria-label={currentInMore ? `Ещё, текущий раздел: ${currentInMore.label}` : undefined}
           data-current={currentInMore ? '' : undefined} onClick={() => dispatch('toggle')}>Ещё</button>
-        <div className="main-more-list" id={MORE_LIST_ID} ref={list} onClick={(event) => {
-          if (event.target instanceof Element && event.target.closest('a')) dispatch('navigate')
-        }}>
+        <div className="main-more-list" id={MORE_LIST_ID} ref={list} onClick={onListClick}>
           {more.map(item)}
         </div>
       </div>}
