@@ -2,10 +2,13 @@ import { useId, useMemo } from 'react'
 import type { CompareCurrency, CompareProduct, ComparePriceIndex, ReceiptCompare } from '../../api/stats'
 import RequestState from '../../components/RequestState'
 import { useLocalRequestFocus } from '../../components/useLocalRequestFocus'
+import { useNarrow } from '../../lib/cards'
 import { formatAmount, formatPrice, formatQuantity } from '../../lib/format'
 import { Link, receiptsStatsHref } from '../../navigation'
 import type { ReceiptsStatsQuery } from '../../navigation'
 import { DateRange } from './period'
+import { EffectCards, ProductCards, effectsCaption, effectsTotalTitle } from './receipts-compare-cards'
+import type { EffectColumns, ProductColumns } from './receipts-compare-cards'
 import { canRetry, failureMessage, hasScope, withoutScope } from './receipts-state'
 import type { CompareState } from './receipts-state'
 import {
@@ -15,8 +18,16 @@ import type { BarSegment, EffectPart, Verdict } from './receipts-wording'
 
 const count = (value: number) => value.toLocaleString('ru-RU')
 
+/** Column headings: one source for a table and for its cards on a phone. */
+const effectColumns: EffectColumns = { term: 'Слагаемое', amount: 'Вклад', share: 'Доля изменения' }
+const productColumns: ProductColumns = { product: 'Товар', price: 'Цена', priceChange: 'Изменение цены', quantity: 'Куплено', amount: 'Сумма' }
+const periodColumns = { base: 'было', current: 'стало' }
+/** Heading of one column of a pair: «Цена было». A card shows the pair as one fact. */
+const pairHeading = (label: string, side: keyof typeof periodColumns) => `${label} ${periodColumns[side]}`
+
 function Decomposition({ block, result }: { block: CompareCurrency; result: Verdict }) {
   const id = useId()
+  const narrow = useNarrow()
   const { parts } = result
   const bar = decompositionBar(parts)
   const segment = (item: BarSegment) => (
@@ -37,13 +48,11 @@ function Decomposition({ block, result }: { block: CompareCurrency; result: Verd
           {bar.positive.length > 0 && <span className="stats-bar-scale-end">увеличивает чек →</span>}
         </div>
       </div>}
-      <div className="stats-table-scroll" role="region" aria-labelledby={id} tabIndex={0}>
+      {narrow ? <EffectCards block={block} parts={parts} columns={effectColumns} labelledBy={id} /> : <div className="stats-table-scroll" role="region" aria-labelledby={id} tabIndex={0}>
         <table className="stats-table stats-effects-table">
-          <caption>
-            Слагаемые в сумме дают изменение среднего чека точно. Полоса над таблицей показывает те же числа: заштрихованные части уменьшают чек.
-          </caption>
+          <caption>{effectsCaption}</caption>
           <thead>
-            <tr><th scope="col">Слагаемое</th><th scope="col" className="stats-number">Вклад</th><th scope="col" className="stats-number stats-effect-share">Доля изменения</th></tr>
+            <tr><th scope="col">{effectColumns.term}</th><th scope="col" className="stats-number">{effectColumns.amount}</th><th scope="col" className="stats-number stats-effect-share">{effectColumns.share}</th></tr>
           </thead>
           <tbody>
             {parts.map((part: EffectPart) => (
@@ -60,7 +69,7 @@ function Decomposition({ block, result }: { block: CompareCurrency; result: Verd
           </tbody>
           <tfoot>
             <tr>
-              <th scope="row">Изменение среднего чека</th>
+              <th scope="row">{effectsTotalTitle}</th>
               <td className="stats-number">{signedAmount(block.change.avg_receipt, block.currency)}</td>
               <td className="stats-number stats-effect-share">
                 {block.change.avg_receipt_percent === null ? '—' : <>{signedPercent(block.change.avg_receipt_percent)} <span className="stats-number-note">к базовому чеку</span></>}
@@ -68,7 +77,7 @@ function Decomposition({ block, result }: { block: CompareCurrency; result: Verd
             </tr>
           </tfoot>
         </table>
-      </div>
+      </div>}
       {result.note && <p className="stats-note">{result.note}</p>}
     </section>
   )
@@ -90,8 +99,12 @@ function PriceIndex({ index }: { index: ComparePriceIndex }) {
 
 function Products({ block }: { block: CompareCurrency }) {
   const id = useId()
+  const narrow = useNarrow()
   const { currency, products, products_total: total } = block
   if (products.length === 0) return null
+  const caption = `${products.length < total
+    ? `Показаны ${count(products.length)} из ${count(total)} совпавших товаров с наибольшим изменением суммы покупок.`
+    : `Все совпавшие товары (${count(total)}), по убыванию изменения суммы покупок.`} Цена — оплаченная сумма, делённая на количество за период.`
   const row = (item: CompareProduct) => (
     <tr key={`${item.product.id}-${item.unit}`}>
       <th scope="row"><Link to={{ kind: 'product', productId: item.product.id, query: { page: 1 } }}>{item.product.name}</Link></th>
@@ -107,26 +120,21 @@ function Products({ block }: { block: CompareCurrency }) {
   return (
     <section className="stats-products">
       <h5 id={id}>Товары, купленные в обоих периодах</h5>
-      <div className="stats-table-scroll" role="region" aria-labelledby={id} tabIndex={0}>
+      {narrow ? <ProductCards block={block} columns={productColumns} caption={caption} labelledBy={id} /> : <div className="stats-table-scroll" role="region" aria-labelledby={id} tabIndex={0}>
         <table className="stats-table stats-products-table">
-          <caption>
-            {products.length < total
-              ? `Показаны ${count(products.length)} из ${count(total)} совпавших товаров с наибольшим изменением суммы покупок.`
-              : `Все совпавшие товары (${count(total)}), по убыванию изменения суммы покупок.`}
-            {' '}Цена — оплаченная сумма, делённая на количество за период.
-          </caption>
+          <caption>{caption}</caption>
           <thead>
             <tr>
-              <th scope="col">Товар</th>
-              <th scope="col" className="stats-number">Цена было</th><th scope="col" className="stats-number">Цена стало</th>
-              <th scope="col" className="stats-number">Изменение цены</th>
-              <th scope="col" className="stats-number">Куплено было</th><th scope="col" className="stats-number">Куплено стало</th>
-              <th scope="col" className="stats-number">Сумма было</th><th scope="col" className="stats-number">Сумма стало</th>
+              <th scope="col">{productColumns.product}</th>
+              <th scope="col" className="stats-number">{pairHeading(productColumns.price, 'base')}</th><th scope="col" className="stats-number">{pairHeading(productColumns.price, 'current')}</th>
+              <th scope="col" className="stats-number">{productColumns.priceChange}</th>
+              <th scope="col" className="stats-number">{pairHeading(productColumns.quantity, 'base')}</th><th scope="col" className="stats-number">{pairHeading(productColumns.quantity, 'current')}</th>
+              <th scope="col" className="stats-number">{pairHeading(productColumns.amount, 'base')}</th><th scope="col" className="stats-number">{pairHeading(productColumns.amount, 'current')}</th>
             </tr>
           </thead>
           <tbody>{products.map(row)}</tbody>
         </table>
-      </div>
+      </div>}
     </section>
   )
 }
