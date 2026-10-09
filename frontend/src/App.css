@@ -17,6 +17,10 @@ button, a, input, select { -webkit-tap-highlight-color: transparent; }
 button, input, select { font: inherit; }
 a { color: inherit; }
 button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible { outline: 3px solid var(--ck-focus); outline-offset: 4px; }
+/* The heading of the page is focused by script only (tabindex="-1": after a load, a transition, the sign-in), for the
+   screen reader and the order of Tab. No person reaches it with Tab, and a ring round the title reads as a fault:
+   it is not drawn. Everything a person can reach with Tab keeps the ring of the rule above. */
+h1[tabindex="-1"]:focus-visible { outline: none; }
 h1, h2, p, dd { margin: 0; }
 h1, h2 { font-family: var(--ck-font-display); font-weight: 600; }
 h1 { font-size: clamp(1.75rem, 7vw, 3.7rem); letter-spacing: 0.01em; line-height: 1.1; }
@@ -68,6 +72,11 @@ button:where(:hover:not(:disabled)) { border-color: var(--ck-brand-hover); backg
 button:where(:active:not(:disabled)) { border-color: var(--ck-brand-active); background: var(--ck-brand-active); }
 button:disabled { background: var(--ck-disabled-bg); border-color: var(--ck-disabled-border); color: var(--ck-disabled-text); cursor: default; }
 input, select { min-height: 44px; max-width: 100%; }
+/* iOS Safari draws a field of a date by its own look: the padding and the frame are added to `width: 100%`, so the
+   field leaves its panel, and the value stands in the middle. Without that look it is a box like any other field;
+   the height comes from the rule above. :where keeps the rule weightless: a screen may still override it. */
+:where(input[type="date"], input[type="datetime-local"], input[type="time"], input[type="month"], input[type="week"]) { -webkit-appearance: none; appearance: none; box-sizing: border-box; min-width: 0; max-width: 100%; }
+input::-webkit-date-and-time-value { text-align: left; }
 .action-link { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 10px 16px; border: 1px solid var(--ck-link); border-radius: var(--ck-radius-sm); color: var(--ck-link); text-underline-offset: 3px; }
 /* :where keeps the hover as weak as `.action-link`: a filled link of a screen (its class sets the fill and the text
    over it) keeps its own text and border while hovered instead of taking the link colour. */
