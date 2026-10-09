@@ -82,3 +82,57 @@ describe('card stylesheet guards (text of the rules, not rendering)', () => {
     for (const item of rules(css)) expect(declares(item.body, 'overflow') || declares(item.body, 'overflow-x'), item.selector).toBe(false)
   })
 })
+
+/** Whatever stands inside :where() weighs nothing. */
+const weightless = (selector: string) => /^:where\(.*\)$/.test(selector) && !selector.slice(7, -1).includes(':where(')
+
+describe('card stylesheet guards: the heading, links and text facts', () => {
+  it('highlights the main line of the heading and leaves what follows it plain', () => {
+    expect(rule('.ck-card-title')).toContain('font-weight: 600;')
+    const plain = ':where(.ck-card-title > :not(:first-child))'
+    expect(rule(plain)).toBe('font-weight: 400;')
+    // Weighs nothing: `.receipt-printed-name` and `.stats-effect-title` keep the weight of their own class.
+    expect(weightless(plain)).toBe(true)
+    // No other rule of the contract touches the weight inside the heading.
+    const weights = rules(css).filter((item) => declares(item.body, 'font-weight')).map((item) => item.selector)
+    expect(weights).toEqual(['.ck-card-title', plain, '.ck-card[data-tone="total"] .ck-card-fact dd'])
+  })
+
+  it('relies on the screen classes that mark the main line of a heading that starts with a note', () => {
+    const screen = (path: string) => read(path).replace(/\/\*[\s\S]*?\*\//g, '')
+    const own = (text: string, selector: string) => rules(text).filter((item) => item.selector === selector).map((item) => item.body).join(' ')
+    expect(own(screen('../../features/receipts/Receipts.css'), '.receipt-printed-name')).toContain('font-weight: 650;')
+    expect(own(screen('../../features/stats/ReceiptsStats.css'), '.stats-effect-title')).toBe('font-weight: 600;')
+  })
+
+  it('paints a link of the heading and of a fact as a link, not as the text around it', () => {
+    // App.css says `a { color: inherit; }`: a class in the selector outweighs it wherever the file stands in the build.
+    for (const selector of ['.ck-card-title a', '.ck-card-fact a']) {
+      expect(rule(selector), selector).toBe('color: var(--ck-link); text-underline-offset: 3px;')
+    }
+    // The footer holds buttons and action links with the colours of their own classes.
+    expect(rules(css).filter((item) => item.selector.includes('.ck-card-footer') && declares(item.body, 'color')).map((item) => item.selector)).toEqual([])
+  })
+
+  it('gives a link of the heading and of a value the touch target of the table links, without outweighing a screen class', () => {
+    const targets = [':where(.ck-card-title > a)', ':where(.ck-card-fact[data-kind="value"] dd a)']
+    for (const selector of targets) {
+      expect(rule(selector), selector).toBe('display: inline-block; min-height: 44px; padding-block: 10px;')
+      expect(weightless(selector), selector).toBe(true)
+    }
+    // Only a direct child of the heading and a link of an unbreakable value: a link inside running text stays inline.
+    expect(rules(css).filter((item) => declares(item.body, 'min-height')).map((item) => item.selector)).toEqual(targets)
+  })
+
+  it('puts a text fact at the right edge like a value and still wraps it by words', () => {
+    const inline = rule('.ck-card-fact:not([data-kind="block"]) dd')
+    expect(inline).toBe('margin-left: auto; text-align: right;')
+    const text = [rule('.ck-card-fact[data-kind="text"] dd'), inline, rule('.ck-card-fact dd')].join(' ')
+    expect(text).toContain('overflow-wrap: break-word;')
+    expect(text).toContain('min-width: 0;')
+    expect(declares(text, 'white-space')).toBe(false)
+    // A block keeps the whole width under its label, aligned as the text of the page.
+    const block = [rule('.ck-card-fact[data-kind="block"]'), rule('.ck-card-fact[data-kind="block"] dd')].join(' ')
+    expect(declares(block, 'text-align') || declares(block, 'margin-left')).toBe(false)
+  })
+})
