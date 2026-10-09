@@ -1,14 +1,21 @@
 /** Selection and keyboard logic of the charts as pure reducers: tested in Node, used by the components. */
 import { coordinate } from './scale.ts'
 
-/* Pie: the sector and its legend row are highlighted together, by pointer or by focus. */
+/* Pie: the sector and its legend row are highlighted together, by pointer, by a finger's tap or by focus. */
 
-export interface PieHighlight { hovered: string | null; focused: string | null }
+export interface PieHighlight {
+  hovered: string | null
+  focused: string | null
+  /** Set by a tap: a finger has no hover, so the highlight it asked for stays until the next tap. */
+  pinned?: string | null
+}
 export type PieHighlightAction =
   | { type: 'enter' | 'focus'; key: string }
   | { type: 'leave' | 'blur'; key: string }
+  | { type: 'pin'; key: string }
+  | { type: 'unpin' }
 
-export const noPieHighlight: PieHighlight = { hovered: null, focused: null }
+export const noPieHighlight: PieHighlight = { hovered: null, focused: null, pinned: null }
 
 export function pieHighlightReducer(state: PieHighlight, action: PieHighlightAction): PieHighlight {
   switch (action.type) {
@@ -17,13 +24,19 @@ export function pieHighlightReducer(state: PieHighlight, action: PieHighlightAct
     // A late leave/blur of an element that is no longer the current one must not clear its successor.
     case 'leave': return state.hovered === action.key ? { ...state, hovered: null } : state
     case 'blur': return state.focused === action.key ? { ...state, focused: null } : state
+    case 'pin': {
+      if ((state.pinned ?? null) !== action.key) return { ...state, pinned: action.key }
+      // The second tap takes the highlight away for good: the first one may have left the focus on the sector.
+      return { ...state, pinned: null, focused: state.focused === action.key ? null : state.focused }
+    }
+    case 'unpin': return (state.pinned ?? null) === null ? state : { ...state, pinned: null }
   }
 }
 
-/** The pointer is the more recent and more precise intent; focus stays as the fallback. */
+/** The pointer is the more recent and more precise intent; then what a tap pinned; focus stays as the fallback. */
 export function activePieKey(state: PieHighlight, keys: readonly string[]): string | null {
-  const known = (key: string | null) => (key !== null && keys.includes(key) ? key : null)
-  return known(state.hovered) ?? known(state.focused)
+  const known = (key: string | null | undefined) => (key != null && keys.includes(key) ? key : null)
+  return known(state.hovered) ?? known(state.pinned) ?? known(state.focused)
 }
 
 /* Line: one selected period (by its start date, so it survives a change of the visible series). */
@@ -40,6 +53,10 @@ export type LineKeyCommand = 'previous' | 'next' | 'first' | 'last' | 'clear'
 export type LineSelectionAction =
   | { type: 'key'; command: LineKeyCommand; xs: readonly string[] }
   | { type: 'pointer'; x: string | null; touch?: boolean }
+  /** A finger tapped the interval: it is selected, and the same interval tapped again is released. */
+  | { type: 'touch-commit'; x: string | null }
+  /** «Снять выделение» and a tap outside the chart: whoever owns the selection, it goes. */
+  | { type: 'dismiss' }
   | { type: 'pointer-leave' }
   | { type: 'blur' }
   | { type: 'toggle'; key: string }
@@ -85,6 +102,11 @@ export function lineSelectionReducer(state: LineSelection, action: LineSelection
       const source = action.touch ? 'touch' : 'pointer'
       return state.activeX === action.x && state.source === source ? state : { ...state, activeX: action.x, source }
     }
+    case 'touch-commit': {
+      if (action.x === null) return state
+      return state.activeX === action.x ? cleared(state) : { ...state, activeX: action.x, source: 'touch' }
+    }
+    case 'dismiss': return cleared(state)
     // The pointer leaving must not drop a selection the keyboard owns, and vice versa. A lifted finger also
     // "leaves": its selection stays until another tap, Escape or the focus moving away.
     case 'pointer-leave': return state.source === 'pointer' ? cleared(state) : state
