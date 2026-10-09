@@ -9,7 +9,6 @@ const read = (path: string) => readFileSync(new URL(path, source), 'utf8')
  * a table its cards removes its own line, and parallel removals of different lines merge without a conflict.
  */
 const exceptions: Record<string, string> = {
-  'lib/charts/LineChart.tsx': 'Т6: «Таблица значений» графика — карточки делает подзадача графиков',
   'lib/charts/PieChart.tsx': 'постоянно: легенда круговой диаграммы остаётся таблицей (три колонки, связь с секторами)',
 }
 
