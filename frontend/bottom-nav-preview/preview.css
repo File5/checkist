@@ -1,0 +1,8 @@
+body { margin: 0; padding: 16px; font-family: system-ui, sans-serif; line-height: 1.5; background: Canvas; color: CanvasText; color-scheme: light dark; }
+h1 { font-size: 1.4rem; }
+h2 { font-size: 1.1rem; margin: 28px 0 4px; }
+p { max-width: 70ch; margin: 4px 0 10px; }
+.frames { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; overflow-x: auto; }
+figure { margin: 0; }
+figcaption { font-size: 0.85rem; white-space: nowrap; }
+iframe { display: block; border: 1px solid GrayText; }

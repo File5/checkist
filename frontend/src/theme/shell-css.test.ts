@@ -106,6 +106,8 @@ describe('state rules of the shell (text of the rules, not rendering)', () => {
       '.brand-bar .main-navigation a:hover = 3',
       'button:where(:hover:not(:disabled)) = 0', 'button:where(:active:not(:disabled)) = 0', 'button:disabled = 1',
       '.action-link:where(:hover) = 1', '.rec-issues summary:focus-visible = 2',
+      // The button «Ещё» of the phone's bottom bar: the shell's own part, like the links of the header.
+      '.brand-bar .main-more-toggle:where(:hover) = 2', '.brand-bar .main-more-toggle[aria-expanded="true"] = 3',
     ])
   })
 
