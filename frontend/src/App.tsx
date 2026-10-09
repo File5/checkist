@@ -18,6 +18,7 @@ import type { ShellView } from './features/auth/auth-state'
 import { moderatorOnlyText } from './features/auth/labels'
 import { canModerate, loadSession, useSession } from './session'
 import { menuKey, useCurrentItemInView } from './menu-view'
+import MainMenu from './menu/MainMenu'
 import { ThemeToggle } from './theme'
 import emblem from './assets/brand/emblem-96.webp'
 import emblem2x from './assets/brand/emblem-192.webp'
@@ -178,19 +179,7 @@ export default function App() {
         <div className="brand-actions">
           <ThemeToggle placement="header" />
         </div>
-        <nav className="main-navigation" aria-label="Основная навигация" ref={mainNavigation}>
-          {signedIn && <>
-            <Link to="/catalog" aria-current={catalogActive ? 'page' : undefined}>Каталог</Link>
-            <Link to="/receipts" aria-current={['receipts', 'upload', 'receipt'].includes(route.kind) ? 'page' : undefined}>Чеки</Link>
-            <Link to="/stats" aria-current={statsActive ? 'page' : undefined}>Статистика</Link>
-            <Link to="/recognition/jobs" aria-current={['jobs', 'job'].includes(route.kind) ? 'page' : undefined}>Обработка</Link>
-          </>}
-          <Link to="/health" aria-current={route.kind === 'health' ? 'page' : undefined}>Состояние сервисов</Link>
-          {/* A guest sees the shell only here, on the health page: everywhere else the sign-in replaces it. */}
-          {session.kind === 'guest' && <Link to="/login">Войти</Link>}
-          {signedIn && session.mode === 'accounts' && <Link className="account-link" to="/account" aria-label={`Аккаунт: ${username}`}
-            aria-current={route.kind === 'account' ? 'page' : undefined}>{username}</Link>}
-        </nav>
+        <MainMenu session={session} route={route} menuRef={mainNavigation} />
       </header>
 
       <div className="page">
