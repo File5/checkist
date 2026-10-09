@@ -71,7 +71,7 @@ export function readError(status: number, body: unknown, local: boolean): LocalA
 /** The session ended or the right is gone: the shell is told once, the screen keeps its own result types.
  * `401 not_authenticated` is not an error of the screen: the shell replaces the page with the sign-in.
  */
-function refuse(status: number, body: unknown, local: boolean): LocalApiFailure | { kind: 'aborted' } {
+export function refuse(status: number, body: unknown, local: boolean): LocalApiFailure | { kind: 'aborted' } {
   if (status === 401 && readErrorCode(body) === 'not_authenticated') {
     reportAuthSignal('unauthenticated')
     return { kind: 'aborted' }
