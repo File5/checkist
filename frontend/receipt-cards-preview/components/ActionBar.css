@@ -1,0 +1,19 @@
+/* The pinned action bar of a long form: `ck-action-bar` is the second class of the existing wrapper of its buttons.
+   Imported by main.tsx after App.css, so it wins over a screen rule of the same weight. Only a phone that is tall
+   enough pins the bar: a landscape phone and a 200 % zoom leave no room for it. State rules do not belong here. */
+@media (max-width: 540px) and (min-height: 480px) {
+  /* Stays in the flow of its form: sticks while the form is longer than the screen, rests in its place at the end. */
+  .ck-action-bar {
+    position: sticky;
+    bottom: var(--ck-bottom-occupied);
+    z-index: var(--ck-z-action-bar);
+    padding-block: 10px;
+    border-top: 1px solid var(--ck-border);
+    background: var(--ck-surface);
+    /* Covers the gesture strip under the bar, where the page would show through; the bottom navigation lies above it. */
+    box-shadow: 0 var(--ck-safe-bottom) 0 var(--ck-surface);
+  }
+
+  /* The only scroll padding of the project: a focused field and a link target stop above the bar and the navigation. */
+  html { scroll-padding-bottom: calc(var(--ck-action-bar-room) + var(--ck-bottom-occupied)); }
+}

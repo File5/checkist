@@ -1,0 +1,9 @@
+/* Only the overview page of the snapshot; the framed pages use the copies of the client styles. */
+body { margin: 0; padding: 16px; background: var(--ck-bg); color: var(--ck-text); font-family: system-ui, sans-serif; line-height: 1.5; }
+h1, h2 { margin: 24px 0 8px; }
+p { max-width: 80ch; color: var(--ck-text-muted); }
+a { color: var(--ck-link); }
+.frames { display: flex; flex-wrap: wrap; gap: 16px; }
+figure { margin: 0; }
+figcaption { margin-bottom: 6px; color: var(--ck-text-muted); }
+iframe { display: block; max-width: 100%; border: 1px solid var(--ck-border); }
