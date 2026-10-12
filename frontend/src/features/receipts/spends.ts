@@ -130,10 +130,11 @@ export function withOwner(query: ReceiptsQuery, owner: string | undefined): Rece
 }
 
 /**
- * Jobs that finished with crops left for a person (`needs_review` or `failed`): the jobs list has a status filter, so
- * one request with `page_size=1` gives the count. Confirming every crop turns the job `succeeded` and it leaves.
+ * Jobs with a crop waiting for a person (`needs_review`) that were not retried: the server filter `needs_review=1`, so
+ * one request with `page_size=1` gives the count. A job is not counted by status: `partial_succeeded` also means a
+ * failed crop next to an imported one, which nobody can confirm. Confirming the last crop takes the job off the list.
  */
-export const reviewJobsQuery = { status: 'partial_succeeded', page: 1 } as const
+export const reviewJobsQuery = { needs_review: 1, page: 1 } as const
 
 /** «2 фото ждут проверки». */
 export function reviewText(count: number): string {

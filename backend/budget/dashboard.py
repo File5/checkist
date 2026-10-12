@@ -14,6 +14,7 @@ from decimal import Decimal
 
 from django.db.models import Count, F, Sum
 
+from catalog.models import Product
 from receipts import spending
 from receipts.models import ReceiptLine
 
@@ -120,21 +121,30 @@ def _root(tree, category_id):
     return tree.path_ids(category_id)[0]
 
 
-def recent(receipts, tree, limit=RECENT_LIMIT):
+def recent(receipts, tree, limit=RECENT_LIMIT, product_ref=None):
     """Последние ``limit`` чеков по моменту покупки; у каждого — главная категория.
 
     Главная категория — корень с наибольшей суммой строк чека (при равенстве — по
-    имени), ``None``, если у строк чека категорий нет. Два запроса.
+    имени), ``None``, если у строк чека категорий нет. ``product_ref`` — выражение
+    «товар строки», как в ``currency_blocks``: строка поглощённого слиянием товара
+    относится к категории оставляемого. Три запроса.
     """
     rows = list(receipts.select_related("store__merchant", "owner")
                 .annotate(lines_total=Count("lines")).order_by("-purchased_at", "-id")[:limit])
     paid = {}
-    lines = (ReceiptLine.objects.filter(receipt_id__in=[row.pk for row in rows], kind=ReceiptLine.Kind.PRODUCT)
-             .values("receipt_id", "category_id", "product__generic__category_id")
-             .annotate(paid=Sum(F("amount") - F("discount_amount"))).order_by()
-             .values_list("receipt_id", "category_id", "product__generic__category_id", "paid"))
-    for receipt_id, line_category, product_category, amount in lines:
-        root = _root(tree, product_category if product_category is not None else line_category)
+    lines = list(
+        ReceiptLine.objects.filter(receipt_id__in=[row.pk for row in rows], kind=ReceiptLine.Kind.PRODUCT)
+        .values("receipt_id", "category_id")
+        .annotate(owner=product_ref if product_ref is not None else F("product_id"),
+                  paid=Sum(F("amount") - F("discount_amount")))
+        .order_by()
+        .values_list("receipt_id", "category_id", "owner", "paid")
+    )
+    owners = {owner for _, _, owner, _ in lines if owner is not None}
+    product_category = dict(Product.objects.filter(pk__in=owners).values_list("pk", "generic__category_id"))
+    for receipt_id, line_category, owner, amount in lines:
+        category = product_category.get(owner) if owner is not None else None
+        root = _root(tree, category if category is not None else line_category)
         if root is not None:
             sums = paid.setdefault(receipt_id, {})
             sums[root] = sums.get(root, _ZERO) + amount

@@ -10,7 +10,7 @@ import { Link } from '../../navigation'
 import { useSession } from '../../session'
 import { categoryTone, dashboardErrorMessage, formatMoney } from './dashboard-state'
 import {
-  amountInput, limitCurrencies, limitFailureMessage, limitFor, parseCurrency, rowAction, topLevelCategories, withLimit, withoutLimit,
+  amountInput, isDuplicateCreate, limitCurrencies, limitFailureMessage, limitFor, parseCurrency, rowAction, topLevelCategories, withLimit, withoutLimit,
 } from './limits-state'
 import './Dashboard.css'
 
@@ -171,7 +171,16 @@ export default function LimitsPage() {
       : await updateBudgetLimit(action.id, action.amount, { signal: controller.signal })
     if (controller.signal.aborted || result.kind === 'aborted') return
     controllers.current.delete(key)
-    if (result.kind === 'error') { setStatus(key, { kind: 'error', text: limitFailureMessage(result) }); return }
+    if (result.kind === 'error') {
+      const creating = action.kind === 'create'
+      setStatus(key, { kind: 'error', text: limitFailureMessage(result, creating) })
+      // Someone in the family saved this pair meanwhile: show their limit, the next save updates it.
+      if (isDuplicateCreate(result, creating)) {
+        const fresh = await getBudgetLimits()
+        if (fresh.kind === 'ok') setLimits(fresh.data)
+      }
+      return
+    }
     setLimits((all) => withLimit(all, result.data))
     clearDraft(key)
     setStatus(key, { kind: 'done', text: 'Сохранено.' })

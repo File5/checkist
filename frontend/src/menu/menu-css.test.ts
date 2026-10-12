@@ -12,7 +12,7 @@ const rules = (text: string) => [...text.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
 const rule = (selector: string, text: string) => rules(text).filter((item) => item.selector === selector).map((item) => item.body).join(' ')
 
 const phone = '@media (max-width: 540px) {'
-const query = '@media (max-width: 540px) and (min-width: 300px) and (min-height: 480px) {'
+const query = '@media (max-width: 540px) and (min-width: 340px) and (min-height: 480px) {'
 const bar = app.slice(app.indexOf(query) + query.length).split('\n}')[0]
 /** Everything but the block of the bar. */
 const rest = app.replace(bar, '')
@@ -26,7 +26,7 @@ describe('bottom bar of the main menu on a phone (text of the rules, not renderi
     expect(app.indexOf(query)).toBeGreaterThan(app.indexOf(phone))
     // One threshold of the phone; the other two conditions leave a tiny or a low window with the row in the header.
     expect([...app.matchAll(/@media ([^{]+)\{/g)].map((match) => match[1].trim())).toEqual([
-      '(max-width: 540px)', '(max-width: 540px) and (min-width: 300px) and (min-height: 480px)', '(forced-colors: active)',
+      '(max-width: 540px)', '(max-width: 540px) and (min-width: 340px) and (min-height: 480px)', '(forced-colors: active)',
     ])
     expect(nav).not.toBe('')
   })
@@ -116,6 +116,10 @@ describe('bottom bar of the main menu on a phone (text of the rules, not renderi
     expect(toggle).toContain('border-radius: 50%;')
     const side = Number(/width: (\d+)px; height: (\d+)px;/.exec(toggle)?.[1])
     expect(side).toBeGreaterThanOrEqual(44)
+    // Inside the 3.5rem (56 px) of the bar: nothing sticks out over the pinned action bars that stop at its top edge.
+    expect(side).toBeLessThanOrEqual(56)
+    expect(toggle).not.toMatch(/margin(-top)?: -/)
+    expect(rule('.brand-bar .main-add', bar)).toContain('align-items: center;')
     expect(rule('.brand-bar .main-add-list', bar)).toBe('display: none;')
     expect(rule('.brand-bar .main-add-list .main-add-action', bar)).toContain('min-height: 48px;')
   })

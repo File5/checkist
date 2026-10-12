@@ -195,6 +195,22 @@ class RejectTests(SuggestedTestCase):
         # «Продукты питания» was there before and still holds other categories.
         self.assertTrue(Category.objects.filter(name="Продукты питания").exists())
 
+    def test_created_category_with_a_budget_limit_is_kept_with_the_limit(self):
+        from budget.models import BudgetLimit
+        from stores.models import Currency
+
+        drinks = Category.objects.get(name="Напитки")
+        self.assertIsNone(drinks.parent_id)
+        currency, _ = Currency.objects.get_or_create(code="KZT", defaults={"name": "Tenge"})
+        owner = get_user_model().objects.create_user("liza-limit")
+        limit = BudgetLimit.objects.create(user=owner, category=drinks, currency=currency, amount=Decimal("20000"))
+        services.reject(record(JUICE).pk, version=1)
+        # The emptied created generic product goes; the category the family budgets for stays, with its limit.
+        self.assertEqual(states(CreatedGenericProduct)["Сок"], "removed")
+        self.assertEqual(states(CreatedCategory)["Напитки"], "kept")
+        self.assertTrue(Category.objects.filter(pk=drinks.pk).exists())
+        self.assertTrue(BudgetLimit.objects.filter(pk=limit.pk, category=drinks).exists())
+
     def test_rejecting_everything_returns_the_original_catalog(self):
         for entry in ProductClassification.objects.order_by("pk"):
             services.reject(entry.pk, version=1)

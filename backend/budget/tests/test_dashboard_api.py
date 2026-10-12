@@ -153,6 +153,24 @@ class DashboardNumbersTests(FixtureMixin, TestCase):
         dates = [row["purchased_on"] for row in recent]
         self.assertEqual(dates, sorted(dates, reverse=True))
 
+    def test_recent_category_follows_the_merge_survivor_like_the_categories_block(self):
+        from api.tests.test_stats_spending import absorb
+
+        stray = make_product(
+            GenericProduct.objects.create(name="Демо-латте", category=self.coffee, base_unit=BaseUnit.PCS), "Демо-латте")
+        survivor = make_product(
+            GenericProduct.objects.create(name="Демо-проезд", category=self.transport, base_unit=BaseUnit.PCS),
+            "Демо-проезд")
+        absorb(survivor, stray)
+        receipt = make_receipt(self.store, "KZT", date(2026, 10, 20), owner=local_user(), total=D("300.00"))
+        make_line(receipt, position=1, product=stray, amount=D("300.00"))
+        body = self.get()
+        kzt = body["currencies"][1]
+        self.assertEqual(next(row for row in kzt["categories"] if row["category_id"] == self.transport.pk)["spent"],
+                         "300.00")
+        row = next(row for row in body["recent"] if row["id"] == receipt.pk)
+        self.assertEqual(row["category_name"], "Демо-транспорт")
+
     def test_recent_is_limited_to_ten(self):
         for day in range(1, 8):
             spend(local_user(), self.cafe, "1", date(2026, 7, day))

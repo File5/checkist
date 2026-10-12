@@ -84,7 +84,7 @@ describe('family chips and the review banner', () => {
     expect(renderToStaticMarkup(<ReviewBanner count={undefined} />)).toBe('')
     expect(renderToStaticMarkup(<ReviewBanner count={0} />)).toBe('')
     expect(renderToStaticMarkup(<ReviewBanner count={3} />))
-      .toBe(`<p class="spends-review"><a href="/recognition/jobs?status=partial_succeeded">3${NBSP}фото ждут проверки</a></p>`)
+      .toBe(`<p class="spends-review"><a href="/recognition/jobs?needs_review=1">3${NBSP}фото ждут проверки</a></p>`)
   })
 
   it('puts chips and the banner above the actions and offers to reset an owner filter on an empty page', () => {

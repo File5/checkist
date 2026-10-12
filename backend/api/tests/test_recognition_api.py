@@ -531,6 +531,25 @@ class RecognitionAPITests(TestCase):
         self.assertEqual(slash.status_code, 400)
         self.assertEqual(slash.json()["error"]["code"], "invalid_request")
 
+    def test_needs_review_filter_lists_only_jobs_waiting_for_a_person(self):
+        statuses = ReceiptImage.Status
+        waiting = ProcessingJob.objects.create(photo=make_photo())
+        make_image(waiting, status=statuses.IMPORTED)
+        make_image(waiting, position=2, status=statuses.NEEDS_REVIEW)
+        # A failed crop next to an imported one (a partial job): nothing to confirm.
+        failed = ProcessingJob.objects.create(photo=make_photo())
+        make_image(failed, status=statuses.IMPORTED)
+        make_image(failed, position=2, status=statuses.FAILED)
+        # Retried: the new job replaces it even though a crop still says needs_review.
+        retried = ProcessingJob.objects.create(photo=make_photo())
+        make_image(retried, status=statuses.NEEDS_REVIEW)
+        ProcessingJob.objects.create(photo=make_photo(), retry_of=retried)  # a finished job would share the photo
+        body = self.client.get("/api/recognition/jobs/?needs_review=1").json()
+        self.assertEqual((body["count"], [job["id"] for job in body["results"]]), (1, [waiting.pk]))
+        self.assertEqual(self.client.get("/api/recognition/jobs/?needs_review=0").json()["count"], 4)
+        self.assertEqual(self.client.get("/api/recognition/jobs/").json()["count"], 4)
+        self.error(self.client.get("/api/recognition/jobs/?needs_review=yes"), 400, "invalid_parameter")
+
     def test_no_n_plus_one_on_lists(self):
         for _ in range(5):
             make_image(ProcessingJob.objects.create(photo=make_photo()))

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { limitFixture } from '../../api/budget-test-support'
 import type { Category } from '../../api/types'
 import {
-  amountInput, limitCurrencies, limitFailureMessage, limitFor, limitMessages, parseCurrency, parseLimitAmount, rowAction, topLevelCategories,
+  amountInput, isDuplicateCreate, limitCurrencies, limitFailureMessage, limitFor, limitMessages, parseCurrency, parseLimitAmount, rowAction, topLevelCategories,
   withLimit, withoutLimit,
 } from './limits-state'
 
@@ -65,6 +65,11 @@ describe('limits screen state', () => {
     expect(limitFailureMessage({ reason: 'invalid_parameter', fields: ['amount'] })).toContain('сумму')
     expect(limitFailureMessage({ reason: 'invalid_parameter', fields: ['category_id'] })).toContain('верхнего уровня')
     expect(limitFailureMessage({ reason: 'invalid_parameter', fields: ['non_field_errors'] })).toContain('уже есть')
+    // The server reports a taken «category and currency» pair at category_id: on a create it is the duplicate.
+    expect(limitFailureMessage({ reason: 'invalid_parameter', fields: ['category_id'] }, true)).toContain('уже есть')
+    expect(isDuplicateCreate({ reason: 'invalid_parameter', fields: ['category_id'] }, true)).toBe(true)
+    expect(isDuplicateCreate({ reason: 'invalid_parameter', fields: ['category_id'] }, false)).toBe(false)
+    expect(isDuplicateCreate({ reason: 'invalid_parameter', fields: ['amount'] }, true)).toBe(false)
     expect(limitFailureMessage({ reason: 'not_found' })).toContain('Обновите страницу')
     expect(limitFailureMessage({ reason: 'invalid_response' })).toBe('Не удалось сохранить лимит. Повторите попытку.')
   })

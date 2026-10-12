@@ -204,11 +204,11 @@ class DashboardView(LocalAPIView):
         params.check()
         tree = common.CategoryTree.load()
         receipts = Receipt.objects.filter(owner_q(request))
-        blocks = dashboard.currency_blocks(receipts, visible_limits(request), month, tree,
-                                           stats_common.owner_product_id())
+        product_ref = stats_common.owner_product_id()
+        blocks = dashboard.currency_blocks(receipts, visible_limits(request), month, tree, product_ref)
         return Response({
             "month": month.label(), "previous_month": month.previous().label(),
             "days_left": dashboard.days_left(month, today), "members": members(request),
             "currencies": [_block_object(block) for block in blocks],
-            "recent": [_recent_object(*pair) for pair in dashboard.recent(receipts, tree)],
+            "recent": [_recent_object(*pair) for pair in dashboard.recent(receipts, tree, product_ref=product_ref)],
         })

@@ -160,9 +160,11 @@ footer { border-top: 1px solid var(--ck-divider); color: var(--ck-text-muted); p
 }
 
 /* A phone held upright: the main menu is a bar pinned to the bottom of the window: «Главная · Траты · ＋ · Статистика · Ещё».
-   A window narrower than 300 px or lower than 480 px (200 % zoom, a phone on its side, the on-screen keyboard of
-   Android) has no room for it and keeps the row in the header from the block above. */
-@media (max-width: 540px) and (min-width: 300px) and (min-height: 480px) {
+   A window narrower than 340 px or lower than 480 px (200 % zoom, a phone on its side, the on-screen keyboard of
+   Android) has no room for it and keeps the row in the header from the block above. Width of the bar, by Manrope
+   advances: words 231 + link padding 4 × 4 + «＋» 48 + gaps 8 + edges 8 ≈ 311 px; 340 leaves room for a wider
+   fallback font while Manrope loads. */
+@media (max-width: 540px) and (min-width: 340px) and (min-height: 480px) {
   /* The height of the bar without the gesture strip: pinned action bars and the scroll padding count from it. */
   :root { --ck-bottom-nav-height: 3.5rem; }
   body { padding-inline: 0; }
@@ -172,7 +174,7 @@ footer { border-top: 1px solid var(--ck-divider); color: var(--ck-text-muted); p
   .brand-bar .main-navigation { position: fixed; inset: auto 0 0; z-index: var(--ck-z-bottom-nav); align-items: stretch; gap: 2px; width: auto; min-height: calc(var(--ck-bottom-nav-height) + var(--ck-safe-bottom)); margin: 0; padding: 0 max(4px, env(safe-area-inset-right, 0px)) 0 max(4px, env(safe-area-inset-left, 0px)); padding-bottom: var(--ck-safe-bottom); overflow: visible; border-top: 1px solid var(--ck-header-border); background: var(--ck-header-bg); color: var(--ck-header-text); }
   /* Columns as wide as their words: «Статистика» does not fit an equal quarter of 320 px.
      The focus ring is drawn closer than elsewhere, so the edge of the window does not cut it. */
-  .brand-bar .main-navigation > a, .brand-bar .main-more-toggle { flex: 1 1 auto; justify-content: center; margin-block: 5px; padding-inline: 4px; outline-offset: 1px; }
+  .brand-bar .main-navigation > a, .brand-bar .main-more-toggle { flex: 1 1 auto; justify-content: center; margin-block: 5px; padding-inline: 2px; outline-offset: 1px; }
   .brand-bar .main-more-toggle { display: inline-flex; align-items: center; border-color: transparent; background: transparent; color: inherit; white-space: nowrap; }
   .brand-bar .main-more-toggle:where(:hover) { background: var(--ck-header-hover-bg); text-decoration: underline; }
   .brand-bar .main-more-toggle[aria-expanded="true"] { background: var(--ck-header-hover-bg); }
@@ -186,10 +188,12 @@ footer { border-top: 1px solid var(--ck-divider); color: var(--ck-text-muted); p
   .brand-bar .main-more[data-open] .main-more-list { display: flex; flex-direction: column; gap: 2px; position: absolute; right: max(4px, env(safe-area-inset-right, 0px)); bottom: 100%; z-index: var(--ck-z-menu-sheet); min-width: min(240px, calc(100% - 8px)); max-width: calc(100% - 8px); margin-bottom: 6px; padding: 6px; border: 1px solid var(--ck-header-border); border-radius: var(--ck-radius); background: var(--ck-header-bg); box-shadow: 0 4px 16px var(--ck-popover-shadow); }
   /* A long name of the person wraps inside the list instead of leaving the window. */
   .brand-bar .main-more-list a { white-space: normal; }
-  /* «＋»: a raised round accent button in the middle of the bar; its sheet opens above the bar, centred, at once.
+  /* «＋»: a round accent button in the middle of the bar; its sheet opens above the bar, centred, at once.
+     It stays inside the 3.5rem of the bar: a part sticking out above would cover the pinned action bars (.ck-action-bar
+     stops at the top edge of the bar), and a tap on «Сохранить» would open the sheet instead.
      The text over the accent is --ck-on-accent: white in the light theme, dark in the dark one. */
-  .brand-bar .main-add { display: flex; flex: none; align-items: flex-start; justify-content: center; padding-inline: 4px; }
-  .brand-bar .main-add-toggle { display: inline-flex; align-items: center; justify-content: center; width: 52px; height: 52px; min-height: 52px; margin-top: -16px; padding: 0; border: 0; border-radius: 50%; background: var(--ck-accent); color: var(--ck-on-accent); box-shadow: 0 0 0 4px var(--ck-header-bg), 0 2px 8px var(--ck-panel-shadow); outline-offset: 3px; }
+  .brand-bar .main-add { display: flex; flex: none; align-items: center; justify-content: center; padding-inline: 0; }
+  .brand-bar .main-add-toggle { display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px; min-height: 48px; margin: 0; padding: 0; border: 0; border-radius: 50%; background: var(--ck-accent); color: var(--ck-on-accent); box-shadow: 0 1px 4px var(--ck-panel-shadow); outline-offset: 2px; }
   .brand-bar .main-add-toggle svg { flex: none; fill: currentColor; }
   .brand-bar .main-add-toggle[aria-expanded="true"] svg { transform: rotate(45deg); }
   .brand-bar .main-add-list { display: none; }

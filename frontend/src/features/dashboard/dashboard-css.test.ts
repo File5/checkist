@@ -49,6 +49,19 @@ describe('«Главная» and «Лимиты» styles (text of the rules, not
     expect(body('.dash-bar')).toContain('background: var(--ck-track)')
     expect(body('.dash-action-shot')).toContain('color: var(--ck-on-accent)')
   })
+  it('draws letters on a category tint in the main text colour, the category colour as a ring', () => {
+    for (const selector of ['.dash-avatar', '.dash-badge']) {
+      expect(body(selector), selector).toContain('color: var(--ck-text);')
+      expect(body(selector), selector).toContain('box-shadow: inset 0 0 0 2px var(--dash-cat);')
+      expect(body(selector), selector).not.toMatch(/(^|[;\s])color: var\(--dash-cat\)/)
+    }
+  })
+  it('wraps the value of a limit under its name instead of breaking the name mid-word', () => {
+    expect(body('.dash-limit-head')).toContain('flex-wrap: wrap;')
+    expect(body('.dash-limit-value')).toContain('margin-left: auto;')
+    expect(body('.dash-limit-value')).toContain('white-space: nowrap')
+    expect(body('.dash-limit-name')).toContain('overflow-wrap: normal;')
+  })
   it('uses the single phone breakpoint of the project', () => {
     expect([...css.matchAll(/@media[^{]+/g)].map((match) => match[0].trim())).toEqual(['@media (max-width: 540px)'])
   })

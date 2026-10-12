@@ -618,7 +618,7 @@ Query разбирается существующим `Params`: неизвест
 | POST `/recognition/photos/` | multipart `file`, без Idempotency-Key | 202 `{reused:false,photo,job}`; точный повтор — 200 `{reused:true,photo,job}`; `Location` на job |
 | GET `/recognition/photos/` | page/page_size, ordering ±created_at, default -created_at | Page Photo |
 | GET `/recognition/photos/{id}/` | нет | Photo |
-| GET `/recognition/jobs/` | photo ID, status, page/page_size, ordering ±created_at | Page Job без `items` |
+| GET `/recognition/jobs/` | photo ID, status, `needs_review=1` (есть вырезка `needs_review` и задание не повторялось — ждёт человека; `0` — без фильтра), page/page_size, ordering ±created_at | Page Job без `items` |
 | GET `/recognition/jobs/{id}/` | нет | Job с `items`, до 10 вырезок |
 | POST `/recognition/jobs/{id}/cancel/` | JSON `{}` | 202 Job cancel_requested; 200 Job cancelled; 409 job_terminal |
 | POST `/recognition/jobs/{id}/retry/` | JSON `{}`, без Idempotency-Key | 202 новый Job; 409 job_active / retry_not_allowed |

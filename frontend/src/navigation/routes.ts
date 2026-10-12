@@ -34,6 +34,8 @@ export interface ReceiptsQuery extends HistoryQuery {
 export interface JobsQuery {
   photo?: number
   status?: JobStatus
+  /** Only jobs with a crop waiting for a person (and not retried). */
+  needs_review?: 1
   page: number
   page_size?: number
   ordering?: 'created_at' | '-created_at'
@@ -334,10 +336,11 @@ export function parseJobsQuery(search: string | URLSearchParams): ParsedQuery<Jo
   const reader = queryReader(search)
   const photo = reader.integer('photo')
   const status = reader.choice('status', jobStatuses)
+  const needsReview = reader.choice('needs_review', ['1', '0'] as const)
   const page = reader.integer('page') ?? 1
   const page_size = reader.pageSize()
   const ordering = reader.choice('ordering', ['created_at', '-created_at'] as const)
-  return { query: { ...(photo && { photo }), ...(status && { status }), page, ...(page_size && { page_size }),
+  return { query: { ...(photo && { photo }), ...(status && { status }), ...(needsReview === '1' && { needs_review: 1 as const }), page, ...(page_size && { page_size }),
     ...(ordering && { ordering }) }, invalidFields: reader.invalidFields }
 }
 
@@ -413,7 +416,7 @@ export function buildReceiptsQuery(query: ReceiptsQuery): string {
 }
 
 export function buildJobsQuery(query: JobsQuery): string {
-  return buildQuery(query, ['photo', 'status', 'page', 'page_size', 'ordering'], parseJobsQuery)
+  return buildQuery(query, ['photo', 'status', 'needs_review', 'page', 'page_size', 'ordering'], parseJobsQuery)
 }
 
 export function buildMergesQuery(query: MergesQuery): string {

@@ -12,14 +12,15 @@ class BudgetLimit(models.Model):
     Владелец — ровно один: семья (``household``), если у пользователя она есть, иначе сам
     пользователь (``user``). Лимит семьи видят и правят все её члены. Категория — только
     верхнего уровня (проверяют API и форма админки; БД этого не умеет). Удаление
-    категории, семьи или пользователя удаляет и лимит.
+    семьи или пользователя удаляет и лимит; категорию с лимитом удалить нельзя (PROTECT) —
+    уборка созданных категорий в ``classification`` по отказу удаления оставляет её.
     """
 
     household = models.ForeignKey(
         "accounts.Household", null=True, blank=True, on_delete=models.CASCADE, related_name="budget_limits")
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.CASCADE, related_name="budget_limits")
-    category = models.ForeignKey("catalog.Category", on_delete=models.CASCADE, related_name="budget_limits")
+    category = models.ForeignKey("catalog.Category", on_delete=models.PROTECT, related_name="budget_limits")
     currency = models.ForeignKey("stores.Currency", on_delete=models.PROTECT, related_name="budget_limits")
     amount = models.DecimalField(max_digits=14, decimal_places=2)
     created_at = models.DateTimeField(auto_now_add=True)

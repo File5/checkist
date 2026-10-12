@@ -5,6 +5,7 @@ from django.contrib import admin
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, connection, transaction
 from django.db.migrations.executor import MigrationExecutor
+from django.db.models.deletion import ProtectedError
 from django.test import TestCase, TransactionTestCase, tag
 
 from accounts.models import Household
@@ -61,11 +62,13 @@ class BudgetLimitModelTests(TestCase):
         self.assertEqual(set(caught.exception.message_dict), {"household", "category", "amount"})
         BudgetLimit(user=self.user, category=self.food, currency_id="KZT", amount=D("1")).clean()
 
-    def test_category_delete_removes_limit(self):
+    def test_category_with_limit_cannot_be_deleted(self):
+        # PROTECT: the classification cleanup must not silently take a family's limit away with its category.
         temporary = Category.objects.create(name="Демо-временная")
         self.make(user=self.user, category=temporary)
-        temporary.delete()
-        self.assertFalse(BudgetLimit.objects.filter(category_id=temporary.pk).exists())
+        with self.assertRaises(ProtectedError), transaction.atomic():
+            temporary.delete()
+        self.assertTrue(BudgetLimit.objects.filter(category_id=temporary.pk).exists())
 
     def test_admin_registered(self):
         self.assertIsInstance(admin.site._registry[BudgetLimit], BudgetLimitAdmin)

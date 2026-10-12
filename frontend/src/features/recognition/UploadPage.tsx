@@ -11,7 +11,7 @@ import { errorText, isExecutorAbsent, sizeText, uploadExecutorNote, uploadLabels
 import { autoSendStep, createUpload, fileFormat, formatBytes, pickAccept, progressValue, setJobNotice, uploadMessage, validateFormat } from './upload-state'
 import { useRequest } from './useRequest'
 import { createPreview } from './preview'
-import { clearQuickShot, peekQuickShot } from './quick-shot'
+import { clearQuickShot, onQuickShot, peekQuickShot } from './quick-shot'
 import './Upload.css'
 
 /** `null` — the browser could not show the photo, so its pixel size stays unknown. */
@@ -62,6 +62,11 @@ export default function UploadPage() {
   ), [request])
   const state = useSyncExternalStore(upload.subscribe, upload.getSnapshot, upload.getServerSnapshot)
   useEffect(() => upload.dispose, [upload])
+  // «Снять чек» of the «＋» menu while this page is open: the new shot replaces the chosen photo and is sent by itself.
+  useEffect(() => onQuickShot((next) => {
+    autoSend.current = next
+    upload.reset(); setMeasured(undefined); setFile(next)
+  }), [upload])
   // Only an explicit refresh disables the buttons; background polling must not make them flicker.
   const [manualRefresh, setManualRefresh] = useState(false)
   const refreshConfig = useCallback(() => {

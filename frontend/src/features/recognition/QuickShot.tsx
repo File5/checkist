@@ -22,8 +22,8 @@ export function useQuickShot(): QuickShotControl {
         const file = event.target.files?.[0]
         event.target.value = ''
         if (!file) return
-        setQuickShot(file)
-        navigate('/receipts/upload')
+        // On the open upload page the shot is taken there; otherwise the page opens and sends it.
+        if (!setQuickShot(file)) navigate('/receipts/upload')
       }} />
   )
   return { open: () => input.current?.click(), field }

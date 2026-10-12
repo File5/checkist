@@ -24,7 +24,7 @@ class Migration(migrations.Migration):
                 ('amount', models.DecimalField(decimal_places=2, max_digits=14)),
                 ('created_at', models.DateTimeField(auto_now_add=True)),
                 ('updated_at', models.DateTimeField(auto_now=True)),
-                ('category', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='budget_limits', to='catalog.category')),
+                ('category', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='budget_limits', to='catalog.category')),
                 ('currency', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='budget_limits', to='stores.currency')),
                 ('household', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='budget_limits', to='accounts.household')),
                 ('user', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='budget_limits', to=settings.AUTH_USER_MODEL)),

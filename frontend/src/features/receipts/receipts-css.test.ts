@@ -146,4 +146,10 @@ describe('whole values and the lines table (text of the rules, not rendering)', 
   it('writes no colour of its own', () => {
     expect(receipts).not.toMatch(/#[0-9a-f]{3,8}\b|\brgba?\(|\bhsla?\(/i)
   })
+
+  it('draws the focus ring of a spend row inside the list that clips it', () => {
+    // .spends-rows has overflow: hidden; the general ring (offset 4px, outside) would be cut away on every row.
+    expect(rule('.spends-rows', receipts)).toContain('overflow: hidden;')
+    expect(rule('.spends-row:focus-visible', receipts)).toBe('outline-offset: -3px;')
+  })
 })

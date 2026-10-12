@@ -96,7 +96,7 @@ export default function ReceiptsPage({ query }: ReceiptsPageProps) {
     page, store, product, country, currency, operation, date_from, date_to, q, owner, page_size, ordering,
   }), { signal }), [page, store, product, country, currency, operation, date_from, date_to, q, owner, page_size, ordering])
   const request = useReceiptRequest(load)
-  const loadReview = useCallback((signal: AbortSignal) => getJobs({ status: reviewJobsQuery.status, page_size: 1 }, { signal }), [])
+  const loadReview = useCallback((signal: AbortSignal) => getJobs({ needs_review: reviewJobsQuery.needs_review, page_size: 1 }, { signal }), [])
   const review = useReceiptRequest(loadReview)
   const session = useSession()
   const chips = useMemo(() => ownerChips(session, owner), [session, owner])

@@ -76,8 +76,17 @@ export function withoutLimit(limits: BudgetLimit[], id: number): BudgetLimit[] {
   return limits.filter((limit) => limit.id !== id)
 }
 
+/**
+ * A create refused at `category_id`: the screen offers only top-level categories, so it is the pair «category and
+ * currency» already taken — another family member saved a limit meanwhile (the server reports it at `category_id`).
+ */
+export function isDuplicateCreate(failure: Pick<LocalApiFailure, 'reason' | 'fields'>, creating: boolean): boolean {
+  return creating && failure.reason === 'invalid_parameter' && (failure.fields ?? []).includes('category_id')
+}
+
 /** Local texts of a refused save or delete; field names only, never server messages. */
-export function limitFailureMessage(failure: Pick<LocalApiFailure, 'reason' | 'fields'>): string {
+export function limitFailureMessage(failure: Pick<LocalApiFailure, 'reason' | 'fields'>, creating = false): string {
+  if (isDuplicateCreate(failure, creating)) return 'Лимит для этой категории и валюты уже есть — показан сохранённый. Проверьте сумму и сохраните ещё раз.'
   switch (failure.reason) {
     case 'invalid_parameter': case 'invalid_request': {
       const fields = failure.fields ?? []
