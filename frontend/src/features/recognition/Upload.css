@@ -4,10 +4,10 @@
 /* The two file fields are pressed by their buttons: out of sight, out of the Tab order (tabindex in the markup). */
 .ck-rec .ck-upload-input { position: absolute; width: 1px; height: 1px; padding: 0; border: 0; opacity: 0; overflow: hidden; clip-path: inset(50%); pointer-events: none; }
 
-/* «Снять чек» opens the camera only where there is one to hold: a mouse gets the same dialog as «Выбрать файл». */
-.ck-rec .ck-upload-camera { display: none; }
+/* «Снять чек» and «Из галереи» only where there is a phone to hold: a mouse gets the same dialog from «Выбрать файл». */
+.ck-rec .ck-upload-camera, .ck-rec .ck-upload-gallery { display: none; }
 @media (pointer: coarse) {
-  .ck-rec .ck-upload-camera { display: block; }
+  .ck-rec .ck-upload-camera, .ck-rec .ck-upload-gallery { display: block; }
 }
 
 /* An outline button: «Выбрать файл» and «Отменить отправку» stand next to a filled main action. */
@@ -23,6 +23,21 @@
 .ck-upload-pdf p { margin: 0; }
 .ck-upload-reduced { padding: 14px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius-sm); background: var(--ck-neutral-bg); color: var(--ck-text); }
 
+.ck-upload-stage p { margin: 0; font-weight: 600; }
 .ck-upload-progress { display: grid; gap: 8px; min-width: 0; }
 .ck-upload-progress p { margin: 0; }
 .ck-upload-progress progress { display: block; width: 100%; height: 12px; accent-color: var(--ck-brand); }
+
+/* «Условия загрузки» folded on a phone: the heading is the summary, the whole line is the target. */
+.ck-upload-conditions summary { display: flex; align-items: center; min-height: 44px; cursor: pointer; }
+.ck-upload-conditions summary h2 { display: inline; margin: 0; }
+.ck-upload-conditions-body { display: grid; gap: 16px; padding-top: 12px; }
+
+/* A phone: the preview takes the width of the form at its own proportions, the picking buttons are large, one under
+   another, right above the pinned main action. */
+@media (max-width: 540px) {
+  .ck-rec-image.ck-upload-preview img { height: auto; max-height: 70vh; }
+  .ck-upload-pick { flex-direction: column; align-items: stretch; }
+  .ck-rec .ck-upload-pick button { flex: none; width: 100%; min-height: 52px; }
+  .ck-upload-progress progress { height: 16px; }
+}
