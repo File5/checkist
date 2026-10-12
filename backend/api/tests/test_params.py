@@ -249,7 +249,7 @@ class ReferenceParamsTests(TestCase):
 
     def test_unknown_currency(self):
         self.assertEqual(
-            parse("currency=USD", lambda params: params.currency()), (None, {"currency": ["Неизвестный код валюты."]}),
+            parse("currency=JPY", lambda params: params.currency()), (None, {"currency": ["Неизвестный код валюты."]}),
         )
 
     def test_object_id(self):
