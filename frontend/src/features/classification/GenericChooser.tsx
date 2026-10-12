@@ -46,7 +46,8 @@ export function GenericChooserView({ record, text, state, selected, busy, saving
             {state.data.count > state.data.results.length && <p className="ck-class-note">Показаны первые {state.data.results.length.toLocaleString('ru-RU')} из {state.data.count.toLocaleString('ru-RU')}: уточните запрос.</p>}
           </>}
     </div>
-    <div className="ck-class-actions">
+    {/* The list of options is long on a phone: «Применить выбор» stays pinned above the bottom menu while it scrolls. */}
+    <div className="ck-class-actions ck-action-bar">
       <button type="button" disabled={busy || chosen === undefined} onClick={onApply}>{saving ? 'Сохраняем выбор…' : 'Применить выбор'}</button>
       <button type="button" className="ck-class-secondary" disabled={busy} onClick={onCancel}>Отмена</button>
     </div>

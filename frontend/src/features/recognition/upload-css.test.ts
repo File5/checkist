@@ -14,15 +14,27 @@ const rule = (selector: string, list = outside) => list.filter((item) => item.se
 const value = (body: string, property: string) => new RegExp(`(?:^|[;\\s])${property}\\s*:\\s*([^;]+);`).exec(body)?.[1].trim()
 
 describe('upload stylesheet guards (text of the rules, not rendering)', () => {
-  it('shows «Снять чек» only to a coarse pointer', () => {
-    expect(value(rule('.ck-rec .ck-upload-camera'), 'display')).toBe('none')
-    const shown = media.filter((block) => block.rules.some((item) => item.selector.includes('.ck-upload-camera')))
-    expect(shown.map((block) => block.query)).toEqual(['(pointer: coarse)'])
-    expect(value(rule('.ck-rec .ck-upload-camera', shown[0].rules), 'display')).toBe('block')
-    // Nothing else of the sheet touches the button, and no other condition shows or hides anything.
-    expect(everywhere.filter((item) => item.selector.includes('.ck-upload-camera'))).toHaveLength(2)
-    expect(media).toHaveLength(1)
+  it('shows «Снять чек» and «Из галереи» only to a coarse pointer', () => {
+    for (const selector of ['.ck-rec .ck-upload-camera', '.ck-rec .ck-upload-gallery']) {
+      expect(value(rule(selector), 'display')).toBe('none')
+      const shown = media.filter((block) => block.rules.some((item) => item.selector === selector))
+      expect(shown.map((block) => block.query)).toEqual(['(pointer: coarse)'])
+      expect(value(rule(selector, shown[0].rules), 'display')).toBe('block')
+      // Nothing else of the sheet touches the button.
+      expect(everywhere.filter((item) => item.selector.includes(selector.slice(8)))).toHaveLength(2)
+    }
+    // Besides the pointer, only the phone block: it never shows or hides anything.
+    expect(media.map((block) => block.query)).toEqual(['(pointer: coarse)', '(max-width: 540px)'])
+    expect(media[1].rules.filter((item) => /display|visibility/.test(item.body))).toEqual([])
     expect(page).toMatch(/className="ck-upload-camera"[^\n]*>\{uploadLabels\.camera\}<\/button>/)
+    expect(page).toMatch(/className="ck-upload-gallery ck-upload-secondary"[^\n]*>\{uploadLabels\.gallery\}<\/button>/)
+  })
+
+  it('on a phone gives the preview the width of the form and makes the picking buttons large', () => {
+    const phone = media[1].rules
+    expect(value(rule('.ck-rec-image.ck-upload-preview img', phone), 'height')).toBe('auto')
+    const big = rule('.ck-rec .ck-upload-pick button', phone)
+    expect(value(big, 'width')).toBe('100%'); expect(Number.parseInt(value(big, 'min-height') ?? '0', 10)).toBeGreaterThanOrEqual(44)
   })
 
   it('takes every colour from the theme tokens', () => {

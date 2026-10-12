@@ -55,6 +55,8 @@ export type Job = {
   created_at: ISODateTime; started_at: ISODateTime | null; finished_at: ISODateTime | null
   cancel_requested_at: ISODateTime | null; heartbeat_at: ISODateTime | null; stalled: boolean; executor: Executor
   progress: JobProgress; review_required: boolean; error: RecognitionError | null; actions: JobActions; items_count: number
+  /** Copies of the source photo (as of Photo): the miniature of a row of the jobs list. */
+  display_url: string | null; thumb_url: string | null
 }
 export type JobDetail = Job & { items: JobItem[] }
 export type PhotoUpload = { reused: boolean; photo: Photo; job: JobDetail }

@@ -8,3 +8,11 @@
 .ck-filters-summary { flex: 1 1 auto; min-width: 0; }
 .ck-filters-sheet { display: grid; gap: 16px; padding-bottom: 4px; }
 .ck-filters-done { width: 100%; }
+/* The sheet is drawn in document.body, outside the screen: the rules of a screen for its fields
+   (`.ck-rec select`, `.product-page input` …) do not reach it. The fields of a filter form get one look here. */
+.ck-filters-sheet label { font-weight: 600; }
+.ck-filters-sheet select { width: 100%; min-width: 0; min-height: 48px; padding: 10px 12px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-surface); color: var(--ck-text); }
+.ck-filters-sheet input:not([type="checkbox"]):not([type="radio"]) { width: 100%; min-width: 0; min-height: 48px; padding: 10px 12px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-surface); color: var(--ck-text); }
+.ck-filters-sheet [aria-invalid="true"] { border-color: var(--ck-error-border); }
+/* A pinned bar of a form inside the sheet stops at the bottom of the sheet: the bottom menu is under the backdrop. */
+.ck-filters-sheet .ck-action-bar { bottom: 0; }

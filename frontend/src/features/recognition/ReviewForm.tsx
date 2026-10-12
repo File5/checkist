@@ -3,6 +3,7 @@ import type { FocusEvent, MouseEvent, ReactNode } from 'react'
 import type { CountryEntry } from '../../api/countries'
 import { getStores } from '../../api/stores'
 import type { StoreEntry, Unit } from '../../api/types'
+import { useNarrow } from '../../lib/cards'
 import { formatUnit } from '../../lib/format'
 import { errorText } from './labels'
 import { focusAfterAttribute, focusAfterPress, replacedFieldKeepsFocus } from './review-actions'
@@ -10,6 +11,8 @@ import { addField, headerField, problemsAt, rowField, storeLabel } from './revie
 import type { ReviewEdit, ReviewHeader, ReviewLine, ReviewList, ReviewState, ReviewStore } from './review-state'
 import { useRequest } from './useRequest'
 import { SERVICE_CHARGE_CATEGORY, isServiceCharge } from './service-charge'
+import { lineAmountText, lineCardId, lineDetailsForced, lineIssues, useStickyOpen } from './mobile-state'
+import type { LineIssue } from './mobile-state'
 
 const kinds = { product: 'Товар', service: 'Услуга', deposit: 'Залог', deposit_return: 'Возврат залога' }
 const units: Unit[] = ['pcs', 'g', 'kg', 'ml', 'l', 'm']
@@ -83,6 +86,35 @@ function StoreChooser({ id, store, problems, disabled, onStore }: {
   </div>
 }
 
+/** «Подробнее» of a line card on a phone: quantity, unit, price, tax and codes. Opens by itself while a field inside has
+ * a problem and then stays open until the person folds it. */
+function LineDetails({ forced, children }: { forced: boolean; children: ReactNode }) {
+  const details = useStickyOpen(forced)
+  return <details className="ck-review-line-more" open={details.open} onToggle={(event) => details.toggle(event.currentTarget.open)}>
+    <summary>Подробнее</summary>
+    <div className="ck-review-grid">{children}</div>
+  </details>
+}
+
+/** The lines with problems, as links to their cards: a phone shows them above the form. */
+export function LineJumps({ imageId, issues }: { imageId: number; issues: LineIssue[] }) {
+  if (issues.length === 0) return null
+  const go = (event: MouseEvent<HTMLAnchorElement>, key: number) => {
+    // The router of the app owns the address: the card is reached by script, the hash is not changed.
+    event.preventDefault()
+    const card = document.getElementById(lineCardId(imageId, key))
+    card?.scrollIntoView({ block: 'center' })
+    card?.focus({ preventScroll: true })
+  }
+  return <nav className="ck-review-jumps" aria-label="Строки с замечаниями">
+    <p>Строки с замечаниями: {issues.length.toLocaleString('ru-RU')}</p>
+    <ul>{issues.map((issue) => <li key={issue.key}>
+      <a href={`#${lineCardId(imageId, issue.key)}`} onClick={(event) => go(event, issue.key)}>{issue.title}</a>
+      <span className="ck-rec-note"> — {issue.problems.join(' ')}</span>
+    </li>)}</ul>
+  </nav>
+}
+
 export type ReviewFormProps = {
   imageId: number; state: ReviewState; dispatch: (edit: ReviewEdit) => void
   /** null until the reference is read, and when its read failed: the country is then typed as a code. */
@@ -93,10 +125,14 @@ export type ReviewFormProps = {
   /** Text of the last refused confirmation of this crop: shown and announced next to the button. */
   refusal?: string
   onConfirm: () => void
+  /** The phone view: line cards with «Подробнее» and the links to the lines with problems. Defaults to the window width. */
+  compact?: boolean
 }
 
 /** Correction form of one needs_review crop. No <form>: Enter in a field must not save a receipt by accident. */
-export default function ReviewForm({ imageId, state, dispatch, countries, countriesFailed = false, onCountriesRetry, pending, unavailable, refusal, onConfirm }: ReviewFormProps) {
+export default function ReviewForm({ imageId, state, dispatch, countries, countriesFailed = false, onCountriesRetry, pending, unavailable, refusal, onConfirm, compact }: ReviewFormProps) {
+  const narrow = useNarrow()
+  const cards = compact ?? narrow
   const dom = useCallback((field: string) => `review-${imageId}-${field.replaceAll('.', '-')}`, [imageId])
   const notice = useRef<HTMLParagraphElement>(null)
   const seen = useRef(state.notice.id)
@@ -105,6 +141,9 @@ export default function ReviewForm({ imageId, state, dispatch, countries, countr
     seen.current = state.notice.id
     // The announcement itself is a live region and needs no focus; it takes it only if the named field is not in the document.
     const target = state.notice.focus === null ? null : document.getElementById(dom(state.notice.focus))
+    // A field folded under «Подробнее» of a phone is unfolded first: a closed disclosure cannot take focus.
+    const folded = target?.closest('details')
+    if (folded && !folded.open) folded.open = true
     ;(target ?? notice.current)?.focus()
   }, [state.notice, dom])
   const lastFocused = useRef<string | null>(null)
@@ -158,6 +197,7 @@ export default function ReviewForm({ imageId, state, dispatch, countries, countr
     <h4>Исправление и подтверждение</h4>
     <p className="ck-rec-warning">Проверьте данные по изображению чека, исправьте их и подтвердите. Несохранённые правки хранятся только на этой открытой странице: перезагрузка или закрытие вкладки их стирает, черновика на сервере нет.</p>
     <p className="ck-rec-note">Заполненное поле считается прочитанным с чека, пустое — отсутствующим. Если сомневаетесь в значении, очистите поле. Суммы и количества: {decimalHint.toLowerCase()}</p>
+    {cards && <LineJumps imageId={imageId} issues={lineIssues(state)} />}
     <fieldset className="ck-review-body" disabled={pending}>
       <legend className="ck-review-hidden">Данные чека</legend>
       <fieldset className="ck-review-group">
@@ -196,24 +236,44 @@ export default function ReviewForm({ imageId, state, dispatch, countries, countr
       <ol className="ck-rec-list">{state.lines.map((line, index) => {
         const id = rowField('lines', line.key)
         const edit = (patch: Extract<ReviewEdit, { type: 'line' }>['patch']) => dispatch({ type: 'line', key: line.key, patch })
+        const name = input(`${id}.name`, 'Название', line.name, (name) => edit({ name }), { max: 4096 })
+        const kind = select(`${id}.kind`, 'Тип строки', line.kind, [...(line.kind === '' ? [['', 'Не выбран'] as Option] : []), ...Object.entries(kinds)], (kind) => edit({ kind: kind as ReviewLine['kind'] }))
+        const parent = line.kind === 'deposit' && select(`${id}.parent_position`, 'Залог к строке', line.parent === null ? '' : String(line.parent),
+          lineChoices((candidate) => candidate.kind === 'product' && candidate.key !== line.key, 'Не связан'), (parent) => edit({ parent: parent === '' ? null : Number(parent) }))
+        const quantity = input(`${id}.quantity`, 'Количество', line.quantity, (quantity) => edit({ quantity }), { mode: 'decimal', max: 20 })
+        const unit = select(`${id}.unit`, 'Единица', line.unit, [['', 'Не указана'], ...units.map((unit): Option => [unit, formatUnit(unit)])], (unit) => edit({ unit: unit as ReviewLine['unit'] }))
+        const unitPrice = input(`${id}.unit_price`, 'Цена за единицу', line.unitPrice, (unitPrice) => edit({ unitPrice }), { mode: 'decimal', max: 20 })
+        const amount = input(`${id}.amount`, 'Сумма', line.amount, (amount) => edit({ amount }), { mode: 'decimal', max: 20 })
+        const taxCode = input(`${id}.tax_code`, 'Код налога', line.taxCode, (taxCode) => edit({ taxCode }), { max: 8 })
+        /* Read-only: the server puts such a line into its category on import, the form sends nothing for it. */
+        const service = isServiceCharge(line.kind, line.name) && <p className="ck-rec-note">Будет учтено как: {SERVICE_CHARGE_CATEGORY}</p>
+        const remove = <button type="button" className="ck-review-secondary" onClick={() => dispatch({ type: 'remove', list: 'lines', key: line.key })}>Удалить строку {index + 1}</button>
+        // A phone: one line is one card — the name, the type and the amount; the rest folds under «Подробнее».
+        if (cards) return <li key={line.key} id={lineCardId(imageId, line.key)} tabIndex={-1} className="ck-review-line"><fieldset className="ck-review-group">
+          <legend>Строка {index + 1}{line.source === null && ' · добавлена вручную'}</legend>
+          <p className="ck-leader ck-review-line-sum" aria-hidden="true"><span>{line.name.trim() || 'Без названия'}</span><span className="ck-figures">{lineAmountText(line)}</span></p>
+          {rowProblems('lines', line.key)}
+          <div className="ck-review-grid">{name}{kind}{amount}</div>
+          {service}
+          <LineDetails forced={lineDetailsForced(state, line.key)}>{parent}{quantity}{unit}{unitPrice}{rate('lines', line, edit)}{taxCode}</LineDetails>
+          {remove}
+        </fieldset></li>
         return <li key={line.key}><fieldset className="ck-review-group">
           <legend>Строка {index + 1}{line.source === null && ' · добавлена вручную'}</legend>
           {rowProblems('lines', line.key)}
           <div className="ck-review-grid">
-            {input(`${id}.name`, 'Название', line.name, (name) => edit({ name }), { max: 4096 })}
-            {select(`${id}.kind`, 'Тип строки', line.kind, [...(line.kind === '' ? [['', 'Не выбран'] as Option] : []), ...Object.entries(kinds)], (kind) => edit({ kind: kind as ReviewLine['kind'] }))}
-            {line.kind === 'deposit' && select(`${id}.parent_position`, 'Залог к строке', line.parent === null ? '' : String(line.parent),
-              lineChoices((candidate) => candidate.kind === 'product' && candidate.key !== line.key, 'Не связан'), (parent) => edit({ parent: parent === '' ? null : Number(parent) }))}
-            {input(`${id}.quantity`, 'Количество', line.quantity, (quantity) => edit({ quantity }), { mode: 'decimal', max: 20 })}
-            {select(`${id}.unit`, 'Единица', line.unit, [['', 'Не указана'], ...units.map((unit): Option => [unit, formatUnit(unit)])], (unit) => edit({ unit: unit as ReviewLine['unit'] }))}
-            {input(`${id}.unit_price`, 'Цена за единицу', line.unitPrice, (unitPrice) => edit({ unitPrice }), { mode: 'decimal', max: 20 })}
-            {input(`${id}.amount`, 'Сумма', line.amount, (amount) => edit({ amount }), { mode: 'decimal', max: 20 })}
+            {name}
+            {kind}
+            {parent}
+            {quantity}
+            {unit}
+            {unitPrice}
+            {amount}
             {rate('lines', line, edit)}
-            {input(`${id}.tax_code`, 'Код налога', line.taxCode, (taxCode) => edit({ taxCode }), { max: 8 })}
+            {taxCode}
           </div>
-          {/* Read-only: the server puts such a line into its category on import, the form sends nothing for it. */}
-          {isServiceCharge(line.kind, line.name) && <p className="ck-rec-note">Будет учтено как: {SERVICE_CHARGE_CATEGORY}</p>}
-          <button type="button" className="ck-review-secondary" onClick={() => dispatch({ type: 'remove', list: 'lines', key: line.key })}>Удалить строку {index + 1}</button>
+          {service}
+          {remove}
         </fieldset></li>
       })}</ol>
       <button type="button" id={dom(addField('lines'))} className="ck-review-secondary" onClick={() => dispatch({ type: 'add', list: 'lines' })}>Добавить строку</button>
