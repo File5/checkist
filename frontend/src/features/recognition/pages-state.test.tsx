@@ -121,7 +121,9 @@ describe('page block states with public API data (SSR)', () => {
     mocked.states = [{ kind: 'error', error: { kind: 'error', reason: 'permission_denied' } }]
     const html = renderToStaticMarkup(<UploadPage />)
     expect(html).toContain('Локальный сервис недоступен'); expect(html).toContain('Повторить')
-    expect(html).toMatch(/type="submit"[^>]*disabled=""/)
+    // Nothing to send without a photo, and nothing can be picked without the conditions.
+    expect(html).not.toContain('type="submit"')
+    expect(html).toMatch(/<button type="button" class="ck-upload-file-button[^"]*" disabled=""/)
   })
   it('renders page links that preserve status and photo and detail links for shell focus return', () => {
     const job = fixture('job-running.json', isJobDetail)

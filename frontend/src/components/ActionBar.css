@@ -14,6 +14,7 @@
     box-shadow: 0 var(--ck-safe-bottom) 0 var(--ck-surface);
   }
 
-  /* The only scroll padding of the project: a focused field and a link target stop above the bar and the navigation. */
-  html { scroll-padding-bottom: calc(var(--ck-action-bar-room) + var(--ck-bottom-occupied)); }
+  /* The only scroll padding of the project: a focused field and a link target stop above the bar and the navigation,
+     and below the pinned header row of a phone (--ck-top-bar-height, 0 where it does not stick). */
+  html { scroll-padding-top: var(--ck-top-bar-height); scroll-padding-bottom: calc(var(--ck-action-bar-room) + var(--ck-bottom-occupied)); }
 }

@@ -16,13 +16,14 @@ export function ReceiptHideView({ hidden, open, busy, failure, onOpen, onClose, 
   return <>
     {hidden && <p className="receipt-note" data-receipt-hidden>{hideTexts.hiddenMark}</p>}
     <div className="receipt-actions">
-      <button type="button" className="receipt-secondary" data-receipt-hide={hidden ? 'show' : 'hide'} onClick={onOpen}>{label}</button>
+      <button type="button" className="receipt-secondary" data-receipt-hide={hidden ? 'show' : 'hide'} aria-label={label} onClick={onOpen}>
+        {hidden ? hideTexts.showShort : hideTexts.hideShort}</button>
     </div>
     <Sheet open={open} onClose={onClose} title={label} id="receipt-hide-sheet">
       <p className="receipt-note">{hidden ? hideTexts.showHint : hideTexts.hideHint}</p>
       {failure && <p className="expense-failure" role="alert">{failure}</p>}
       <div className="receipt-actions">
-        <button type="button" className="receipt-secondary" data-receipt-hide-confirm aria-disabled={busy || undefined}
+        <button type="button" className="receipt-hide-confirm" data-receipt-hide-confirm aria-disabled={busy || undefined}
           onClick={busy ? undefined : onConfirm}>{busy ? 'Сохраняем…' : label}</button>
         <button type="button" className="receipt-secondary" onClick={onClose}>Отмена</button>
       </div>

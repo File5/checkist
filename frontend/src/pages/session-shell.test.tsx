@@ -70,11 +70,13 @@ function render(session: Session, route: Route, href: string) {
 }
 const screens = (html: string) => (html.match(/<pre data-screen="[^"]*"/g) ?? []).map((item) => item.slice(18, -1))
 const h1 = (html: string) => html.match(/<h1\b[^>]*>([^<]*)<\/h1>/)?.[1]
+/** The pictures of the menu (the bottom bar of a phone) are left out: the words name the links. */
+const noIcons = (html: string) => html.replace(/<svg\b.*?<\/svg>/g, '')
 const mainNav = (html: string) => {
-  const nav = html.split('aria-label="Основная навигация">')[1].split('</nav>')[0]
+  const nav = noIcons(html).split('aria-label="Основная навигация">')[1].split('</nav>')[0]
   return [...nav.matchAll(/<a\b[^>]*>([^<]*)<\/a>/g)].map((match) => match[1])
 }
-const navLink = (html: string, text: string) => html.match(new RegExp(`<a\\b[^>]*>${text}</a>`))?.[0] ?? ''
+const navLink = (html: string, text: string) => noIcons(html).match(new RegExp(`<a\\b[^>]*>${text}</a>`))?.[0] ?? ''
 /** The links of the header row; «Добавить трату» lives in the «＋» sheet, which a server render draws closed. */
 const fullMenu = ['Главная', 'Траты', 'Статистика', 'Каталог', 'Обработка', 'Выгрузка', 'Состояние сервисов']
 
@@ -237,7 +239,7 @@ describe('signed-in shell (SSR only, no browser interaction)', () => {
   it('renders a name that looks like markup as text', () => {
     const tricky: Session = { kind: 'user', mode: 'accounts', user: { id: 3, username: '<i>x</i>', is_staff: false }, household: null, permissions: { moderate_catalog: false } }
     const html = render(tricky, { kind: 'catalog', query: { page: 1 } }, '/catalog')
-    expect(html).toContain('aria-label="Аккаунт: &lt;i&gt;x&lt;/i&gt;" href="/account">&lt;i&gt;x&lt;/i&gt;</a>')
+    expect(noIcons(html)).toContain('aria-label="Аккаунт: &lt;i&gt;x&lt;/i&gt;" href="/account">&lt;i&gt;x&lt;/i&gt;</a>')
     expect(html).not.toContain('<i>x</i>')
   })
   it('keeps unknown and invalid addresses as before for a signed-in person', () => {
@@ -277,13 +279,18 @@ describe('local_single keeps the previous interface (SSR only, no browser intera
   })
 })
 
-describe('top bar of a phone: the heading row with «назад» (SSR only; the pinning is CSS, checked by a person)', () => {
-  const back = /<a class="ck-back" aria-label="([^"]*)" href="([^"]*)"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false">/
-  const intro = (html: string) => html.slice(html.indexOf('<div class="intro">'), html.indexOf('</h1>') + 5)
+describe('header row of a screen: «назад», the slots of a page, the heading, «✕» (SSR only; the pinning is CSS, checked by a person)', () => {
+  const back = /<a class="ck-back ck-round" aria-label="([^"]*)" href="([^"]*)"><svg class="ck-icon" viewBox="0 0 24 24" width="20" height="20"/
+  const slot = '<div class="intro-slot"></div>'
+  /** The row up to its own end: after the heading come the slot of the page and, on a focus screen, «✕». */
+  const intro = (html: string) => {
+    const after = html.indexOf(`</h1>${slot}`) + `</h1>${slot}`.length
+    return html.slice(html.indexOf('<div class="intro">'), html.indexOf('</div>', after) + 6)
+  }
 
   it('leads a nested page back to its list, before the heading in the same row', () => {
     const html = render(reader, { kind: 'receipt', receiptId: 7 }, '/receipts/7')
-    expect(intro(html)).toMatch(/^<div class="intro"><a class="ck-back" aria-label="Назад к тратам" href="\/receipts"><svg[^>]*>.*<\/svg><\/a><h1 id="page-heading" tabindex="-1">Чек<\/h1>$/)
+    expect(intro(html)).toMatch(new RegExp(`^<div class="intro"><a class="ck-back ck-round" aria-label="Назад к тратам" href="/receipts"><svg[^>]*>.*</svg></a>${slot}<h1 id="page-heading" tabindex="-1">Чек</h1>${slot}</div>$`))
   })
 
   it('returns to the very list the person came from', () => {
@@ -302,9 +309,18 @@ describe('top bar of a phone: the heading row with «назад» (SSR only; the
     expect(back.exec(render(moderator, { kind: 'merge', groupId: 2 }, '/catalog/merges/2'))?.slice(1)).toEqual(['Назад к дублям', '/catalog/merges'])
   })
 
+  it('closes a focus screen with «✕» after the heading and no «назад»', () => {
+    const fresh = intro(render(reader, { kind: 'expense-new' }, '/receipts/new'))
+    expect(fresh).toMatch(new RegExp(`^<div class="intro">${slot}<h1 id="page-heading" tabindex="-1">Новая трата</h1>${slot}<a class="ck-close ck-round" aria-label="Закрыть" href="/"><svg[^>]*>.*</svg></a></div>$`))
+    const edit = intro(render(reader, { kind: 'expense-edit', receiptId: 9 }, '/receipts/9/edit'))
+    expect(edit).toContain('<h1 id="page-heading" tabindex="-1">Изменить трату</h1>')
+    expect(edit).toContain('<a class="ck-close ck-round" aria-label="Закрыть" href="/receipts/9">')
+    expect(edit).not.toContain('ck-back')
+  })
+
   it('keeps the note of the health page out of the pinned row', () => {
     const html = render(reader, { kind: 'health' }, '/health')
     expect(intro(html)).not.toContain('intro-note')
-    expect(html).toContain('</h1></div><p class="intro-note intro-note-after">Сводка о состоянии служб.</p>')
+    expect(html).toContain(`</h1>${slot}</div><p class="intro-note intro-note-after">Сводка о состоянии служб.</p>`)
   })
 })

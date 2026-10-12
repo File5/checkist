@@ -113,6 +113,15 @@ describe('controls and the top bar of a phone (text of the rules, not rendering)
     expect(rule('.intro .eyebrow', narrow)).toBe('display: none;')
   })
 
+  it('draws «назад», «✕» and the steps of a month as one round control of 44 px with a thin frame', () => {
+    const round = rule('.ck-round', wide)
+    expect(round).toContain('width: 44px; height: 44px;')
+    expect(round).toContain('border: 1px solid var(--ck-border); border-radius: 50%; background: var(--ck-surface); color: var(--ck-text);')
+    expect(rule('.ck-close', wide)).toBe('margin-left: auto;')
+    // The slots of a page have no box: their parts stand in the row (components/PageHeader.tsx).
+    expect(rule('.intro-slot', wide)).toBe('display: contents;')
+  })
+
   it('pins the heading row to the top on a phone tall enough, in the colour of the page, from the safe areas', () => {
     const intro = rule('.intro', bar)
     expect(intro).toContain('position: sticky; top: 0; z-index: var(--ck-z-top-bar);')
@@ -123,8 +132,8 @@ describe('controls and the top bar of a phone (text of the rules, not rendering)
     expect(app.replace(bar, '')).not.toMatch(/position: sticky/)
   })
 
-  it('keeps the bottom bar 56 px tall', () => {
-    expect(rule(':root', bar)).toBe('--ck-bottom-nav-height: 3.5rem;')
+  it('keeps the bottom bar 64 px tall (the artifact: a picture over a word, the raised «＋»)', () => {
+    expect(rule(':root', bar)).toBe('--ck-bottom-nav-height: 4rem; --ck-top-bar-height: 4rem;')
   })
 
   it('draws the action slot of an empty or failed state as a row that a phone stretches', () => {

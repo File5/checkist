@@ -2,6 +2,7 @@ import { useEffect, useId, useLayoutEffect, useRef } from 'react'
 import type { KeyboardEvent, ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { SHEET_FOCUSABLE, sheetKeyAction, shouldReturnFocus } from './sheet-keys'
+import Icon from './Icon'
 import './Sheet.css'
 
 export interface SheetProps {
@@ -75,7 +76,7 @@ export default function Sheet({ open, onClose, title, children, id, closeLabel =
         <div className="ck-sheet-head">
           <h2 className="ck-sheet-title" id={titleId}>{title}</h2>
           <button type="button" className="ck-sheet-close" aria-label={closeLabel} onClick={() => close.current()}>
-            <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false"><path d="M6.4 5 5 6.4 10.6 12 5 17.6 6.4 19l5.6-5.6 5.6 5.6 1.4-1.4-5.6-5.6L19 6.4 17.6 5 12 10.6z" /></svg>
+            <Icon name="close" size={20} />
           </button>
         </div>
         <div className="ck-sheet-body">{children}</div>

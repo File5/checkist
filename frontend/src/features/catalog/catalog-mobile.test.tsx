@@ -32,11 +32,15 @@ describe('phone view of the catalog (SSR markup and the text of the rules)', () 
     expect(bare).toContain('<p class="ck-catalog-note">Молоко</p>'); expect(bare).toContain('Покупок нет')
   })
 
-  it('pins the search on a phone, prints the price in the figures font and keeps rows at least 56 px high', () => {
-    const sticky = rule('.ck-catalog-search.ck-catalog-panel', narrow)
-    expect(sticky).toContain('position: sticky;'); expect(sticky).toContain('top: 0;'); expect(sticky).toContain('z-index: var(--ck-z-action-bar);')
+  it('keeps the search a short card under the top bar, prints the price in the figures font, rows at least 56 px high', () => {
+    // The top bar of the shell sticks to the top of a phone: a second pinned block would slide under it.
+    const search = rule('.ck-catalog-search.ck-catalog-panel', narrow)
+    expect(search).not.toContain('position: sticky;')
+    expect(search).toContain('padding: 12px 16px;')
     expect(rule('.ck-catalog-price', css)).toContain('font-family: var(--ck-font-figures);')
-    expect(rule('.ck-catalog-row', css)).toContain('min-height: 56px;')
+    expect(Number(rule('.ck-catalog-row', css).match(/min-height: (\d+)px/)?.[1])).toBeGreaterThanOrEqual(56)
+    // The products are rows of one card of the artifact.
+    expect(rule('.ck-catalog-rows', css)).toContain('background: var(--ck-surface); box-shadow: var(--ck-card-shadow);')
     // The help of the search is hidden from sight only: no display or visibility.
     expect(rule('.ck-catalog-search > .ck-catalog-search-field:first-child > .ck-catalog-note', narrow)).not.toMatch(/display|visibility/)
   })

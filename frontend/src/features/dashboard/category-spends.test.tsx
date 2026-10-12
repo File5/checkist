@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { isCategorySpends } from '../../api/budget-schema'
@@ -87,13 +88,19 @@ describe('the route of «Траты категории»', () => {
 
 describe('«Траты категории» markup (Vitest/SSR, not browser visual acceptance)', () => {
   const view = (data = fixture(), today = '2026-10') => renderToStaticMarkup(<CategorySpendsView data={data} today={today} />)
-  it('heads with the path, the month switch and the hero total', () => {
-    const html = view()
+  const noIcons = (html: string) => html.replace(/<svg\b.*?<\/svg>/g, '')
+  it('heads with the path, the month and its steps in the first card, and the hero total', () => {
+    const html = noIcons(view())
     expect(html).toContain('<nav class="cat-crumbs" aria-label="Категории выше"><a href="/spends/category/5?month=2026-10">Развлечения</a></nav>')
-    expect(html).toContain('<h2 class="dash-month-title cat-spends-name">Игры</h2>')
-    expect(html).toContain('<a class="dash-month-step" aria-label="Предыдущий месяц" href="/spends/category/51?month=2026-09">‹</a>')
+    // The name is the heading of the page (the header row of the shell, usePageTitle): no second heading in the screen.
+    expect(html).not.toMatch(/<h[12][^>]*>Игры/)
+    expect(readFileSync(new URL('./CategorySpendsPage.tsx', import.meta.url), 'utf8')).toContain('usePageTitle(category.name)')
+    expect(html).toContain('<nav class="cat-month" aria-label="Месяц"><span class="cat-spends-month">Октябрь\u00a02026</span>')
+    expect(html).toContain('<a class="ck-round dash-month-step" aria-label="Предыдущий месяц" href="/spends/category/51?month=2026-09"></a>')
     expect(html).not.toContain('Следующий месяц')
-    expect(view(fixture(), '2026-11')).toContain('href="/spends/category/51?month=2026-11">›</a>')
+    expect(html).toContain('<span class="ck-round dash-month-step dash-month-step-off" aria-hidden="true"></span>')
+    expect(noIcons(view(fixture(), '2026-11'))).toContain('aria-label="Следующий месяц" href="/spends/category/51?month=2026-11"></a>')
+    expect(html).toContain('<p class="dash-label">Потрачено</p>')
     expect(html).toContain(`<p class="dash-total ck-hero-figure">${nb('24 501 ₸')}</p>`)
     expect(html.match(/ck-hero-figure/g)).toHaveLength(1)
   })
@@ -105,7 +112,8 @@ describe('«Траты категории» markup (Vitest/SSR, not browser visu
   })
   it('lists each spend with its place, source, who added it and the part of this category', () => {
     const html = view()
-    expect(html).toContain('<a class="cat-spend-row" href="/receipts/812"><span class="cat-spend-main"><span class="cat-spend-title">Steam</span><span class="cat-spend-note">Steam purchase</span>')
+    // By hand or by a receipt, as in «Траты»: a picture on the tint of the top-level category, the meta line says it.
+    expect(html).toMatch(/<a class="cat-spend-row" href="\/receipts\/812"><span class="cat-spend-badge dash-cat-5" aria-hidden="true"><svg[^>]*>.*?<\/svg><\/span><span class="cat-spend-main"><span class="cat-spend-title">Steam<\/span><span class="cat-spend-note">Steam purchase<\/span>/)
     expect(html).toContain(`<time dateTime="2026-10-09">${nb('9 октября')}</time> · Выписка Kaspi Gold · Андрей`)
     expect(html).toContain(`<span class="ck-figures">${nb('501 ₸')}</span><span class="cat-spend-whole">из ${nb('12 500 ₸')} по чеку</span>`)
     expect(html).toContain('<details class="cat-spend-lines"><summary>Позиции: 2</summary>')

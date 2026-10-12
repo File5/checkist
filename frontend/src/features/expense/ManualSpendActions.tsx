@@ -8,9 +8,9 @@ import './Expense.css'
 
 export type DeleteStep = { kind: 'idle' } | { kind: 'confirm' } | { kind: 'deleting' } | { kind: 'failed'; message: string }
 
-/** «Изменить» and «Удалить» of a manual spend on its page. The deletion asks inline on a wide screen and in a sheet on
- * a phone (`narrow`), never with a browser dialog. */
-export function ManualSpendActions({ receiptId, initial = { kind: 'idle' }, narrow = false }: { receiptId: number; initial?: DeleteStep; narrow?: boolean }) {
+/** The deletion of a manual spend: the step, the inline question and the request. Both the page of the spend
+ * («Удалить») and its edit form («Удалить трату») ask the same way. */
+function useSpendDeletion(receiptId: number, initial: DeleteStep) {
   const [step, setStep] = useState<DeleteStep>(initial)
   const controller = useRef<AbortController | undefined>(undefined)
   const confirmButton = useRef<HTMLButtonElement>(null)
@@ -40,6 +40,14 @@ export function ManualSpendActions({ receiptId, initial = { kind: 'idle' }, narr
       <button type="button" className="receipt-secondary" disabled={step.kind === 'deleting'} onClick={() => setStep({ kind: 'idle' })}>Отмена</button>
     </div>
   </div>
+  const close = () => { if (step.kind !== 'deleting') setStep({ kind: 'idle' }) }
+  return { step, setStep, asking, confirm, close }
+}
+
+/** «Изменить» and «Удалить» of a manual spend on its page. The deletion asks inline on a wide screen and in a sheet on
+ * a phone (`narrow`), never with a browser dialog. */
+export function ManualSpendActions({ receiptId, initial = { kind: 'idle' }, narrow = false }: { receiptId: number; initial?: DeleteStep; narrow?: boolean }) {
+  const { step, setStep, asking, confirm, close } = useSpendDeletion(receiptId, initial)
   // A wide screen asks in place of the buttons; a phone keeps the bottom bar and asks in a sheet over it.
   if (asking && !narrow) return confirm
   return <>
@@ -48,6 +56,18 @@ export function ManualSpendActions({ receiptId, initial = { kind: 'idle' }, narr
       <button type="button" className="receipt-secondary" onClick={() => setStep({ kind: 'confirm' })}>Удалить</button>
       {step.kind === 'failed' && <p className="expense-failure" role="alert">{step.message}</p>}
     </div>
-    {narrow && <Sheet open={asking} title="Удалить трату?" onClose={() => { if (step.kind !== 'deleting') setStep({ kind: 'idle' }) }}>{confirm}</Sheet>}
+    {narrow && <Sheet open={asking} title="Удалить трату?" onClose={close}>{confirm}</Sheet>}
   </>
+}
+
+/** «Удалить трату» at the end of the edit form: a quiet danger button; the question comes inline on a wide screen and
+ * in a sheet on a phone (`narrow`), like on the page of the spend. Never submits the form around it. */
+export function DeleteSpend({ receiptId, initial = { kind: 'idle' }, narrow = false }: { receiptId: number; initial?: DeleteStep; narrow?: boolean }) {
+  const { step, setStep, asking, confirm, close } = useSpendDeletion(receiptId, initial)
+  return <div className="expense-delete">
+    {asking && !narrow ? confirm
+      : <button type="button" className="expense-danger expense-delete-button" onClick={() => setStep({ kind: 'confirm' })}>Удалить трату</button>}
+    {step.kind === 'failed' && <p className="expense-failure" role="alert">{step.message}</p>}
+    {narrow && <Sheet open={asking} title="Удалить трату?" onClose={close}>{confirm}</Sheet>}
+  </div>
 }

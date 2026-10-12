@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useLayoutEffect, useRef } from 'react'
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { buildRoute, Link, navigate, useNavigation } from './navigation'
 import type { NavigationSnapshot, Route } from './navigation'
@@ -7,6 +7,9 @@ import CatalogPage from './features/catalog/CatalogPage'
 import CategoryPage from './features/catalog/CategoryPage'
 import ProductPage from './features/product/ProductPage'
 import RequestState from './components/RequestState'
+import Icon from './components/Icon'
+import { PageHeaderContext } from './components/page-header'
+import type { PageHeaderSlots } from './components/page-header'
 import { UploadPage, JobsPage, JobPage } from './features/recognition'
 import { ReceiptsPage, ReceiptPage } from './features/receipts'
 import { ExpensePage } from './features/expense'
@@ -23,7 +26,7 @@ import { moderatorOnlyText } from './features/auth/labels'
 import { canModerate, loadSession, useSession } from './session'
 import { menuKey, useCurrentItemInView } from './menu-view'
 import MainMenu from './menu/MainMenu'
-import { backTarget } from './menu/back-target'
+import { headerAction, isFocusRoute } from './menu/back-target'
 import { ThemeToggle } from './theme'
 import OfflineBanner from './offline/OfflineBanner'
 import { usePendingSync } from './offline/pending-store'
@@ -44,7 +47,7 @@ function pageTitle(route: Route) {
     case 'health': return 'Состояние сервисов'
     case 'receipts': return 'Траты'
     case 'upload': return 'Загрузка фото чеков'
-    case 'expense-new': return 'Добавить трату'
+    case 'expense-new': return 'Новая трата'
     case 'expense-edit': return 'Изменить трату'
     case 'receipt': return 'Чек'
     case 'jobs': return 'Обработка'
@@ -122,6 +125,22 @@ export default function App() {
   const contentKey = route.kind === 'health' ? 'health' : pageKey(session)
   const shell = `${view}:${contentKey}`
 
+  // The header row of the shell takes the controls and the heading of a page (components/PageHeader.tsx).
+  const [headStart, setHeadStart] = useState<HTMLElement | null>(null)
+  const [headEnd, setHeadEnd] = useState<HTMLElement | null>(null)
+  const [pageHeading, setPageHeading] = useState<{ path: string; text: string } | undefined>()
+  // Pages set it from their effects, after the address has changed: the address of the window is the new one.
+  const setTitle = useCallback((text: string | undefined) => setPageHeading(text === undefined ? undefined : { path: window.location.pathname, text }), [])
+  const headerSlots = useMemo<PageHeaderSlots>(() => ({ start: headStart, end: headEnd, setTitle }), [headStart, headEnd, setTitle])
+  // A heading given by the page of another address is never shown: a page leaving the screen takes its own back.
+  const heading1 = view === 'page' && pageHeading?.path === pathname ? pageHeading.text : title
+
+  // Where «✕» of a focus screen (a new spend) leads: the page the person came from, inside of the app.
+  const [trail, setTrail] = useState<{ href: string; focus: boolean; from?: string }>({ href: navigation.href, focus: isFocusRoute(route) })
+  if (trail.href !== navigation.href) {
+    setTrail({ href: navigation.href, focus: isFocusRoute(route), from: trail.focus ? trail.from : trail.href })
+  }
+
   useEffect(() => watchSession(loadSession, document), [])
   // Spends kept on the phone without network belong to one person and are sent when the network is back.
   usePendingSync(session.kind === 'user' ? session.user.username : null)
@@ -172,8 +191,14 @@ export default function App() {
   }, [title])
 
   const mainNavigation = useCurrentItemInView(menuKey(view, session, route))
-  // «Назад» of the phone's top bar on a nested page: to the list the person came from, or to the parent list.
-  const back = view === 'page' ? backTarget(navigation) : undefined
+  // «Назад» before the heading on a nested page (to the list the person came from, or to the parent list), or «✕»
+  // after it on a focus screen: a new or changed spend, drawn without the bottom bar of a phone.
+  const action = view === 'page' ? headerAction(navigation, trail.from) : undefined
+  const focus = view === 'page' && isFocusRoute(route)
+  useLayoutEffect(() => {
+    document.documentElement.classList.toggle('ck-focus-mode', focus)
+    return () => document.documentElement.classList.remove('ck-focus-mode')
+  }, [focus])
 
   const mergesActive = route.kind === 'merges' || route.kind === 'merge'
   const classificationActive = route.kind === 'classification'
@@ -196,7 +221,7 @@ export default function App() {
     case 'not-found': body = notFound; break
   }
   return (
-    <>
+    <PageHeaderContext.Provider value={headerSlots}>
       <a className="skip-link" href="#page-heading">К содержимому</a>
       <OfflineBanner />
       <header className="brand-bar">
@@ -212,12 +237,13 @@ export default function App() {
 
       <div className="page">
         <main id="main" ref={content}>
-          {/* On a phone this row is the compact top bar pinned to the top of the window. */}
+          {/* One header row on the page background; on a phone it is pinned to the top of the window. */}
           <div className="intro">
-            {back && <Link className="ck-back" to={back.to} aria-label={back.label}>
-              <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false"><path d="M15.4 5 8.4 12l7 7 1.4-1.4L11.2 12l5.6-5.6z" /></svg>
-            </Link>}
-            <h1 id="page-heading" ref={heading} tabIndex={-1}>{title}</h1>
+            {action?.kind === 'back' && <Link className="ck-back ck-round" to={action.to} aria-label={action.label}><Icon name="back" size={20} /></Link>}
+            <div className="intro-slot" ref={setHeadStart} />
+            <h1 id="page-heading" ref={heading} tabIndex={-1}>{heading1}</h1>
+            <div className="intro-slot" ref={setHeadEnd} />
+            {action?.kind === 'close' && <Link className="ck-close ck-round" to={action.to} aria-label={action.label}><Icon name="close" size={20} /></Link>}
           </div>
           {route.kind === 'health' && <p className="intro-note intro-note-after">Сводка о состоянии служб.</p>}
           {catalogActive && view === 'page' && canModerate(session) && <nav className="main-navigation section-navigation" aria-label="Раздел каталога">
@@ -235,6 +261,6 @@ export default function App() {
         {/* The old jokes of the brand stay, quietly, in the footer line. */}
         <footer>Чекист — семейный бюджет · Доверяй, но проверяй чек</footer>
       </div>
-    </>
+    </PageHeaderContext.Provider>
   )
 }

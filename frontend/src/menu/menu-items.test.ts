@@ -23,7 +23,7 @@ describe('items of the main menu and their split for the bottom bar of a phone',
     expect(labels(menu.primary)).toEqual(['Состояние сервисов'])
     expect(menu.more).toEqual([])
     expect(menu.add).toBe(false)
-    expect(menu.primary[0]).toEqual({ key: 'health', to: '/health', label: 'Состояние сервисов', current: true })
+    expect(menu.primary[0]).toEqual({ key: 'health', to: '/health', label: 'Состояние сервисов', current: true, icon: 'health' })
   })
 
   it.each([false, true])('a guest (session ended: %s): the health page and the sign-in, no «Ещё»', (expired) => {
@@ -47,7 +47,9 @@ describe('items of the main menu and their split for the bottom bar of a phone',
     expect(labels(menu.primary)).toEqual(['Главная', 'Траты', 'Статистика'])
     expect(menu.add).toBe(true)
     expect(labels(menu.more)).toEqual(['Каталог', 'Обработка', 'Выгрузка', 'Состояние сервисов', 'Семья', 'synthetic-reader'])
-    expect(menu.more[5]).toEqual({ key: 'account', to: '/account', label: 'synthetic-reader', current: false, account: true })
+    expect(menu.more[5]).toEqual({ key: 'account', to: '/account', label: 'synthetic-reader', current: false, account: true, icon: 'account' })
+    // The pictures of the bottom bar and of the list behind «Ещё» (components/Icon.tsx).
+    expect([...menu.primary, ...menu.more].map((item) => item.icon)).toEqual(['home', 'list', 'stats', 'catalog', 'jobs', 'export', 'health', 'family', 'account'])
   })
 
   it('never puts more into the bar than it holds, and keeps «Ещё» for at least two links', () => {

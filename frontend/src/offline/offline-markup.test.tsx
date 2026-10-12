@@ -39,10 +39,12 @@ describe('offline banner', () => {
     expect(reachable).toContain('Показаны сохранённые данные.')
   })
 
-  it('uses only tokens of the warning state and sets no font size', () => {
+  it('uses only tokens of the warning state and font sizes of the scale', () => {
     const css = readFileSync(new URL('./Offline.css', import.meta.url), 'utf8')
     expect(css).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/i)
-    expect(css).not.toMatch(/font-size\s*:/)
+    const sizes = [...css.matchAll(/font-size\s*:\s*([^;]+);/g)].map((match) => match[1].trim())
+    expect(sizes.length).toBeGreaterThan(0)
+    for (const size of sizes) expect(size).toMatch(/^var\(--ck-text-(xs|sm|base|lg|xl)\)$/)
     expect(css).toContain('var(--ck-warning-bg)')
     expect(css).toContain('var(--ck-warning-text)')
   })

@@ -4,7 +4,10 @@ import { getCountries } from '../../api/countries'
 import type { CountryEntry } from '../../api/countries'
 import { getStores } from '../../api/stores'
 import type { StoreEntry } from '../../api/types'
+import ChipScroller from '../../components/ChipScroller'
+import ResponsiveFilters from '../../components/ResponsiveFilters'
 import { useLocalRequestFocus } from '../../components/useLocalRequestFocus'
+import { useNarrow } from '../../lib/cards'
 import { buildReceiptsStatsQuery, Link, maxStatsStores, navigate } from '../../navigation'
 import type { ReceiptsStatsQuery } from '../../navigation'
 import { useProductRequest } from '../product/useProductRequest'
@@ -12,6 +15,7 @@ import {
   applyFilters, filterDraft, formErrors, hasPeriods, hasScope, isActivePreset, localToday, periodPresets, presetHref, sameDraft,
 } from './receipts-state'
 import type { DateField, FilterDraft, FilterErrors, FilterField } from './receipts-state'
+import { useChipInView } from './chip-in-view'
 
 /** A reference list of the form; the form stays usable while it loads or after it failed. */
 export type Reference<T> = { kind: 'loading' } | { kind: 'error' } | { kind: 'ok'; items: T[]; total: number }
@@ -133,20 +137,25 @@ export function ReceiptsFiltersForm({
     </div>
   )
   const changed = !sameDraft(draft, filterDraft(query))
+  const narrow = useNarrow()
+  const active = presets.find((preset) => isActivePreset(query, preset))
+  const presetsRef = useChipInView<HTMLElement>(`${active?.key ?? ''}-${narrow}`)
+  // Own periods count as one filter, a ready pair is a chip; then the country, the currency and the stores.
+  const count = (hasPeriods(query) && !active ? 1 : 0) + (query.country ? 1 : 0) + (query.currency ? 1 : 0) + (query.store?.length ? 1 : 0)
+  const chips = presets.length > 0 && <nav ref={presetsRef} className="stats-presets" aria-label="Готовые пары периодов">
+    {!narrow && <span className="stats-presets-title">Быстрый выбор:</span>}
+    <ChipScroller label="Готовые пары периодов">
+      {presets.map((preset) => (
+        <Link key={preset.key} className="ck-chip" to={presetHref(query, preset)} aria-current={isActivePreset(query, preset) ? 'true' : undefined}>{preset.label}</Link>
+      ))}
+    </ChipScroller>
+  </nav>
   return (
-    <section className="stats-panel" aria-labelledby={`${id}-heading`}>
+    <section className="stats-panel stats-filters" aria-labelledby={`${id}-heading`}>
       <h3 id={`${id}-heading`}>Периоды и фильтры</h3>
-      {presets.length > 0 && <nav className="stats-presets" aria-label="Готовые пары периодов">
-        <span className="stats-presets-title">Быстрый выбор:</span>
-        <ul>
-          {presets.map((preset) => (
-            <li key={preset.key}>
-              <Link className="stats-chip" to={presetHref(query, preset)} aria-current={isActivePreset(query, preset) ? 'true' : undefined}>{preset.label}</Link>
-            </li>
-          ))}
-        </ul>
-      </nav>}
-      <form ref={formRef} noValidate onSubmit={onSubmit}>
+      {!narrow && chips}
+      <ResponsiveFilters count={count} summary={chips || undefined}>
+      <form ref={formRef} className="stats-form" noValidate onSubmit={onSubmit}>
         <div className="stats-periods">
           <fieldset className="stats-period">
             <legend>Базовый период (было)</legend>
@@ -168,6 +177,7 @@ export function ReceiptsFiltersForm({
           {(hasPeriods(query) || hasScope(query) || changed) && <button type="button" className="stats-secondary" onClick={onReset}>Сбросить периоды и фильтры</button>}
         </div>
       </form>
+      </ResponsiveFilters>
     </section>
   )
 }

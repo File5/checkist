@@ -32,123 +32,132 @@ const text = (html: string) => html.replace(/<[^>]+>/g, '')
 const headings = (html: string) => [...html.matchAll(/<th scope="col">([^<]*)<\/th>/g)].map((match) => match[1])
 const rows = (html: string) => [...html.matchAll(/<tr id="(receipt-line-\d+)" tabindex="-1"><th scope="row">([\s\S]*?)<\/th>([\s\S]*?)<\/tr>/g)]
   .map((match) => ({ id: match[1], heading: match[2], cells: [...match[3].matchAll(/<td class="receipt-number">([^<]*)<\/td>/g)].map((cell) => cell[1]) }))
-const columnOrder = ['Количество', 'Цена', 'Сумма', 'Скидка', 'Оплачено']
-/** A leader row: its heading, the facts under the name and the amount at the right, read back in the order of the table columns. */
-const items = (html: string) => [...html.matchAll(/<li id="(receipt-line-\d+)" tabindex="-1" class="receipt-leader ck-leader"><div class="receipt-leader-main">([\s\S]*?)<dl class="receipt-leader-facts">([\s\S]*?)<\/dl><\/div><span class="receipt-leader-amount ck-figures"><span class="receipt-visually-hidden">Сумма: <\/span>([^<]*)<\/span><\/li>/g)]
-  .map((match) => ({ id: match[1], heading: match[2],
-    facts: [...[...match[3].matchAll(/<div><dt>([^<]*)<\/dt><dd class="receipt-number">([^<]*)<\/dd><\/div>/g)].map((fact) => [fact[1], fact[2]]), ['Сумма', match[4]]]
-      .sort((a, b) => columnOrder.indexOf(a[0]) - columnOrder.indexOf(b[0])) }))
+const factOrder = ['Количество и цена', 'Сумма', 'Скидка', 'Оплачено']
+/** A row of the phone view: the name, the facts under it, the details, the amount at the right — the facts read back with the
+ * amount in the order of the table columns. */
+const items = (html: string) => [...html.matchAll(/<li id="(receipt-line-\d+)" tabindex="-1" class="receipt-leader"><div class="receipt-leader-main"><span class="receipt-printed-name">([^<]*)<\/span>(?:<dl class="receipt-leader-facts">([\s\S]*?)<\/dl>)?([\s\S]*?)<\/div><span class="receipt-leader-amount ck-figures"><span class="receipt-visually-hidden">Сумма: <\/span>([^<]*)<\/span><\/li>/g)]
+  .map((match) => ({ id: match[1], name: match[2], details: match[4],
+    facts: [...[...(match[3] ?? '').matchAll(/<div><dt(?: class="receipt-visually-hidden")?>([^<]*)<\/dt><dd class="receipt-number">([^<]*)<\/dd><\/div>/g)].map((fact) => [fact[1], fact[2]]), ['Сумма', match[5]]]
+      .sort((a, b) => factOrder.indexOf(a[0]) - factOrder.indexOf(b[0])) }))
 const one = (line: Partial<Line>) => items(cards([{ ...milk, ...line }]))[0].facts
 const labels = (facts: string[][]) => facts.map(([label]) => label)
+/** The value of the same line in the table, by the label of a fact of the phone row. */
+const cellOf = (cells: string[], label: string) => label === 'Количество и цена' ? `${cells[0]} × ${cells[1]}`
+  : cells[['Количество', 'Цена', 'Сумма', 'Скидка', 'Оплачено'].indexOf(label)]
 
-describe('receipt line leader rows (Vitest/SSR of the phone view, not browser visual acceptance)', () => {
-  it('draws the table on a wide screen and only the leader rows on a phone', () => {
+describe('receipt line rows (Vitest/SSR of the phone view, not browser visual acceptance)', () => {
+  it('draws the table on a wide screen and only the rows of the card on a phone', () => {
     const wide = table(lines)
     expect(wide).toContain('<table class="receipt-lines-table">')
-    expect(wide).not.toContain('ck-leader')
+    expect(wide).not.toContain('receipt-leader')
     const narrow = cards(lines)
     expect(narrow).not.toContain('<table')
     expect(narrow).not.toContain('role="region"')
     expect(narrow).not.toContain('receipt-table-scroll')
+    // No dotted leaders any more: the amount stands at the right of the row like in the list of spends.
+    expect(narrow).not.toContain('ck-leader')
     expect(narrow).toContain('<div class="receipt-leaders"><p class="receipt-note">Строки в порядке печати на чеке</p><ol class="receipt-leader-list" aria-label="Строки чека">')
-    expect(narrow.match(/class="receipt-leader ck-leader"/g)).toHaveLength(lines.length)
+    expect(narrow.match(/class="receipt-leader"/g)).toHaveLength(lines.length)
     expect(items(narrow)).toHaveLength(lines.length)
   })
 
-  it('puts the printed name first, the category as a chip under it, the amount at the right in the figures font', () => {
+  it('puts the printed name first, the facts under it, then the category as a chip, the amount at the right in the figures font', () => {
     const grocery: Line = { ...bread, category: { id: 3, name: 'Продукты' } } as Line
     const [row] = items(cards([grocery]))
-    expect(row.heading.startsWith('<span class="receipt-printed-name">ХЛЕБ</span><span class="receipt-line-chip" data-tone="3"><span class="receipt-visually-hidden">Категория: </span>Продукты</span><span class="receipt-note">Строка\u00a02 · Товар</span>')).toBe(true)
-    expect(row.heading).not.toContain('Категория: Продукты</span>')
+    expect(row.name).toBe('ХЛЕБ')
+    expect(row.details.startsWith('<span class="receipt-line-chip" data-tone="3"><span class="receipt-visually-hidden">Категория: </span>Продукты</span><span class="receipt-note">Строка 2 · Товар</span>')).toBe(true)
+    expect(row.details).not.toContain('Категория: Продукты</span>')
+    // A category instead of the unmatched mark, like in the table.
+    expect(row.details).not.toContain('Товар не сопоставлен')
     // The table keeps its former words for the category.
     expect(table([grocery])).toContain('<span class="receipt-note receipt-line-category">Категория: Продукты</span>')
   })
 
-  it('names the facts by the headings of the table columns, in the order of the columns, on the same data', () => {
-    const columns = headings(table([milk]))
-    expect(columns).toEqual(['Строка и товар каталога', 'Количество', 'Цена', 'Сумма', 'Скидка', 'Оплачено'])
+  it('says the quantity and the price in one fact and the discount and the paid amount by the headings of the table', () => {
+    expect(headings(table([milk]))).toEqual(['Строка и товар каталога', 'Количество', 'Цена', 'Сумма', 'Скидка', 'Оплачено'])
     const [row] = rows(table([milk]))
     const [card] = items(cards([milk]))
-    // The fixture line has a discount, so no fact is left out.
-    expect(labels(card.facts)).toEqual(columns.slice(1))
-    expect(card.facts.map(([, value]) => value)).toEqual(row.cells)
-    expect(row.cells).toEqual(['2 шт', '1,29 €', '3 €', '1 €', '3 €'])
+    // The fixture line has two pieces and a discount, so no fact is left out.
+    expect(card.facts).toEqual([['Количество и цена', '2\u00a0шт × 1,29\u00a0€'], ['Сумма', '3\u00a0€'], ['Скидка', '1\u00a0€'], ['Оплачено', '3\u00a0€']])
+    expect(row.cells).toEqual(['2\u00a0шт', '1,29\u00a0€', '3\u00a0€', '1\u00a0€', '3\u00a0€'])
+    // The words of the quantity and the price are read by a screen reader only.
+    expect(cards([milk])).toContain('<dt class="receipt-visually-hidden">Количество и цена</dt><dd class="receipt-number">2\u00a0шт × 1,29\u00a0€</dd>')
   })
 
   it('keeps every shown value equal to the cell of the same column', () => {
-    const columns = headings(table(lines))
     const wide = rows(table(lines))
     const narrow = items(cards(lines))
     expect(wide).toHaveLength(lines.length)
     for (const [index, card] of narrow.entries()) {
-      expect(card.facts.length).toBeGreaterThanOrEqual(3)
-      for (const [label, value] of card.facts) expect(value).toBe(wide[index].cells[columns.indexOf(label) - 1])
-      expect(labels(card.facts)).toEqual(columns.slice(1).filter((label) => labels(card.facts).includes(label)))
+      for (const [label, value] of card.facts) expect(value, `${card.id} ${label}`).toBe(cellOf(wide[index].cells, label))
     }
   })
 
   it('moves the content of the row heading under the name: number, kind, printed name, catalog link, relations', () => {
     const wide = rows(table(lines))
     const narrow = items(cards(lines))
-    // The same pieces, the printed name first.
+    // The same pieces; the facts are the other cells of the table.
     const pieces = (html: string) => [...html.matchAll(/<(?:span|a)[^>]*>[^<]*/g)].map((match) => match[0]).sort()
-    expect(narrow.map((card) => pieces(card.heading))).toEqual(wide.map((row) => pieces(row.heading)))
-    expect(narrow[0].heading).toContain('<span class="receipt-printed-name">MILCH 1 L</span><span class="receipt-note">Строка\u00a01 · Товар</span>')
-    expect(narrow[0].heading).toContain('<a class="receipt-product-link" href="/catalog/products/61">Товар каталога: Молоко 1 л</a>')
-    expect(narrow[0].heading).toContain('<span class="receipt-line-relation">Залог: <a href="#receipt-line-103">Строка 3: PFAND</a></span>')
-    expect(narrow[1].heading).toContain('<span class="receipt-warning">Товар не сопоставлен</span>')
-    expect(narrow[2].heading).toContain('Залог к <a href="#receipt-line-101">Строка 1: MILCH 1 L</a>')
-    expect(narrow[3].heading).toContain('Строка 4 · Услуга')
-    expect(narrow[4].heading).toContain('Возврат залога')
+    expect(narrow.map((card) => pieces(`<span class="receipt-printed-name">${card.name}</span>${card.details}`))).toEqual(wide.map((row) => pieces(row.heading)))
+    expect(narrow[0].details).toContain('<span class="receipt-note">Строка 1 · Товар</span>')
+    expect(narrow[0].details).toContain('<a class="receipt-product-link" href="/catalog/products/61">Товар каталога: Молоко 1 л</a>')
+    expect(narrow[0].details).toContain('<span class="receipt-line-relation">Залог: <a href="#receipt-line-103">Строка\u00a03: PFAND</a></span>')
+    expect(narrow[1].details).toContain('<span class="receipt-warning">Товар не сопоставлен</span>')
+    expect(narrow[2].details).toContain('Залог к <a href="#receipt-line-101">Строка\u00a01: MILCH 1 L</a>')
+    expect(narrow[3].details).toContain('Строка\u00a04 · Услуга')
+    expect(narrow[4].details).toContain('Возврат залога')
     expect(cards(lines).match(/Товар не сопоставлен/g)).toHaveLength(4)
   })
 
-  it('makes the leader row the target of a line link: id and tabindex of the former row, once per line', () => {
+  it('makes the row the target of a line link: id and tabindex of the former row, once per line', () => {
     const wide = rows(table(lines))
     const narrow = cards(lines)
     expect(items(narrow).map((card) => card.id)).toEqual(wide.map((row) => row.id))
     for (const line of lines) expect(narrow.match(new RegExp(` id="receipt-line-${line.id}"`, 'g'))).toHaveLength(1)
     expect(narrow.match(/tabindex="-1"/g)).toHaveLength(lines.length)
     expect(narrow).not.toContain('tabindex="0"')
-    // Every link of the list points at a card of the same list.
-    for (const [, target] of narrow.matchAll(/href="#(receipt-line-\d+)"/g)) expect(narrow).toContain(`<li id="${target}" tabindex="-1" class="receipt-leader ck-leader">`)
+    // Every link of the list points at a row of the same list.
+    for (const [, target] of narrow.matchAll(/href="#(receipt-line-\d+)"/g)) expect(narrow).toContain(`<li id="${target}" tabindex="-1" class="receipt-leader">`)
   })
 
   it('keeps the identity of a parent line that is on another page', () => {
     const html = cards([{ ...milk, kind: 'deposit', parent_id: 999 }])
-    expect(html).toContain('Залог к <span>Строка ID 999 (на другой странице строк)</span>')
+    expect(html).toContain('Залог к <span>Строка\u00a0ID\u00a0999 (на другой странице строк)</span>')
     expect(html).not.toContain('href="#receipt-line-999"')
   })
 
   it('leaves out a zero discount, in any spelling of the source value', () => {
     for (const discount_amount of ['0.00', '0', '0.0', '0.000', '00.00', '-0.00']) {
-      expect(labels(one({ discount_amount, paid_amount: '2.00' }))).toEqual(['Количество', 'Цена', 'Сумма', 'Оплачено'])
+      expect(labels(one({ discount_amount, paid_amount: '2.00' }))).toEqual(['Количество и цена', 'Сумма', 'Оплачено'])
     }
     for (const discount_amount of ['0.01', '-0.20', '0.001']) expect(labels(one({ discount_amount }))).toContain('Скидка')
-    expect(rows(table([{ ...milk, discount_amount: '0.00' }]))[0].cells[3]).toBe('0 €')
+    expect(rows(table([{ ...milk, discount_amount: '0.00' }]))[0].cells[3]).toBe('0\u00a0€')
   })
 
   it('leaves out the paid amount equal to the amount, comparing the source values and not the formatted text', () => {
-    expect(labels(one({ amount: '2.58', paid_amount: '2.58' }))).toEqual(['Количество', 'Цена', 'Сумма', 'Скидка'])
+    expect(labels(one({ amount: '2.58', paid_amount: '2.58' }))).toEqual(['Количество и цена', 'Сумма', 'Скидка'])
     expect(labels(one({ amount: '2.5', paid_amount: '2.50' }))).not.toContain('Оплачено')
     expect(labels(one({ amount: '-0.25', paid_amount: '-0.25' }))).not.toContain('Оплачено')
     expect(labels(one({ amount: '0.00', paid_amount: '-0.00' }))).not.toContain('Оплачено')
     // Both read "3 €", but the values differ: the fact stays.
     const close = one({ amount: '2.58', paid_amount: '2.584' })
-    expect(close.filter(([label]) => label === 'Сумма' || label === 'Оплачено')).toEqual([['Сумма', '3 €'], ['Оплачено', '3 €']])
+    expect(close.filter(([label]) => label === 'Сумма' || label === 'Оплачено')).toEqual([['Сумма', '3\u00a0€'], ['Оплачено', '3\u00a0€']])
     expect(labels(one({ amount: '0.25', paid_amount: '-0.25' }))).toContain('Оплачено')
   })
 
-  it('shows only quantity, price and amount for a line without a discount', () => {
-    expect(one({ amount: '2.58', discount_amount: '0.00', paid_amount: '2.58' })).toEqual([
-      ['Количество', '2 шт'], ['Цена', '1,29 €'], ['Сумма', '3 €']])
-    const [row] = rows(table([{ ...milk, discount_amount: '0.00', paid_amount: '2.58' }]))
-    expect(row.cells).toHaveLength(5)
+  it('leaves out the quantity and the price of a single piece: the price is the amount itself', () => {
+    expect(one({ amount: '2.58', discount_amount: '0.00', paid_amount: '2.58' })).toEqual([['Количество и цена', '2\u00a0шт × 1,29\u00a0€'], ['Сумма', '3\u00a0€']])
+    for (const quantity of ['1', '1.000', '01.0']) {
+      expect(one({ quantity, amount: '1.29', discount_amount: '0.00', paid_amount: '1.29' }), quantity).toEqual([['Сумма', '2\u00a0€']])
+    }
+    // Nothing to say under the name: no empty list of facts.
+    expect(cards([{ ...milk, quantity: '1.000', discount_amount: '0.00', paid_amount: milk.amount }])).not.toContain('receipt-leader-facts')
+    expect(labels(one({ quantity: '0.532' }))).toContain('Количество и цена')
   })
 
   it('shows a value that was not read instead of hiding it', () => {
     const unread = one({ discount_amount: null as unknown as string, paid_amount: null as unknown as string })
-    expect(unread.slice(3)).toEqual([['Скидка', 'Не распознано'], ['Оплачено', 'Не распознано']])
+    expect(unread.filter(([label]) => label === 'Скидка' || label === 'Оплачено')).toEqual([['Скидка', 'Не распознано'], ['Оплачено', 'Не распознано']])
     const both = one({ amount: 'x', paid_amount: 'x' })
     expect(both.filter(([label]) => label === 'Сумма' || label === 'Оплачено')).toEqual([['Сумма', 'Не распознано'], ['Оплачено', 'Не распознано']])
   })
@@ -158,7 +167,22 @@ describe('receipt line leader rows (Vitest/SSR of the phone view, not browser vi
     const html = renderToStaticMarkup(<ReceiptLines lines={[milk]} />)
     expect(html).toContain('Валюта: Не распознано')
     expect(html.indexOf('«Оплачено» учитывает скидку строки')).toBeLessThan(html.indexOf('class="receipt-leaders"'))
-    expect(items(html)[0].facts).toEqual([['Количество', '2 шт'], ['Цена', '1,29'], ['Сумма', '3'], ['Скидка', '1'], ['Оплачено', '3']])
+    expect(items(html)[0].facts).toEqual([['Количество и цена', '2\u00a0шт × 1,29'], ['Сумма', '3'], ['Скидка', '1'], ['Оплачено', '3']])
+  })
+
+  it('shows a spend typed by hand without the printed order, the numbers of its lines or an unmatched mark', () => {
+    const coffee: Line = { ...bread, id: 201, position: 1, name: 'Капучино', quantity: '1.000', amount: '1500.00', paid_amount: '1500.00', category: { id: 2, name: 'Кафе' } } as Line
+    const water: Line = { ...coffee, id: 202, position: 2, name: 'Вода', category: null }
+    screen.narrow = true
+    const html = renderToStaticMarkup(<ReceiptLines lines={[coffee, water]} currency="KZT" manual />)
+    expect(html).not.toContain('Строки в порядке печати')
+    expect(html).not.toContain('«Оплачено»')
+    expect(html).not.toContain('Строка ')
+    expect(html).not.toContain('Товар не сопоставлен')
+    const [first, second] = items(html)
+    expect(first.details).toBe('<span class="receipt-line-chip" data-tone="2"><span class="receipt-visually-hidden">Категория: </span>Кафе</span>')
+    expect(first.facts).toEqual([['Сумма', '1 500 ₸']])
+    expect(second.details).toBe('')
   })
 
   it('has no date in a line: nothing of a date outside <time>, no foreign rows in an own receipt', () => {
@@ -187,7 +211,7 @@ describe('receipt screen on a phone (Vitest/SSR)', () => {
     const html = narrow(view)
     expect(html).toContain('Скидка к <a href="#receipt-line-101">')
     expect(html.match(/ id="receipt-line-101"/g)).toHaveLength(1)
-    expect(html).toContain('<li id="receipt-line-101" tabindex="-1" class="receipt-leader ck-leader">')
+    expect(html).toContain('<li id="receipt-line-101" tabindex="-1" class="receipt-leader">')
     expect(html).not.toContain('<table')
   })
 
@@ -198,7 +222,7 @@ describe('receipt screen on a phone (Vitest/SSR)', () => {
   ])('does not choose a view while the lines block shows %s', (_name, lines, mark) => {
     const phone = narrow({ ...view, lines: lines as BlockRequest<Page<Line>> })
     expect(phone).toContain(mark)
-    expect(phone).not.toContain('ck-leader')
+    expect(phone).not.toContain('receipt-leader')
     expect(phone).toBe(renderToStaticMarkup(<ReceiptView {...view} lines={lines as BlockRequest<Page<Line>>} />))
   })
 })
@@ -209,7 +233,7 @@ describe('receipt filters action bar (Vitest/SSR)', () => {
 
   it('adds the pinned bar as the second class of the former wrapper', () => {
     expect(html.match(/ck-action-bar/g)).toHaveLength(1)
-    expect(html).toContain('<div class="receipt-actions ck-action-bar"><button type="submit">Применить фильтры</button><button type="button" class="receipt-secondary">Сбросить фильтры</button></div></form>')
+    expect(html).toContain('<div class="receipt-actions ck-action-bar"><button type="submit">Применить</button><button type="button" class="receipt-secondary">Сбросить</button></div></form>')
   })
 
   it('keeps the explanation and the refusal outside the bar, before it', () => {
@@ -217,6 +241,6 @@ describe('receipt filters action bar (Vitest/SSR)', () => {
     expect(before).toContain('Поиск: от 2 до 100 символов.')
     expect(before).toContain('<p class="receipt-field-error" role="alert">Исправьте поля фильтров.</p>')
     expect(bar).not.toContain('<p')
-    expect(text(bar)).toBe('Применить фильтрыСбросить фильтры')
+    expect(text(bar)).toBe('ПрименитьСбросить')
   })
 })

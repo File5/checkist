@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { getCategorySpends } from '../../api/budget'
 import type { CategorySpendCurrency, CategorySpendItem, CategorySpends } from '../../api/budget'
+import Icon from '../../components/Icon'
+import { usePageTitle } from '../../components/page-header'
 import RequestState from '../../components/RequestState'
-import { formatMoney } from '../../lib/money'
+import { currencySymbol, formatMoney } from '../../lib/money'
 import { Link } from '../../navigation'
 import { capitalize, dashboardErrorMessage, dayAndMonth, deviceMonth, inMonth, monthSlide, monthTitle, plural, shiftMonth } from './dashboard-state'
 import { glue } from '../../lib/text'
@@ -11,11 +14,13 @@ import { categorySpendsHref, partShare, showsLines, spendNote, spendSource, spen
 import { categoryTone } from '../../lib/category-tone'
 import './Dashboard.css'
 
-function SpendItem({ item, currency }: { item: CategorySpendItem; currency: string }) {
+function SpendItem({ item, currency, tone }: { item: CategorySpendItem; currency: string; tone: number }) {
   const note = spendNote(item)
   const whole = wholeReceipt(item, currency)
   return <li className="cat-spend">
     <Link className="cat-spend-row" to={`/receipts/${item.receipt_id}`}>
+      {/* By a receipt or by hand, as in «Траты»: the picture says it, the meta line names it. */}
+      <span className={`cat-spend-badge dash-cat-${tone}`} aria-hidden="true"><Icon name={item.source === 'photo' ? 'receipt' : 'pencil'} size={20} /></span>
       <span className="cat-spend-main">
         <span className="cat-spend-title">{spendTitle(item)}</span>
         {note && <span className="cat-spend-note">{note}</span>}
@@ -36,14 +41,30 @@ function SpendItem({ item, currency }: { item: CategorySpendItem; currency: stri
   </li>
 }
 
-function CurrencyBlock({ block, month, hero, categoryName }: { block: CategorySpendCurrency; month: string; hero: boolean; categoryName: string }) {
+/** «‹ Октябрь 2026 ›» in the head of the first card: the month of the category, its steps through the address. */
+function MonthSteps({ categoryId, month, today }: { categoryId: number; month: string; today: string }) {
+  return <nav className="cat-month" aria-label="Месяц">
+    <span className="cat-spends-month">{monthTitle(month)}</span>
+    <span className="cat-month-steps">
+      <Link className="ck-round dash-month-step" to={categorySpendsHref(categoryId, shiftMonth(month, -1))} aria-label="Предыдущий месяц"><Icon name="back" size={20} /></Link>
+      {month < today
+        ? <Link className="ck-round dash-month-step" to={categorySpendsHref(categoryId, shiftMonth(month, 1))} aria-label="Следующий месяц"><Icon name="forward" size={20} /></Link>
+        : <span className="ck-round dash-month-step dash-month-step-off" aria-hidden="true"><Icon name="forward" size={20} /></span>}
+    </span>
+  </nav>
+}
+
+function CurrencyBlock({ block, month, hero, categoryName, tone, steps }: {
+  block: CategorySpendCurrency; month: string; hero: boolean; categoryName: string; tone: number; steps?: ReactNode
+}) {
   const headingId = `cat-spends-items-${block.currency}`
   const parts = block.parts.filter((part) => !part.direct || block.parts.length > 1)
   return <>
-    <section className="dash-card cat-spends-total" aria-label={`Потрачено, ${block.currency}`}>
-      <p className="dash-label">Потрачено {inMonth(month)}</p>
+    <section className="ck-panel dash-card cat-spends-total" aria-label={`Потрачено, ${block.currency}`}>
+      {steps}
+      <p className="dash-label">{steps ? 'Потрачено' : `Потрачено ${inMonth(month)}`}{hero ? '' : `, ${currencySymbol(block.currency)}`}</p>
       <p className={`dash-total ${hero ? 'ck-hero-figure' : 'ck-figures dash-total-plain'}`}>{formatMoney(block.total, block.currency)}</p>
-      <p className="dash-note">{glue(block.receipts_count.toLocaleString('ru-RU'), plural(block.receipts_count, 'чек или трата', 'чека или траты', 'чеков и трат'))}</p>
+      <p className="dash-note cat-spends-count">{glue(block.receipts_count.toLocaleString('ru-RU'), plural(block.receipts_count, 'чек или трата', 'чека или траты', 'чеков и трат'))}</p>
       {parts.length > 0 && <ul className="cat-parts" aria-label="Из чего сложилось">
         {parts.map((part) => {
           const share = partShare(part, block.total)
@@ -62,40 +83,36 @@ function CurrencyBlock({ block, month, hero, categoryName }: { block: CategorySp
         })}
       </ul>}
     </section>
-    <section className="dash-card cat-spends-items" aria-labelledby={headingId}>
-      <h2 id={headingId}>Траты и чеки{hero ? '' : ` · ${block.currency}`}</h2>
-      <ul className="cat-spend-list">{block.items.map((item) => <SpendItem key={item.receipt_id} item={item} currency={block.currency} />)}</ul>
+    <section className="ck-panel dash-card cat-spends-items" aria-labelledby={headingId}>
+      <div className="ck-panel-head"><h2 id={headingId}>Траты и чеки{hero ? '' : ` · ${currencySymbol(block.currency)}`}</h2></div>
+      <ul className="cat-spend-list">{block.items.map((item) => <SpendItem key={item.receipt_id} item={item} currency={block.currency} tone={tone} />)}</ul>
     </section>
   </>
 }
 
 export type CategorySpendsViewProps = { data: CategorySpends; today?: string; slide?: MonthSlide }
 
-/** The screen without loading: the markup tests render it directly. */
+/** The screen without loading: the markup tests render it directly. The name of the category is the heading of the
+ * page (the header row of the shell); the categories above it are links under the heading. */
 export function CategorySpendsView({ data, today = deviceMonth(), slide }: CategorySpendsViewProps) {
   const { category, month } = data
   const ancestors = category.path.slice(0, -1)
+  usePageTitle(category.name)
+  const tone = categoryTone(category.path[0]?.id ?? category.id)
+  const steps = <MonthSteps categoryId={category.id} month={month} today={today} />
   return <div className={`dash cat-spends${slide ? ` dash-slide-${slide}` : ''}`}>
-    <div className="dash-head">
-      <div className="cat-spends-title">
-        {ancestors.length > 0 && <nav className="cat-crumbs" aria-label="Категории выше">
-          {ancestors.map((step) => <Link key={step.id} to={categorySpendsHref(step.id, month)}>{step.name}</Link>)}
-        </nav>}
-        <h2 className="dash-month-title cat-spends-name">{category.name}</h2>
-      </div>
-      <nav className="dash-month" aria-label="Месяц">
-        <Link className="dash-month-step" to={categorySpendsHref(category.id, shiftMonth(month, -1))} aria-label="Предыдущий месяц">‹</Link>
-        <span className="cat-spends-month">{monthTitle(month)}</span>
-        {month < today
-          ? <Link className="dash-month-step" to={categorySpendsHref(category.id, shiftMonth(month, 1))} aria-label="Следующий месяц">›</Link>
-          : <span className="dash-month-step dash-month-step-off" aria-hidden="true">›</span>}
-      </nav>
-    </div>
+    {ancestors.length > 0 && <nav className="cat-crumbs" aria-label="Категории выше">
+      {ancestors.map((step) => <Link key={step.id} to={categorySpendsHref(step.id, month)}>{step.name}</Link>)}
+    </nav>}
     {data.currencies.length
-      ? data.currencies.map((block, index) => <CurrencyBlock key={block.currency} block={block} month={month} hero={index === 0} categoryName={category.name} />)
-      : <RequestState kind="empty" title={`${capitalize(inMonth(month))} трат в этой категории ${month < today ? 'не было' : 'пока нет'}`}
-        message="Траты появятся здесь, как только в категории будет хотя бы одна строка чека или трата."
-        action={<Link className="action-link" to={month === today ? '/' : `/?month=${month}`}>На главную</Link>} />}
+      ? data.currencies.map((block, index) => <CurrencyBlock key={block.currency} block={block} month={month} hero={index === 0} categoryName={category.name}
+        tone={tone} steps={index === 0 ? steps : undefined} />)
+      : <>
+        <section className="ck-panel dash-card cat-spends-total" aria-label="Месяц">{steps}</section>
+        <RequestState kind="empty" title={`${capitalize(inMonth(month))} трат в этой категории ${month < today ? 'не было' : 'пока нет'}`}
+          message="Траты появятся здесь, как только в категории будет хотя бы одна строка чека или трата."
+          action={<Link className="action-link" to={month === today ? '/' : `/?month=${month}`}>На главную</Link>} />
+      </>}
   </div>
 }
 

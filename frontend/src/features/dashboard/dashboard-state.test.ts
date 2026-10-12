@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { dashboardFixture } from '../../api/budget-test-support'
 import {
   badgeLetter, capitalize, categoryIds, categoryTone, cents, compareMonths, dayAndMonth, daysLeftText, dashboardErrorMessage, deviceMonth,
-  formatMoney, formatNumber, initials, inMonth, monthIsEmpty, monthSlide, monthTitle, plural, progress, recentMeta, shiftMonth,
+  currencyName, deviceDate, formatMoney, formatNumber, hasLimit, initials, relativeDay, inMonth, monthIsEmpty, monthSlide, monthTitle, plural, progress, recentMeta, shiftMonth,
 } from './dashboard-state'
 
 const nb = (text: string) => text.replaceAll(' ', '\u00a0')
@@ -16,13 +16,17 @@ describe('money of the dashboard', () => {
     expect(cents(null)).toBe(0n)
   })
   it('shows kopecks only when there are any and never breaks a value', () => {
-    expect(formatMoney('287450.00', 'KZT')).toBe(nb('287 450 KZT'))
-    expect(formatMoney('1500.50', 'KZT')).toBe(nb('1 501 KZT'))
-    expect(formatMoney(5n, 'EUR')).toBe(nb('1 EUR'))
-    expect(formatMoney(-40n, 'EUR')).toBe(nb('-1 EUR'))
-    expect(formatMoney('-1200.00', 'KZT')).toBe(nb('-1 200 KZT'))
+    // The sign of the currency (lib/money.ts): «287 450 ₸»; a rare code stays a code.
+    expect(formatMoney('287450.00', 'KZT')).toBe(nb('287 450 ₸'))
+    expect(formatMoney('1500.50', 'KZT')).toBe(nb('1 501 ₸'))
+    expect(formatMoney(5n, 'EUR')).toBe(nb('1 €'))
+    expect(formatMoney(-40n, 'EUR')).toBe(nb('-1 €'))
+    expect(formatMoney('-1200.00', 'KZT')).toBe(nb('-1 200 ₸'))
+    expect(formatMoney('10.00', 'UZS')).toBe(nb('10 UZS'))
     expect(formatNumber('92300.00')).toBe(nb('92 300'))
     expect(formatMoney('0.00', 'KZT')).not.toContain(' ')
+    expect(currencyName('USD')).toBe('Доллары')
+    expect(currencyName('UZS')).toBe('UZS')
   })
 })
 
@@ -102,12 +106,23 @@ describe('colours, avatars and recent spends', () => {
   })
   it('describes a recent spend', () => {
     const [photo, manual] = dashboardFixture().recent
-    expect(recentMeta(photo)).toBe(`liza · ${nb('12 октября')} · ${nb('23 позиции')}`)
-    expect(recentMeta(manual)).toBe(`andrey · ${nb('11 октября')} · вручную`)
-    expect(recentMeta({ ...photo, owner_name: 'Лиза' })).toBe(`Лиза · ${nb('12 октября')} · ${nb('23 позиции')}`)
+    const later = '2026-10-20'
+    expect(recentMeta(photo, later)).toBe(`liza · ${nb('12 октября')} · ${nb('23 позиции')}`)
+    expect(recentMeta(manual, later)).toBe(`andrey · ${nb('11 октября')} · вручную`)
+    expect(recentMeta({ ...photo, owner_name: 'Лиза' }, later)).toBe(`Лиза · ${nb('12 октября')} · ${nb('23 позиции')}`)
+    // «сегодня» and «вчера» by the date of the device, as in the artifact.
+    expect(recentMeta(photo, '2026-10-12')).toBe(`liza · сегодня · ${nb('23 позиции')}`)
+    expect(recentMeta(manual, '2026-10-12')).toBe('andrey · вчера · вручную')
     expect(recentMeta({ ...photo, owner_name: '' })).toContain('liza · ')
     expect(recentMeta({ ...photo, lines_count: 1 })).toContain(nb('1 позиция'))
     expect(recentMeta({ ...photo, lines_count: 11 })).toContain(nb('11 позиций'))
+    expect(relativeDay('2026-12-31', '2027-01-01')).toBe('вчера')
+    expect(relativeDay('2026-02-28', '2026-03-01')).toBe('вчера')
+    expect(relativeDay('2026-02-27', '2026-03-01')).toBe(nb('27 февраля'))
+    expect(deviceDate(new Date(2026, 9, 3))).toBe('2026-10-03')
+    expect(hasLimit({ category_id: 1, name: 'Жильё', spent: '1.00', limit: null, limit_id: null, children: [
+      { category_id: 2, name: 'Аренда', spent: '1.00', limit: '5.00', limit_id: 3, children: [] }] })).toBe(true)
+    expect(hasLimit({ category_id: 1, name: 'Жильё', spent: '1.00', limit: null, limit_id: null })).toBe(false)
     expect(badgeLetter('продукты', 'Magnum')).toBe('П')
     expect(badgeLetter(null, 'magnum')).toBe('M')
     expect(badgeLetter(null, '')).toBe('•')

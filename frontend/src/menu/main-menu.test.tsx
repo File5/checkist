@@ -12,7 +12,10 @@ const local: Session = { kind: 'user', mode: 'local_single', user: { id: 1, user
 const catalog: Route = { kind: 'catalog', query: { page: 1 } }
 const health: Route = { kind: 'health' }
 
-const render = (session: Session, route: Route) => renderToStaticMarkup(<MainMenu session={session} route={route} menuRef={{ current: null }} />)
+const raw = (session: Session, route: Route) => renderToStaticMarkup(<MainMenu session={session} route={route} menuRef={{ current: null }} />)
+/** The pictures (components/Icon) are checked once below; the other expectations read the words. */
+const noIcons = (html: string) => html.replace(/<svg\b.*?<\/svg>/g, '')
+const render = (session: Session, route: Route) => noIcons(raw(session, route))
 const links = (html: string) => [...html.matchAll(/<a\b[^>]*>([^<]*)<\/a>/g)].map((match) => match[1])
 const button = (html: string) => html.match(/<button\b[^>]*>[^<]*<\/button>/g) ?? []
 
@@ -39,14 +42,24 @@ describe('markup of the main menu (SSR only: the bar, touches and keys are check
     // Closed buttons that name what they open: «Ещё» a list, «＋» a sheet (a dialog, components/Sheet) not drawn while closed.
     expect(html).toContain('<button type="button" class="main-more-toggle" aria-expanded="false" aria-controls="main-more-list">Ещё</button>')
     expect(html).toContain('<button type="button" class="main-add-toggle" aria-haspopup="dialog" aria-expanded="false" aria-label="Добавить: снять чек, выбрать из галереи или добавить трату">')
-    const list = html.split('<div class="main-more-list" id="main-more-list">')[1].split('</div>')[0]
+    const list = html.split('<div class="main-more-list" id="main-more-list">')[1].split('<div class="main-more-theme">')[0]
     expect(links(list)).toEqual(more)
+    // The header of a phone is gone: its theme switch is the last row of the list (hidden on wider screens).
+    expect(html).toContain('<div class="main-more-theme"><button type="button" class="ck-theme-toggle ck-theme-toggle-menu"')
     expect(html.match(/id="main-more-list"/g)).toHaveLength(1)
     expect(html).not.toMatch(/role="(dialog|menu)"|aria-modal/)
     expect(html.match(/aria-haspopup/g)).toHaveLength(1)
     expect(html).not.toMatch(/<img/)
-    // The only picture is the «＋» of the round button, hidden from the screen reader.
-    expect(html.match(/<svg[^>]*>/g)).toEqual(['<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false">'])
+  })
+
+  it('draws a picture over each word of the bar and before each row of «Ещё», hidden from the screen reader', () => {
+    const html = raw(reader, catalog)
+    const pictures = html.match(/<svg\b[^>]*>/g) ?? []
+    // Six links of «Ещё», three of the bar, «Ещё» itself and «＋» (26 px); the theme switch keeps its own picture.
+    expect(pictures.filter((tag) => tag.includes('class="ck-icon"'))).toHaveLength(3 + 6 + 1 + 1)
+    for (const tag of pictures) expect(tag).toContain('aria-hidden="true"')
+    expect(html).toMatch(/<a href="\/"><svg class="ck-icon" viewBox="0 0 24 24" width="22" height="22"[^>]*>.*?<\/svg>Главная<\/a>/)
+    expect(html).toMatch(/<button type="button" class="main-add-toggle"[^>]*><svg class="ck-icon" viewBox="0 0 24 24" width="26" height="26"/)
   })
 
   it('offers three actions: «Снять чек» and «Из галереи» with their fields outside of the sheet, and «Добавить трату»', () => {
@@ -56,9 +69,10 @@ describe('markup of the main menu (SSR only: the bar, touches and keys are check
     expect(add).not.toContain('main-add-list')
     const source = readFileSync(new URL('./MainMenu.tsx', import.meta.url), 'utf8')
     expect(source).toContain('<Sheet open={open} onClose={close} title="Добавить" id={ADD_SHEET_ID}>')
-    expect(source).toContain('<button type="button" className="main-add-action" onClick={choose(shot.open)}>Снять чек</button>')
-    expect(source).toContain('<button type="button" className="main-add-action ck-button-secondary" onClick={choose(gallery.open)}>Из галереи</button>')
-    expect(source).toContain('<Link className="main-add-action" to="/receipts/new" onClick={close}>Добавить трату</Link>')
+    // Big rows: a picture, the action and a line about it; «Снять чек» is the main one.
+    expect(source).toContain(`<button type="button" className="main-add-action main-add-primary" onClick={choose(shot.open)}>{body('camera', 'Снять чек', `)
+    expect(source).toContain(`<button type="button" className="main-add-action" onClick={choose(gallery.open)}>{body('image', 'Из галереи', `)
+    expect(source).toContain(`<Link className="main-add-action" to="/receipts/new" onClick={close}>{body('pencil', 'Добавить трату', `)
     // The fields stay mounted when the sheet closes: iOS opens the camera or the picker only from the press itself.
     // The gallery has no capture, so iOS offers the photo library and Files; a PDF bill is accepted too.
     expect(source.indexOf('</Sheet>')).toBeLessThan(source.indexOf('{shot.field}'))

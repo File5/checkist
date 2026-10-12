@@ -17,7 +17,8 @@ const csrf = () => { const value = publicFixture('csrf.json'); if (!isRecognitio
 const render = (state?: RequestState<unknown>) => { mocked.states = state ? [state] : []; return renderToStaticMarkup(<UploadPage />) }
 const ready = () => render({ kind: 'ok', data: csrf(), refreshing: false })
 const tags = (html: string, name: string) => html.match(new RegExp(`<${name}\\b[^>]*>`, 'g')) ?? []
-const button = (html: string, label: string) => new RegExp(`<button\\b[^>]*>${label}</button>`).exec(html)?.[0] ?? ''
+/** A big picking button: its picture, then its words. */
+const big = (html: string, label: string) => new RegExp(`<button\\b[^>]*><svg(?:(?!</button>)[\\s\\S])*</svg>${label}</button>`).exec(html)?.[0] ?? ''
 
 describe('upload screen markup (SSR)', () => {
   it('lists PDF among the formats and says how many pages it may have', () => {
@@ -43,47 +44,58 @@ describe('upload screen markup (SSR)', () => {
       expect(field).not.toMatch(/\sdisabled/)
     }
   })
-  it('offers «Снять чек», «Из галереи» and «Выбрать файл» as ordinary buttons of one group, described by the cloud warning', () => {
+  it('offers «Снять чек», «Из галереи» and «Выбрать файл» as big buttons of one group, described by the cloud warning', () => {
     const html = ready()
     const group = /<div class="ck-rec-actions ck-upload-pick" role="group" aria-label="Выбор фото">([\s\S]*?)<\/div>/.exec(html)?.[1] ?? ''
     expect(tags(group, 'button')).toHaveLength(3)
-    const camera = button(group, 'Снять чек'); const gallery = button(group, 'Из галереи'); const file = button(group, 'Выбрать файл')
-    expect(camera).toContain('class="ck-upload-camera"'); expect(gallery).toContain('class="ck-upload-gallery ck-upload-secondary"'); expect(file).toContain('class="ck-upload-secondary"')
+    const camera = big(group, 'Снять чек'); const gallery = big(group, 'Из галереи'); const file = big(group, 'Выбрать файл')
+    // Without a photo «Снять чек» is the main action, filled; the other two are outlines.
+    expect(camera).toContain('class="ck-upload-camera ck-upload-big"'); expect(gallery).toContain('class="ck-upload-gallery ck-upload-big ck-upload-secondary"')
+    expect(file).toContain('class="ck-upload-file-button ck-upload-big ck-upload-secondary"')
     for (const item of [camera, gallery, file]) {
       expect(item).toContain('type="button"'); expect(item).toContain('aria-describedby="recognition-cloud-warning"'); expect(item).not.toContain('disabled')
     }
-    expect(html).toContain('id="recognition-cloud-warning"')
+    // The pictures are decoration: the words name the buttons.
+    expect(group.match(/<svg class="ck-upload-icon"[^>]*aria-hidden="true"/g)).toHaveLength(3)
+    expect(html).toContain('<p id="recognition-cloud-warning" class="ck-upload-cloud">')
     expect(html).not.toContain('id="recognition-pick-wait"')
   })
   it.each([
     ['loading', undefined, uploadLabels.conditionsLoading],
     ['failed', { kind: 'error', error: { kind: 'error', reason: 'network' } } as RequestState<unknown>, uploadLabels.conditionsFailed],
-  ])('disables both picking buttons and both fields while the conditions are %s, and says why', (_name, state, note) => {
+  ])('disables the three picking buttons and their fields while the conditions are %s, and says why', (_name, state, note) => {
     const html = render(state)
     for (const label of ['Снять чек', 'Из галереи', 'Выбрать файл']) {
-      const item = button(html, label)
+      const item = big(html, label)
       expect(item).toContain('disabled=""'); expect(item).toContain('aria-describedby="recognition-cloud-warning recognition-pick-wait"')
     }
     // The gallery field of useQuickShot has no `disabled`: its button is the one that waits.
     for (const field of tags(html, 'input').filter((tag) => !tag.includes('ck-quick-shot-input'))) expect(field).toContain('disabled=""')
     expect(html).toContain(`<p id="recognition-pick-wait" class="ck-rec-note">${note}</p>`)
-    expect(button(html, 'Загрузить фото')).toContain('disabled=""')
+    expect(html).not.toContain('Загрузить фото')
   })
-  it('puts the form above the conditions and wraps the main action into the pinned bar', () => {
+  it('puts the form above the conditions and leaves sending to a chosen photo', () => {
     const html = ready()
     expect(html.indexOf('id="recognition-file-title"')).toBeGreaterThan(-1)
     expect(html.indexOf('id="recognition-file-title"')).toBeLessThan(html.indexOf('id="recognition-limits-title"'))
-    const bar = /<div class="ck-rec-actions ck-action-bar">([\s\S]*?)<\/div>/.exec(html)?.[1] ?? ''
-    // Only buttons in the bar; without a photo there is nothing to send or to stop.
-    expect(bar).toBe('<button type="submit" disabled="">Загрузить фото</button>')
+    expect(html).toContain('<h2 id="recognition-file-title" tabindex="-1" data-request-focus-target="true">Фото чека</h2>')
+    expect(html).toContain('<p class="ck-upload-lead">Одно фото — один или несколько чеков; PDF — до 3\u00a0страниц.</p>')
+    // Without a photo there is nothing to send or to stop: no pinned bar at all.
+    expect(html).not.toContain('ck-action-bar'); expect(html).not.toContain('type="submit"')
     expect(html).not.toContain('Отменить отправку'); expect(html).not.toContain('<progress')
     expect(html).toContain('<div role="status" aria-live="polite" class="ck-upload-stage"></div>')
   })
-  it('puts the stage above its bar and the picking buttons low, right above the main action', () => {
+  it('puts the stage above the picking buttons and the cloud warning under them', () => {
     const html = ready()
-    const order = ['class="ck-upload-stage"', 'aria-label="Выбор фото"', 'id="recognition-cloud-warning"', 'class="ck-rec-actions ck-action-bar"'].map((part) => html.indexOf(part))
+    const order = ['class="ck-upload-stage"', 'aria-label="Выбор фото"', 'id="recognition-cloud-warning"'].map((part) => html.indexOf(part))
     for (const index of order) expect(index).toBeGreaterThan(-1)
     expect([...order].sort((a, b) => a - b)).toEqual(order)
+  })
+  it('leads to the processing and the spends from a list card at the end', () => {
+    const html = ready()
+    expect(html).toMatch(/<nav class="ck-upload-links" aria-label="Обработка и траты"><a href="\/recognition\/jobs">Обработка фото<svg[^>]*aria-hidden="true"/)
+    expect(html).toContain('<a href="/receipts">Все траты<svg')
+    expect(html.indexOf('ck-upload-links')).toBeGreaterThan(html.indexOf('id="recognition-limits-title"'))
   })
   it('keeps the conditions open on a wide screen: the disclosure belongs to a phone only', () => {
     const html = ready()

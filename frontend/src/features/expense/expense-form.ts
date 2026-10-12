@@ -23,7 +23,7 @@ export const NOTE_MAX = 1000
 export const NAME_MAX = 200
 export const LINES_MAX = 100
 /** How many chips are in sight before «Все категории». */
-export const CHIPS_SHOWN = 8
+export const CHIPS_SHOWN = 6
 const UNASSIGNED = 'Не разобрано'
 
 export const messages = {
@@ -181,12 +181,27 @@ export function chipLabel(category: Category): string {
   return names.slice(-2).join(' › ')
 }
 
+/** The parent named by a chip of a nested category, «Еда» of «Еда › Кафе»: the chip shows «Кафе» with the dot of the
+ * family colour, the parent is said to a screen reader and in the tooltip. `undefined` for a root category. */
+export function chipParent(category: Category): string | undefined {
+  const [parent] = chipLabel(category).split(' › ').slice(-2, -1)
+  return parent
+}
+
 /** The chips in sight: the first `CHIPS_SHOWN`, and the chosen one even when it lies further. */
 export function visibleChips(chips: Category[], selected: number | null, expanded: boolean): Category[] {
   if (expanded) return chips
   const shown = chips.slice(0, CHIPS_SHOWN)
   const chosen = chips.find((category) => category.id === selected)
   return chosen && !shown.includes(chosen) ? [...shown, chosen] : shown
+}
+
+/** The sum of positions in the read-only amount: «21 780» for "21780.00", «350,50» for "350.50" — exact, as a person
+ * would write it (the field is not a shown money amount and is not rounded). */
+export function sumText(value: string): string {
+  const [whole, fraction] = amountText(value).split('.')
+  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0')
+  return fraction === undefined ? grouped : `${grouped},${fraction}`
 }
 
 /** «Сохранить · 4 501 KZT»: the amount that will be saved, rounded up to whole units like every amount on screen
@@ -208,6 +223,19 @@ export function dayBefore(day: string): string {
 export function dateChoice(date: string, today: string): 'today' | 'yesterday' | 'other' {
   if (date === today) return 'today'
   return date === dayBefore(today) ? 'yesterday' : 'other'
+}
+
+/** «12.09» for a day of the current year, «12.09.25» otherwise: the date chip of the calendar, short enough for the
+ * row «Когда» of a phone. The full date stays in the field itself and in `<time dateTime>`. */
+export function shortDay(day: string, today: string): string {
+  const [year, month, date] = day.split('-')
+  if (!year || !month || !date) return day
+  return year === today.slice(0, 4) ? `${date}.${month}` : `${date}.${month}.${year.slice(2)}`
+}
+
+/** The colour of a chip (`--ck-cat-N`): the colour of its root category, the same family colour on every screen. */
+export function chipToneId(category: Category): number {
+  return category.path[0]?.id ?? category.id
 }
 
 /** Names from the root to the category itself. */

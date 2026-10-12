@@ -163,7 +163,7 @@ const accountsSession = () => { const session = getSession(); return session.kin
 /** Local wording only: the server's message never reaches the screen. */
 export function failureMessage(failure: StatsFailure): string {
   switch (statsFailureKind(failure)) {
-    case 'invalid_parameter': return 'Сервер не принял параметры запроса. Исправьте отмеченные поля в форме выше или сбросьте фильтры.'
+    case 'invalid_parameter': return 'Сервер не принял параметры запроса. Исправьте отмеченные поля в фильтрах или сбросьте их.'
     case 'range_too_large': return 'Слишком много интервалов для одного графика: уменьшите период или укрупните интервал.'
     case 'permission_denied': return accountsSession() ? permissionDeniedText(getSession())
       : 'Статистика чеков доступна только в локальном режиме сервера, сейчас он выключен. Включите его в настройках сервера (DEBUG и ALLOW_LOCAL_RECOGNITION_API=1) и откройте приложение на этом же компьютере; без этого повтор не поможет.'

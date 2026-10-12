@@ -15,8 +15,8 @@ const data: ExportPreview = {
 const noop = () => {}
 const props = (patch: Partial<ExportViewProps> = {}): ExportViewProps => ({
   query: {}, today: '2026-10-12', preview: { kind: 'ok', data }, people: data.people, categories: [{ id: 3, name: 'Молочное', depth: 1, path: 'Продукты / Молочное' }],
-  storeNames: new Map([[12, 'Magnum']]), storeSearch: '', storeResults: [], categoriesOpen: false, categorySearch: '',
-  onChange: noop, onStoreSearch: noop, onRememberStore: noop, onCategoriesOpen: noop, onCategorySearch: noop, ...patch,
+  storeNames: new Map([[12, 'Magnum']]), storeSearch: '', storeResults: [], categoriesOpen: false, storesOpen: false, categorySearch: '',
+  onChange: noop, onStoreSearch: noop, onRememberStore: noop, onCategoriesOpen: noop, onStoresOpen: noop, onCategorySearch: noop, ...patch,
 })
 const render = (patch: Partial<ExportViewProps> = {}) => renderToStaticMarkup(<ExportView {...props(patch)} />)
 
@@ -55,6 +55,24 @@ describe('«Выгрузка» markup (Vitest/SSR, not browser visual acceptance
     expect(html).toContain('aria-label="Убрать: Магазин №40"')
   })
 
+  it('puts categories, stores and the currency into rows with their value on the right', () => {
+    const html = render({ query: { category: [3], store: [12, 40] } })
+    expect(html).toMatch(/<button type="button" class="export-row" aria-haspopup="dialog" aria-expanded="false"><span class="export-row-label"[^>]*>Категории<\/span><span class="export-row-value">Продукты \/ Молочное<\/span>/)
+    expect(html).toMatch(/<span class="export-row-label"[^>]*>Магазины<\/span><span class="export-row-value">Выбрано: 2<\/span>/)
+    expect(render()).toMatch(/<span class="export-row-label"[^>]*>Магазины<\/span><span class="export-row-value">Все<\/span>/)
+    expect(html).toMatch(/<label class="export-row"><span class="export-row-label">Валюта<\/span><select>/)
+    // Chips wrap into rows instead of a sideways scroll.
+    expect(html).toContain('<div class="export-chips" role="group" aria-label="Период">')
+    expect(html).not.toContain('ck-chip-scroller')
+  })
+
+  it('opens the store search in a sheet', () => {
+    const html = render({ storesOpen: true, storeSearch: 'mag', storeResults: [{ id: 12, name: 'Magnum', city: 'Алматы', address: '', country: 'KZ', timezone: 'Asia/Almaty', receipts_count: 3 }] })
+    expect(html).toContain('role="dialog"')
+    expect(html).toContain('<ul class="export-results" aria-label="Найденные магазины">')
+    expect(render({ storesOpen: true })).toContain('Наберите хотя бы две буквы названия.')
+  })
+
   it('opens the category tree in a sheet with a search', () => {
     const html = render({ categoriesOpen: true })
     expect(html).toContain('role="dialog"')
@@ -73,7 +91,7 @@ describe('«Выгрузка» markup (Vitest/SSR, not browser visual acceptance
     expect(html).toContain('<p class="export-preview" aria-live="polite"><span>Будет выгружено: </span><span class="ck-figures">2 чека</span>')
     expect(html).toContain('<span class="ck-figures">5 790 ₸</span>')
     expect(html).toContain('<div class="export-actions ck-action-bar">')
-    expect(html).toContain('href="/api/export/?from=2026-10-01&amp;to=2026-10-31&amp;include=receipts%2Clines%2Ccategories%2Cstores%2Climits%2Csummary&amp;download=1" download="">Скачать JSON</a>')
+    expect(html).toContain('href="/api/export/?from=2026-10-01&amp;to=2026-10-31&amp;include=receipts%2Clines%2Ccategories%2Cstores%2Climits%2Csummary&amp;download=1" download=""><svg class="export-icon"')
     expect(html).toContain('target="_blank" rel="noopener">Открыть</a>')
   })
 
@@ -93,8 +111,9 @@ describe('«Выгрузка» styles', () => {
 
   it('uses tokens only and keeps touch targets', () => {
     expect(css).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/i)
-    expect(css).toMatch(/\.export-check \{[^}]*min-height: 44px/)
-    expect(css).toMatch(/a\.export-download \{[^}]*min-height: 52px/)
+    expect(css).toMatch(/\.export-check \{[^}]*min-height: 48px/)
+    expect(css).toMatch(/\.export-row \{[^}]*min-height: 56px/)
+    expect(css).toMatch(/a\.export-download \{[^}]*min-height: 56px[^}]*background: var\(--ck-primary\); color: var\(--ck-on-primary\)/)
     for (const size of css.match(/font-size: [^;]+/g) ?? []) expect(size).toMatch(/var\(--ck-text-/)
   })
 })
@@ -103,7 +122,7 @@ describe('the way to «Выгрузка» from the account page', () => {
   it('links /export', () => {
     const html = renderToStaticMarkup(<AccountView username="andrey" password={{ kind: 'idle' }} values={{ current_password: '', new_password: '', repeat: '' }}
       onChange={noop} onPassword={noop} signOut={{ kind: 'idle' }} onSignOut={noop} />)
-    expect(html).toContain('<h2 id="account-export-heading">Выгрузка данных</h2>')
-    expect(html).toMatch(/<a [^>]*href="\/export"[^>]*>Выгрузить в JSON<\/a>/)
+    expect(html).toMatch(/<a [^>]*href="\/export"[^>]*><span class="ck-auth-row-text"><span class="ck-auth-row-label">Выгрузка в JSON<\/span>/)
+    expect(html).toMatch(/<a [^>]*href="\/family"[^>]*><span class="ck-auth-row-text"><span class="ck-auth-row-label">Семья<\/span>/)
   })
 })

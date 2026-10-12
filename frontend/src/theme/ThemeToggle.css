@@ -19,6 +19,11 @@
 .ck-theme-toggle.ck-theme-toggle-header:focus-visible { outline-color: var(--ck-header-focus); }
 .ck-theme-toggle-header .ck-theme-icon { fill: var(--ck-header-accent); }
 
+/* A row of the list behind «Ещё» of a phone: the width of the list, a picture and the words, no frame. */
+.ck-theme-toggle.ck-theme-toggle-menu { justify-content: flex-start; gap: 14px; width: 100%; min-height: 52px; padding: 4px 8px; border: 0; border-radius: var(--ck-radius-sm); background: none; color: var(--ck-text); font-weight: 600; }
+.ck-theme-toggle.ck-theme-toggle-menu:hover:not(:disabled) { background: var(--ck-surface-raised); }
+.ck-theme-toggle-menu .ck-theme-icon { flex-basis: 22px; width: 22px; height: 22px; fill: var(--ck-text-muted); }
+
 @media (forced-colors: active) {
   .ck-theme-toggle, .ck-theme-toggle.ck-theme-toggle-header { border-color: ButtonText; background: ButtonFace; color: ButtonText; }
   .ck-theme-toggle:focus-visible, .ck-theme-toggle.ck-theme-toggle-header:focus-visible { outline-color: Highlight; }

@@ -40,7 +40,7 @@ describe('comparison block (Vitest/SSR, not browser acceptance)', () => {
     const markup = compare(loaded('compare-2020-2026.json'))
     const eur = markup.split('<article')[1]
     expect(eur).toContain('<h4 id="')
-    expect(eur).toContain('>EUR</h4>')
+    expect(eur).toContain('>Чеки в €</h4>')
     expect(eur).toContain('<div class="stats-verdict" data-kind="grew">')
     expect(eur).toContain('Средний чек вырос на 19 € (+69,27 %): с 28 € до 46 €.')
     expect(eur).toContain('Главная причина: стал покупать больше позиций за поход — +9 €, 46,23 % изменения.')
@@ -112,7 +112,7 @@ describe('comparison block (Vitest/SSR, not browser acceptance)', () => {
     const markup = compare(loaded('compare-2020-2026.json'))
     expect(markup.match(/<article class="stats-currency"/g)).toHaveLength(2)
     expect(markup).toContain('Валюты не складываются и не пересчитываются')
-    expect(markup).toContain('>KZT</h4>')
+    expect(markup).toContain('>Чеки в ₸</h4>')
     expect(markup).toContain('Средний чек вырос на 4 425 ₸ (+144,88 %)')
     expect(compare(loaded('compare-no-matched-products.json'))).not.toContain('Валюты не складываются')
   })
@@ -158,12 +158,12 @@ describe('comparison block (Vitest/SSR, not browser acceptance)', () => {
   it('invites to choose periods before anything is asked', () => {
     const markup = compare({ kind: 'idle' }, {})
     expect(markup).toContain('request-state-empty')
-    expect(markup).toContain('Выберите базовый и текущий периоды')
+    expect(markup).toContain('Выберите готовую пару периодов или свои периоды в фильтрах')
     expect(markup).not.toMatch(/<table|<button/)
   })
   it('explains an incomplete or overlapping address without a repeat button', () => {
     const missing = compare({ kind: 'invalid', errors: { base_to: filterMessages.required, current_to: filterMessages.required } }, { base_from: '2020-01-01' })
-    expect(missing).toContain(`Сравнение не построено. ${filterMessages.required} Исправьте отмеченные поля в форме выше.`)
+    expect(missing).toContain(`Сравнение не построено. ${filterMessages.required} Исправьте отмеченные поля в фильтрах.`)
     expect(compare({ kind: 'invalid', errors: { current_from: filterMessages.overlap } })).toContain(filterMessages.overlap)
     expect(missing).not.toContain('<button')
   })
@@ -188,7 +188,7 @@ describe('comparison block (Vitest/SSR, not browser acceptance)', () => {
   })
   it('sends a server refusal of parameters back to the form instead of a repeat', () => {
     const markup = compare(failure('invalid_parameter', ['store']), { ...periods, store: [99], interval: 'year' })
-    expect(markup).toContain('Сервер не принял параметры запроса. Исправьте отмеченные поля в форме выше или сбросьте фильтры.')
+    expect(markup).toContain('Сервер не принял параметры запроса. Исправьте отмеченные поля в фильтрах или сбросьте их.')
     expect(markup).not.toContain('<button')
     expect(markup).toContain('<a class="action-link" href="/stats/receipts?interval=year">Сбросить периоды и фильтры</a>')
   })
@@ -236,8 +236,8 @@ describe('chart block (Vitest/SSR, not browser acceptance)', () => {
     const nav = markup.split('aria-label="Интервал графика">')[1].split('</nav>')[0]
     const base = '/stats/receipts?base_from=2020-01-01&amp;base_to=2020-12-31&amp;current_from=2026-01-01&amp;current_to=2026-09-30&amp;currency=EUR'
     expect(nav.match(/<a [^>]*>[^<]*/g)).toEqual([
-      `<a class="stats-chip" href="${base}">Месяц`, `<a class="stats-chip" aria-current="true" href="${base}&amp;interval=quarter">Квартал`,
-      `<a class="stats-chip" href="${base}&amp;interval=year">Год`,
+      `<a class="ck-chip" href="${base}">Месяц`, `<a class="ck-chip" aria-current="true" href="${base}&amp;interval=quarter">Квартал`,
+      `<a class="ck-chip" href="${base}&amp;interval=year">Год`,
     ])
     expect(markup).toContain('Загружаем походы по времени…')
     expect(markup).toContain('Охват графика: с <time dateTime="2020-01-01">01.01.2020</time> по <time dateTime="2026-09-30">30.09.2026</time> — от начала базового периода до конца текущего.')
@@ -301,9 +301,9 @@ describe('form of periods and filters (Vitest/SSR, not browser acceptance)', () 
     const markup = form({ currency: 'EUR', base_from: '2025-01-01', base_to: '2025-12-31', current_from: '2026-01-01', current_to: '2026-10-07' })
     const nav = markup.split('aria-label="Готовые пары периодов">')[1].split('</nav>')[0]
     expect(nav.match(/<a [^>]*>[^<]*/g)).toEqual([
-      '<a class="stats-chip" href="/stats/receipts?base_from=2020-01-01&amp;base_to=2020-12-31&amp;current_from=2026-01-01&amp;current_to=2026-10-07&amp;currency=EUR">2020 против этого года (2026)',
-      '<a class="stats-chip" aria-current="true" href="/stats/receipts?base_from=2025-01-01&amp;base_to=2025-12-31&amp;current_from=2026-01-01&amp;current_to=2026-10-07&amp;currency=EUR">Прошлый год против этого (2025 и 2026)',
-      '<a class="stats-chip" href="/stats/receipts?base_from=2024-01-01&amp;base_to=2024-12-31&amp;current_from=2025-01-01&amp;current_to=2025-12-31&amp;currency=EUR">2024 против 2025 (два полных года)',
+      '<a class="ck-chip" href="/stats/receipts?base_from=2020-01-01&amp;base_to=2020-12-31&amp;current_from=2026-01-01&amp;current_to=2026-10-07&amp;currency=EUR">2020 против этого года (2026)',
+      '<a class="ck-chip" aria-current="true" href="/stats/receipts?base_from=2025-01-01&amp;base_to=2025-12-31&amp;current_from=2026-01-01&amp;current_to=2026-10-07&amp;currency=EUR">Прошлый год против этого (2025 и 2026)',
+      '<a class="ck-chip" href="/stats/receipts?base_from=2024-01-01&amp;base_to=2024-12-31&amp;current_from=2025-01-01&amp;current_to=2025-12-31&amp;currency=EUR">2024 против 2025 (два полных года)',
     ])
   })
   it('marks wrong fields and ties each message to its field', () => {
@@ -346,7 +346,7 @@ describe('screen before any answer arrives (Vitest/SSR, not browser acceptance)'
     const markup = page({})
     expect(markup).toContain('<section class="stats-receipts" aria-labelledby="stats-receipts-heading"><h2 id="stats-receipts-heading">Почему изменился средний чек</h2>')
     expect(markup.match(/<h3\b[^>]*>[^<]*/g)?.map((heading) => heading.split('>')[1])).toEqual(['Периоды и фильтры', 'Что изменилось между периодами', 'Средний чек по времени'])
-    expect(markup).toContain('Выберите базовый и текущий периоды')
+    expect(markup).toContain('Выберите готовую пару периодов или свои периоды в фильтрах')
     expect(markup).toContain('Загружаем походы по времени…')
     expect(markup).not.toContain('Считаем сравнение периодов…')
     expect(markup).not.toMatch(/Раздел в разработке|<table|<svg|\d+,\d{2} [A-Z]{3}/)

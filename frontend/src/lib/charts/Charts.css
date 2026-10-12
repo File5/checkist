@@ -37,7 +37,7 @@
 .ck-chart-muted { --ck-c: var(--ck-chart-special); }
 .ck-chart-hatch { fill: var(--ck-chart-surface); opacity: 0.55; }
 .ck-chart-empty { color: var(--ck-chart-muted); }
-.ck-chart-note { color: var(--ck-chart-muted); font-size: 0.85rem; }
+.ck-chart-note { color: var(--ck-chart-muted); font-size: var(--ck-text-xs); }
 /* A value is never torn: a sum, a share and a date keep one line at every width. Free text around them wraps. */
 .ck-chart-number { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ck-chart-whole { white-space: nowrap; }
@@ -46,7 +46,7 @@
 .ck-chart th, .ck-chart td { padding: 8px 10px; border-bottom: 1px solid var(--ck-chart-grid); vertical-align: top; }
 /* `break-word`, unlike the inherited `anywhere`, keeps a whole word in the least width of a column: a heading above
    a narrow number column wraps between words, not between letters. */
-.ck-chart thead th { color: var(--ck-chart-muted); font-size: 0.85rem; font-weight: 600; text-align: left; vertical-align: bottom; overflow-wrap: break-word; }
+.ck-chart thead th { color: var(--ck-chart-muted); font-size: var(--ck-text-xs); font-weight: 600; text-align: left; vertical-align: bottom; overflow-wrap: break-word; }
 .ck-chart thead th.ck-chart-number { text-align: right; white-space: normal; }
 .ck-chart tbody th { font-weight: 400; text-align: left; }
 .ck-chart svg text { fill: var(--ck-chart-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
@@ -54,6 +54,8 @@
 .ck-chart-axis line { stroke: var(--ck-chart-axis); stroke-width: 1; }
 
 /* Pie */
+/* The ring and its legend side by side where both fit 340px, one under the other on a phone; no width query. */
+.ck-pie { grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); align-items: start; column-gap: 32px; }
 /* The viewBox is as wide as the figure (PieChart measures it), so the drawing is shown one to one and its text
    stays 12px; `--ck-pie-hole` is the diameter of the hole of the ring in the same pixels. */
 .ck-pie-figure { position: relative; width: 100%; max-width: 380px; margin-inline: auto; }
@@ -68,7 +70,7 @@
 .ck-pie-center {
   position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
   display: grid; justify-items: center; width: calc(var(--ck-pie-hole, 92px) - 4px); pointer-events: none;
-  font-size: 0.8rem; line-height: 1.25; text-align: center; overflow-wrap: anywhere; white-space: nowrap;
+  font-size: var(--ck-text-xs); line-height: 1.25; text-align: center; overflow-wrap: anywhere; white-space: nowrap;
 }
 .ck-pie-center-label { color: var(--ck-chart-muted); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; white-space: normal; }
 /* Never wider than the hole: PieChart compares the text with this box and takes a sum that does not fit out of
@@ -77,14 +79,25 @@
 .ck-pie-center-value[data-fits="false"] { height: 0; visibility: hidden; }
 .ck-pie-legend-scroll { overflow-x: auto; max-width: 100%; }
 .ck-pie-legend-scroll:focus-visible { outline: 3px solid var(--ck-chart-focus); outline-offset: 2px; }
-.ck-pie-legend tbody th { min-width: 160px; }
+/* The legend reads as the rows of a list (artifact 2026-10-13): a dot, the name in bold with its note and a thin bar of
+   its share under it, the sum in bold on the right and the share beside it, quiet; a divider between the rows. */
+.ck-chart .ck-pie-legend th, .ck-chart .ck-pie-legend td { padding: 12px 8px; border-bottom-color: var(--ck-divider); }
+.ck-chart .ck-pie-legend th:first-child, .ck-chart .ck-pie-legend td:first-child { padding-left: 0; }
+.ck-chart .ck-pie-legend th:last-child, .ck-chart .ck-pie-legend td:last-child { padding-right: 0; }
+.ck-chart .ck-pie-legend tbody tr:last-child > * { border-bottom: 0; }
+.ck-pie-legend tbody th { min-width: 160px; font-size: var(--ck-text-sm); }
+.ck-pie-legend tbody td { font-size: var(--ck-text-sm); font-weight: 700; }
+.ck-pie-legend tbody td:last-child { color: var(--ck-chart-muted); font-size: var(--ck-text-xs); font-weight: 600; }
 .ck-pie-legend tbody tr { transition: background-color 0.12s; }
 .ck-pie-legend tbody tr[data-state="active"] { background: var(--ck-chart-highlight); }
 .ck-pie-legend a { text-underline-offset: 3px; }
 .ck-pie-legend a:focus-visible { outline: 3px solid var(--ck-chart-focus); outline-offset: 2px; }
 .ck-pie-name { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
-.ck-pie-name-text { display: grid; gap: 2px; min-width: 0; }
-.ck-pie-swatch { flex: 0 0 14px; width: 14px; height: 14px; margin-top: 5px; border-radius: 3px; background: var(--ck-c); }
+.ck-pie-name-text { display: grid; gap: 2px; flex: 1 1 auto; min-width: 0; }
+.ck-pie-swatch { flex: 0 0 10px; width: 10px; height: 10px; margin-top: 7px; border-radius: 50%; background: var(--ck-c); }
+/* The share of the item as a thin bar in its own colour on the track of the theme; decoration, the number is beside it. */
+.ck-pie-bar { display: block; height: 6px; margin-top: 4px; overflow: hidden; border-radius: 3px; background: var(--ck-track); }
+.ck-pie-bar > span { display: block; height: 100%; border-radius: inherit; background: var(--ck-c); }
 .ck-pie-swatch[data-hatched] { background: repeating-linear-gradient(45deg, var(--ck-c) 0 3px, color-mix(in srgb, var(--ck-c) 45%, var(--ck-chart-surface)) 3px 5px); }
 .ck-pie-swatch-none { background: none; border: 1px dashed var(--ck-chart-muted); }
 /* Rows of the parts of a legend item (PieChartItem.children): indented under its name, with its swatch.
@@ -101,12 +114,12 @@
 
 /* Line */
 .ck-line-legend { display: flex; flex-wrap: wrap; gap: 4px 18px; min-width: 0; margin: 0; padding: 0; border: 0; }
-.ck-line-legend legend { padding: 0; color: var(--ck-chart-muted); font-size: 0.85rem; }
+.ck-line-legend legend { padding: 0; color: var(--ck-chart-muted); font-size: var(--ck-text-xs); }
 .ck-line-legend-item { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; min-width: 0; cursor: pointer; }
 .ck-line-legend-item input { flex: 0 0 auto; width: 18px; height: 18px; min-height: 0; margin: 0; accent-color: var(--ck-brand); }
 .ck-line-legend-item input:not(:checked) ~ * { opacity: 0.55; }
 .ck-line-legend-text { min-width: 0; }
-.ck-line-badge { display: inline-block; min-width: 1.5em; margin-right: 6px; padding: 0 5px; border: 1px solid var(--ck-chart-axis); border-radius: var(--ck-radius-sm); font-size: 0.8rem; font-weight: 600; text-align: center; }
+.ck-line-badge { display: inline-block; min-width: 1.5em; margin-right: 6px; padding: 0 6px; border-radius: var(--ck-radius-pill); background: var(--ck-chart-highlight); font-size: var(--ck-text-xs); font-weight: 700; text-align: center; }
 .ck-line-swatch { flex: 0 0 34px; width: 34px; height: 14px; }
 /* A finger scrolls the page up and down over the plot and zooms it; sideways it leads the selection (touch.ts).
    Never `touch-action: none`: the plot is tall enough to trap the page. */
@@ -130,20 +143,22 @@
 .ck-line-tooltip {
   flex: 0 9999 auto; display: grid; gap: 4px; max-width: min(260px, 70%);
   padding: 8px 10px; border: 1px solid var(--ck-popover-border); border-radius: var(--ck-radius);
-  background: var(--ck-chart-surface); box-shadow: 0 4px 16px var(--ck-popover-shadow); font-size: 0.85rem; line-height: 1.3;
+  background: var(--ck-chart-surface); box-shadow: 0 4px 16px var(--ck-popover-shadow); font-size: var(--ck-text-xs); line-height: 1.3;
 }
 /* The distance to the crosshair is a margin, not a transform: it takes part in fitting the row. */
 .ck-line-tooltip[data-side="right"] { margin-left: 12px; }
 .ck-line-tooltip[data-side="left"] { margin-right: 12px; }
 .ck-line-tooltip-title { color: var(--ck-chart-muted); font-weight: 600; }
 .ck-line-tooltip-row { display: grid; grid-template-columns: 34px auto; column-gap: 8px; align-items: center; }
-.ck-line-tooltip-row > span { grid-column: 2; color: var(--ck-chart-muted); font-size: 0.8rem; }
+.ck-line-tooltip-row > span { grid-column: 2; color: var(--ck-chart-muted); font-size: var(--ck-text-xs); }
 /* The arrow keys and Escape of a phone: shown only where the pointer is a finger (the block at the end). */
 .ck-line-steps { display: none; grid-template-columns: repeat(3, auto); justify-content: start; gap: 8px; min-width: 0; }
-.ck-line-steps button { min-width: 0; min-height: 44px; padding: 8px 12px; border-color: var(--ck-border-field); background: var(--ck-chart-surface); color: var(--ck-chart-ink); overflow-wrap: break-word; }
+/* Pills of the chips of the screen: quiet, the link colour while they can act. */
+.ck-line-steps button { min-width: 0; min-height: 44px; padding: 8px 6px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-pill); background: var(--ck-chart-surface); color: var(--ck-link); font-weight: 700; overflow-wrap: break-word; }
+.ck-line-steps button:hover:not(:disabled) { border-color: var(--ck-link); background: var(--ck-chart-surface); color: var(--ck-link-hover); }
 .ck-line-steps button:active:not(:disabled) { background: var(--ck-chart-highlight); }
 .ck-line-steps button:disabled { border-color: var(--ck-disabled-border); background: var(--ck-disabled-bg); color: var(--ck-disabled-text); }
-.ck-line-live { min-height: 1.5em; font-variant-numeric: tabular-nums; }
+.ck-line-live { min-height: 1.5em; font-size: var(--ck-text-sm); font-weight: 600; font-variant-numeric: tabular-nums; }
 .ck-line-table summary { cursor: pointer; min-height: 44px; padding-block: 10px; border-radius: var(--ck-radius-sm); font-weight: 600; }
 .ck-line-table summary:focus-visible { outline: 3px solid var(--ck-chart-focus); outline-offset: 2px; }
 .ck-line-table-scroll { overflow-x: auto; max-width: 100%; }
@@ -156,14 +171,17 @@
   /* Narrower than on a wide screen, so that the three columns with ordinary sums fit a phone without scrolling. */
   .ck-pie-legend tbody th { min-width: 104px; }
   .ck-pie-child .ck-pie-name, .ck-pie-child-status-body { margin-left: 12px; }
-  /* Two steps side by side, «Снять выделение» under them: three names do not fit one row of a phone. */
-  .ck-line-steps { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); justify-content: stretch; }
-  .ck-line-steps button:last-child { grid-column: 1 / -1; }
+  /* Three short words share one row of a phone. */
+  .ck-line-steps { grid-template-columns: repeat(3, minmax(0, 1fr)); justify-content: stretch; }
 }
 @media (pointer: coarse) {
   .ck-line-steps { display: grid; }
-  /* Heavier than a screen's own `.ck-pie-legend a`: a finger gets a 44px link, the sector itself no longer leads away. */
-  .ck-chart .ck-pie-legend tbody a { display: inline-flex; align-items: center; min-height: 44px; }
+  /* The keys of a keyboard mean nothing under a finger: the hint stays the description of the plot for a screen reader. */
+  .ck-line-keys { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  /* Heavier than a screen's own `.ck-pie-legend a`: a finger gets a 44px link, the sector itself no longer leads away.
+     The name keeps its line beside the sum: the target grows around it, not the row. */
+  .ck-chart .ck-pie-legend tbody a { position: relative; }
+  .ck-chart .ck-pie-legend tbody a:not(.ck-pie-action)::before { content: ""; position: absolute; inset: -11px -8px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .ck-pie-shape, .ck-pie-legend tbody tr { transition: none; }

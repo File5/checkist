@@ -1,63 +1,130 @@
-/* «Добавить трату»: one column, phone first. Colors only from tokens; fields reuse .receipt-field from Receipts.css. */
-.expense-form { display: grid; gap: 20px; min-width: 0; padding: 24px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius); background: var(--ck-surface); }
-.expense-amount-row { display: flex; gap: 12px; align-items: stretch; min-width: 0; }
-/* The amount comes first, in the hero figure (never under 22 px, so iOS does not zoom in). */
-.expense-amount-input { flex: 1 1 auto; min-width: 0; font-variant-numeric: tabular-nums; }
-/* «Сегодня · Вчера · календарь»: the calendar field is the third chip. */
-.expense-dates { display: grid; gap: 10px; min-width: 0; margin: 0; padding: 0; border: 0; }
-.expense-dates legend { padding: 0; margin-bottom: 10px; font-weight: 600; }
-.expense-date-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; }
-.expense-date-chip { display: flex; flex: 1 1 9rem; min-width: 0; }
-.expense-date-chip input { width: 100%; min-height: 44px; padding: 8px 14px; border: 1px solid var(--ck-border-field); border-radius: 22px; background: var(--ck-surface); color: var(--ck-text); font-size: var(--ck-text-base); }
-.expense-date-chip-chosen input { border-color: var(--ck-brand); box-shadow: inset 0 0 0 1px var(--ck-brand); }
-/* «Все категории» in a sheet: search and the tree, every row a whole-width button. */
-.expense-tree { display: grid; margin: 0; padding: 0; list-style: none; }
-.expense-tree li + li { border-top: 1px solid var(--ck-divider); }
-.expense-tree-item { width: 100%; min-height: 48px; padding: 8px 12px 8px calc(12px + var(--expense-depth, 0) * 16px); border: 0; border-radius: 0; background: transparent; color: var(--ck-text); text-align: left; }
-.expense-tree-item[aria-pressed="true"] { background: var(--ck-accent-bg); color: var(--ck-accent-text); font-weight: 700; }
-.ck-sheet .receipt-field input { font-size: var(--ck-text-base); }
-.expense-amount-input[readonly] { color: var(--ck-text-muted); }
-.expense-currency { flex: 0 0 5.5rem; display: flex; }
-.expense-currency input { width: 100%; padding: 8px 12px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-pill); font-size: var(--ck-text-base); font-weight: 600; background: var(--ck-surface); color: inherit; text-align: center; text-transform: uppercase; }
-.expense-form .receipt-field textarea { width: 100%; padding: 8px 12px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-surface); color: inherit; font: inherit; resize: vertical; }
+/* «Новая трата» / «Изменить трату» by the artifact (docs/plans/2026-10-13-artifact-mobile-design.md): the hint card
+   «Скажите словами», the amount card with the hero figure, the category chips wrapping into rows, the list card of
+   «Когда · Где · Комментарий · Позиции» and the save bar at the bottom. Colours only from tokens, sizes of text only from
+   the --ck-text-* scale, fields never under 16 px. */
+
+.expense-page { display: flex; flex-direction: column; gap: 16px; min-width: 0; max-width: 600px; }
+.expense-form { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+/* A card of the artifact: the values of the .ck-card brick of tokens.css, written here because lib/cards/Cards.css
+   gives the same class name to its record cards (grid, 16 px, a border), and that rule outweighs the brick. */
+.expense-card { display: flex; flex-direction: column; gap: 12px; min-width: 0; padding: 20px; border-radius: var(--ck-radius); background: var(--ck-surface); box-shadow: var(--ck-card-shadow); }
 .expense-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.expense-categories { display: grid; gap: 10px; min-width: 0; margin: 0; padding: 0; border: 0; }
-.expense-categories legend { padding: 0; margin-bottom: 10px; font-weight: 600; }
-.expense-chips { display: flex; flex-wrap: wrap; gap: 8px; }
-.expense-chip { min-height: 44px; padding: 8px 14px; border: 1px solid var(--ck-border-field); border-radius: 22px; background: var(--ck-surface); color: var(--ck-text); white-space: nowrap; }
-.expense-chip[aria-pressed="true"] { background: var(--ck-brand); border-color: var(--ck-brand); color: var(--ck-on-brand); }
-.expense-more { color: var(--ck-link); }
-.expense-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-.expense-lines { display: grid; gap: 12px; min-width: 0; }
-.expense-lines h3 { margin: 0; font-size: 1.05rem; }
-.expense-line-list { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
-.expense-line { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 9rem) auto; gap: 12px; align-items: end; padding-top: 12px; border-top: 1px solid var(--ck-divider); }
-.expense-line-remove, .expense-add-line { min-height: 44px; }
-.expense-add-line { justify-self: start; }
-.expense-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
-.expense-save { min-height: 52px; padding: 0 28px; font-weight: 700; white-space: nowrap; background: var(--ck-brand); border-color: var(--ck-brand); color: var(--ck-on-brand); }
+.expense-label { color: var(--ck-text-muted); font-size: var(--ck-text-sm); font-weight: 600; }
+.expense-hint-note { margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-xs); }
+.expense-error { margin: 0; color: var(--ck-error-text); font-size: var(--ck-text-xs); font-weight: 600; }
+.expense-row-block > .expense-error, .expense-line > .expense-error { padding-bottom: 10px; }
+
+/* «Скажите словами — заполню форму»: its own small form on the soft accent, one row of field, mic and arrow. */
+.expense-hint { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 16px; border-radius: var(--ck-radius); background: var(--ck-accent-bg); }
+.expense-hint-label { color: var(--ck-accent-text); font-size: var(--ck-text-sm); font-weight: 800; }
+.expense-hint-row { display: flex; gap: 8px; align-items: stretch; min-width: 0; }
+.expense-hint-row input { flex: 1 1 auto; min-width: 0; height: 48px; min-height: 48px; padding: 0 14px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-surface); color: var(--ck-text); font-size: var(--ck-text-base); }
+.expense-hint-row input::placeholder { color: var(--ck-text-muted); }
+.expense-hint-mic, .expense-hint-send { display: flex; flex: none; align-items: center; justify-content: center; width: 48px; height: 48px; min-height: 48px; padding: 0; border-radius: var(--ck-radius-sm); }
+/* The mic: an outline square next to the field; while listening it is filled like the main action. */
+.expense-hint-mic { border: 1px solid var(--ck-border-field); background: var(--ck-surface); color: var(--ck-accent-text); }
+.expense-hint-mic:hover:not(:disabled) { border-color: var(--ck-accent-text); background: var(--ck-surface-raised); }
+.expense-hint-mic[aria-pressed="true"], .expense-hint-mic[aria-pressed="true"]:hover:not(:disabled) { border-color: var(--ck-primary); background: var(--ck-primary); color: var(--ck-on-primary); }
+.expense-hint-send { border: 1px solid var(--ck-primary); background: var(--ck-primary); color: var(--ck-on-primary); }
+.expense-hint-send:hover:not(:disabled) { border-color: var(--ck-primary-hover); background: var(--ck-primary-hover); }
+.expense-hint-status { margin: 0; color: var(--ck-accent-text); font-size: var(--ck-text-xs); }
+.expense-hint-status:empty { display: none; }
+.expense-hint-filled { font-weight: 700; }
+.expense-hint-failed { color: var(--ck-error-text); font-weight: 600; }
+
+/* «Сумма»: the hero figure without a frame and the currency pill beside it. */
+.expense-amount { gap: 6px; }
+.expense-amount-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.expense-amount-input { flex: 1 1 auto; width: 100%; min-width: 0; min-height: 56px; padding: 0; border: 0; border-radius: var(--ck-radius-sm); background: transparent; color: var(--ck-text); }
+.expense-amount-input::placeholder { color: var(--ck-text-muted); }
+.expense-amount-input[aria-invalid="true"] { color: var(--ck-error-text); }
+.expense-currency { position: relative; display: inline-flex; flex: none; align-items: center; color: var(--ck-text); }
+.expense-currency-sign { position: absolute; top: 50%; left: 14px; font-size: var(--ck-text-sm); font-weight: 800; line-height: 1; transform: translateY(-50%); pointer-events: none; }
+/* The pill is the field itself: its ring of focus is the ring of the pill. */
+.expense-currency input { width: calc(2.6em + 28px); height: 44px; min-height: 44px; padding: 0 12px 0 14px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-pill); background: var(--ck-bg); color: inherit; font-size: var(--ck-text-base); font-weight: 700; text-transform: uppercase; }
+.expense-currency-signed input { width: calc(2.6em + 46px); padding-left: 32px; }
+.expense-currency input[aria-invalid="true"] { border-color: var(--ck-error-border); color: var(--ck-error-text); }
+
+/* «Категория»: chips wrap into rows; a dot of the category colour, the chosen chip filled. A fieldset: its legend is
+   floated so it lies inside the card like any child. */
+.expense-categories { margin: 0; border: 0; }
+.expense-categories > legend { float: left; width: 100%; margin: 0; padding: 0; }
+.expense-chips { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.expense-chip { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; min-height: 44px; padding: 0 16px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-pill); background: var(--ck-surface); color: var(--ck-text); font-size: var(--ck-text-sm); font-weight: 700; white-space: nowrap; }
+/* A long name ends in «…» inside its chip; the whole path is the tooltip. */
+.expense-chip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.expense-chip:hover:not(:disabled) { border-color: var(--ck-text-muted); background: var(--ck-surface-raised); }
+.expense-chip[aria-pressed="true"], .expense-chip[aria-pressed="true"]:hover:not(:disabled) { border-color: var(--ck-chip-selected-bg); background: var(--ck-chip-selected-bg); color: var(--ck-chip-selected-text); }
+.expense-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--expense-tone, var(--ck-text-muted)); }
+.expense-more { border-style: dashed; border-color: var(--ck-link); color: var(--ck-link); }
+.expense-more:hover:not(:disabled) { border-color: var(--ck-link-hover); color: var(--ck-link-hover); }
+
+/* The list card: rows of 56 px with dividers, the label on the left and the value on the right. */
+.expense-details { gap: 0; padding: 8px 20px; }
+.expense-row-block { display: flex; flex-direction: column; min-width: 0; }
+.expense-row-block + .expense-row-block { border-top: 1px solid var(--ck-divider); }
+.expense-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; min-height: 56px; }
+.expense-row-label { flex: none; font-size: var(--ck-text-sm); font-weight: 600; }
+.expense-row:has([aria-invalid="true"]) .expense-row-label { color: var(--ck-error-text); }
+.expense-row-input { flex: 1 1 auto; width: 100%; min-width: 0; min-height: 48px; padding: 12px 0; border: 0; border-radius: var(--ck-radius-sm); background: transparent; color: var(--ck-text); font-size: var(--ck-text-base); line-height: 1.5; text-align: right; }
+.expense-row-input::placeholder { color: var(--ck-text-muted); }
+textarea.expense-row-input { resize: none; field-sizing: content; max-height: 12rem; }
+
+/* «Когда»: «Сегодня · Вчера» and the round calendar. The native date field lies over the calendar, invisible but
+   real: a tap opens the picker of the phone, the label names it, the ring shows where the keyboard is. */
+.expense-when { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; min-width: 0; padding-block: 6px; }
+.expense-day { padding: 0 11px; font-weight: 600; }
+.expense-day[aria-pressed="true"] { font-weight: 800; }
+.expense-date-pick { position: relative; display: inline-flex; flex: none; align-items: center; justify-content: center; gap: 6px; min-width: 44px; height: 44px; padding: 0 11px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-pill); background: var(--ck-surface); color: var(--ck-text); font-size: var(--ck-text-sm); font-weight: 800; white-space: nowrap; cursor: pointer; }
+.expense-date-pick:not(.expense-date-pick-chosen) { padding: 0; }
+.expense-date-pick:hover { border-color: var(--ck-text-muted); background: var(--ck-surface-raised); }
+.expense-date-pick-chosen, .expense-date-pick-chosen:hover { border-color: var(--ck-chip-selected-bg); background: var(--ck-chip-selected-bg); color: var(--ck-chip-selected-text); }
+.expense-date-pick:has(input:focus-visible) { outline: 3px solid var(--ck-focus); outline-offset: 2px; }
+.expense-date-pick:has([aria-invalid="true"]) { border-color: var(--ck-error-border); }
+.expense-date-pick input { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; margin: 0; padding: 0; border: 0; opacity: 0; font-size: var(--ck-text-base); cursor: pointer; }
+
+/* «Позиции»: the dashed «+ Добавить» in the row, the positions under it in the same card. */
+.expense-add-line { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 16px; border: 1px dashed var(--ck-link); border-radius: var(--ck-radius-pill); background: var(--ck-surface); color: var(--ck-link); font-size: var(--ck-text-sm); font-weight: 700; white-space: nowrap; }
+.expense-add-line:hover:not(:disabled) { border-color: var(--ck-link-hover); background: var(--ck-surface-raised); color: var(--ck-link-hover); }
+.expense-line-list { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0 0 14px; list-style: none; }
+.expense-line { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.expense-line > .expense-error { padding-bottom: 0; }
+.expense-line-fields { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.expense-line-name, .expense-line-amount { min-width: 0; height: 48px; min-height: 48px; padding: 0 12px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-bg); color: var(--ck-text); font-size: var(--ck-text-base); }
+.expense-line-name::placeholder, .expense-line-amount::placeholder { color: var(--ck-text-muted); }
+.expense-line-name { flex: 1 1 auto; }
+.expense-line-amount { flex: 0 0 5.75rem; width: 5.75rem; font-variant-numeric: tabular-nums; text-align: right; }
+.expense-line-name[aria-invalid="true"], .expense-line-amount[aria-invalid="true"] { border-color: var(--ck-error-border); box-shadow: inset 0 0 0 1px var(--ck-error-border); }
+.expense-line-remove { display: flex; flex: none; align-items: center; justify-content: center; width: 44px; height: 44px; min-height: 44px; margin-right: -10px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--ck-text-muted); }
+.expense-line-remove:hover:not(:disabled) { background: var(--ck-error-bg); color: var(--ck-error-text); }
+
+.expense-byline { margin: 0; padding: 0 4px; color: var(--ck-text-muted); font-size: var(--ck-text-xs); }
+.expense-delete { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.expense-delete-button { width: 100%; min-height: 48px; font-weight: 700; }
+
+/* The save bar: one wide main action «Сохранить · 4 500 ₸»; a failed save says why right above the button. */
+.expense-actions { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.expense-save { width: 100%; min-height: 56px; padding: 0 20px; border: 1px solid var(--ck-primary); border-radius: var(--ck-radius-button); background: var(--ck-primary); color: var(--ck-on-primary); font-size: var(--ck-text-lg); font-weight: 800; white-space: nowrap; }
+.expense-save:hover:not(:disabled) { border-color: var(--ck-primary-hover); background: var(--ck-primary-hover); }
+
 .expense-failure { margin: 0; padding: 12px; border: 1px solid var(--ck-error-border); border-radius: var(--ck-radius-sm); background: var(--ck-error-bg); color: var(--ck-error-text); }
 .expense-notice { margin: 0; padding: 12px; border: 1px solid var(--ck-success-border); border-radius: var(--ck-radius-sm); background: var(--ck-success-bg); color: var(--ck-success-text); }
 .expense-confirm { display: grid; gap: 12px; padding: 12px; border: 1px solid var(--ck-warning-border); border-radius: var(--ck-radius-sm); background: var(--ck-warning-bg); }
 .expense-confirm p { margin: 0; color: var(--ck-warning-text); }
-/* «Трата словами»: the hint above the form, its own small form. */
-.expense-hint { display: grid; gap: 10px; min-width: 0; padding: 16px 24px; border: 1px solid var(--ck-accent); border-radius: var(--ck-radius); background: var(--ck-accent-bg); }
-.expense-hint-label { font-weight: 600; color: var(--ck-accent-text); }
-.expense-hint-row { display: flex; gap: 12px; align-items: stretch; min-width: 0; }
-.expense-hint-row input { flex: 1 1 auto; min-width: 0; min-height: 44px; padding: 8px 12px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-surface); color: var(--ck-text); font: inherit; font-size: var(--ck-text-base); }
-/* The mic: a square next to the field; while listening it is filled like the main action. */
-.expense-hint-mic { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; width: 44px; min-height: 44px; padding: 0; background: var(--ck-surface); border-color: var(--ck-border-field); color: var(--ck-accent-text); }
-.expense-hint-mic[aria-pressed="true"] { background: var(--ck-brand); border-color: var(--ck-brand); color: var(--ck-on-brand); }
-.expense-hint-send { flex: 0 0 auto; min-height: 44px; padding: 0 20px; background: var(--ck-brand); border-color: var(--ck-brand); color: var(--ck-on-brand); white-space: nowrap; }
-.expense-hint-status { margin: 0; color: var(--ck-text-muted); }
-.expense-hint-status:empty { display: none; }
-.expense-hint-filled { color: var(--ck-success-text); }
-.expense-hint-failed { color: var(--ck-error-text); }
+
+/* «Все категории» in a sheet: search and the tree, every row a whole-width button with the dot of its colour. */
+.expense-search { display: grid; gap: 6px; min-width: 0; }
+.expense-search label { font-weight: 600; }
+.expense-search input { width: 100%; min-height: 48px; padding: 0 14px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-surface); color: var(--ck-text); font-size: var(--ck-text-base); }
+.expense-tree { display: grid; margin: 0; padding: 0; list-style: none; }
+.expense-tree li + li { border-top: 1px solid var(--ck-divider); }
+.expense-tree-item { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 48px; padding: 8px 12px 8px calc(12px + var(--expense-depth, 0) * 16px); border: 0; border-radius: 0; background: transparent; color: var(--ck-text); font-weight: 600; text-align: left; }
+.expense-tree-item:hover:not(:disabled) { background: var(--ck-surface-raised); }
+.expense-tree-item[aria-pressed="true"], .expense-tree-item[aria-pressed="true"]:hover:not(:disabled) { background: var(--ck-accent-bg); color: var(--ck-accent-text); font-weight: 800; }
+
 @media (max-width: 540px) {
-  .expense-form { padding: 16px; }
-  .expense-hint { padding: 16px; }
-  .expense-grid { grid-template-columns: minmax(0, 1fr); }
-  .expense-line { grid-template-columns: minmax(0, 1fr) minmax(0, 7.5rem); }
-  .expense-line-remove { grid-column: 1 / -1; justify-self: start; }
-  .expense-save { flex: 1 1 auto; }
+  .expense-page { max-width: none; }
+  /* The save bar spans the whole window, edge to edge, over the bottom of the page (the pinning itself is the shared
+     .ck-action-bar of components/ActionBar.css; on this screen the shell hides the bottom menu). */
+  .expense-form .expense-actions { margin-inline: calc(50% - 50vw); padding: 12px 16px; }
 }

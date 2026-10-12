@@ -4,6 +4,14 @@ import type { NavigationSnapshot, Route } from '../navigation'
 /** The «назад» of the phone's top bar: where it leads and its name for a screen reader. */
 export type BackTarget = { to: string; label: string }
 
+/** The round control of the header row: «назад» before the heading, or «✕» after it on a focus screen. */
+export type HeaderAction = BackTarget & { kind: 'back' | 'close' }
+
+/** A new or changed spend: a screen of one task, with «✕» instead of «назад» and without the bottom bar of a phone. */
+export function isFocusRoute(route: Route): boolean {
+  return route.kind === 'expense-new' || route.kind === 'expense-edit'
+}
+
 /** The name of the way back by the kind of the page it leads to. */
 const backLabels: Partial<Record<Route['kind'], string>> = {
   dashboard: 'Назад на главную',
@@ -38,4 +46,17 @@ export function backTarget({ route, returnTo }: Pick<NavigationSnapshot, 'route'
     case 'category-spends': return target(returnTo ?? (route.month ? `/?month=${route.month}` : '/'))
     default: return undefined
   }
+}
+
+/**
+ * The control of the header row. A focus screen is closed by «✕»: a changed spend back to its receipt, a new one to
+ * the page of the app the person came from (`from`), otherwise to «Главная». Any other nested page goes back by
+ * «назад» (`backTarget`); a page of a section has none.
+ */
+export function headerAction(navigation: Pick<NavigationSnapshot, 'route' | 'returnTo'>, from?: string): HeaderAction | undefined {
+  const { route } = navigation
+  if (route.kind === 'expense-new') return { kind: 'close', to: from ?? '/', label: 'Закрыть' }
+  if (route.kind === 'expense-edit') return { kind: 'close', to: `/receipts/${route.receiptId}`, label: 'Закрыть' }
+  const back = backTarget(navigation)
+  return back && { kind: 'back', ...back }
 }

@@ -4,6 +4,7 @@ import type { TrendsCategory, TrendsCategoryCurrency, TrendsCategoryOption, Tren
 import RequestState from '../../components/RequestState'
 import { useLocalRequestFocus } from '../../components/useLocalRequestFocus'
 import { LineChart, StackedColumns } from '../../lib/charts'
+import { currencySymbol } from '../../lib/money'
 import { Link, navigate } from '../../navigation'
 import type { TrendsQuery } from '../../navigation'
 import { canRetry, failureMessage } from './receipts-state'
@@ -15,7 +16,7 @@ import { loadingOf } from './trends-state'
 import type { BlockState, ChangeBadge, MoverRow } from './trends-state'
 
 
-/** A change as arrow, sign and words — never colour alone. `up` is the warning tone: more spent, prices grew. */
+/** A change as arrow, sign and words — never colour alone. `up` is the over tone: more spent, prices grew. */
 export function Badge({ badge, label }: { badge: ChangeBadge; label?: string }) {
   return (
     <span className={`trends-badge trends-badge-${badge.tone}`} title={label ? `${badge.words} ${label}` : badge.words}>
@@ -30,15 +31,27 @@ export function Failure({ state, onRetry }: { state: Exclude<BlockState<unknown>
     : <RequestState kind="empty" message={failureMessage(state)} />
 }
 
-export function Panel({ title, note, state, children }: { title: string; note?: string; state: { kind: string }; children: ReactNode }) {
+/**
+ * A card of the screen: the heading with an optional link on the right, the content, then the explanation in small
+ * print — the numbers come first, as on «Главная».
+ */
+export function Panel({ title, note, state, link, children }: {
+  title: string; note?: string; state: { kind: string }
+  /** A link at the right of the heading, e.g. «Изменить» to the limits. */
+  link?: { to: string; label: string }
+  children: ReactNode
+}) {
   const id = useId()
   const phase = useMemo(() => ({ kind: state.kind === 'idle' ? 'loading' : state.kind } as { kind: 'loading' | 'ok' | 'error' }), [state])
   const block = useLocalRequestFocus<HTMLElement>(phase)
   return (
     <section ref={block} className="stats-panel trends-panel" aria-labelledby={id} aria-busy={state.kind === 'loading' || state.kind === 'idle'}>
-      <h3 id={id} data-request-focus-target tabIndex={-1}>{title}</h3>
-      {note && <p className="stats-note">{note}</p>}
+      <div className="stats-panel-head">
+        <h3 id={id} data-request-focus-target tabIndex={-1}>{title}</h3>
+        {link && <Link className="stats-panel-link" to={link.to}>{link.label}</Link>}
+      </div>
       {children}
+      {note && <p className="stats-note stats-footnote">{note}</p>}
     </section>
   )
 }
@@ -59,7 +72,10 @@ function MonthDetails({ block, month, query }: { block: TrendsMonthlyCurrency; m
           {details.rows.map((row) => (
             <li key={row.key} className={`trends-row trends-cat-${row.tone}`}>
               <span className="trends-dot" aria-hidden="true" />
-              {row.href ? <Link className="trends-row-name" to={row.href}>{row.label}</Link> : <span className="trends-row-name">{row.label}</span>}
+              <span className="trends-row-main">
+                {row.href ? <Link className="trends-row-name" to={row.href}>{row.label}</Link> : <span className="trends-row-name">{row.label}</span>}
+                {row.bar > 0 && <span className="trends-row-bar" aria-hidden="true"><span style={{ width: `${row.bar}%` }} /></span>}
+              </span>
               <span className="trends-value">{row.amount}</span>
             </li>
           ))}
@@ -81,7 +97,7 @@ function MonthlyCurrency({ block, query, several }: { block: TrendsMonthlyCurren
   return (
     <article className="stats-currency trends-currency" aria-labelledby={id}>
       <div className="trends-summary">
-        <h4 id={id}>{several ? block.currency : 'Всего за период'}</h4>
+        <h4 id={id}>Всего за период{several && `, ${currencySymbol(block.currency)}`}</h4>
         <p className="trends-big">{summary.total}</p>
         <p className="stats-note">В среднем <span className="trends-value">{summary.average}</span> в месяц</p>
       </div>
@@ -136,7 +152,7 @@ function CategoryCurrency({ block, several, name }: { block: TrendsCategoryCurre
   return (
     <article className="stats-currency trends-currency" aria-labelledby={id}>
       <div className="trends-summary">
-        <h4 id={id}>{several ? block.currency : 'Последний месяц'}</h4>
+        <h4 id={id}>Последний месяц{several && `, ${currencySymbol(block.currency)}`}</h4>
         {change && <>
           <p className="trends-big">{change.last}</p>
           <p className={`trends-compare trends-compare-${change.tone}`}>{change.text}</p>
@@ -223,7 +239,7 @@ function PricesCurrency({ block, several }: { block: TrendsPricesCurrency; sever
   return (
     <article className="stats-currency trends-currency" aria-labelledby={id}>
       <div className="trends-summary">
-        <h4 id={id}>{several ? block.currency : 'Индекс цен семьи'}</h4>
+        <h4 id={id}>Индекс цен семьи{several && `, ${currencySymbol(block.currency)}`}</h4>
         {summary && <p className="trends-lead">{summary.text} <Badge badge={summary.badge} /></p>}
         <p className="trends-counts">{moverCounts(block)}</p>
       </div>

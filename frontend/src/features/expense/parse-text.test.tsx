@@ -88,17 +88,18 @@ describe('«Трата словами»: markup (Vitest/SSR, not browser visual 
     expect(html).toContain('<form class="expense-hint" noValidate="" aria-busy="false">')
     expect(html).toContain(`<label for="expense-hint-text" class="expense-hint-label">${parseTexts.label}</label>`)
     expect(html).toMatch(/<input id="expense-hint-text" type="text" autoComplete="off" enterKeyHint="go" maxLength="500" placeholder="такси до аэропорта 4500" aria-describedby="expense-hint-status" value="такси 4500"\/>/)
-    expect(html).toContain('<button type="submit" class="expense-hint-send">Заполнить</button>')
+    // One row: the field and the arrow, a square named by its label.
+    expect(html).toContain(`<button type="submit" class="expense-hint-send" aria-label="${parseTexts.button}"><svg`)
     expect(html).toContain('class="expense-hint-status expense-hint-idle" role="status"></p>')
   })
   it('an empty text cannot be sent', () => {
-    expect(hint({ kind: 'idle' }, '  ')).toContain('<button type="submit" class="expense-hint-send" disabled="">')
+    expect(hint({ kind: 'idle' }, '  ')).toContain(`<button type="submit" class="expense-hint-send" disabled="" aria-label="${parseTexts.button}">`)
   })
   it('says «Разбираю…» while waiting and keeps the text read-only', () => {
     const html = hint({ kind: 'working' })
     expect(html).toContain('aria-busy="true"')
     expect(html).toContain('readOnly=""')
-    expect(html).toContain(`disabled="">${parseTexts.working}</button>`)
+    expect(html).toContain(`<button type="submit" class="expense-hint-send" disabled="" aria-label="${parseTexts.working}">`)
     expect(html).toContain(`role="status">${parseTexts.working}</p>`)
   })
   it('announces the fill and a failure', () => {

@@ -124,9 +124,12 @@ describe('PieChart legend rows of an item’s parts (Node, not pointer or focus 
     expect(trs(plain).map((row) => row.attrs)).toEqual(['', '', '', ''])
     expect(trs(plain)[2].body).toBe(
       '<th scope="row"><span class="ck-pie-name"><span class="ck-pie-swatch ck-chart-other" aria-hidden="true"></span>'
-      + '<span class="ck-pie-name-text">Прочее<span class="ck-chart-note">Ещё 3 обобщённых продукта с меньшими суммами, одной строкой.</span></span></span></th>'
+      + '<span class="ck-pie-name-text">Прочее<span class="ck-chart-note">Ещё 3 обобщённых продукта с меньшими суммами, одной строкой.</span>'
+      // The thin bar of the share, the largest item full: decoration for the eye, the share column is the number.
+      + '<span class="ck-pie-bar ck-chart-other" aria-hidden="true"><span style="width:33.3%"></span></span></span></span></th>'
       + '<td class="ck-chart-number">40,00 EUR</td><td class="ck-chart-number">16,00 %</td>',
     )
+    expect(trs(plain)[0].body).toContain('<span class="ck-pie-bar ck-chart-c1" aria-hidden="true"><span style="width:100%"></span></span>')
     // Empty or absent values of the new fields are the same as no fields.
     expect(render(withOther({ children: [], childrenPrefix: 'В составе: ', childrenStatus: null }))).toBe(plain)
   })
@@ -141,7 +144,8 @@ describe('PieChart legend rows of an item’s parts (Node, not pointer or focus 
   })
   it('puts a toggle link with aria-expanded after the name and the note, the same element in both states', () => {
     expect(trs(collapsed)[2].body).toContain(
-      'одной строкой.</span><a href="/stats?other=open" class="ck-pie-action" aria-expanded="false" aria-label="Показать состав «Прочего», EUR">Показать состав</a></span>',
+      'одной строкой.</span><span class="ck-pie-bar ck-chart-other" aria-hidden="true"><span style="width:33.3%"></span></span>'
+      + '<a href="/stats?other=open" class="ck-pie-action" aria-expanded="false" aria-label="Показать состав «Прочего», EUR">Показать состав</a></span>',
     )
     expect(trs(expanded)[2].body).toContain('<a href="/stats" class="ck-pie-action" aria-expanded="true">Скрыть состав</a></span>')
     expect(count(collapsed, /aria-expanded=/g)).toBe(1)
@@ -208,7 +212,7 @@ describe('LineChart markup (Node, not keyboard or pointer behaviour)', () => {
     expect(html).toContain('<div class="ck-chart ck-line" role="group" aria-label="Цена за штуку, EUR">')
     expect(html).toMatch(/<div class="ck-line-plot" role="application" tabindex="0" aria-label="График: Цена за штуку, EUR" aria-roledescription="интерактивный график" aria-describedby="([^"]+)">/)
     const hintId = /aria-describedby="([^"]+)"/.exec(html)![1]
-    expect(html).toContain(`<p class="ck-chart-note" id="${hintId}">`)
+    expect(html).toContain(`<p class="ck-chart-note ck-line-keys" id="${hintId}">`)
     expect(html).toContain('Esc — снять выделение')
     expect(html).toContain('<p class="ck-line-live" aria-live="polite" aria-atomic="true">Интервал не выбран.</p>')
     expect(html).toContain('<svg class="ck-line-svg" viewBox="0 0 640 300" aria-hidden="true"')

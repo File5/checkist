@@ -2,7 +2,7 @@ import type { Dashboard, DashboardCategory, DashboardRecent, DashboardSubCategor
 import { ownerName, peopleOf } from '../../lib/people'
 import type { Person } from '../../lib/people'
 import type { Decimal, LocalApiFailure } from '../../api/types'
-import { formatCentsNumber } from '../../lib/money'
+import { currencySymbol, formatCentsNumber } from '../../lib/money'
 import { NBSP, glue } from '../../lib/text'
 
 /** Money is counted in cents with BigInt: a Decimal never becomes a Number. A malformed value counts as zero. */
@@ -20,9 +20,16 @@ export function formatNumber(value: Decimal | bigint): string {
   return formatCentsNumber(typeof value === 'bigint' ? value : cents(value))
 }
 
-/** «287 450 KZT»: the whole value never breaks. */
+/** «287 450 ₸»: the sign of the currency (`lib/money.ts`), the whole value never breaks. */
 export function formatMoney(value: Decimal | bigint, currency: string): string {
-  return glue(formatNumber(value), currency)
+  return glue(formatNumber(value), currencySymbol(currency))
+}
+
+const currencyNames: Record<string, string> = { KZT: 'Тенге', USD: 'Доллары', EUR: 'Евро', RUB: 'Рубли', GBP: 'Фунты', CNY: 'Юани', TRY: 'Лиры' }
+
+/** «Доллары» for a row of another currency on «Главная»; a rare code stays a code. */
+export function currencyName(currency: string): string {
+  return currencyNames[currency] ?? currency
 }
 
 /** «В октябре» at the start of a sentence. */
@@ -136,11 +143,28 @@ export function badgeLetter(name: string | null, title: string): string {
   return ([...(name ?? title).trim()][0] ?? '•').toUpperCase()
 }
 
-/** «Лиза · 12 октября · 23 позиции», «вручную» for a spend without a receipt; the name, or the username without one. */
-export function recentMeta(item: DashboardRecent): string {
+/** The calendar date of the device, «2026-10-13». */
+export function deviceDate(now: Date = new Date()): string {
+  return `${String(now.getFullYear()).padStart(4, '0')}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+}
+
+/** «сегодня», «вчера», otherwise «12 октября»; `today` is the date of the device. */
+export function relativeDay(date: string, today: string = deviceDate()): string {
+  if (date === today) return 'сегодня'
+  const [year, month, day] = today.split('-').map(Number)
+  return date === deviceDate(new Date(year, month - 1, day - 1)) ? 'вчера' : dayAndMonth(date)
+}
+
+/** «Лиза · сегодня · 23 позиции», «вручную» for a spend without a receipt; the name, or the username without one. */
+export function recentMeta(item: DashboardRecent, today: string = deviceDate()): string {
   const what = item.source === 'manual' ? 'вручную'
     : glue(String(item.lines_count), plural(item.lines_count, 'позиция', 'позиции', 'позиций'))
-  return [ownerName(item), dayAndMonth(item.purchased_on), what].join(' · ')
+  return [ownerName(item), relativeDay(item.purchased_on, today), what].join(' · ')
+}
+
+/** A category with a limit, or with a limited sub-category somewhere under it: a row with a bar on «Главная». */
+export function hasLimit(category: DashboardCategory | DashboardSubCategory): boolean {
+  return category.limit !== null || subCategories(category).some(hasLimit)
 }
 
 /** «ещё 19 дней» до конца месяца. */

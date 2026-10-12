@@ -24,12 +24,14 @@ export function TextHintView({ text, view, onText, onSubmit, voice }: TextHintVi
         onChange={(event) => onText(event.target.value)} />
       {voice && <button type="button" className="expense-hint-mic" aria-pressed={voice.listening} disabled={working}
         aria-label={voice.listening ? 'Остановить запись' : 'Сказать голосом'} onClick={voice.onToggle}>
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
           <rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 10a7 7 0 0 0 14 0M12 17v4M8 21h8" />
         </svg>
       </button>}
-      <button type="submit" className="expense-hint-send" disabled={working || !text.trim()}>
-        {working ? parseTexts.working : parseTexts.button}
+      <button type="submit" className="expense-hint-send" disabled={working || !text.trim()} aria-label={working ? parseTexts.working : parseTexts.button}>
+        {working
+          ? <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" /></svg>
+          : <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h14M13 6l6 6-6 6" /></svg>}
       </button>
     </div>
     <p id="expense-hint-status" className={`expense-hint-status expense-hint-${view.kind}`}

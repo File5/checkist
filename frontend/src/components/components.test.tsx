@@ -4,6 +4,11 @@ import RequestState from './RequestState'
 import Pagination from './Pagination'
 
 describe('request state markup contract (Node, not browser interaction)', () => {
+  it('draws a compact state without a card of its own, for use inside a panel', () => {
+    expect(renderToStaticMarkup(<RequestState kind="empty" compact message="Трат пока нет." />))
+      .toContain('<div class="request-state request-state-empty request-state-compact" aria-live="polite" aria-busy="false">')
+    expect(renderToStaticMarkup(<RequestState kind="loading" />)).toContain('class="request-state request-state-loading"')
+  })
   it('marks loading as busy and supplies a local message', () => {
     const html = renderToStaticMarkup(<RequestState kind="loading" />)
     expect(html).toContain('aria-live="polite"')

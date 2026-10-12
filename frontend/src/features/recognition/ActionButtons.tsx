@@ -17,7 +17,7 @@ export default function ActionButtons({ job, state, run, busy = false, onReview 
   return <div className="ck-rec-action-block">
     <div className="ck-rec-actions">
       {review && <button type="button" onClick={onReview}>Проверить и подтвердить</button>}
-      <button type="button" disabled={!job.actions.can_cancel || locked || cancelled} onClick={() => { void run(job.id, 'cancel') }}>{addressed && pending && state.action === 'cancel' ? 'Запрашиваем отмену…' : 'Отменить'}</button>
+      <button type="button" className="ck-rec-cancel" disabled={!job.actions.can_cancel || locked || cancelled} onClick={() => { void run(job.id, 'cancel') }}>{addressed && pending && state.action === 'cancel' ? 'Запрашиваем отмену…' : 'Отменить'}</button>
       <button type="button" className={review ? 'ck-review-secondary' : undefined} disabled={!job.actions.can_retry || locked} onClick={() => { void run(job.id, 'retry') }}>{addressed && pending && state.action === 'retry' ? 'Создаём задание…' : 'Повторить обработку'}</button>
     </div>
     <p role="status" aria-live="polite">{addressed && state.kind === 'message' ? state.message : ''}</p>

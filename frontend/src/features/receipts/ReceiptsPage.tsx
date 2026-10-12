@@ -21,15 +21,19 @@ import ReceiptFilters from './ReceiptFilters'
 import ReceiptMedia from './ReceiptMedia'
 import type { ReceiptRequestState } from './request'
 import { HiddenChip, OwnerChips, SpendDays } from './SpendDays'
-import { localToday, ownerChips, reviewJobsQuery, reviewText } from './spends'
+import { localToday, ownerChips, reviewJobsQuery, reviewText, spendsCount } from './spends'
 import type { OwnerChip } from './spends'
 import { activeFilterCount, hasFilters, money, ownerShown, receiptParams, receiptPlace, recognizedText, recognizedValue } from './state'
-import { ResponsiveFiltersView } from '../../components/ResponsiveFilters'
+import Sheet from '../../components/Sheet'
+import { filtersButtonLabel } from '../../components/filters-label'
+import '../../components/ResponsiveFilters.css'
 import { ManualMark } from './ManualMark'
 import { useReceiptRequest } from './useReceiptRequest'
 import '../expense/Expense.css'
 import './Receipts.css'
 
+/** The former list of cards with thumbnails and facts. «Траты» shows days of rows on every width now (SpendDays); the
+ * component stays for the screens and tests that still render a single receipt card from it. */
 export function ReceiptList({ receipts, showOwner = false }: { receipts: Receipt[]; showOwner?: boolean }) {
   return <ul className="receipt-list">{receipts.map((receipt) => <li key={receipt.id} className="receipt-list-card">
     {receipt.preview_image_url && <ReceiptMedia url={receipt.preview_image_url} display={receipt.preview_thumb_url} thumbnail alt={`Миниатюра чека №${receipt.id}`} />}
@@ -53,19 +57,31 @@ export function ReceiptList({ receipts, showOwner = false }: { receipts: Receipt
 }
 
 
-/** «2 фото ждут проверки» → the jobs that wait for a person. Nothing while unknown or zero. */
+/** «2 фото ждут проверки · Проверить» → the jobs that wait for a person. Nothing while unknown or zero. */
 export function ReviewBanner({ count }: { count: number | undefined }) {
   if (!count) return null
   return <p className="spends-review">
-    <Link to={{ kind: 'jobs', query: reviewJobsQuery }}>{reviewText(count)}</Link>
+    <Link to={{ kind: 'jobs', query: reviewJobsQuery }}>
+      <span className="spends-review-text">{reviewText(count)}</span><span className="spends-review-action" aria-hidden="true">Проверить</span>
+    </Link>
   </p>
+}
+
+/** «Фильтры» of a phone beside the family chips: a round button with a funnel and the number of what is filtered.
+ * Its name says the same in words («Фильтры (2)»). */
+export function FiltersToggle({ count, open, sheetId, onOpen }: { count: number; open: boolean; sheetId: string; onOpen: () => void }) {
+  return <button type="button" className="spends-filters-toggle" aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? sheetId : undefined}
+    aria-label={filtersButtonLabel(count)} onClick={onOpen}>
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 6h18M6 12h12M10 18h4" /></svg>
+    {count > 0 && <span className="spends-filters-count" aria-hidden="true">{count.toLocaleString('ru-RU')}</span>}
+  </button>
 }
 
 export function ReceiptsView({ query, state, retry, showOwner = false, narrow = false, chips = [], review, today = localToday(), pending, notice, head = false }: {
   /** The family head: the chip «Показать скрытые». */
   head?: boolean
   query: ReceiptsQuery; state: ReceiptRequestState<Page<ReceiptListItem>>; retry: () => void; showOwner?: boolean
-  /** A phone: days and rows instead of the cards of the wide screen. */
+  /** A phone: the filters behind a round button and a sheet instead of the form in the page. */
   narrow?: boolean
   chips?: OwnerChip[]
   /** Jobs waiting for a person; `undefined` while unknown. */
@@ -82,33 +98,43 @@ export function ReceiptsView({ query, state, retry, showOwner = false, narrow = 
     ? <Link className="action-link" to={{ kind: 'receipts', query: { ...query, page: 1 } }}>На первую страницу</Link>
     : state.kind === 'error' && ['invalid_parameter', 'invalid_request'].includes(state.reason)
       ? <Link className="action-link" to="/receipts">Сбросить фильтры</Link> : undefined
-  return <div className="receipts-page">
+  const filtered = hasFilters(query)
+  const closeFilters = () => setFiltersOpen(false)
+  const filters = <>
+    <HiddenChip query={query} head={head} onToggle={closeFilters} />
+    <ReceiptFilters query={query} failure={state.kind === 'error' ? state : undefined} />
+  </>
+  // Adding a spend is the «＋» of the navigation; the list keeps only the way to the processing of photos, quietly.
+  const jobs = <p className="spends-jobs"><Link to="/recognition/jobs">Обработка фото</Link></p>
+  return <div className={`receipts-page spends-page${narrow ? ' spends-page-narrow' : ''}`}>
     {notice && <p className="expense-notice" role="status">{notice}</p>}
     {pending}
-    <OwnerChips chips={chips} query={query} />
-    <HiddenChip query={query} head={head} />
-    <ReviewBanner count={review} />
-    <div className="receipt-actions">
-      <Link className="action-link receipt-primary" to="/receipts/upload">Загрузить фото</Link>
-      <Link className="action-link receipt-primary" to="/receipts/new">Добавить трату</Link>
-      <Link className="action-link" to="/recognition/jobs">Обработка</Link>
+    {/* Who added it, and on a phone the round «Фильтры» at the end of the same line: the form opens in a sheet. */}
+    <div className="spends-toolbar">
+      <OwnerChips chips={chips} query={query} />
+      {narrow ? <FiltersToggle count={activeFilterCount(query)} open={filtersOpen} sheetId={sheetId} onOpen={() => setFiltersOpen(true)} /> : filters}
     </div>
-    {/* On a phone behind «Фильтры (N)» in a sheet, which closes once the form is applied. */}
-    <ResponsiveFiltersView narrow={narrow} count={activeFilterCount(query)} open={filtersOpen} onOpen={() => setFiltersOpen(true)}
-      onClose={() => setFiltersOpen(false)} sheetId={sheetId}>
-      <ReceiptFilters query={query} failure={state.kind === 'error' ? state : undefined} />
-    </ResponsiveFiltersView>
-    <ReceiptBlock title="Список чеков" state={state} retry={retry} recovery={recovery}>
+    {narrow && <Sheet open={filtersOpen} onClose={closeFilters} title="Фильтры" id={sheetId}>
+      {/* A filter form submitted inside the sheet has done its work: the sheet closes after the form's own handler. */}
+      <div className="ck-filters-sheet" onSubmit={closeFilters}>
+        {filters}
+      </div>
+    </Sheet>}
+    <ReviewBanner count={review} />
+    {/* The days are the cards themselves: the block keeps its heading for a screen reader only. */}
+    <ReceiptBlock title="Список трат" state={state} retry={retry} recovery={recovery} bare>
       {state.kind === 'ok' && (state.data.results.length ? <>
-        <p className="receipt-note" role="status">Чеков: {state.data.count.toLocaleString('ru-RU')} · Страница {state.data.page.toLocaleString('ru-RU')} из {state.data.pages.toLocaleString('ru-RU')}</p>
-        {narrow ? <SpendDays receipts={state.data.results} today={today} showOwner={showOwner} />
-          : <ReceiptList receipts={state.data.results} showOwner={showOwner} />}
+        <SpendDays receipts={state.data.results} today={today} showOwner={showOwner} />
+        <p className="receipt-note spends-count" role="status">{spendsCount(state.data.count)} · Страница {state.data.page.toLocaleString('ru-RU')} из {state.data.pages.toLocaleString('ru-RU')}</p>
         <Pagination page={state.data.page} pages={state.data.pages}
-          buildPageHref={(page) => `/receipts${buildReceiptsQuery({ ...query, page })}`} label="Страницы чеков" />
-      </> : <RequestState kind="empty" message={hasFilters(query) ? 'По выбранным фильтрам чеков нет.' : 'Чеков пока нет. Загрузите первое фото чека.'}
-        action={<Link className="action-link" to={hasFilters(query) ? '/receipts' : '/receipts/upload'}>{hasFilters(query) ? 'Сбросить фильтры' : 'Загрузить фото'}</Link>} />)}
+          buildPageHref={(page) => `/receipts${buildReceiptsQuery({ ...query, page })}`} label="Страницы трат" />
+      </> : <RequestState kind="empty" title={filtered ? 'Ничего не нашлось' : 'Трат пока нет'}
+        message={filtered ? 'По выбранным фильтрам трат нет.' : 'Загрузите первое фото чека или добавьте трату.'}
+        action={filtered ? <Link className="action-link" to="/receipts">Сбросить фильтры</Link>
+          : <><Link className="action-link" to="/receipts/upload">Загрузить фото</Link><Link className="action-link" to="/receipts/new">Добавить трату</Link></>} />)}
     </ReceiptBlock>
-    {state.kind === 'loading' && <p className="receipt-note">Страница {query.page.toLocaleString('ru-RU')}</p>}
+    {state.kind === 'loading' && <p className="receipt-note spends-count">Страница {query.page.toLocaleString('ru-RU')}</p>}
+    {jobs}
   </div>
 }
 

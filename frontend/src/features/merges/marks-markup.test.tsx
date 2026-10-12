@@ -233,7 +233,7 @@ describe('App shell routes of the catalog section', () => {
     expect(html).toContain('<option value="all" selected="">Все группы</option>')
     expect(sectionNav(html)).toContain('<a aria-current="page" href="/catalog/merges">Дубли</a>')
     expect(sectionNav(html)).toContain('<a href="/catalog">Товары</a>')
-    expect(html).toMatch(/aria-label="Основная навигация">[\s\S]*<a aria-current="page" href="\/catalog">Каталог<\/a>/)
+    expect(html).toMatch(/aria-label="Основная навигация">[\s\S]*<a aria-current="page" href="\/catalog">(?:<svg[^>]*>[\s\S]*?<\/svg>)?Каталог<\/a>/)
   })
   it('connects the group screen and passes the list context', () => {
     const html = app({ href: '/catalog/merges/7', route: { kind: 'merge', groupId: 7 }, returnTo: '/catalog/merges?status=confirmed' })

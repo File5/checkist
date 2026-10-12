@@ -11,28 +11,35 @@
 .dash-cat-5 { --dash-cat: var(--ck-cat-5); --dash-cat-tint: var(--ck-cat-5-tint); }
 .dash-cat-6 { --dash-cat: var(--ck-cat-6); --dash-cat-tint: var(--ck-cat-6-tint); }
 
-.dash, .limits { display: grid; gap: 16px; min-width: 0; max-width: 760px; }
-.dash-card { display: grid; gap: 12px; min-width: 0; padding: 20px; border: 1px solid var(--ck-border); border-radius: 20px; background: var(--ck-surface); box-shadow: 0 1px 2px var(--ck-panel-shadow); }
-.dash-card h2 { margin: 0; font-size: var(--ck-text-lg); }
+.dash, .limits { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; min-width: 0; max-width: 760px; }
+/* A card of the artifact is the .ck-panel brick of tokens.css (a surface of radius 20, 20 px inside, the shadow of the
+   theme); the cards of «Главная» keep 16 px between their parts. */
+.dash-card { gap: 16px; }
+.dash-card h2 { margin: 0; font-size: var(--ck-text-lg); font-weight: 800; }
 .dash-card-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+/* A small link in the head of a card («Динамика», «Изменить», «Все»): a 44 px target that takes no room of the row. */
+.ck-panel-head > .dash-card-link { display: inline-flex; align-items: center; min-height: 44px; margin-block: -12px; color: var(--ck-link); font-size: var(--ck-text-sm); font-weight: 700; text-decoration: none; white-space: nowrap; }
+.dash-card-link:hover { text-decoration: underline; text-underline-offset: 3px; }
 .dash-note { margin: 0; color: var(--ck-text-muted); }
-.dash-link { display: inline-flex; align-items: center; min-height: 44px; color: var(--ck-link); font-weight: 600; white-space: nowrap; }
+.dash-inline-link, .dash-link { color: var(--ck-link); font-weight: 700; white-space: nowrap; }
 .dash-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .dash-value { white-space: nowrap; font-variant-numeric: tabular-nums; }
-.dash-strong { font-weight: 700; color: var(--ck-text); }
+.dash-strong { font-weight: 800; color: var(--ck-text); }
 .dash-currency { color: var(--ck-text-muted); font-weight: 600; white-space: nowrap; }
 
-/* Месяц и семья: крупные стрелки без свайпа; новый месяц въезжает со своей стороны (только без reduced-motion). */
-.dash-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
-.dash-month { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.dash-month-title { margin: 0; font-size: var(--ck-text-xl); white-space: nowrap; }
-.dash-month-step { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 48px; height: 48px; border: 1px solid var(--ck-border); border-radius: 50%; background: var(--ck-surface); color: var(--ck-text); font-size: var(--ck-text-xl); line-height: 1; text-decoration: none; }
-.dash-month-step-off { color: var(--ck-disabled-text); background: var(--ck-disabled-bg); border-color: var(--ck-disabled-border); }
-.dash-family { display: flex; margin: 0; padding: 0; list-style: none; }
-/* A letter on a category tint is main text (4.5:1 needs --ck-text: an orange letter on its tint is 3.5:1 in the light
-   theme); the category colour is the ring, a non-text mark that needs 3:1. Same for the badges of recent spends. */
-.dash-avatar { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border: 2px solid var(--ck-bg); border-radius: 50%; background: var(--dash-cat-tint); color: var(--ck-text); box-shadow: inset 0 0 0 2px var(--dash-cat); font-weight: 800; white-space: nowrap; }
-.dash-avatar + .dash-avatar { margin-left: -8px; }
+/* The two columns of a wide screen; one column of a phone in the order of the artifact: the money, the actions, the
+   limits, the latest spends. */
+.dash-column { display: contents; }
+.dash-column-side > * { order: 1; }
+.dash-recent { order: 2; }
+
+/* The header row of the shell: «‹ Октябрь 2026 ›» and the family on the right; the new month slides in from its
+   side (only without reduced motion). */
+.dash-family { display: flex; flex: none; margin: 0 0 0 auto; padding: 0; list-style: none; }
+/* A letter on a category tint is main text (4.5:1 needs --ck-text: a gold letter on its tint is 3.5:1 in the light
+   theme); the frame in the colour of the page parts the overlapping circles. */
+.dash-avatar { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: 2px solid var(--ck-bg); border-radius: 50%; background: var(--dash-cat-tint); color: var(--ck-text); font-size: var(--ck-text-xs); font-weight: 800; white-space: nowrap; }
+.dash-avatar + .dash-avatar { margin-left: -10px; }
 @media (prefers-reduced-motion: no-preference) {
   .dash-slide-forward { animation: dash-slide-forward 200ms ease-out; }
   .dash-slide-back { animation: dash-slide-back 200ms ease-out; }
@@ -40,173 +47,207 @@
   @keyframes dash-slide-back { from { transform: translateX(-24px); opacity: 0.4; } }
 }
 
-/* Потрачено за месяц: первая валюта — цифра-герой, вторая — просто шрифт цифр. */
-.dash-label { margin: 0; color: var(--ck-text-muted); font-weight: 600; }
+/* Потрачено за месяц: the hero figure, the comparison in its colour, the overall limit (10 px) with what is left
+   on the left and the days on the right. */
+.dash-hero { gap: 12px; }
+.dash-label { margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-sm); font-weight: 600; }
 .dash-total { margin: 0; line-height: 1.1; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.dash-total-plain { font-size: var(--ck-text-xl); }
-.dash-compare { margin: 0; color: var(--ck-text-muted); }
+.dash-compare { margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-sm); font-weight: 600; }
 .dash-compare-less { color: var(--ck-success-text); }
 .dash-compare-more { color: var(--ck-over-text); }
-.dash-left { margin: 0; color: var(--ck-text-muted); }
-.dash-days { white-space: nowrap; }
-.dash-over { margin: 0; color: var(--ck-over-text); font-weight: 600; }
+.dash-hero-limit { display: grid; gap: 8px; margin-top: 4px; }
+.dash-left { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 12px; margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-xs); }
+.dash-days { margin-left: auto; white-space: nowrap; }
+.dash-hero-note { font-size: var(--ck-text-xs); }
+.dash-over { margin: 0; color: var(--ck-over-text); font-size: var(--ck-text-xs); font-weight: 700; }
+
+/* Other currencies: a row each, the sign of the currency in the badge. */
+.dash-others { gap: 4px; padding-block: 12px 4px; }
+.dash-others .ck-panel-head { padding-top: 4px; }
+.dash-currency-badge { background: var(--ck-accent-bg); color: var(--ck-accent-text); font-size: var(--ck-text-lg); }
+.dash-other { min-height: 60px; }
 
 /* Полоса прогресса: дорожка и заполненная часть; сверх лимита — свой цвет. */
 .dash-bar { height: 10px; overflow: hidden; border-radius: 5px; background: var(--ck-track); }
-.dash-bar-fill { display: block; height: 100%; min-width: 0; border-radius: 5px; background: var(--ck-accent); }
+.dash-bar-fill { display: block; height: 100%; min-width: 0; border-radius: inherit; background: var(--ck-primary); }
+.dash-limit .dash-bar { height: 8px; border-radius: 4px; }
 .dash-limit .dash-bar-fill { background: var(--dash-cat); }
 .dash-bar-over .dash-bar-fill, .dash-limit .dash-bar-over .dash-bar-fill { background: var(--ck-over-bar); }
 
-/* Три быстрых действия одним рядом: на телефоне — внизу, под большим пальцем, над нижним меню (ck-action-bar). */
-.dash-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.dash-action { display: flex; align-items: center; justify-content: center; min-height: 52px; padding: 0 8px; border: 1px solid var(--ck-border-field); border-radius: 16px; background: var(--ck-surface); color: var(--ck-text); font-size: var(--ck-text-sm); font-weight: 700; text-decoration: none; white-space: nowrap; }
-.dash-action-shot { border-color: var(--ck-accent); background: var(--ck-accent); color: var(--ck-on-accent); }
-.dash-action-shot:hover:not(:disabled) { border-color: var(--ck-accent); background: var(--ck-accent); color: var(--ck-on-accent); text-decoration: underline; }
-.dash-action-spend:hover { background: var(--ck-surface-raised); }
+/* Two big actions of 64 px: the camera on the fill of the main action, the form as an outline in the link colour. */
+.dash-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.dash-action { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 64px; padding: 0 12px; border: 1.5px solid var(--ck-link); border-radius: var(--ck-radius-button); background: var(--ck-surface); color: var(--ck-link); font-size: var(--ck-text-base); font-weight: 800; text-decoration: none; white-space: nowrap; }
+.dash-action .ck-icon { flex: none; }
+.dash-action-shot { border-color: var(--ck-primary); background: var(--ck-primary); color: var(--ck-on-primary); }
+.dash-action-shot:hover:not(:disabled) { border-color: var(--ck-primary-hover); background: var(--ck-primary-hover); color: var(--ck-on-primary); }
+.dash-action-spend:hover { border-color: var(--ck-link-hover); background: var(--ck-surface-raised); color: var(--ck-link-hover); }
 
-/* Лимиты по категориям */
-.dash-limit-list, .dash-recent-list, .limits-list { display: grid; margin: 0; padding: 0; list-style: none; }
-.dash-limit-list { gap: 16px; }
+/* Лимиты по категориям: a coloured dot and the name, «spent / limit» on one line at the right, an 8 px bar. */
+.dash-limit-list, .dash-plain-list, .limits-list { display: grid; margin: 0; padding: 0; list-style: none; }
+.dash-limit-list { gap: 18px; }
 .dash-limit { display: grid; gap: 8px; min-width: 0; }
-.dash-limit-head, .limits-row-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
-/* On a narrow card «92 300 / 120 000 KZT» leaves the name about 80–100 px: the value goes under the name, at the right,
-   instead of the name breaking mid-word. */
-.dash-limit-head { flex-wrap: wrap; row-gap: 2px; }
+.dash-limit-head, .limits-row-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .dash-limit-name { overflow-wrap: normal; }
 .dash-limit-value { margin-left: auto; }
-.dash-dot { flex: 0 0 auto; width: 12px; height: 12px; border-radius: 50%; background: var(--dash-cat); }
-.dash-limit-name, .limits-name { flex: 1 1 auto; min-width: 0; font-weight: 600; }
-.dash-limit-value, .limits-current { flex: 0 0 auto; color: var(--ck-text-muted); font-size: var(--ck-text-sm); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.dash-dot { flex: 0 0 auto; width: 10px; height: 10px; border-radius: 50%; background: var(--dash-cat); }
+.dash-limit-name, .limits-name { flex: 1 1 auto; min-width: 0; font-size: var(--ck-text-sm); font-weight: 600; }
+.dash-limit-value, .limits-current { flex: 0 0 auto; font-size: var(--ck-text-sm); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.dash-limit-spent { color: var(--ck-text); font-weight: 700; }
+.dash-limit-spent-over { color: var(--ck-over-text); }
+.dash-limit-of { color: var(--ck-text-muted); font-weight: 500; }
 
-/* Подкатегории с лимитами под строкой корня: отступ до имени корня (точка 12 px + зазор 10 px), тоньше полоса;
-   цвет полосы — цвет корня (--dash-cat наследуется от .dash-limit). Глубже — ещё по 12 px. Текст не мельче 13 px. */
-.dash-sublimit-list { display: grid; gap: 10px; margin: 2px 0 0; padding: 0 0 0 22px; list-style: none; }
+/* Подкатегории под строкой корня: отступ до имени корня (точка 10 px + зазор 8 px), полоса тоньше; цвет полосы — цвет
+   корня (--dash-cat наследуется от .dash-limit). Глубже — ещё по 12 px. Текст не мельче 13 px. */
+.dash-sublimit-list { display: grid; gap: 12px; margin: 2px 0 0; padding: 0 0 0 18px; list-style: none; }
 .dash-sublimit .dash-sublimit-list { padding-left: 12px; }
 .dash-sublimit { display: grid; gap: 6px; min-width: 0; }
-.dash-sublimit-name { flex: 1 1 auto; min-width: 0; overflow-wrap: normal; font-size: var(--ck-text-sm); font-weight: 600; }
-.dash-sublimit-value { font-size: var(--ck-text-xs); white-space: nowrap; }
-.dash-sublimit-over { font-size: var(--ck-text-sm); }
-/* Подкатегории свёрнуты: своя кнопка под строкой (ссылка строки ведёт в «Траты категории»), 44 px по высоте.
-   Шеврон поворачивается без анимации; подсказка с лимитами — одна строка, иначе только число. */
-.dash-sub-toggle { display: flex; align-items: center; gap: 8px; justify-self: start; max-width: 100%; min-height: 44px; margin: -6px 0 0; padding: 0 8px 0 0; border: 0; background: none; color: var(--ck-text-muted); font: inherit; font-size: var(--ck-text-sm); text-align: left; cursor: pointer; }
+.dash-sublimit-name { flex: 1 1 auto; min-width: 0; overflow-wrap: normal; font-size: var(--ck-text-xs); font-weight: 600; }
+.dash-sublimit-value { font-size: var(--ck-text-xs); }
+.dash-sublimit-over { font-size: var(--ck-text-xs); }
+/* Подкатегории свёрнуты: своя кнопка под строкой (ссылка строки ведёт в «Траты категории»). 44 px по высоте, но
+   поля отрицательные: в строке она занимает одну строчку текста. Шеврон поворачивается без анимации. */
+.dash-sub-toggle { display: flex; align-items: center; gap: 6px; justify-self: start; max-width: 100%; min-height: 44px; margin: -12px 0 -14px 12px; padding: 0 8px 0 0; border: 0; background: none; color: var(--ck-text-muted); font: inherit; font-size: var(--ck-text-xs); font-weight: 600; text-align: left; cursor: pointer; }
 .dash-sub-toggle:hover .dash-sub-count { text-decoration: underline; text-underline-offset: 3px; }
-.dash-sub-chevron { flex: 0 0 auto; width: 12px; text-align: center; }
+.dash-sub-chevron { flex: 0 0 auto; }
 .dash-sub-toggle[aria-expanded="true"] .dash-sub-chevron { transform: rotate(90deg); }
-.dash-sub-text { display: grid; min-width: 0; }
+.dash-sub-text { display: flex; gap: 8px; min-width: 0; }
 .dash-sub-count { white-space: nowrap; }
-.dash-sub-hint { overflow: hidden; font-size: var(--ck-text-xs); white-space: nowrap; text-overflow: ellipsis; }
+.dash-sub-hint { overflow: hidden; font-size: var(--ck-text-xs); font-weight: 600; white-space: nowrap; text-overflow: ellipsis; }
 .dash-sublimit-list[hidden] { display: none; }
 .dash-bar-small { height: 6px; border-radius: 3px; }
-.dash-bar-small .dash-bar-fill { border-radius: 3px; }
 
-/* Последние траты: каждая — кусочек ленты чека; ссылка внутри ленты выше зубцов, кольцо фокуса не срезается. */
-.dash-recent-list { gap: 10px; }
-.dash-recent-tape { padding-bottom: 8px; background: var(--ck-surface-raised); }
-.dash-recent-item { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 56px; padding: 8px 12px; color: var(--ck-text); text-decoration: none; }
-.dash-recent-item:focus-visible { outline-offset: -3px; }
-.dash-recent-item:hover .dash-recent-title { text-decoration: underline; }
-.dash-badge { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 14px; background: var(--dash-cat-tint); color: var(--ck-text); box-shadow: inset 0 0 0 2px var(--dash-cat); font-weight: 800; white-space: nowrap; }
-.dash-recent-main { display: grid; gap: 2px; min-width: 0; }
-.dash-recent-title { overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.dash-recent-meta { color: var(--ck-text-muted); font-size: var(--ck-text-xs); }
-.dash-recent-amount { font-size: var(--ck-text-base); white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* Categories without a limit: below the limited ones, one compact line each, no bars. */
+.dash-plain-block { display: grid; gap: 2px; padding-top: 14px; border-top: 1px solid var(--ck-divider); }
+.dash-plain-title { margin: 0 0 4px; color: var(--ck-text-muted); font-size: var(--ck-text-xs); font-weight: 700; letter-spacing: 0.02em; }
+.dash-plain-head { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 40px; color: var(--ck-text); text-decoration: none; }
+.dash-plain-name { flex: 1 1 auto; min-width: 0; font-size: var(--ck-text-sm); font-weight: 500; overflow-wrap: normal; }
+.dash-plain-value { flex: none; color: var(--ck-text-muted); font-size: var(--ck-text-sm); white-space: nowrap; }
+
+/* Последние траты: rows of the list brick, a tinted badge in the colour of the category. */
+.dash-recent { gap: 0; padding-block: 12px 4px; }
+.dash-recent .ck-panel-head { padding: 4px 0 8px; }
+.dash-recent .ck-list > li:first-child { border-top: 1px solid var(--ck-divider); }
+.dash-recent-item { border-radius: var(--ck-radius-sm); }
+.dash-recent-item:focus-visible { outline-offset: 2px; }
+.dash-recent-item:hover .dash-recent-title { text-decoration: underline; text-underline-offset: 3px; }
+.dash-badge { background: var(--dash-cat-tint); color: var(--ck-text); font-size: var(--ck-text-base); }
 
 /* Строка категории на «Главной» — ссылка на её траты месяца: вся голова строки, не меньше 44 px. */
 .dash-limit-link { min-height: 44px; color: var(--ck-text); text-decoration: none; }
-.dash-limit-link:hover .dash-limit-name, .dash-limit-link:hover .dash-sublimit-name { text-decoration: underline; text-underline-offset: 3px; }
-.dash-limit-link .dash-limit-value::after { content: "›"; margin-left: 8px; color: var(--ck-text-muted); }
+.dash-limit-head.dash-limit-link { margin-block: -8px; }
+.dash-limit-link:hover .dash-limit-name, .dash-limit-link:hover .dash-sublimit-name, .dash-limit-link:hover .dash-plain-name { text-decoration: underline; text-underline-offset: 3px; }
 
-/* «Траты категории»: путь, месяц, итог-герой, из чего сложилось (части — ссылки глубже), траты и чеки. */
-.cat-spends-title { display: grid; gap: 2px; min-width: 0; }
-.cat-spends-name { white-space: normal; overflow-wrap: anywhere; }
-.cat-crumbs { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: var(--ck-text-sm); }
-.cat-crumbs a { display: inline-flex; align-items: center; min-height: 44px; color: var(--ck-link); }
+/* «Траты категории»: the name is the heading of the page; the categories above it, the month with its steps in the
+   head of the first card, the hero total, what it consists of (parts link deeper), the spends and receipts. */
+.cat-crumbs { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 0 10px; margin-top: -8px; padding-inline: 4px; font-size: var(--ck-text-sm); }
+.cat-crumbs a { display: inline-flex; align-items: center; min-height: 44px; color: var(--ck-link); font-weight: 700; text-decoration: none; }
 .cat-crumbs a::after { content: "›"; margin-left: 10px; color: var(--ck-text-muted); }
-.cat-spends-month { font-weight: 700; white-space: nowrap; }
-.cat-parts { display: grid; gap: 10px; margin: 4px 0 0; padding: 0; list-style: none; }
+.cat-month { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: -8px 0 -4px; }
+.cat-spends-month { font-size: var(--ck-text-base); font-weight: 800; white-space: nowrap; }
+.cat-month-steps { display: flex; gap: 8px; }
+.ck-round.dash-month-step-off { border-color: var(--ck-disabled-border); background: var(--ck-disabled-bg); color: var(--ck-disabled-text); }
+.cat-spends-total { gap: 10px; }
+.dash-total-plain { font-size: var(--ck-text-xl); }
+.cat-spends-count { font-size: var(--ck-text-sm); }
+.cat-parts { display: grid; gap: 14px; margin: 8px 0 0; padding: 14px 0 0; border-top: 1px solid var(--ck-divider); list-style: none; }
 .cat-part { display: grid; gap: 6px; min-height: 44px; color: var(--ck-text); text-decoration: none; }
 .cat-part-link:hover .cat-part-name { text-decoration: underline; text-underline-offset: 3px; }
-.cat-part-head { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; min-width: 0; }
-.cat-part-name { flex: 1 1 auto; min-width: 0; font-weight: 600; }
-.cat-part-amount { margin-left: auto; white-space: nowrap; }
+.cat-part-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.cat-part-name { flex: 1 1 auto; min-width: 0; font-size: var(--ck-text-sm); font-weight: 600; }
+.cat-part-amount { flex: none; margin-left: auto; font-size: var(--ck-text-sm); white-space: nowrap; }
 .cat-part-link .cat-part-amount::after { content: "›"; margin-left: 8px; color: var(--ck-text-muted); }
-.cat-spends-items h2 { font-size: var(--ck-text-lg); }
+.cat-spends-items { gap: 0; padding-block: 12px 4px; }
+.cat-spends-items .ck-panel-head { padding: 4px 0 8px; }
 .cat-spend-list { display: grid; margin: 0; padding: 0; list-style: none; }
-.cat-spend + .cat-spend { border-top: 1px solid var(--ck-divider); }
-.cat-spend-row { display: flex; align-items: flex-start; gap: 12px; min-height: 56px; padding: 10px 0; color: var(--ck-text); text-decoration: none; }
+.cat-spend { border-top: 1px solid var(--ck-divider); }
+.cat-spend-row { display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 12px 0; color: var(--ck-text); text-decoration: none; }
 .cat-spend-row:hover .cat-spend-title { text-decoration: underline; text-underline-offset: 3px; }
-.cat-spend-main { display: grid; flex: 1 1 auto; gap: 2px; min-width: 0; }
-.cat-spend-title { font-weight: 700; overflow-wrap: anywhere; }
-.cat-spend-note { color: var(--ck-text); font-size: var(--ck-text-sm); overflow-wrap: anywhere; }
-.cat-spend-meta { color: var(--ck-text-muted); font-size: var(--ck-text-sm); }
-.cat-spend-amount { display: grid; flex: none; justify-items: end; gap: 2px; font-size: var(--ck-text-base); white-space: nowrap; }
+.cat-spend-badge { display: flex; flex: none; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: var(--ck-radius-sm); background: var(--dash-cat-tint); color: var(--ck-text); }
+.cat-spend-main { display: flex; flex: 1 1 auto; flex-direction: column; gap: 2px; min-width: 0; }
+.cat-spend-title { font-size: var(--ck-text-sm); font-weight: 700; overflow-wrap: anywhere; }
+.cat-spend-note { color: var(--ck-text); font-size: var(--ck-text-xs); overflow-wrap: anywhere; }
+.cat-spend-meta { color: var(--ck-text-muted); font-size: var(--ck-text-xs); }
+.cat-spend-amount { display: grid; flex: none; justify-items: end; gap: 2px; font-size: var(--ck-text-sm); white-space: nowrap; }
 .cat-spend-whole { color: var(--ck-text-muted); font-size: var(--ck-text-xs); white-space: nowrap; }
-.cat-spend-lines { padding: 0 0 10px; }
-.cat-spend-lines summary { display: flex; align-items: center; min-height: 44px; color: var(--ck-link); font-weight: 600; cursor: pointer; }
-.cat-spend-lines ul { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.cat-spend-lines { padding: 0 0 10px 52px; }
+.cat-spend-lines summary { display: flex; align-items: center; min-height: 44px; margin-top: -8px; color: var(--ck-link); font-size: var(--ck-text-sm); font-weight: 700; cursor: pointer; }
+.cat-spend-lines ul { display: grid; gap: 6px; margin: 0; padding: 0; font-size: var(--ck-text-sm); list-style: none; }
 .cat-spend-line-name { overflow-wrap: anywhere; }
-.cat-spend-line-category { color: var(--ck-text-muted); font-size: var(--ck-text-sm); }
+.cat-spend-line-category { color: var(--ck-text-muted); font-size: var(--ck-text-xs); }
 
 /* Пустой месяц: с действием */
 .dash-empty-title { margin: 0; font-size: var(--ck-text-lg); font-weight: 700; }
-.dash-empty-action { display: flex; align-items: center; justify-content: center; min-height: 52px; padding: 0 20px; border: 1px solid var(--ck-brand); border-radius: var(--ck-radius-button); background: var(--ck-brand); color: var(--ck-on-brand); font-weight: 700; text-decoration: none; white-space: nowrap; }
-.dash-empty-action:hover { background: var(--ck-brand-hover); border-color: var(--ck-brand-hover); color: var(--ck-on-brand); }
+.dash-empty-action { display: flex; align-items: center; justify-content: center; min-height: 52px; padding: 0 20px; border: 1px solid var(--ck-primary); border-radius: var(--ck-radius-button); background: var(--ck-primary); color: var(--ck-on-primary); font-weight: 800; text-decoration: none; white-space: nowrap; }
+.dash-empty-action:hover { background: var(--ck-primary-hover); border-color: var(--ck-primary-hover); color: var(--ck-on-primary); }
 
-/* Экран лимитов: категории — строки одного списка во всю ширину; сохраняет панель внизу. */
-.limits-small-heading { font-size: var(--ck-text-base); }
+/* Экран лимитов: a note, the currency (chips and another code), one card of rows — a category with its limit and a
+   field each — and the save bar pinned at the bottom (ck-action-bar). */
+.limits-intro { padding-inline: 4px; color: var(--ck-text-muted); font-size: var(--ck-text-sm); }
+.limits-small-heading { font-size: var(--ck-text-lg); font-weight: 800; }
+.limits-currencies { gap: 12px; }
 .dash-chips { display: flex; flex-wrap: wrap; gap: 8px; }
-.dash-chip { min-height: 44px; padding: 8px 16px; border: 1px solid var(--ck-border-field); border-radius: 22px; background: var(--ck-surface); color: var(--ck-text); font-weight: 600; white-space: nowrap; }
+.dash-chip { min-height: 44px; padding: 8px 18px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-pill); background: var(--ck-surface); color: var(--ck-text); font-weight: 700; white-space: nowrap; }
 .dash-chip:hover:not(:disabled) { border-color: var(--ck-border-field); background: var(--ck-surface-raised); color: var(--ck-text); }
-.dash-chip[aria-pressed="true"], .dash-chip[aria-pressed="true"]:hover:not(:disabled) { border-color: var(--ck-text); background: var(--ck-text); color: var(--ck-bg); }
-.limits-add-currency { display: grid; gap: 6px; min-width: 0; }
-.limits-add-currency label { font-weight: 600; }
+.dash-chip[aria-pressed="true"], .dash-chip[aria-pressed="true"]:hover:not(:disabled) { border-color: var(--ck-chip-selected-bg); background: var(--ck-chip-selected-bg); color: var(--ck-chip-selected-text); font-weight: 800; }
+.limits-add-currency { display: grid; gap: 6px; min-width: 0; padding-top: 12px; border-top: 1px solid var(--ck-divider); }
+.limits-add-currency label { color: var(--ck-text-muted); font-size: var(--ck-text-sm); font-weight: 600; }
 .limits-add-row { display: flex; gap: 8px; align-items: stretch; }
 .limits-add-row input { flex: 0 1 7rem; min-width: 0; padding: 8px 12px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-surface); color: var(--ck-text); font-size: var(--ck-text-base); text-transform: uppercase; }
-.limits-list { border: 1px solid var(--ck-border); border-radius: 20px; background: var(--ck-surface); overflow: hidden; }
-.limits-row { display: grid; gap: 8px; min-width: 0; padding: 14px 16px; }
+.limits-list { border-radius: var(--ck-radius); background: var(--ck-surface); box-shadow: var(--ck-card-shadow); overflow: hidden; }
+.limits-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; min-width: 0; padding: 16px 20px; }
 .limits-list > .limits-row + .limits-row { border-top: 1px solid var(--ck-divider); }
 .limits-row-changed { background: var(--ck-accent-bg); }
-.limits-form { display: grid; gap: 10px; min-width: 0; }
+.limits-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; min-width: 0; }
 .limits-controls { display: flex; gap: 8px; align-items: stretch; }
 .limits-input { display: flex; flex: 1 1 10rem; align-items: center; min-width: 0; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-surface); }
 /* 18 px: the field is never smaller than 16 px, iOS does not zoom the page in. */
-.limits-input input { flex: 1 1 auto; min-width: 0; min-height: 44px; padding: 8px 12px; border: 0; background: transparent; color: var(--ck-text); font-family: var(--ck-font-figures); font-size: var(--ck-text-lg); font-weight: 600; font-variant-numeric: tabular-nums; }
+.limits-input input { flex: 1 1 auto; min-width: 0; min-height: 44px; padding: 8px 12px; border: 0; background: transparent; color: var(--ck-text); font-family: var(--ck-font-figures); font-size: var(--ck-text-lg); font-weight: 700; font-variant-numeric: tabular-nums; }
 .limits-input:has(input[aria-invalid="true"]) { border-color: var(--ck-error-border); }
-.limits-input-currency { padding: 0 12px; color: var(--ck-text-muted); white-space: nowrap; }
+.limits-input-currency { padding: 0 14px; color: var(--ck-text-muted); font-weight: 700; white-space: nowrap; }
+.limits-current { color: var(--ck-text-muted); font-weight: 700; }
 .limits-savebar { display: flex; }
-.limits-save { flex: 1 1 auto; min-height: 52px; border-color: var(--ck-accent); background: var(--ck-accent); color: var(--ck-on-accent); font-weight: 700; white-space: nowrap; }
-.limits-save:hover:not(:disabled) { border-color: var(--ck-accent); background: var(--ck-accent); color: var(--ck-on-accent); text-decoration: underline; }
+.limits-save { flex: 1 1 auto; min-height: 56px; font-size: var(--ck-text-base); font-weight: 800; white-space: nowrap; }
 .limits-delete { flex: 0 0 auto; min-height: 44px; }
-.limits-done { margin: 0; color: var(--ck-success-text); }
+.limits-done { margin: 0; color: var(--ck-success-text); font-size: var(--ck-text-sm); }
 .limits-row .receipt-field-error { margin: 0; }
 /* Подкатегория: отступ по глубине (до четырёх уровней) внутри строки, цвет — цвет её корня. */
-.limits-row-sub { padding-left: calc(16px + var(--limits-depth, 1) * 16px); }
+.limits-row-sub { padding-left: calc(20px + var(--limits-depth, 1) * 16px); }
 .limits-row-sub .limits-name { font-weight: 500; }
-.limits-toggle { justify-self: start; min-height: 44px; padding: 8px 12px; border: 1px solid var(--ck-border-field); border-radius: 22px; background: var(--ck-surface); color: var(--ck-link); font-weight: 600; white-space: nowrap; }
-.limits-toggle:hover:not(:disabled) { border-color: var(--ck-border-field); background: var(--ck-surface-raised); color: var(--ck-link); }
+.limits-toggle { display: inline-flex; align-items: center; gap: 6px; justify-self: start; min-height: 44px; margin: -6px 0 -10px -4px; padding: 0 8px 0 4px; border: 0; background: none; color: var(--ck-link); font-size: var(--ck-text-sm); font-weight: 700; white-space: nowrap; }
+.limits-toggle:hover:not(:disabled) { border: 0; background: none; color: var(--ck-link-hover); text-decoration: underline; }
+.limits-back { padding-inline: 4px; }
+.limits-toggle-chevron { flex: none; }
+.limits-toggle-open { transform: rotate(90deg); }
 
 /* «История изменений» на экране лимитов: запись — строка списка; дата и кто, категория, «старое → новое» и ▲/▼ с процентом. */
-.limits-history { display: grid; gap: 12px; min-width: 0; }
+.limits-history { gap: 12px; }
 .limits-history-filter { display: grid; gap: 6px; min-width: 0; }
 .limits-history-filter label { font-weight: 600; }
 .limits-history-filter select { min-height: 44px; min-width: 0; max-width: 100%; padding: 8px 12px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-surface); color: var(--ck-text); font-size: var(--ck-text-base); }
 .limits-history-list { margin: 0; padding: 0; list-style: none; }
-.limits-history-item { display: grid; gap: 4px; min-width: 0; padding: 12px 0; }
+.limits-history-item { display: grid; gap: 2px; min-width: 0; padding: 12px 0; }
+/* What changed first, then when and who, quieter. */
+.limits-history-item > .limits-history-meta { order: 3; }
 .limits-history-item + .limits-history-item { border-top: 1px solid var(--ck-divider); }
-.limits-history-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--ck-text-muted); font-size: var(--ck-text-sm); }
+.limits-history-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--ck-text-muted); font-size: var(--ck-text-xs); }
 .limits-history-meta time { white-space: nowrap; }
-.limits-history-category { font-weight: 600; }
+.limits-history-category { font-size: var(--ck-text-sm); font-weight: 700; }
 .limits-history-change { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
 .limits-history-badge { font-size: var(--ck-text-sm); font-weight: 700; white-space: nowrap; }
 .limits-history-up { color: var(--ck-over-text); }
 .limits-history-down { color: var(--ck-success-text); }
 
+/* A wide screen: the month and the spends on the left, the limits beside them. */
+@media (min-width: 960px) {
+  .dash { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; max-width: none; }
+  .dash-column { display: grid; gap: 16px; min-width: 0; }
+}
+
 @media (max-width: 540px) {
-  .dash-card { padding: 16px; }
-  /* The quick actions sit in the thumb zone: last on the screen, pinned above the navigation by ck-action-bar. */
-  .dash-actions { order: 1; }
+  /* The save bar of the limits spans the window, as the save bar of a new spend in the artifact. */
+  .limits-savebar { margin-inline: -16px; padding-inline: 16px; }
   .dash-sublimit-list { padding-left: 14px; }
   .dash-sublimit .dash-sublimit-list { padding-left: 8px; }
-  .limits-row { padding: 12px; }
-  .limits-row-sub { padding-left: calc(12px + var(--limits-depth, 1) * 10px); }
+  .limits-row { padding: 14px 16px; }
+  .limits-row-sub { padding-left: calc(16px + var(--limits-depth, 1) * 10px); }
 }

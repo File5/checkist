@@ -111,7 +111,8 @@ export default function StackedColumns({
         {legend.map((entry) => (
           <li key={entry.key}>
             <Swatch tone={entry.tone} />
-            <span>{entry.label}{entry.note && <span className="ck-chart-note"> · <span className="ck-chart-whole">{entry.note}</span></span>}</span>
+            <span className="ck-columns-label">{entry.label}</span>
+            {entry.note && <span className="ck-chart-note ck-columns-note"><span className="ck-chart-hidden"> · </span><span className="ck-chart-whole">{entry.note}</span></span>}
           </li>
         ))}
       </ul>

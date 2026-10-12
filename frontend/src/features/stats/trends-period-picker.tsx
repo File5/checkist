@@ -7,6 +7,7 @@ import { Link, maxTrendsPeriodMonths, navigate } from '../../navigation'
 import type { TrendsQuery } from '../../navigation'
 import { checkPeriod, fieldValue, supportsMonthInput, monthsCount, parsePeriodPhrase, periodHref, periodText, presetChoices, resolvePeriod } from './trends-period'
 import type { Period, PeriodDraft, PeriodErrors } from './trends-period'
+import { useChipInView } from './chip-in-view'
 import { monthName } from './trends-state'
 
 
@@ -104,32 +105,43 @@ export default function TrendsPeriodPicker({ query, current, first, narrow: narr
   const sheetId = useId()
   const period = resolvePeriod(query, current)
   const key = `${period.from}-${period.to}-${native}`
+  const chipsRef = useChipInView<HTMLElement>(`${key}-${narrow}-${first ?? ''}`)
   const apply = (next: Period) => {
     setOpen(false)
     navigate(periodHref(query, next))
   }
   const form = <PeriodForm key={key} period={period} current={current} native={native} onApply={apply} />
+  const chips = (
+    <ChipScroller label="Готовые периоды" className="trends-period-chips">
+      {presetChoices(query, current, first).map((choice) => choice.href === null
+        ? <span key={choice.key} className="ck-chip trends-chip-off" aria-disabled="true"
+          title={first === null ? 'Чеков пока нет' : 'Узнаём, с какого месяца есть чеки…'}>{choice.label}</span>
+        : <Link key={choice.key} className="ck-chip" to={choice.href} aria-current={choice.active ? 'true' : undefined}
+          title={choice.clipped ? `Чеки есть и раньше; показаны последние ${monthsCount(maxTrendsPeriodMonths)}` : undefined}>{choice.label}</Link>)}
+    </ChipScroller>
+  )
   return (
-    <section className="trends-period" aria-label="Период">
-      <ChipScroller label="Готовые периоды" className="trends-period-chips">
-        {presetChoices(query, current, first).map((choice) => choice.href === null
-          ? <span key={choice.key} className="ck-chip trends-chip-off" aria-disabled="true"
-            title={first === null ? 'Чеков пока нет' : 'Узнаём, с какого месяца есть чеки…'}>{choice.label}</span>
-          : <Link key={choice.key} className="ck-chip" to={choice.href} aria-current={choice.active ? 'true' : undefined}
-            title={choice.clipped ? `Чеки есть и раньше; показаны последние ${monthsCount(maxTrendsPeriodMonths)}` : undefined}>{choice.label}</Link>)}
-      </ChipScroller>
-      <PeriodText period={period} />
+    <section ref={chipsRef} className="trends-period" aria-label="Период">
       {narrow ? (
         <>
-          <button type="button" className="ck-button-secondary trends-period-open" aria-haspopup="dialog" aria-expanded={open}
-            aria-controls={open ? sheetId : undefined} onClick={() => setOpen(true)}>Свой период</button>
+          {/* On a phone «Свой период» stands at the start of the row of ready periods, like «Фильтры» on «Траты». */}
+          <div className="trends-period-bar">
+            <button type="button" className="trends-period-open" aria-haspopup="dialog" aria-expanded={open}
+              aria-controls={open ? sheetId : undefined} onClick={() => setOpen(true)}>Свой период</button>
+            {chips}
+          </div>
+          <PeriodText period={period} />
           <Sheet open={open} onClose={() => setOpen(false)} title="Свой период" id={sheetId}>{form}</Sheet>
         </>
       ) : (
-        <div className="trends-period-custom">
-          <h3 className="trends-subheading">Свой период</h3>
-          {form}
-        </div>
+        <>
+          {chips}
+          <PeriodText period={period} />
+          <div className="trends-period-custom">
+            <h3 className="trends-subheading">Свой период</h3>
+            {form}
+          </div>
+        </>
       )}
     </section>
   )

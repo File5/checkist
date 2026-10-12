@@ -4,6 +4,7 @@ import RequestState from '../../components/RequestState'
 import { useLocalRequestFocus } from '../../components/useLocalRequestFocus'
 import { LineChart } from '../../lib/charts'
 import { formatAxisTick } from '../../lib/charts/scale'
+import { currencySymbol } from '../../lib/money'
 import { Link, receiptsStatsHref } from '../../navigation'
 import type { ReceiptsStatsQuery } from '../../navigation'
 import { PeriodDate } from './period'
@@ -21,7 +22,7 @@ function CurrencyTrend({ block, interval }: { block: ReceiptSeriesCurrency; inte
   const formatTick = useCallback((x: string) => intervalName(x, interval, true), [interval])
   return (
     <article className="stats-currency" aria-labelledby={id}>
-      <h4 id={id}>{block.currency}</h4>
+      <h4 id={id}>Средний и медианный чек, {currencySymbol(block.currency)}</h4>
       <LineChart title={`Средний и медианный чек, ${block.currency}`} series={charts.receipts} interval={interval} zeroBaseline
         formatX={formatX} formatTick={formatTick} formatValue={moneyAxisNumber} valueAxisLabel={block.currency} />
       <LineChart title="Позиций на чек" series={charts.lines} interval={interval} zeroBaseline
@@ -79,18 +80,17 @@ export default function TrendBlock(props: TrendBlockProps) {
   return (
     <section ref={block} className="stats-panel" aria-labelledby={id} aria-busy={state.kind === 'loading'}>
       <h3 id={id} data-request-focus-target tabIndex={-1}>Средний чек по времени</h3>
-      <p className="stats-note">Охват графика: {span}. Интервал без походов — разрыв линии, а не ноль.</p>
       <nav className="stats-intervals" aria-label="Интервал графика">
-        <span className="stats-presets-title">Интервал:</span>
-        <ul>
+        <ul className="stats-chip-row">
           {intervalChoices(query.interval ?? 'month').map((choice) => (
             <li key={choice.interval}>
-              <Link className="stats-chip" to={intervalHref(query, choice.interval)} aria-current={choice.active ? 'true' : undefined}>{choice.label}</Link>
+              <Link className="ck-chip" to={intervalHref(query, choice.interval)} aria-current={choice.active ? 'true' : undefined}>{choice.label}</Link>
             </li>
           ))}
         </ul>
       </nav>
       <TrendBody {...props} />
+      <p className="stats-note stats-footnote">Охват графика: {span}. Интервал без походов — разрыв линии, а не ноль.</p>
     </section>
   )
 }

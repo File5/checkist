@@ -19,11 +19,12 @@ describe('LineChart step buttons (server markup and source text, not gestures)',
   const panel = /<div class="ck-line-steps"[^>]*>(.*?)<\/div>/.exec(html)
 
   it('puts three named buttons right under the plot, before the notes and the live line', () => {
+    // Short visible words fit one row of a phone; each name begins with them and says the whole step.
     expect(panel?.[0]).toBe(
       '<div class="ck-line-steps">'
-      + '<button type="button" disabled="">Предыдущий интервал</button>'
-      + '<button type="button" disabled="">Следующий интервал</button>'
-      + '<button type="button" disabled="">Снять выделение</button></div>',
+      + '<button type="button" disabled="" aria-label="Раньше: предыдущий интервал"><span aria-hidden="true">‹ </span>Раньше</button>'
+      + '<button type="button" disabled="" aria-label="Позже: следующий интервал">Позже<span aria-hidden="true"> ›</span></button>'
+      + '<button type="button" disabled="" aria-label="Снять выделение">Снять</button></div>',
     )
     const at = (text: string) => html.indexOf(text)
     expect(at('class="ck-line-steps"')).toBeGreaterThan(at('</svg>'))
@@ -37,7 +38,7 @@ describe('LineChart step buttons (server markup and source text, not gestures)',
   it('keeps every button off without a selection, also while all series are hidden', () => {
     const hidden = renderToStaticMarkup(<LineChart {...props} defaultHiddenKeys={['lidl', 'aldi']} />)
     expect(hidden).toContain('Все серии скрыты.')
-    expect(hidden.match(/<button type="button" disabled="">/g)).toHaveLength(3)
+    expect(hidden.match(/<button type="button" disabled=""/g)).toHaveLength(3)
   })
   it('draws no panel without data', () => {
     const empty = renderToStaticMarkup(<LineChart {...props} series={[]} />)

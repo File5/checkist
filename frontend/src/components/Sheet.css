@@ -7,16 +7,16 @@
 .ck-sheet {
   position: relative; display: flex; flex-direction: column; width: 100%; max-width: 640px; max-height: calc(100% - 48px); margin-inline: auto;
   padding: 8px max(20px, env(safe-area-inset-right, 0px)) calc(16px + var(--ck-safe-bottom)) max(20px, env(safe-area-inset-left, 0px));
-  border: 1px solid var(--ck-popover-border); border-bottom: 0; border-radius: var(--ck-radius) var(--ck-radius) 0 0;
-  background: var(--ck-surface); color: var(--ck-text); box-shadow: 0 -4px 16px var(--ck-popover-shadow);
+  border: 1px solid var(--ck-border); border-bottom: 0; border-radius: var(--ck-radius) var(--ck-radius) 0 0;
+  background: var(--ck-nav-bg); color: var(--ck-text); box-shadow: 0 -8px 24px var(--ck-popover-shadow);
 }
 /* A picture of the handle: the sheet is closed by the button, Esc or the backdrop, never dragged. */
 .ck-sheet-handle { flex: none; align-self: center; width: 36px; height: 4px; margin-bottom: 8px; border-radius: var(--ck-radius-pill); background: var(--ck-border-field); }
-.ck-sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 8px; }
-.ck-sheet-title { min-width: 0; font-size: var(--ck-text-lg); }
-.ck-sheet-close { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 44px; min-height: 44px; padding: 0; border-color: transparent; background: transparent; color: var(--ck-text-muted); }
-.ck-sheet-close svg { fill: currentColor; }
-.ck-sheet-close:hover:not(:disabled) { border-color: var(--ck-border); background: var(--ck-surface-raised); color: var(--ck-text); }
+.ck-sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 4px; }
+.ck-sheet-title { min-width: 0; font-size: var(--ck-text-xl); font-weight: 800; }
+/* The round «✕» of the artifact: a thin frame on the card, like «назад» of the header row. */
+.ck-sheet-close { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 44px; height: 44px; min-height: 44px; padding: 0; border: 1px solid var(--ck-border); border-radius: 50%; background: var(--ck-surface); color: var(--ck-text); }
+.ck-sheet-close:hover:not(:disabled) { border-color: var(--ck-border-field); background: var(--ck-surface-raised); color: var(--ck-text); }
 .ck-sheet-close:active:not(:disabled) { border-color: var(--ck-border-field); background: var(--ck-surface-raised); color: var(--ck-text); }
 /* A long form scrolls inside the sheet; the scroll does not run on into the page. */
 .ck-sheet-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }

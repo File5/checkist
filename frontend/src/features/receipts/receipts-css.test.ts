@@ -63,13 +63,15 @@ describe('filled action link guards (text of the rules, not rendering)', () => {
     // Hover, press and focus of the shell must not repaint the text or the border of a screen element that is as specific.
     const states = rules(app).filter((item) => /:(hover|active|focus-visible)/.test(item.selector) && (declares(item.body, 'color') || declares(item.body, 'border-color')))
     expect(states.map((item) => item.selector)).toEqual([
+      // The round control of the header row (artifact design 2026-10-13): «назад», «✕», the steps of a month.
+      '.ck-round:where(:hover)',
       'button:where(:hover:not(:disabled))', 'button:where(:active:not(:disabled))', '.action-link:where(:hover)',
       // The secondary and the quiet danger looks of a button (mobile design 2026-10-12).
       '.ck-button-secondary:where(:hover:not(:disabled))', '.ck-button-secondary:where(:active:not(:disabled))',
       '.ck-button-danger:where(:hover:not(:disabled))', '.ck-button-danger:where(:active:not(:disabled))',
       '.expense-danger:where(:hover:not(:disabled))', '.expense-danger:where(:active:not(:disabled))',
     ])
-    expect(states.map((item) => weight(item.selector))).toEqual([0, 0, 1, 1, 1, 1, 1, 1, 1])
+    expect(states.map((item) => weight(item.selector))).toEqual([1, 0, 0, 1, 1, 1, 1, 1, 1, 1])
   })
 })
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Route } from '../navigation'
-import { backTarget } from './back-target'
+import { backTarget, headerAction, isFocusRoute } from './back-target'
 
 const at = (route: Route, returnTo?: string) => backTarget({ route, returnTo })
 
@@ -34,5 +34,22 @@ describe('«назад» of the phone top bar (pure, no browser)', () => {
       { kind: 'merges', query: { page: 1 } }, { kind: 'classification', query: { page: 1 } }, { kind: 'not-found', path: '/x' },
     ]
     for (const route of top) expect(at(route, '/receipts'), route.kind).toBeUndefined()
+  })
+})
+
+describe('the round control of the header row (pure, no browser)', () => {
+  it('closes a focus screen with «✕»: a changed spend to its receipt, a new one to where the person came from', () => {
+    expect(headerAction({ route: { kind: 'expense-edit', receiptId: 12 } })).toEqual({ kind: 'close', to: '/receipts/12', label: 'Закрыть' })
+    expect(headerAction({ route: { kind: 'expense-new' } }, '/receipts?page=2')).toEqual({ kind: 'close', to: '/receipts?page=2', label: 'Закрыть' })
+    // Opened directly: «Главная».
+    expect(headerAction({ route: { kind: 'expense-new' } })).toEqual({ kind: 'close', to: '/', label: 'Закрыть' })
+    expect(isFocusRoute({ kind: 'expense-new' })).toBe(true)
+    expect(isFocusRoute({ kind: 'expense-edit', receiptId: 3 })).toBe(true)
+    expect(isFocusRoute({ kind: 'receipts', query: { page: 1 } })).toBe(false)
+  })
+
+  it('goes back from any other nested page and has nothing on a page of a section', () => {
+    expect(headerAction({ route: { kind: 'receipt', receiptId: 7 } }, '/stats')).toEqual({ kind: 'back', to: '/receipts', label: 'Назад к тратам' })
+    expect(headerAction({ route: { kind: 'dashboard' } }, '/receipts')).toBeUndefined()
   })
 })

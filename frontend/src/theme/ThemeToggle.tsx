@@ -2,8 +2,9 @@ import { themeLabel, useTheme } from './theme'
 import './ThemeToggle.css'
 
 export type ThemeToggleProps = {
-  /** `header` — on the header bar (header tokens); `page` — on the page or a panel. */
-  placement?: 'page' | 'header'
+  /** `header` — on the header bar (header tokens); `page` — on the page or a panel; `menu` — a row of the list
+   * behind «Ещё» of a phone. */
+  placement?: 'page' | 'header' | 'menu'
 }
 
 /** A plain button: its text names the current theme, a press switches it at once and keeps the focus. */
@@ -12,7 +13,7 @@ export function ThemeToggle({ placement = 'page' }: ThemeToggleProps) {
   return (
     <button
       type="button"
-      className={placement === 'header' ? 'ck-theme-toggle ck-theme-toggle-header' : 'ck-theme-toggle'}
+      className={placement === 'page' ? 'ck-theme-toggle' : `ck-theme-toggle ck-theme-toggle-${placement}`}
       data-theme-current={theme}
       onClick={toggle}
     >

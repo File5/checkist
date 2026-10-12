@@ -31,8 +31,8 @@ export default function JobsPage({ query }: JobsPageProps) {
   const narrow = useNarrow()
   const changeStatus = (event: ChangeEvent<HTMLSelectElement>) => navigate({ kind: 'jobs', query: { ...query, page: 1, status: (event.target.value || undefined) as typeof query.status } })
   return <div className="ck-rec">
-    <div className="ck-rec-actions"><Link className="action-link" to="/receipts/upload">Загрузить фото</Link><Link className="action-link" to="/receipts">К чекам</Link></div>
-    <div className="ck-rec-panel">
+    <div className="ck-rec-actions ck-rec-nav"><Link className="action-link" to="/receipts/upload">Загрузить фото</Link><Link className="action-link" to="/receipts">К чекам</Link></div>
+    <div className="ck-rec-panel ck-rec-filters">
       <ResponsiveFilters count={jobsFilterCount(query)} title="Фильтры заданий">
         <label htmlFor="recognition-status-filter">Статус обработки</label>
         <select id="recognition-status-filter" value={status ?? ''} onChange={changeStatus}><option value="">Все статусы</option>{jobStatuses.map((item) => <option value={item} key={item}>{jobLabels[item]}</option>)}</select>

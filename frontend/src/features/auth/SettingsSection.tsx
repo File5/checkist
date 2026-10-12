@@ -12,15 +12,14 @@ export type SettingsState =
 export type SettingsNotice = { kind: 'saved' | 'failed'; text: string }
 
 
-export type SettingsViewProps = { displayName: string; state: SettingsState; onCurrency: (code: string | null) => void }
+export type SettingsViewProps = { state: SettingsState; onCurrency: (code: string | null) => void }
 
-export function SettingsView({ displayName, state, onCurrency }: SettingsViewProps) {
+export function SettingsView({ state, onCurrency }: SettingsViewProps) {
   return (
     <section className="ck-auth-panel" aria-labelledby="account-settings-heading" data-account-settings>
       <h2 id="account-settings-heading">{settingsTexts.heading}</h2>
-      <p data-settings-name><span className="ck-auth-username">{displayName}</span> · {settingsTexts.name}</p>
-      {state.kind === 'loading' && <p role="status">Загружаем…</p>}
-      {state.kind === 'failed' && <p role="alert">{settingsTexts.loadFailed}</p>}
+      {state.kind === 'loading' && <p className="ck-auth-hint" role="status">Загружаем…</p>}
+      {state.kind === 'failed' && <p className="ck-auth-error" role="alert">{settingsTexts.loadFailed}</p>}
       {state.kind === 'ready' && (
         <div className="ck-auth-field">
           <label htmlFor="account-default-currency">{settingsTexts.currency}</label>
@@ -30,8 +29,8 @@ export function SettingsView({ displayName, state, onCurrency }: SettingsViewPro
             <option value="">{settingsTexts.none}</option>
             {state.currencies.map((item) => <option key={item.code} value={item.code}>{item.code} — {item.name}</option>)}
           </select>
-          <p id="account-currency-hint" className="ck-auth-rules">{settingsTexts.currencyHint}</p>
-          <p id="account-settings-notice" role="status" data-settings-notice={state.notice?.kind}>{state.notice?.text ?? ''}</p>
+          <p id="account-currency-hint" className="ck-auth-hint">{settingsTexts.currencyHint}</p>
+          <p id="account-settings-notice" className={state.notice?.kind === 'failed' ? 'ck-auth-error' : 'ck-auth-done'} role="status" data-settings-notice={state.notice?.kind}>{state.notice?.text ?? ''}</p>
         </div>
       )}
     </section>
@@ -39,7 +38,7 @@ export function SettingsView({ displayName, state, onCurrency }: SettingsViewPro
 }
 
 /** «Настройки» on `/account`: the choice is saved at once, the session learns the new value. */
-export default function SettingsSection({ displayName }: { displayName: string }) {
+export default function SettingsSection() {
   const [state, setState] = useState<SettingsState>({ kind: 'loading' })
   useEffect(() => {
     const controller = new AbortController()
@@ -69,5 +68,5 @@ export default function SettingsSection({ displayName }: { displayName: string }
       }
     })
   }
-  return <SettingsView displayName={displayName} state={state} onCurrency={choose} />
+  return <SettingsView state={state} onCurrency={choose} />
 }

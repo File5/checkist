@@ -4,7 +4,7 @@ import type { Category } from '../../api/types'
 import {
   CHIPS_SHOWN, amountText, categoryChips, chipLabel, clearExpenseNotice, draftBody, draftFromReceipt, emptyDraft,
   getExpenseNotice, linesTotal, sentIndexes, messages, newLine, normalizeAmount, serverErrors, setExpenseNotice, todayISO, visibleChips,
-  categoryTree, dateChoice, dayBefore, fieldScrollDelta, saveLabel,
+  categoryTree, chipParent, chipToneId, dateChoice, dayBefore, fieldScrollDelta, saveLabel, shortDay, sumText,
 } from './expense-form'
 import type { ExpenseDraft, LineDraft } from './expense-form'
 
@@ -114,6 +114,8 @@ describe('category chips', () => {
     expect(visibleChips(many, null, false)).toHaveLength(CHIPS_SHOWN)
     expect(visibleChips(many, many.at(-1)!.id, false).at(-1)).toBe(many.at(-1))
     expect(visibleChips(many, null, true)).toHaveLength(many.length)
+    // Six chips and «Все категории…»: the seven pills of the artifact.
+    expect(CHIPS_SHOWN).toBe(6)
   })
 })
 
@@ -156,5 +158,24 @@ describe('the mobile spend form', () => {
     expect(fieldScrollDelta(300, 600, 80)).toBe(0)
     expect(fieldScrollDelta(560, 600, 80)).toBe(52)
     expect(fieldScrollDelta(508, 600, 80)).toBe(0)
+  })
+})
+
+describe('the short texts of the artifact form', () => {
+  it('names the calendar chip by day and month, with the year only for another year', () => {
+    expect(shortDay('2026-09-02', '2026-10-13')).toBe('02.09')
+    expect(shortDay('2025-12-31', '2026-01-02')).toBe('31.12.25')
+    expect(shortDay('', '2026-10-13')).toBe('')
+  })
+  it('shows the sum of positions grouped and exact', () => {
+    expect(sumText('21780.00')).toBe('21\u00a0780')
+    expect(sumText('350.50')).toBe('350,50')
+    expect(sumText('1234567.05')).toBe('1\u00a0234\u00a0567,05')
+  })
+  it('colours a chip by its root category and names its parent apart', () => {
+    expect(chipToneId(cafe)).toBe(1)
+    expect(chipToneId(transport)).toBe(3)
+    expect(chipParent(cafe)).toBe('Еда')
+    expect(chipParent(food)).toBeUndefined()
   })
 })

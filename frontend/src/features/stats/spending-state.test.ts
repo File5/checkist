@@ -6,6 +6,7 @@ import type { SpendingQuery } from '../../navigation/routes'
 import { applyMe } from '../../session'
 import { resetSession } from '../../session/store'
 import {
+  filterCount,
   activePreset, applyFilters, breadcrumbs, failureView, filterDraft, filterMessages, formReducer, groupingHref, hasFilters,
   hasScopeFilters, initForm, itemHref, localToday, needsAddressReset, presetHref, presetPeriod, resetFiltersHref, resetHref,
   needsTail, otherHref, requestKey, sameDraft, serverFieldErrors, shownResult, spendingParams, spendingTailLimit, spendingTailParams, upHref,
@@ -295,5 +296,18 @@ describe('result block', () => {
     const texts = Object.values(statsErrorFixtures).map(({ reason, status }) => view(reason as SpendingFailure['reason'], status).message)
     // Nothing from the server's own messages.
     for (const text of texts) expect(text).not.toMatch(/Доступ запрещён|Некорректные параметры запроса|Ожидается/)
+  })
+})
+
+describe('the number on «Фильтры» of a phone', () => {
+  const today = '2026-10-07'
+  it('counts own dates, the country, the currency and the stores; a ready period is a chip, not a filter', () => {
+    expect(filterCount({}, today)).toBe(0)
+    expect(filterCount({ date_from: '2026-10-01', date_to: '2026-10-31' }, today)).toBe(0)
+    expect(filterCount({ date_from: '2026-10-02', date_to: '2026-10-31' }, today)).toBe(1)
+    expect(filterCount({ date_from: '2026-01-01' }, today)).toBe(1)
+    expect(filterCount({ country: 'KZ', currency: 'KZT', store: [1, 2] }, today)).toBe(3)
+    // The drill-down and the breakdown are not filters of the form.
+    expect(filterCount({ category: 3, group_by: 'store', other: 'open' }, today)).toBe(0)
   })
 })

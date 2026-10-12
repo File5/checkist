@@ -1,22 +1,48 @@
-/* «Выгрузка» (`/export`): a phone-first form. Colours are tokens only (theme/tokens.css), sizes from the text scale. */
+/* «Выгрузка» (`/export`) in the language of the artifact: cards of 20 px on the page background, chips that wrap
+   into rows, the filters as rows of 56 px (the words on the left, the value and a chevron on the right), the count
+   and «Скачать JSON» in a dock above the bottom bar. Colours are tokens only (theme/tokens.css), sizes from the
+   text scale. */
 .export { display: grid; gap: 16px; max-width: 720px; }
 .export-intro { color: var(--ck-text-muted); font-size: var(--ck-text-sm); }
-.export-block { display: grid; gap: 10px; min-width: 0; margin: 0; padding: 16px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius); background: var(--ck-surface); box-shadow: 0 1px 2px var(--ck-panel-shadow); }
-.export-heading { margin: 0; padding: 0; font-size: var(--ck-text-base); font-weight: 700; color: var(--ck-text); }
-.export-note { color: var(--ck-text-muted); font-size: var(--ck-text-sm); }
+.export-block { display: grid; gap: 12px; min-width: 0; margin: 0; padding: 20px; border: 0; border-radius: var(--ck-radius); background: var(--ck-surface); box-shadow: var(--ck-card-shadow); }
+/* The words of a card: like «Категория» of the artifact — small, bold, quiet. */
+.export-heading { margin: 0; padding: 0; color: var(--ck-text-muted); font-size: var(--ck-text-sm); font-weight: 700; }
+.export-note { color: var(--ck-text-muted); font-size: var(--ck-text-xs); }
 .export-field { display: grid; gap: 6px; color: var(--ck-text-muted); font-size: var(--ck-text-sm); font-weight: 600; }
-.export-field input, .export-field select { width: 100%; min-height: 44px; padding: 8px 12px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-surface); color: var(--ck-text); font-size: var(--ck-text-base); }
+.export-field input, .export-field select { width: 100%; min-height: 48px; padding: 8px 14px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-surface); color: var(--ck-text); font-size: var(--ck-text-base); }
 .export-dates { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.export-open { justify-self: start; }
 
-.export-removable { gap: 8px; }
+/* Chips wrap into rows instead of scrolling: every choice is in sight. */
+.export-chips { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.export-chips .ck-chip { font-size: var(--ck-text-sm); }
+.export-removable { gap: 8px; max-width: 100%; }
+.export-removable > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .export-removable-mark { font-size: var(--ck-text-lg); line-height: 1; color: var(--ck-text-muted); }
 
-.export-check { display: flex; align-items: center; gap: 12px; min-height: 44px; color: var(--ck-text); font-size: var(--ck-text-base); cursor: pointer; }
-.export-check input { flex: none; width: 22px; height: 22px; min-height: 0; margin: 0; accent-color: var(--ck-brand); }
-.export-sections { gap: 2px; }
-.export-sections .export-note { margin-bottom: 6px; }
+/* A card of rows: the rows reach its top and bottom edges. */
+.export-block.export-list { gap: 0; padding-block: 4px; }
+.export-rows { display: grid; margin: 0; padding: 0; list-style: none; }
+.export-rows > li { display: grid; gap: 4px; min-width: 0; padding-bottom: 4px; }
+.export-rows > li + li { border-top: 1px solid var(--ck-divider); }
+.export-row { display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; min-height: 56px; margin: 0; padding: 6px 0; border: 0; border-radius: 0; background: transparent; color: var(--ck-text); font-size: var(--ck-text-sm); font-weight: 600; text-align: left; cursor: pointer; }
+.export-row:where(:hover:not(:disabled)), .export-row:where(:active:not(:disabled)) { background: transparent; color: var(--ck-text); }
+.export-row:hover .export-row-label { text-decoration: underline; }
+.export-row-label { flex: none; }
+.export-row-value { flex: 1; min-width: 0; overflow: hidden; color: var(--ck-text-muted); font-weight: 600; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+.export-row-note { margin-top: -10px; padding-bottom: 8px; color: var(--ck-text-muted); font-size: var(--ck-text-xs); }
+.export-row select { flex: 1; width: auto; min-width: 0; min-height: 44px; padding: 0 0 0 8px; -webkit-appearance: none; appearance: none; border: 0; border-radius: var(--ck-radius-sm); background: transparent; color: var(--ck-text-muted); font-size: var(--ck-text-sm); font-weight: 600; text-align: right; text-align-last: right; cursor: pointer; }
+.export-chevron { flex: none; width: 20px; height: 20px; fill: none; stroke: var(--ck-text-muted); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.export-chosen { padding-bottom: 10px; }
 
+.export-check { display: flex; align-items: center; gap: 12px; min-height: 48px; color: var(--ck-text); font-size: var(--ck-text-base); cursor: pointer; }
+.export-check input { flex: none; width: 22px; height: 22px; min-height: 0; margin: 0; accent-color: var(--ck-primary); }
+.export-sections { gap: 4px; }
+/* A floated legend is a plain child of the card: it stands inside it, not on its top edge. */
+.export-sections > legend { float: left; width: 100%; margin-bottom: 8px; }
+.export-checks { display: grid; }
+.export-checks > .export-check + .export-check { border-top: 1px solid var(--ck-divider); }
+
+.export-sheet { display: grid; gap: 12px; }
 .export-tree { display: grid; gap: 0; margin: 12px 0 0; padding: 0; list-style: none; }
 .export-tree li { border-bottom: 1px solid var(--ck-divider); }
 
@@ -27,19 +53,32 @@
 .export-result-name { min-width: 0; overflow-wrap: anywhere; }
 .export-result-city { flex: none; color: inherit; opacity: 0.8; font-weight: 400; font-size: var(--ck-text-sm); white-space: nowrap; }
 
-.export-actions { display: grid; gap: 10px; }
-.export-preview { color: var(--ck-text); font-size: var(--ck-text-sm); }
+/* The dock: what goes into the file and the two ways to get it. */
+.export .export-actions { display: grid; gap: 12px; padding: 16px; border-radius: var(--ck-radius); background: var(--ck-surface); box-shadow: var(--ck-card-shadow); }
+.export-preview { color: var(--ck-text-muted); font-size: var(--ck-text-sm); }
+.export-preview .ck-figures { color: var(--ck-text); }
 .export-warning { padding: 10px 12px; border: 1px solid var(--ck-warning-border); border-radius: var(--ck-radius-sm); background: var(--ck-warning-bg); color: var(--ck-warning-text); font-size: var(--ck-text-sm); }
-.export-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+.export-buttons { display: flex; gap: 8px; }
 /* The filled main action: a link of its own class (not a modifier of `.action-link`), every state set here. */
-a.export-download { display: inline-flex; flex: 1 1 auto; align-items: center; justify-content: center; min-height: 52px; padding: 10px 16px; border: 1px solid var(--ck-brand); border-radius: var(--ck-radius-button); background: var(--ck-brand); color: var(--ck-on-brand); font-weight: 600; text-decoration: none; white-space: nowrap; }
-a.export-download:hover { border-color: var(--ck-brand-hover); background: var(--ck-brand-hover); color: var(--ck-on-brand); }
-a.export-download:active { border-color: var(--ck-brand-active); background: var(--ck-brand-active); color: var(--ck-on-brand); }
-button.export-download { flex: 1 1 auto; min-height: 52px; }
-.export-show { flex: none; min-height: 52px; background: var(--ck-surface); white-space: nowrap; }
+a.export-download { display: inline-flex; flex: 1 1 auto; align-items: center; justify-content: center; gap: 10px; min-height: 56px; padding: 10px 16px; border: 0; border-radius: var(--ck-radius-button); background: var(--ck-primary); color: var(--ck-on-primary); font-size: var(--ck-text-base); font-weight: 800; text-decoration: none; white-space: nowrap; }
+a.export-download:hover { background: var(--ck-primary-hover); color: var(--ck-on-primary); }
+a.export-download:active { background: var(--ck-primary-hover); color: var(--ck-on-primary); }
+button.export-download { flex: 1 1 auto; min-height: 56px; font-size: var(--ck-text-base); font-weight: 800; }
+.export-icon { flex: none; width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+a.export-show { display: inline-flex; flex: none; align-items: center; justify-content: center; min-height: 56px; padding: 10px 18px; border: 1.5px solid var(--ck-link); border-radius: var(--ck-radius-button); background: var(--ck-surface); color: var(--ck-link); font-weight: 700; text-decoration: none; white-space: nowrap; }
+a.export-show:hover { border-color: var(--ck-link-hover); background: var(--ck-surface-raised); color: var(--ck-link-hover); }
+a.export-show:active { border-color: var(--ck-link-hover); background: var(--ck-accent-bg); color: var(--ck-link-hover); }
 
 @media (max-width: 540px) {
-  .export-block { padding: 14px; }
   .export-dates { grid-template-columns: 1fr; }
-  .export-open { justify-self: stretch; }
+}
+
+/* A phone that pins the dock (components/ActionBar.css): a floating card just above the bottom bar, not a strip. */
+@media (max-width: 540px) and (min-height: 480px) {
+  .export .export-actions { bottom: calc(var(--ck-bottom-occupied) + 8px); padding: 12px; border: 1px solid var(--ck-border); box-shadow: 0 4px 16px var(--ck-popover-shadow); }
+  .export-preview { font-size: var(--ck-text-xs); }
+}
+
+@media (forced-colors: active) {
+  .export-block, .export .export-actions { border: 1px solid CanvasText; }
 }

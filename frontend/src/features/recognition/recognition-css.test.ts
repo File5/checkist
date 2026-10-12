@@ -44,11 +44,19 @@ describe('recognition stylesheet guards (text of the rules, not rendering)', () 
     expect(limited.map((item) => item.selector)).toEqual(['.ck-review'])
   })
 
-  it('keeps the text of notes and marks no smaller than before', () => {
+  it('takes every size of the text from the scale of the theme and never changes it on a phone', () => {
     const sizes = all.flatMap((item) => value(item.body, 'font-size') ?? [])
     expect(sizes.length).toBeGreaterThan(0)
-    for (const size of sizes) { expect(size).toMatch(/^[\d.]+rem$/); expect(Number.parseFloat(size)).toBeGreaterThanOrEqual(0.9) }
+    for (const size of sizes) expect(size).toMatch(/^var\(--ck-text-(xs|sm|base|lg|xl)\)$/)
     expect(narrow).not.toMatch(/font-size/)
+  })
+
+  it('draws the blocks as cards of the artifact, the jobs as rows of their card, states as pills', () => {
+    expect(rule('.ck-rec-panel')).toContain('background: var(--ck-surface); box-shadow: var(--ck-card-shadow);')
+    expect(rule('.ck-rec-card')).toContain('border-top: 1px solid var(--ck-divider);')
+    expect(rule('.ck-rec-status')).toContain('border-radius: var(--ck-radius-pill);')
+    // «Отменить» is a quiet danger: an outline in the error colours while it can be pressed.
+    expect(rule('.ck-rec-cancel:not(:disabled)')).toBe('border: 1.5px solid var(--ck-error-border); background: var(--ck-surface); color: var(--ck-error-text);')
   })
 
   it('takes every colour from the theme tokens', () => {

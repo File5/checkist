@@ -4,7 +4,7 @@ import { publicFixture } from '../../api/recognition-test-support'
 import type { Session } from '../../session'
 import {
   categoriesText, categoryTone, dayLabel, sourceMark, withoutSourceMark, groupByDay, localToday, ownerChips, positions, previousDay, reviewText, rowMeta, rowTitle,
-  shortDate, sumAmounts, withOwner,
+  shortDate, spendsCount, spendSource, sumAmounts, withOwner,
 } from './spends'
 
 const NBSP = ' '
@@ -83,15 +83,30 @@ describe('rows of «Траты»', () => {
     expect(rowTitle({ ...manual({}), first_line: undefined, category: undefined })).toBe('Без места')
   })
 
-  it('says category, owner in a family, where it came from and the count of positions', () => {
+  it('says who in a family, on what and the count of positions of a photo; the badge says the rest', () => {
     const row = receipt({ category: { id: 3, name: 'Продукты' }, owner: 'liza', owner_name: 'Лиза', lines_count: 23 })
-    expect(rowMeta(row, true)).toEqual(['Продукты', 'Лиза', 'по чеку', `23${NBSP}позиции`])
+    expect(rowMeta(row, true)).toEqual(['Лиза', 'Продукты', `23${NBSP}позиции`])
     // A blank name or none at all (an older server): the username.
-    expect(rowMeta({ ...row, owner_name: '  ' }, true)[1]).toBe('liza')
-    expect(rowMeta({ ...row, owner_name: undefined }, true)[1]).toBe('liza')
-    expect(rowMeta(row, false)).toEqual(['Продукты', 'по чеку', `23${NBSP}позиции`])
-    expect(rowMeta(receipt({ category: null, lines_count: 1, operation: 'refund' }), false)).toEqual(['по чеку', `1${NBSP}позиция`, 'Возврат'])
-    expect(rowMeta(receipt({ category: null, lines_count: 0 }), false)).toEqual(['по чеку', `0${NBSP}позиций`])
+    expect(rowMeta({ ...row, owner_name: '  ' }, true)[0]).toBe('liza')
+    expect(rowMeta({ ...row, owner_name: undefined }, true)[0]).toBe('liza')
+    expect(rowMeta(row, false)).toEqual(['Продукты', `23${NBSP}позиции`])
+    expect(rowMeta(receipt({ category: null, lines_count: 1, operation: 'refund' }), false)).toEqual([`1${NBSP}позиция`, 'Возврат'])
+    expect(rowMeta(receipt({ category: null, lines_count: 0 }), false)).toEqual([`0${NBSP}позиций`])
+    // A spend typed by hand says neither «вручную» nor «по чеку» while it has anything else to say.
+    expect(rowMeta(receipt({ source: 'manual', category: { id: 8, name: 'Транспорт' }, owner_name: 'Андрей' }), true)).toEqual(['Андрей', 'Транспорт'])
+    // A hidden payment says so first.
+    expect(rowMeta(receipt({ source: 'manual', hidden: true, category: null }), false)).toEqual(['скрыто', 'вручную'])
+  })
+
+  it('tells a photo, a hand-typed spend and a bank statement apart for the badge', () => {
+    expect(spendSource({ source: 'photo', note: '' })).toBe('photo')
+    expect(spendSource({ source: 'manual', note: 'кофе' })).toBe('manual')
+    expect(spendSource({ source: 'manual', note: 'Steam · Выписка Kaspi Gold' })).toBe('statement')
+    expect(spendSource({ source: 'manual', note: null as unknown as string })).toBe('manual')
+  })
+
+  it('counts the spends of the list in Russian', () => {
+    expect([1, 3, 5, 21, 208].map(spendsCount)).toEqual([`1${NBSP}трата`, `3${NBSP}траты`, `5${NBSP}трат`, `21${NBSP}трата`, `208${NBSP}трат`])
   })
 
   it('names every category of the lines and the bank statement a spend came from', () => {
@@ -102,6 +117,7 @@ describe('rows of «Траты»', () => {
     expect(categoriesText({ category: null })).toBeUndefined()
     const steam = receipt({ source: 'manual', note: 'Steam purchase · Выписка Kaspi Gold', categories: [{ id: 7, name: 'Игры' }], lines_count: 1 })
     expect(rowMeta(steam, false)).toEqual(['Игры', 'Выписка Kaspi Gold'])
+    expect(rowMeta(steam, true)[0]).toBe(steam.owner_name ?? steam.owner)
     expect(rowMeta(receipt({ source: 'manual', note: 'кофе', category: null, lines_count: 1 }), false)).toEqual(['вручную'])
     expect(sourceMark('manual', 'Такси · Выписка ForteBank ')).toBe('Выписка ForteBank')
     expect(withoutSourceMark('Такси · Выписка ForteBank')).toBe('Такси')

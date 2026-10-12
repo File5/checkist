@@ -107,6 +107,8 @@ describe('state rules of the shell (text of the rules, not rendering)', () => {
       'h1[tabindex="-1"]:focus-visible = 2',
       '.skip-link:focus = 2', '.skip-link:focus-visible = 2', '.brand-bar :focus-visible = 2',
       '.brand-bar .main-navigation a:hover = 3',
+      // The rows of the «＋» sheet and the round control of the header row (artifact design): as weak as their class.
+      '.main-add-action:where(:hover) .main-add-title = 2', '.ck-round:where(:hover) = 1',
       'button:where(:hover:not(:disabled)) = 0', 'button:where(:active:not(:disabled)) = 0', 'button:disabled = 1',
       '.action-link:where(:hover) = 1',
       // The secondary and the quiet danger looks of a button (mobile design 2026-10-12): as weak as their class.
@@ -114,8 +116,12 @@ describe('state rules of the shell (text of the rules, not rendering)', () => {
       '.ck-button-danger:where(:hover:not(:disabled)) = 1', '.ck-button-danger:where(:active:not(:disabled)) = 1',
       '.expense-danger:where(:hover:not(:disabled)) = 1', '.expense-danger:where(:active:not(:disabled)) = 1',
       '.rec-issues summary:focus-visible = 2',
-      // The button «Ещё» of the phone's bottom bar: the shell's own part, like the links of the header.
-      '.brand-bar .main-more-toggle:where(:hover) = 2', '.brand-bar .main-more-toggle[aria-expanded="true"] = 3',
+      // The bottom bar of a phone and the list behind «Ещё»: the shell's own parts, like the links of the header. They
+      // weigh as much as the header rules they replace in the bar, and come after them.
+      '.brand-bar .main-navigation :focus-visible = 3',
+      '.brand-bar .main-navigation > a:hover = 3', '.brand-bar .main-more-toggle:where(:hover) = 2',
+      '.brand-bar .main-more-toggle[aria-expanded="true"] = 3',
+      '.brand-bar .main-more-list a:hover = 3',
       // «＋» of the bar opens a modal sheet (components/Sheet) that covers it: the button has no open state of its own.
     ])
   })
@@ -152,7 +158,8 @@ describe('width of the page and values that never break (text of the rules, not 
   it('still wraps free text instead of scrolling the page, and leaves the phone as it was', () => {
     expect(rule('.page', wide)).toContain('overflow-wrap: anywhere;')
     const phone = /@media \(max-width: 540px\) \{([\s\S]*?)\n\}/.exec(app)?.[1] ?? ''
-    expect(rule('.page', phone)).toBe('padding: 0 20px;')
+    // The 16 px margins of the artifact design.
+    expect(rule('.page', phone)).toBe('padding: 0 16px;')
     expect(rule('.brand-bar', phone)).toBe('padding: 10px 20px 11px; gap: 4px 10px;')
     expect(rule('.brand-bar .main-navigation', phone)).toContain('flex-wrap: nowrap;')
     expect(rule('.brand-bar .main-navigation', phone)).toContain('overflow-x: auto;')

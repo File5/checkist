@@ -1,7 +1,19 @@
-.receipts-page { display: grid; gap: 24px; min-width: 0; }
-.receipt-panel { display: grid; gap: 18px; min-width: 0; padding: 24px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius); background: var(--ck-surface); }
-.receipt-panel h3 { margin: 0; font-size: 1.05rem; }
+/* «Траты» and the page of a receipt or a spend, laid out like the mockup of 2026-10-13: cards of 20px on the tinted
+   page, rows with a badge, the amount at the right. Colours — tokens only; font sizes — the scale --ck-text-*.
+   The generic pieces (.receipt-panel, .receipt-field, .receipt-secondary, .receipt-note …) are reused by «Добавить
+   трату» and the limits screen: they keep their names. */
+.receipts-page { display: grid; gap: 16px; min-width: 0; }
+/* A wide screen keeps «Траты» and a receipt in one column of the width of a phone list, not stretched rows. */
+.spends-page { max-width: 760px; }
+/* A block of a screen: the surface card of the project (as .ck-panel) with its heading of 18px. */
+.receipt-panel { display: grid; gap: 16px; min-width: 0; padding: 20px; border: 0; border-radius: var(--ck-radius); background: var(--ck-surface); box-shadow: var(--ck-card-shadow); }
+.receipt-panel > h2, .receipt-block-head > h2 { margin: 0; font-size: var(--ck-text-lg); font-weight: 800; }
+.receipt-panel h3 { margin: 0; font-size: var(--ck-text-base); }
 .receipt-panel form { display: grid; gap: 16px; min-width: 0; }
+.receipt-block-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; min-width: 0; }
+.receipt-block-count { flex: none; color: var(--ck-text-muted); font-size: var(--ck-text-sm); font-weight: 700; }
+/* A block without a card: the days of «Траты» are the cards. */
+.receipt-bare { display: grid; gap: 16px; min-width: 0; }
 .receipt-actions { display: flex; flex-wrap: wrap; gap: 12px; }
 .receipt-actions > * { max-width: 100%; text-align: center; }
 .action-link.receipt-primary { background: var(--ck-brand); border-color: var(--ck-brand); color: var(--ck-on-brand); }
@@ -17,18 +29,19 @@
 .receipt-field input, .receipt-field select { width: 100%; padding: 8px 12px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-surface); color: inherit; }
 .receipt-field [aria-invalid="true"] { border-color: var(--ck-error-border); }
 .receipt-field-error { color: var(--ck-error-text); }
-.receipt-note { color: var(--ck-text-muted); font-size: 0.9rem; font-weight: 400; }
-.receipt-warning { color: var(--ck-warning-text); font-size: 0.95rem; }
+.receipt-note { color: var(--ck-text-muted); font-size: var(--ck-text-sm); font-weight: 400; }
+.receipt-warning { color: var(--ck-warning-text); font-size: var(--ck-text-sm); }
 .receipt-number { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .receipt-owner { white-space: nowrap; }
-.receipt-total { font-size: 1.2rem; font-weight: 700; white-space: nowrap; }
+.receipt-total { font-size: var(--ck-text-lg); font-weight: 700; white-space: nowrap; }
 .receipt-facts { margin: 0; }
-.receipt-facts dt { color: var(--ck-text-muted); font-size: 0.9rem; }
+.receipt-facts dt { color: var(--ck-text-muted); font-size: var(--ck-text-sm); }
 .receipt-facts dd { margin: 4px 0 0; }
 /* List card: as many columns as fit, so the total is never squeezed into a column narrower than the value. */
 .receipt-list-content .receipt-facts { grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); }
 .receipt-list, .receipt-images, .receipt-detail-list { display: grid; gap: 16px; list-style: none; padding: 0; margin: 0; }
 .receipt-list-card { display: flex; align-items: flex-start; gap: 18px; border-top: 1px solid var(--ck-divider); padding-top: 18px; min-width: 0; }
+.receipt-list-card:first-child { border-top: 0; padding-top: 0; }
 .receipt-list-content { display: grid; gap: 12px; min-width: 0; flex: 1; }
 .receipt-list h3 a, .receipt-product-link, .receipt-line-relation a { text-underline-offset: 3px; color: var(--ck-link); }
 .receipt-list h3 a { display: inline-flex; align-items: center; min-height: 44px; }
@@ -37,18 +50,27 @@
 .receipt-media img { display: block; object-fit: contain; width: 100%; height: 320px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius-sm); background: var(--ck-bg); }
 .receipt-thumbnail { flex: 0 0 110px; width: 110px; }
 .receipt-thumbnail img { height: 150px; }
-.receipt-image-fallback { min-height: 150px; padding: 12px; background: var(--ck-bg); border: 1px solid var(--ck-border); border-radius: var(--ck-radius-sm); font-size: 0.9rem; display: grid; align-content: center; gap: 10px; }
+.receipt-image-fallback { min-height: 150px; padding: 12px; background: var(--ck-bg); border: 1px solid var(--ck-border); border-radius: var(--ck-radius-sm); font-size: var(--ck-text-sm); display: grid; align-content: center; gap: 10px; }
 .receipt-media:not(.receipt-thumbnail) > .receipt-image-fallback { min-height: 320px; }
 .receipt-media.receipt-image-fallback:not(.receipt-thumbnail) { min-height: 320px; }
-.receipt-image-fallback button { padding: 8px; font-size: 0.85rem; overflow-wrap: anywhere; }
+.receipt-image-fallback button { padding: 8px; font-size: var(--ck-text-xs); overflow-wrap: anywhere; }
 .receipt-images { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .receipt-image-card { min-width: 0; display: grid; align-content: start; gap: 12px; }
+.receipt-image-head { display: grid; gap: 2px; min-width: 0; }
+.receipt-image-head > * { margin: 0; }
+.receipt-image-head > h3 { font-size: var(--ck-text-sm); font-weight: 700; }
+.receipt-image-status { color: var(--ck-text-muted); font-size: var(--ck-text-xs); font-weight: 600; }
+.receipt-image-head > .receipt-note { font-size: var(--ck-text-xs); }
+.receipt-media > .receipt-note { margin: 0; font-size: var(--ck-text-xs); }
+/* «Скачать оригинал» and the job: quiet pills side by side, not two wide outline buttons. */
+.receipt-image-links { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.receipt-image-links > .action-link { flex: 0 1 auto; justify-self: auto; min-height: 44px; padding: 0 16px; border-color: var(--ck-border); border-radius: var(--ck-radius-pill); background: var(--ck-surface); color: var(--ck-link); font-size: var(--ck-text-sm); font-weight: 700; text-decoration: none; }
 .receipt-image-card .receipt-warning { margin: 0; padding-left: 20px; }
 .receipt-table-scroll { max-width: 100%; overflow-x: auto; border: 1px solid var(--ck-border); border-radius: var(--ck-radius-sm); overscroll-behavior-x: contain; }
 /* The width of the table is the sum of its columns: the name column is at least 160px wide and wraps by words, the
    numbers and their headings never wrap. Separate borders keep the divider on the pinned column while it scrolls. */
 .receipt-lines-table { border-collapse: separate; border-spacing: 0; width: 100%; }
-.receipt-lines-table caption { padding: 12px; text-align: left; color: var(--ck-text-muted); font-size: 0.9rem; }
+.receipt-lines-table caption { padding: 12px; text-align: left; color: var(--ck-text-muted); font-size: var(--ck-text-sm); }
 .receipt-lines-table th, .receipt-lines-table td { text-align: left; padding: 12px; vertical-align: top; border-top: 1px solid var(--ck-divider); }
 .receipt-lines-table thead { background: var(--ck-surface-raised); }
 .receipt-lines-table thead th + th { white-space: nowrap; }
@@ -59,7 +81,18 @@
 .ck-card-title > .receipt-warning { display: block; margin-top: 8px; }
 .receipt-product-link { display: inline-block; min-height: 44px; padding-block: 8px; }
 .receipt-lines-table tr:target { background: var(--ck-accent-bg); }
-.receipt-detail-list > li { display: grid; gap: 10px; border-top: 1px solid var(--ck-divider); padding-top: 16px; }
+/* Discounts and taxes: rows of the card, the name at the left, the amount at the right. */
+.receipt-detail-list { gap: 0; }
+.receipt-detail-list > li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 4px 12px; padding: 14px 0; border-top: 1px solid var(--ck-divider); }
+.receipt-detail-list > li:first-child { border-top: 0; padding-top: 0; }
+.receipt-detail-list > li:last-child { padding-bottom: 0; }
+.receipt-detail-list > li > * { margin: 0; min-width: 0; }
+.receipt-detail-list > li > h3 { font-size: var(--ck-text-sm); font-weight: 700; overflow-wrap: anywhere; }
+.receipt-detail-list > li > .receipt-number { font-weight: 700; }
+.receipt-detail-list > li > .receipt-note, .receipt-detail-list > li > .receipt-facts { grid-column: 1 / -1; font-size: var(--ck-text-xs); }
+.receipt-detail-list .receipt-facts { gap: 8px 16px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.receipt-detail-list .receipt-facts dt { font-size: var(--ck-text-xs); }
+.receipt-detail-list .receipt-facts dd { margin-top: 2px; font-size: var(--ck-text-sm); font-weight: 700; }
 .receipt-pagination { padding-bottom: 0; }
 .receipt-pagination button { min-width: 44px; padding: 8px 12px; color: var(--ck-link); background: var(--ck-surface); border-color: var(--ck-border-field); }
 .receipt-pagination button:hover:not(:disabled) { background: var(--ck-surface-raised); }
@@ -72,7 +105,6 @@
   .receipt-lines-table tr:target > th[scope="row"] { background: var(--ck-accent-bg); }
 }
 @media (max-width: 540px) {
-  .receipt-panel { padding: 16px; }
   .receipt-filter-grid, .receipt-facts, .receipt-images { grid-template-columns: minmax(0, 1fr); }
   .receipt-list-card { flex-wrap: wrap; }
   .receipt-thumbnail { flex-basis: auto; width: 100%; }
@@ -80,32 +112,52 @@
   .receipt-actions > * { flex: 1 1 160px; }
 }
 /* A spend entered by hand: a small mark next to the place. */
-.receipt-source-mark { display: inline-block; padding: 2px 8px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); color: var(--ck-text-muted); font-size: 0.8rem; font-weight: 400; white-space: nowrap; vertical-align: middle; }
+.receipt-source-mark { display: inline-block; padding: 2px 8px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); color: var(--ck-text-muted); font-size: var(--ck-text-xs); font-weight: 400; white-space: nowrap; vertical-align: middle; }
 .receipt-line-category { display: block; margin-top: 8px; }
-/* «Траты»: the family filter, the review banner and, on a phone, days with rows (SpendDays.tsx). Colours — tokens only. */
+
+/* «Траты» (ReceiptsPage.tsx, SpendDays.tsx): the family chips with «Фильтры» at the end of their line, the review
+   banner, then days — a quiet line with the day and its total, a card of rows. */
 .spends-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.spends-chip { display: inline-flex; align-items: center; min-height: 44px; padding: 0 18px; border: 1px solid var(--ck-border); border-radius: 999px; background: var(--ck-surface); color: var(--ck-text); font-weight: 600; text-decoration: none; white-space: nowrap; }
+.spends-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.spends-toolbar > .spends-chips { flex: 1 1 0; min-width: 0; }
+.spends-toolbar > .receipt-panel { flex: 1 1 100%; }
+.spends-toolbar > .spends-hidden-toggle { flex: none; }
+/* The chip row starts at the edge of the page: the scroller keeps its inner room for the focus ring. */
+.spends-chips .ck-chip-scroller { margin: -6px -4px; }
+.spends-chips ul { display: flex; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.spends-chips li { flex: none; }
+.spends-chip { display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius-pill); background: var(--ck-surface); color: var(--ck-text); font-size: var(--ck-text-sm); font-weight: 600; text-decoration: none; white-space: nowrap; }
 .spends-chip:hover { border-color: var(--ck-text-muted); }
 .spends-chip[aria-current="true"] { background: var(--ck-chip-selected-bg); border-color: var(--ck-chip-selected-bg); color: var(--ck-chip-selected-text); }
-.spends-review { margin: 0; border-radius: 16px; background: var(--ck-warning-bg); color: var(--ck-warning-text); }
-.spends-review a { display: flex; align-items: center; min-height: 44px; padding: 8px 16px; color: inherit; font-weight: 600; text-underline-offset: 3px; }
-.spends-days { display: grid; gap: 20px; }
-/* The heading of a day stays at the top while its rows scroll under it: opaque, over the masked tape of the rows
-   (a mask makes its own stacking context, painted after the heading). */
-.spends-day-head { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; padding-block: 8px; background: var(--ck-bg); }
-.spends-day h3 { margin: 0; font-size: var(--ck-text-base); }
-.spends-day-total { margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-sm); }
-.spends-day-sum { font-variant-numeric: tabular-nums; white-space: nowrap; }
-/* One strip of receipt tape per day (.ck-tape): the teeth below the last row, never over it. */
-.spends-rows { margin: 0; padding: 0 0 8px; list-style: none; border: 1px solid var(--ck-border); border-radius: 20px 20px 0 0; background: var(--ck-surface); overflow: hidden; }
+.spends-chip[aria-current="true"]:hover { border-color: var(--ck-chip-selected-bg); }
+/* «Фильтры» beside the chips on a phone: a round button of 44px with a funnel, the number of what is filtered in a badge. */
+.spends-filters-toggle { position: relative; display: inline-grid; flex: none; place-items: center; width: 44px; height: 44px; min-height: 44px; padding: 0; border: 1px solid var(--ck-border); border-radius: 50%; background: var(--ck-surface); color: var(--ck-text); }
+.spends-filters-toggle:hover:not(:disabled) { border-color: var(--ck-text-muted); background: var(--ck-surface-raised); color: var(--ck-text); }
+.spends-filters-toggle:active:not(:disabled) { border-color: var(--ck-text-muted); background: var(--ck-surface-raised); color: var(--ck-text); }
+.spends-filters-toggle svg { fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
+.spends-filters-count { position: absolute; top: -6px; right: -6px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: var(--ck-radius-pill); background: var(--ck-primary); color: var(--ck-on-primary); font-size: var(--ck-text-xs); font-weight: 800; line-height: 20px; text-align: center; box-shadow: 0 0 0 2px var(--ck-bg); }
+/* «2 фото ждут проверки · Проверить»: the warning card of the mockup, one link. */
+.spends-review { margin: 0; border-radius: var(--ck-radius-button); background: var(--ck-warning-bg); color: var(--ck-warning-text); }
+.spends-review a { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 52px; padding: 12px 16px; color: inherit; text-decoration: none; }
+.spends-review-text { min-width: 0; font-size: var(--ck-text-sm); font-weight: 600; }
+.spends-review-action { flex: none; font-size: var(--ck-text-sm); font-weight: 800; text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
+.spends-days { display: grid; gap: 16px; }
+.spends-day { display: grid; gap: 8px; min-width: 0; }
+.spends-day-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 12px; padding: 0 4px; color: var(--ck-text-muted); }
+.spends-day h3 { margin: 0; color: inherit; font-size: var(--ck-text-sm); font-weight: 700; }
+.spends-day-total { margin: 0; font-size: var(--ck-text-sm); }
+.spends-day-sum { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* One card per day; the rows are separated inside its padding, while a row itself takes the whole width for a tap. */
+.spends-rows { margin: 0; padding: 0; list-style: none; border-radius: var(--ck-radius); background: var(--ck-surface); box-shadow: var(--ck-card-shadow); overflow: hidden; }
+.spends-rows > li { margin: 0 16px; }
 .spends-rows > li + li { border-top: 1px solid var(--ck-divider); }
-.spends-row { display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 12px 16px; color: var(--ck-text); text-decoration: none; }
-.spends-row:hover .spends-row-title { text-decoration: underline; text-underline-offset: 3px; }
+.spends-row { display: flex; align-items: center; gap: 12px; min-height: 64px; margin: 0 -16px; padding: 12px 16px; color: var(--ck-text); text-decoration: none; }
+.spends-row:hover { background: var(--ck-surface-raised); }
 /* The list clips its rows to the rounded card: the ring of the general rule (offset 4px, outside) would be cut away,
    so on a row it is drawn inside. Colour and width stay those of the general rule. */
 .spends-row:focus-visible { outline-offset: -3px; }
-.spends-badge { display: grid; flex: none; place-items: center; width: 40px; height: 40px; border-radius: 12px; background: var(--ck-neutral-bg); color: var(--ck-text-muted); }
-.spends-badge svg { fill: currentColor; }
+.spends-badge { display: grid; flex: none; place-items: center; width: 40px; height: 40px; border-radius: var(--ck-radius-sm); background: var(--ck-neutral-bg); color: var(--ck-text-muted); }
+.spends-badge svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .spends-badge[data-tone="1"] { background: var(--ck-cat-1-tint); color: var(--ck-cat-1); }
 .spends-badge[data-tone="2"] { background: var(--ck-cat-2-tint); color: var(--ck-cat-2); }
 .spends-badge[data-tone="3"] { background: var(--ck-cat-3-tint); color: var(--ck-cat-3); }
@@ -113,44 +165,111 @@
 .spends-badge[data-tone="5"] { background: var(--ck-cat-5-tint); color: var(--ck-cat-5); }
 .spends-badge[data-tone="6"] { background: var(--ck-cat-6-tint); color: var(--ck-cat-6); }
 .spends-row-main { display: grid; flex: 1; gap: 2px; min-width: 0; }
-.spends-row-title { font-weight: 700; overflow-wrap: anywhere; }
-.spends-row-meta { color: var(--ck-text-muted); font-size: var(--ck-text-sm); }
-.spends-row-amount { flex: none; font-size: var(--ck-text-base); font-variant-numeric: tabular-nums; white-space: nowrap; }
-/* Страница чека или траты: шапка — кусочек ленты чека (.ck-tape) с местом, датой, кто добавил, итогом-героем. */
+.spends-row-title { overflow: hidden; font-size: var(--ck-text-sm); font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.spends-row-meta { overflow: hidden; color: var(--ck-text-muted); font-size: var(--ck-text-xs); text-overflow: ellipsis; white-space: nowrap; }
+.spends-row[data-hidden] .spends-row-title { color: var(--ck-text-muted); }
+.spends-row-flag { color: var(--ck-warning-text); font-weight: 700; }
+.spends-row-amount { flex: none; font-size: var(--ck-text-sm); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.spends-count { margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-xs); text-align: center; }
+.spends-page .pagination { padding: 0; }
+.spends-page .pagination ul { justify-content: center; }
+.spends-page .pagination a { text-decoration: none; }
+.spends-jobs { margin: 0; text-align: center; }
+.spends-jobs a { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; padding: 0 12px; color: var(--ck-link); font-size: var(--ck-text-sm); font-weight: 700; text-decoration: none; }
+.spends-jobs a:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+/* The page of a receipt or a spend (ReceiptPage.tsx, ReceiptContent.tsx). */
 .receipt-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.receipt-head { display: grid; gap: 14px; min-width: 0; padding: 16px 16px 24px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius-sm) var(--ck-radius-sm) 0 0; background: var(--ck-surface-raised); }
+.receipt-screen { max-width: 760px; }
+.receipt-back { margin: 0; }
+/* The header card: «Трата №206» small above the place, the date and who added it, the total as the hero figure, the
+   categories of the lines, the facts as rows, then the actions. */
+.receipt-hero { gap: 0; }
+.receipt-hero > h2 { color: var(--ck-text-muted); font-size: var(--ck-text-xs); font-weight: 700; letter-spacing: 0.02em; }
+.receipt-head { display: grid; gap: 16px; min-width: 0; margin-top: 4px; }
 .receipt-head-top { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
-.receipt-head-main { display: grid; flex: 1 1 auto; gap: 6px; min-width: 0; }
-.receipt-store-name { margin: 0; font-size: var(--ck-text-xl); overflow-wrap: anywhere; }
-.receipt-head-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-sm); }
+.receipt-head-main { display: grid; flex: 1 1 auto; gap: 4px; min-width: 0; }
+.receipt-store-name { margin: 0; font-size: var(--ck-text-xl); font-weight: 800; line-height: 1.25; overflow-wrap: anywhere; }
+.receipt-hero .receipt-store-name { font-size: var(--ck-text-xl); }
+/* «04.10.2026, 14:35 · Лиза · по чеку» flows as text: a dot stays with the word before it, a line breaks after it. */
+.receipt-head-meta { margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-sm); }
+.receipt-head-meta > div, .receipt-head-meta dd { display: inline; }
+.receipt-head-meta > div + div::before { content: "\00a0· "; }
 .receipt-head-meta dt { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .receipt-head-meta dd { margin: 0; }
 .receipt-head-total { display: grid; gap: 2px; margin: 0; }
 .receipt-head-label { color: var(--ck-text-muted); font-size: var(--ck-text-sm); font-weight: 600; }
+.receipt-head-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.receipt-head > .receipt-warning { margin: 0; padding: 10px 12px; border-radius: var(--ck-radius-sm); background: var(--ck-warning-bg); font-weight: 600; }
+/* The facts: rows of the card, the name at the left, the value at the right; a long value wraps under itself. */
+.receipt-head > .receipt-facts { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; border-top: 1px solid var(--ck-divider); }
+.receipt-head > .receipt-facts > div { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 16px; min-height: 48px; padding: 12px 0; border-bottom: 1px solid var(--ck-divider); }
+.receipt-head > .receipt-facts dt { flex: none; color: var(--ck-text-muted); font-size: var(--ck-text-sm); }
+.receipt-head > .receipt-facts dd { flex: 1 1 8rem; min-width: 0; margin: 0; font-size: var(--ck-text-sm); font-weight: 600; text-align: right; overflow-wrap: anywhere; }
 /* The photo of the receipt: a thumbnail, a tap opens the full preview in a sheet. */
-.receipt-photo-thumb { flex: none; width: 64px; height: 84px; min-height: 44px; padding: 0; overflow: hidden; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-bg); }
+.receipt-photo-thumb { flex: none; width: 64px; height: 84px; min-height: 44px; padding: 0; overflow: hidden; border: 1px solid var(--ck-border); border-radius: var(--ck-radius-sm); background: var(--ck-bg); }
 .receipt-photo-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
-/* Строки чека на телефоне: выноски «название ……… сумма», категория — чип под названием. */
+/* The actions under the facts: tiles of the same size with a picture over the word — «Изменить», «Скрыть»,
+   «Удалить». The wrappers of the action components give their buttons to this row (display: contents), so the bottom
+   bar of a phone is not used here. */
+.receipt-toolbar { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; margin-top: 16px; }
+.receipt-toolbar > .receipt-actions { display: contents; }
+.receipt-toolbar > .receipt-actions > a, .receipt-toolbar > .receipt-actions > button { position: relative; display: flex; flex: 0 1 calc((100% - 16px) / 3); flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-width: 0; min-height: 64px; padding: 8px 6px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius-button); background: var(--ck-surface); color: var(--ck-text); font-size: var(--ck-text-xs); font-weight: 700; line-height: 1.2; text-align: center; text-decoration: none; }
+.receipt-toolbar > .receipt-actions > a:hover, .receipt-toolbar > .receipt-actions > button:hover:not(:disabled) { border-color: var(--ck-text-muted); background: var(--ck-surface-raised); color: var(--ck-text); }
+.receipt-toolbar > .receipt-actions > a::before, .receipt-toolbar > .receipt-actions > button::before { content: ""; width: 22px; height: 22px; background: currentColor; -webkit-mask: var(--receipt-icon) center / contain no-repeat; mask: var(--receipt-icon) center / contain no-repeat; }
+/* Order and pictures: «Изменить» first (a link), «Скрыть / Показать» next, the quiet danger «Удалить» last. */
+.receipt-toolbar > .expense-manual-actions > a { order: 1; --receipt-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 20h9'/%3E%3Cpath d='M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z'/%3E%3C/svg%3E"); }
+.receipt-toolbar > .receipt-actions > [data-receipt-hide] { order: 2; --receipt-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17.9 17.9A10 10 0 0 1 12 20c-7 0-11-8-11-8a18.5 18.5 0 0 1 5.1-5.9M9.9 4.2A9 9 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.2 3.2M14.1 14.1a3 3 0 1 1-4.2-4.2M1 1l22 22'/%3E%3C/svg%3E"); }
+.receipt-toolbar > .receipt-actions > [data-receipt-hide="show"] { --receipt-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z'/%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3C/svg%3E"); }
+.receipt-toolbar > .expense-manual-actions > button, .receipt-toolbar > .receipt-delete-bar > button { order: 3; color: var(--ck-error-text); --receipt-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6'/%3E%3C/svg%3E"); }
+.receipt-toolbar > .expense-manual-actions > button:hover:not(:disabled), .receipt-toolbar > .receipt-delete-bar > button:hover:not(:disabled) { border-color: var(--ck-error-border); background: var(--ck-error-bg); color: var(--ck-error-text); }
+/* The mark of a hidden payment above the tiles, a refusal and an inline question under them: the whole width. */
+.receipt-toolbar > [data-receipt-hidden] { order: 0; flex: 1 1 100%; margin: 0; padding: 10px 12px; border-radius: var(--ck-radius-sm); background: var(--ck-warning-bg); color: var(--ck-warning-text); font-weight: 600; }
+.receipt-toolbar > .receipt-actions > .expense-failure, .receipt-toolbar > .expense-confirm { order: 4; flex: 1 1 100%; margin: 0; }
+/* The notes above the lines of a receipt: quiet and small. */
+#receipt-lines > .receipt-note, #receipt-lines > .receipt-warning { margin: 0; font-size: var(--ck-text-xs); }
+/* Lines of the receipt on a phone: rows of the card — the printed name and the amount, under them the quantity and the
+   price, the category as a chip, the catalog link and the relations. */
 .receipt-leaders { display: grid; gap: 8px; min-width: 0; }
+.receipt-leaders > .receipt-note { margin: 0; font-size: var(--ck-text-xs); }
 .receipt-leader-list { display: grid; margin: 0; padding: 0; list-style: none; }
-.receipt-leader { padding: 12px 0; border-top: 1px solid var(--ck-divider); }
+.receipt-leader { display: flex; align-items: flex-start; gap: 12px; min-width: 0; padding: 14px 0; border-top: 1px solid var(--ck-divider); }
+.receipt-leader:first-child { border-top: 0; padding-top: 4px; }
+.receipt-leader:last-child { padding-bottom: 0; }
 .receipt-leader:target { background: var(--ck-accent-bg); }
 .receipt-leader:focus-visible { outline-offset: -3px; }
-.receipt-leader-main { display: grid; justify-items: start; gap: 4px; min-width: 0; }
-.receipt-leader-main > .receipt-printed-name { margin: 0; overflow-wrap: anywhere; }
-.receipt-leader-main > .receipt-product-link { min-height: 44px; padding-block: 10px; }
-.receipt-leader-amount { font-size: var(--ck-text-base); white-space: nowrap; }
-.receipt-leader-facts { display: flex; flex-wrap: wrap; gap: 2px 12px; margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-sm); }
-.receipt-leader-facts div { display: flex; gap: 4px; }
+.receipt-leader-main { display: grid; flex: 1 1 auto; justify-items: start; gap: 4px; min-width: 0; }
+.receipt-leader-main > .receipt-printed-name { margin: 0; font-size: var(--ck-text-sm); font-weight: 700; overflow-wrap: anywhere; }
+.receipt-leader-main > .receipt-note { font-size: var(--ck-text-xs); }
+.receipt-leader-main > .receipt-product-link { min-height: 44px; padding-block: 10px; font-size: var(--ck-text-xs); font-weight: 600; }
+.receipt-leader-main > .receipt-line-relation, .receipt-leader-main > .receipt-warning { margin: 0; font-size: var(--ck-text-xs); }
+.receipt-leader-amount { flex: none; font-size: var(--ck-text-sm); white-space: nowrap; }
+.receipt-leader-facts { margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-xs); }
+.receipt-leader-facts > div, .receipt-leader-facts dt, .receipt-leader-facts dd { display: inline; }
 .receipt-leader-facts dd { margin: 0; }
-.receipt-line-chip { display: inline-block; padding: 2px 10px; border-radius: var(--ck-radius-pill); background: var(--ck-neutral-bg); color: var(--ck-text); font-size: var(--ck-text-xs); font-weight: 600; white-space: nowrap; }
+.receipt-leader-facts dt:not(.receipt-visually-hidden)::after { content: "\00a0"; }
+.receipt-leader-facts > div + div::before { content: "\00a0· "; }
+.receipt-line-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 8px; border-radius: var(--ck-radius-pill); background: var(--ck-neutral-bg); color: var(--ck-text); font-size: var(--ck-text-xs); font-weight: 600; white-space: nowrap; }
+.receipt-line-chip::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--ck-text-muted); }
 .receipt-line-chip[data-tone="1"] { background: var(--ck-cat-1-tint); }
 .receipt-line-chip[data-tone="2"] { background: var(--ck-cat-2-tint); }
 .receipt-line-chip[data-tone="3"] { background: var(--ck-cat-3-tint); }
 .receipt-line-chip[data-tone="4"] { background: var(--ck-cat-4-tint); }
 .receipt-line-chip[data-tone="5"] { background: var(--ck-cat-5-tint); }
 .receipt-line-chip[data-tone="6"] { background: var(--ck-cat-6-tint); }
+.receipt-line-chip[data-tone="1"]::before { background: var(--ck-cat-1); }
+.receipt-line-chip[data-tone="2"]::before { background: var(--ck-cat-2); }
+.receipt-line-chip[data-tone="3"]::before { background: var(--ck-cat-3); }
+.receipt-line-chip[data-tone="4"]::before { background: var(--ck-cat-4); }
+.receipt-line-chip[data-tone="5"]::before { background: var(--ck-cat-5); }
+.receipt-line-chip[data-tone="6"]::before { background: var(--ck-cat-6); }
 /* A form in a sheet of a phone needs no frame of its own: the sheet is its card. */
-.ck-sheet .receipt-panel { padding: 0; border: 0; }
+.ck-sheet .receipt-panel { padding: 0; border: 0; background: none; box-shadow: none; }
 /* Its action bar rests at the bottom of the sheet, not above the navigation of the page. */
 .ck-sheet .ck-action-bar { bottom: 0; }
+/* «Скрыть платёж» confirmed in its sheet: the main action of the sheet, not a danger. */
+.receipt-hide-confirm { border-color: var(--ck-primary); background: var(--ck-primary); color: var(--ck-on-primary); }
+.receipt-hide-confirm:hover:not(:disabled) { border-color: var(--ck-primary-hover); background: var(--ck-primary-hover); color: var(--ck-on-primary); }
+.receipt-hide-confirm:active:not(:disabled) { border-color: var(--ck-primary-hover); background: var(--ck-primary-hover); color: var(--ck-on-primary); }
+/* «Показать скрытые» at the top of the filters. */
+.spends-hidden-toggle { display: flex; }

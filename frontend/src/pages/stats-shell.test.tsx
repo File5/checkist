@@ -21,9 +21,10 @@ vi.mock('../features/stats', () => ({
   TrendsPage: ({ query }: { query: unknown }) => <pre data-screen="trends">{JSON.stringify(query)}</pre>,
 }))
 
+/** The pictures of the main menu (the bottom bar of a phone) are left out: the words name the links. */
 function render(route: NavigableRoute) {
   state.snapshot = { route, href: buildRoute(route) }
-  return renderToStaticMarkup(<App />)
+  return renderToStaticMarkup(<App />).replace(/<svg\b.*?<\/svg>/g, '')
 }
 
 const activeLinks = (html: string) => html.match(/<a\b[^>]*aria-current="page"[^>]*>[^<]*/g) ?? []

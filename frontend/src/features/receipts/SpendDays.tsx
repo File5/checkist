@@ -1,35 +1,45 @@
 import type { ReceiptListItem } from '../../api/receipts'
 import { Link } from '../../navigation'
 import type { ReceiptsQuery } from '../../navigation'
-import { categoryTone, groupByDay, rowMeta, rowTitle, withHidden, withOwner } from './spends'
-import type { OwnerChip } from './spends'
+import { categoryTone, groupByDay, isRowFlag, rowMeta, rowTitle, spendSource, withHidden, withOwner } from './spends'
+import type { OwnerChip, SpendSource } from './spends'
 import { money } from './state'
 import ChipScroller from '../../components/ChipScroller'
 
-/** A photo receipt: a slip with a torn edge. */
-const receiptIcon = 'M5 2h10v16l-2-1.3-1.7 1.3L10 16.7 8.7 18 7 16.7 5 18Zm2.5 4v1.5h5V6Zm0 3.5V11h5V9.5Zm0 3.5v1.5h3V13Z'
-/** A spend entered by hand: a pencil. */
-const pencilIcon = 'm13.6 2.6 3.8 3.8-9.9 9.9-4.6.8.8-4.6Zm0 2.3-7.9 7.9-.4 2 2-.4 7.9-7.9Z'
+/** The badge of a row: a slip of a photo receipt, a pencil of a spend typed by hand, a card of a bank statement. Strokes of
+ * the 24px grid, the colour of the category. */
+const sourceIcons: Record<SpendSource, string[]> = {
+  photo: ['M6 2h12v20l-3-2-3 2-3-2-3 2z', 'M9 7h6M9 11h6M9 15h4'],
+  manual: ['M12 20h9', 'M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z'],
+  statement: ['M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z', 'M2 10h20M6 15h4'],
+}
+/** What the badge says, for a screen reader: it is hidden from it. */
+const sourceWords: Record<SpendSource, string> = { photo: ' (по чеку)', manual: ' (трата без чека)', statement: ' (из выписки)' }
+
+export function SourceIcon({ source }: { source: SpendSource }) {
+  return <svg viewBox="0 0 24 24" width="20" height="20" focusable="false" data-source={source}>
+    {sourceIcons[source].map((d) => <path key={d} d={d} />)}
+  </svg>
+}
 
 function SpendRow({ receipt, showOwner }: { receipt: ReceiptListItem; showOwner: boolean }) {
   const tone = receipt.category ? categoryTone(receipt.category.id) : undefined
-  const manual = receipt.source === 'manual'
+  const source = spendSource(receipt)
   return <li>
-    <Link className="spends-row" to={`/receipts/${receipt.id}`}>
-      <span className="spends-badge" data-tone={tone} aria-hidden="true">
-        <svg viewBox="0 0 20 20" width="20" height="20" focusable="false"><path d={manual ? pencilIcon : receiptIcon} /></svg>
-      </span>
+    <Link className="spends-row" to={`/receipts/${receipt.id}`} data-hidden={receipt.hidden ? '' : undefined}>
+      <span className="spends-badge" data-tone={tone} aria-hidden="true"><SourceIcon source={source} /></span>
       <span className="spends-row-main">
-        <span className="spends-row-title">{rowTitle(receipt)}{manual && <span className="spends-hidden"> (трата без чека)</span>}</span>
-        <span className="spends-row-meta">{rowMeta(receipt, showOwner).join(' · ')}</span>
+        <span className="spends-row-title">{rowTitle(receipt)}<span className="spends-hidden">{sourceWords[source]}</span></span>
+        <span className="spends-row-meta">{rowMeta(receipt, showOwner).map((text, index) => <span key={index} className={isRowFlag(text) ? 'spends-row-flag' : undefined}>
+          {index > 0 && ' · '}{text}</span>)}</span>
       </span>
       <span className="spends-row-amount ck-figures">{money(receipt.total, receipt.currency)}</span>
     </Link>
   </li>
 }
 
-/** The phone view of «Траты»: days with their totals, one strip of receipt tape per day, one row per receipt. The day
- * heading with its total stays at the top of the screen while its rows scroll. */
+/** «Траты» like the mockup, on a phone and in the column of a wide screen: a day — its name and its total in a quiet line, then one card with a row
+ * per receipt (a badge by the source in the colour of the category, the place, who and on what, the amount). */
 export function SpendDays({ receipts, today, showOwner }: { receipts: ReceiptListItem[]; today: string; showOwner: boolean }) {
   return <div className="spends-days">{groupByDay(receipts, today).map((day) => <section key={day.day} className="spends-day" aria-label={day.label}>
     <div className="spends-day-head">
@@ -38,22 +48,24 @@ export function SpendDays({ receipts, today, showOwner }: { receipts: ReceiptLis
         {index > 0 && ' · '}<span className="spends-day-sum ck-figures">{money(item.total, item.currency)}</span>
       </span>)}</p>
     </div>
-    <ul className="spends-rows ck-tape">{day.receipts.map((receipt) => <SpendRow key={receipt.id} receipt={receipt} showOwner={showOwner} />)}</ul>
+    <ul className="spends-rows">{day.receipts.map((receipt) => <SpendRow key={receipt.id} receipt={receipt} showOwner={showOwner} />)}</ul>
   </section>)}</div>
 }
 
-/** «Вся семья / Андрей / Лиза»: links, so the choice lives in the address; one line that scrolls sideways. */
-/** The family head's «Показать скрытые»: a pressed chip lists hidden payments too. Nobody else sees it. */
-export function HiddenChip({ query, head }: { query: ReceiptsQuery; head: boolean }) {
+/** The family head's «Показать скрытые»: a pressed chip lists hidden payments too. Nobody else sees it. It stands in the
+ * filters (the sheet of a phone); `onToggle` closes the sheet once the list is switched. */
+export function HiddenChip({ query, head, onToggle }: { query: ReceiptsQuery; head: boolean; onToggle?: () => void }) {
   if (!head) return null
   const on = query.hidden === 1
-  return <div className="spends-chips">
-    <Link className="spends-chip" data-hidden-chip to={{ kind: 'receipts', query: withHidden(query, !on) }} aria-current={on ? 'true' : undefined}>
+  return <div className="spends-chips spends-hidden-toggle">
+    <Link className="spends-chip" data-hidden-chip to={{ kind: 'receipts', query: withHidden(query, !on) }} aria-current={on ? 'true' : undefined}
+      onClick={onToggle}>
       Показать скрытые
     </Link>
   </div>
 }
 
+/** «Вся семья / Андрей / Лиза»: links, so the choice lives in the address; one line that scrolls sideways. */
 export function OwnerChips({ chips, query }: { chips: OwnerChip[]; query: ReceiptsQuery }) {
   if (!chips.length) return null
   return <div className="spends-chips">

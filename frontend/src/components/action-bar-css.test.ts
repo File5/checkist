@@ -66,12 +66,12 @@ describe('action bar guards (text of the rules, not rendering)', () => {
 
   it('reads only tokens that the theme defines', () => {
     const used = [...new Set([...css.matchAll(/var\((--[a-z0-9-]+)/g)].map((match) => match[1]))].sort()
-    expect(used).toEqual(['--ck-action-bar-room', '--ck-border', '--ck-bottom-occupied', '--ck-safe-bottom', '--ck-surface', '--ck-z-action-bar'])
+    expect(used).toEqual(['--ck-action-bar-room', '--ck-border', '--ck-bottom-occupied', '--ck-safe-bottom', '--ck-surface', '--ck-top-bar-height', '--ck-z-action-bar'])
     for (const name of used) expect(token(name), name).toBeDefined()
   })
 
   it('keeps a focused field and a link target above the bar', () => {
-    expect(rule('html')).toBe('scroll-padding-bottom: calc(var(--ck-action-bar-room) + var(--ck-bottom-occupied));')
+    expect(rule('html')).toBe('scroll-padding-top: var(--ck-top-bar-height); scroll-padding-bottom: calc(var(--ck-action-bar-room) + var(--ck-bottom-occupied));')
   })
 
   it('holds the only scroll padding of the project', () => {

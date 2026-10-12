@@ -19,22 +19,25 @@ describe('upload stylesheet guards (text of the rules, not rendering)', () => {
       expect(value(rule(selector), 'display')).toBe('none')
       const shown = media.filter((block) => block.rules.some((item) => item.selector === selector))
       expect(shown.map((block) => block.query)).toEqual(['(pointer: coarse)'])
-      expect(value(rule(selector, shown[0].rules), 'display')).toBe('block')
+      expect(value(rule(selector, shown[0].rules), 'display')).toBe('flex')
       // Nothing else of the sheet touches the button.
       expect(everywhere.filter((item) => item.selector.includes(selector.slice(8)))).toHaveLength(2)
     }
     // Besides the pointer, only the phone block: it never shows or hides anything.
     expect(media.map((block) => block.query)).toEqual(['(pointer: coarse)', '(max-width: 540px)'])
     expect(media[1].rules.filter((item) => /display|visibility/.test(item.body))).toEqual([])
-    expect(page).toMatch(/className="ck-upload-camera"[^\n]*>\{uploadLabels\.camera\}<\/button>/)
-    expect(page).toMatch(/className="ck-upload-gallery ck-upload-secondary"[^\n]*>\{uploadLabels\.gallery\}<\/button>/)
+    expect(page).toMatch(/className=\{`ck-upload-camera ck-upload-big[^\n]*>\{cameraIcon\}\{uploadLabels\.camera\}<\/button>/)
+    expect(page).toMatch(/className="ck-upload-gallery ck-upload-big ck-upload-secondary"[^\n]*>\{galleryIcon\}\{uploadLabels\.gallery\}<\/button>/)
   })
 
-  it('on a phone gives the preview the width of the form and makes the picking buttons large', () => {
+  it('makes the picking buttons big and gives the preview the width of the form on a phone', () => {
+    const bigButton = rule('.ck-rec .ck-upload-big')
+    expect(value(bigButton, 'width')).toBe('100%'); expect(Number.parseInt(value(bigButton, 'min-height') ?? '0', 10)).toBeGreaterThanOrEqual(56)
+    // A column: the buttons do not grow into the height of the group.
+    expect(value(bigButton, 'flex')).toBe('none')
+    expect(value(rule('.ck-upload-pick'), 'flex-direction')).toBe('column')
     const phone = media[1].rules
     expect(value(rule('.ck-rec-image.ck-upload-preview img', phone), 'height')).toBe('auto')
-    const big = rule('.ck-rec .ck-upload-pick button', phone)
-    expect(value(big, 'width')).toBe('100%'); expect(Number.parseInt(value(big, 'min-height') ?? '0', 10)).toBeGreaterThanOrEqual(44)
   })
 
   it('takes every colour from the theme tokens', () => {
@@ -59,8 +62,11 @@ describe('upload stylesheet guards (text of the rules, not rendering)', () => {
     expect(hidden).not.toMatch(/display|visibility/)
   })
 
-  it('adds no font size, motion or fixed width, and gives the outline button its own states', () => {
-    expect(css).not.toMatch(/font-size|transition|animation|min-width:\s*[1-9]/)
+  it('sizes text by the scale only, adds no motion or fixed width, and gives the outline button its own states', () => {
+    const sizes = [...css.matchAll(/font-size\s*:\s*([^;]+);/g)].map((match) => match[1].trim())
+    expect(sizes.length).toBeGreaterThan(0)
+    for (const size of sizes) expect(size).toMatch(/^var\(--ck-text-(xs|sm|base|lg|xl|hero)\)$/)
+    expect(css).not.toMatch(/transition|animation|min-width:\s*[1-9]/)
     for (const state of [':hover:not(:disabled)', ':disabled']) expect(rule(`.ck-rec .ck-upload-secondary${state}`)).not.toBe('')
     expect(value(rule('.ck-upload-progress progress'), 'width')).toBe('100%')
   })

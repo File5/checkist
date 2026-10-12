@@ -1,40 +1,50 @@
-.ck-merge { display: grid; gap: 20px; min-width: 0; overflow-wrap: anywhere; }
-.ck-merge-panel { display: grid; gap: 16px; min-width: 0; padding: 24px; background: var(--ck-surface); border: 1px solid var(--ck-border); border-radius: var(--ck-radius); }
+/* «Дубли товаров» in the language of the artifact (docs/plans/2026-10-13-artifact-mobile-design.md): cards of 20 px on
+   the page background, headings of 18 px / 800, the groups of the list as rows with dividers, states as pills, facts as
+   small tiles. Colours are tokens only, sizes from the text scale. */
+.ck-merge { display: grid; gap: 16px; min-width: 0; overflow-wrap: anywhere; }
+.ck-merge > * { min-width: 0; }
+.ck-merge-panel { display: grid; gap: 16px; min-width: 0; padding: 20px; border-radius: var(--ck-radius); background: var(--ck-surface); box-shadow: var(--ck-card-shadow); }
+.ck-merge-panel > h2 { font-size: var(--ck-text-lg); font-weight: 800; line-height: 1.3; }
 .ck-merge-panel > *, .ck-merge-form > * { min-width: 0; max-width: 100%; }
 .ck-merge-form { display: grid; gap: 18px; min-width: 0; }
 .ck-merge-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
 .ck-merge-actions > * { max-width: 100%; }
-.ck-merge-secondary { background: var(--ck-surface); border-color: var(--ck-border-field); color: var(--ck-link); }
-.ck-merge-secondary:hover:not(:disabled) { background: var(--ck-surface-raised); }
+.ck-merge-secondary { background: var(--ck-surface); border: 1.5px solid var(--ck-link); color: var(--ck-link); }
+.ck-merge-secondary:hover:not(:disabled) { background: var(--ck-surface-raised); border-color: var(--ck-link-hover); color: var(--ck-link-hover); }
 .ck-merge-field { display: grid; gap: 6px; min-width: 0; }
 .ck-merge-field label, .ck-merge legend { font-weight: 600; }
-.ck-merge select { width: 100%; min-width: 0; padding: 10px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-surface); color: var(--ck-text); }
+.ck-merge select { width: 100%; min-width: 0; min-height: 48px; padding: 10px 14px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-surface); color: var(--ck-text); }
 .ck-merge [aria-invalid="true"] { border-color: var(--ck-error-border); }
-.ck-merge-note { color: var(--ck-text-muted); font-size: 0.9rem; }
-.ck-merge-subtext { display: block; color: var(--ck-text-muted); font-size: 0.85rem; font-weight: 400; margin-top: 4px; }
-.ck-merge-warning { color: var(--ck-warning-text); background: var(--ck-warning-bg); border: 1px solid var(--ck-warning-border); padding: 14px; border-radius: var(--ck-radius-sm); }
+.ck-merge-note { color: var(--ck-text-muted); font-size: var(--ck-text-xs); }
+.ck-merge-subtext { display: block; color: var(--ck-text-muted); font-size: var(--ck-text-xs); font-weight: 400; margin-top: 2px; }
+.ck-merge-warning { color: var(--ck-warning-text); background: var(--ck-warning-bg); border: 1px solid var(--ck-warning-border); padding: 14px; border-radius: var(--ck-radius-sm); font-size: var(--ck-text-sm); }
 .ck-merge-notice { display: grid; gap: 12px; justify-items: start; margin: 16px 0; }
 .ck-merge-error { color: var(--ck-error-text); }
-.ck-merge-status { font-weight: 650; padding: 12px; background: var(--ck-warning-bg); color: var(--ck-warning-text); border-radius: var(--ck-radius-sm); }
+.ck-merge-status { justify-self: start; padding: 4px 12px; border-radius: var(--ck-radius-pill); background: var(--ck-warning-bg); color: var(--ck-warning-text); font-size: var(--ck-text-xs); font-weight: 700; }
 .ck-merge-status-confirmed { color: var(--ck-success-text); background: var(--ck-success-bg); }
 .ck-merge-status-cancelled { color: var(--ck-neutral-text); background: var(--ck-neutral-bg); }
 .ck-merge-flag { color: var(--ck-error-text); }
-.ck-merge-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr)); gap: 16px; margin: 0; }
-.ck-merge-facts > div { min-width: 0; }
-.ck-merge-facts dt, .ck-merge-cell-facts dt { color: var(--ck-text-muted); font-size: 0.9rem; }
-.ck-merge-facts dd { margin: 4px 0 0; }
-.ck-merge-list { display: grid; gap: 16px; padding: 0; margin: 0; list-style: none; }
-.ck-merge-card { display: grid; gap: 14px; padding: 18px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius); min-width: 0; }
-.ck-merge h3 { margin: 0; font-size: 1.1rem; }
-.ck-merge h3 a, .ck-merge-names a { display: inline-flex; align-items: center; min-height: 44px; color: var(--ck-link); text-underline-offset: 4px; }
-.ck-merge-names { margin: 0; padding-left: 22px; }
+/* Facts as rows: the words on the left, the value on the right, a divider between them. */
+.ck-merge-facts { display: grid; margin: 0; }
+.ck-merge-facts > div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; min-width: 0; padding-block: 8px; border-bottom: 1px solid var(--ck-divider); font-size: var(--ck-text-sm); }
+.ck-merge-facts dt, .ck-merge-cell-facts dt { color: var(--ck-text-muted); font-size: var(--ck-text-xs); }
+.ck-merge-facts dt { flex: none; font-size: var(--ck-text-sm); }
+.ck-merge-facts dd { min-width: 0; margin: 0; font-weight: 700; text-align: right; }
+/* The groups of the list: rows of the card with a divider between them. */
+.ck-merge-list { display: grid; gap: 0; padding: 0; margin: 0; list-style: none; }
+.ck-merge-card { display: grid; gap: 10px; min-width: 0; padding-block: 16px; border-top: 1px solid var(--ck-divider); }
+.ck-merge-list > .ck-merge-card:last-child { padding-bottom: 0; }
+.ck-merge h3 { margin: 0; font-size: var(--ck-text-base); font-weight: 800; }
+.ck-merge h3 a, .ck-merge-names a { display: inline-flex; align-items: center; min-height: 44px; color: var(--ck-link); text-decoration: none; }
+.ck-merge h3 a:hover, .ck-merge-names a:hover { text-decoration: underline; }
+.ck-merge-names { margin: 0; padding-left: 20px; color: var(--ck-text-muted); font-size: var(--ck-text-sm); }
 .ck-merge-table-scroll { max-width: 100%; overflow-x: auto; border: 1px solid var(--ck-border); border-radius: var(--ck-radius-sm); overscroll-behavior-x: contain; }
 /* Borders belong to the cells (separate model): a collapsed border would stay behind when the name column sticks. */
-.ck-merge-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.95rem; }
+.ck-merge-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: var(--ck-text-sm); }
 /* Smallest width at which every column still holds its content: the sum of the columns, not a spare. */
 .ck-merge-members { min-width: 720px; }
 .ck-merge-choosing, .ck-merge-lines { min-width: 1040px; }
-.ck-merge-table caption { padding: 12px; text-align: left; color: var(--ck-text-muted); font-size: 0.9rem; }
+.ck-merge-table caption { padding: 12px; text-align: left; color: var(--ck-text-muted); font-size: var(--ck-text-xs); }
 .ck-merge-table th, .ck-merge-table td { padding: 12px; border-top: 1px solid var(--ck-divider); text-align: left; vertical-align: top; }
 /* A heading wraps between its words only: `anywhere` of the screen would let a squeezed column cut a word. */
 .ck-merge-table thead th { background: var(--ck-surface-raised); overflow-wrap: normal; }
@@ -51,20 +61,32 @@
 .ck-merge-cell-facts { display: grid; gap: 6px; margin: 0; }
 .ck-merge-cell-facts dd { margin: 0; }
 .ck-merge-choice { display: flex; align-items: flex-start; gap: 10px; min-height: 44px; padding-block: 8px; cursor: pointer; }
-.ck-merge-choice input { flex: 0 0 auto; width: 20px; height: 20px; min-height: 0; margin: 2px 0 0; accent-color: var(--ck-brand); }
+.ck-merge-choice input { flex: 0 0 auto; width: 20px; height: 20px; min-height: 0; margin: 2px 0 0; accent-color: var(--ck-primary); }
 .ck-merge-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .ck-merge-conflicts { display: grid; gap: 14px; }
-.ck-merge fieldset { min-width: 0; margin: 0; padding: 12px 16px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius); }
+.ck-merge fieldset { min-width: 0; margin: 0; padding: 12px 16px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius-sm); }
 .ck-merge fieldset.ck-merge-invalid { border-color: var(--ck-error-border); background: var(--ck-error-bg); }
 .ck-merge legend { padding: 0 6px; }
 .ck-merge .pagination { padding: 0; }
 .ck-merge .pagination button { min-width: 44px; padding: 8px 12px; color: var(--ck-link); background: var(--ck-surface); border-color: var(--ck-border-field); }
 .ck-merge .pagination button:hover:not(:disabled) { background: var(--ck-surface-raised); }
-.ck-merge .pagination button[aria-current="page"] { color: var(--ck-on-brand); background: var(--ck-brand); border-color: var(--ck-brand); }
+.ck-merge .pagination button[aria-current="page"] { color: var(--ck-chip-selected-text); background: var(--ck-chip-selected-bg); border-color: var(--ck-chip-selected-bg); }
 .ck-merge-badge { margin-top: 8px; }
-.ck-merge-badge a, .ck-merge-badge span { display: inline-flex; align-items: center; min-height: 44px; padding: 6px 12px; border: 1px solid var(--ck-warning-border); border-radius: var(--ck-radius-sm); background: var(--ck-warning-bg); color: var(--ck-warning-text); font-size: 0.9rem; font-weight: 600; text-underline-offset: 3px; }
+.ck-merge-badge a, .ck-merge-badge span { display: inline-flex; align-items: center; min-height: 32px; padding: 4px 12px; border-radius: var(--ck-radius-pill); background: var(--ck-warning-bg); color: var(--ck-warning-text); font-size: var(--ck-text-xs); font-weight: 700; text-decoration: none; }
+/* The link of the mark keeps a target of 44 px: the pill is drawn smaller, the tap area is not. */
+.ck-merge-badge a { position: relative; }
+.ck-merge-badge a::after { content: ""; position: absolute; inset: -6px 0; }
+.ck-merge-badge a:hover { text-decoration: underline; }
 @media (max-width: 540px) {
-  .ck-merge-panel { padding: 16px; }
-  .ck-merge-card { padding: 14px; }
-  .ck-merge-actions button, .ck-merge-actions .action-link { flex: 1 1 180px; }
+  .ck-merge-actions button, .ck-merge-actions .action-link { flex: 1 1 140px; }
 }
+
+/* The way back: a quiet pill, not a second main button. */
+.ck-merge-nav .action-link { min-height: 44px; padding: 8px 16px; border-color: var(--ck-border-field); border-radius: var(--ck-radius-pill); background: var(--ck-surface); font-size: var(--ck-text-sm); font-weight: 700; text-decoration: none; }
+@media (max-width: 540px) {
+  .ck-merge-nav .action-link { flex: none; }
+}
+
+/* The cards of a phone (lib/cards) inside a card of this screen: blocks on the tint of the page, not cards in cards. */
+.ck-merge-panel .ck-card { border: 0; border-radius: var(--ck-radius-button); background: var(--ck-bg); box-shadow: none; }
+.ck-merge-panel .ck-card:target { background: var(--ck-accent-bg); }

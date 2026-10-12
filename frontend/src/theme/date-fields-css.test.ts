@@ -69,7 +69,13 @@ describe('fields of a date keep the width of their panel (text of the rules and 
   it('lets no screen bring the own look or a least width back', () => {
     const sheets = files.filter((path) => path.endsWith('.css') && path !== 'App.css' && !preview(path))
     expect(sheets).toContain('features/receipts/Receipts.css')
-    expect(sheets.filter((path) => /(^|[\s;{-])appearance\s*:/.test(read(path)))).toEqual([])
+    // A select drawn as the value of a row (the field rows of the artifact, Export.css) may drop its own look;
+    // a rule that reaches a field of a date may not.
+    const own = (path: string) => [...read(path).replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+      .filter((match) => /(^|[\s;-])appearance\s*:/.test(match[2]))
+      .flatMap((match) => match[1].split(',').map((selector) => selector.trim()))
+      .filter((selector) => !/(^|[\s>])select(?![\w-])/.test(selector))
+    expect(sheets.filter((path) => own(path).length)).toEqual([])
     expect(sheets.filter((path) => new RegExp(`type="(${kind})"`).test(read(path)))).toEqual([])
   })
 })

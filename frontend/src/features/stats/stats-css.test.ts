@@ -20,7 +20,7 @@ describe('statistics stylesheet guards (text of the rules, not rendering)', () =
   it('never tears a value: numbers and totals keep one line, in a table and outside it', () => {
     expect(rule(receipts, '.stats-number')).toContain('white-space: nowrap')
     expect(rule(spending, '.spending-total')).toContain('white-space: nowrap')
-    expect(rule(spending, '.spending-facts dd')).toContain('white-space: nowrap')
+    expect(rule(spending, '.spending-figure')).toContain('white-space: nowrap')
     // Only a column heading may wrap, and it wraps between words: `break-word` keeps a word in the least width.
     const wrapping = [spending, receipts].flatMap(rules).filter((item) => /white-space:\s*normal/.test(item.body)).map((item) => item.selector)
     expect(wrapping).toEqual(['.stats-table thead .stats-number'])
@@ -29,12 +29,25 @@ describe('statistics stylesheet guards (text of the rules, not rendering)', () =
   it('does not take the single line back on a narrow screen', () => {
     for (const item of [spending, receipts].flatMap(narrow)) expect(item.body, item.selector).not.toMatch(/white-space/)
   })
-  it('lays the facts and the date fields out by the room they need, not by a fixed number of columns', () => {
-    expect(rule(spending, '.spending-facts')).toContain('grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr))')
+  it('lays the date fields out by the room they need, not by a fixed number of columns', () => {
     expect(rule(receipts, '.stats-field-grid')).toContain('grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr))')
     const overridden = [spending, receipts].flatMap(narrow)
-      .filter((item) => ['.spending-facts', '.stats-field-grid'].includes(item.selector) && declares(item.body, 'grid-template-columns'))
+      .filter((item) => item.selector === '.stats-field-grid' && declares(item.body, 'grid-template-columns'))
     expect(overridden).toEqual([])
+  })
+  it('draws the panels as cards of the artifact: surface, radius 20, the card shadow of the theme, no frame', () => {
+    for (const [sheet, selector] of [[spending, '.spending-panel'], [receipts, '.stats-panel']] as const) {
+      const body = rule(sheet, selector)
+      expect(body, selector).toContain('border-radius: var(--ck-radius)')
+      expect(body, selector).toContain('background: var(--ck-surface)')
+      expect(body, selector).toContain('box-shadow: var(--ck-card-shadow)')
+      expect(declares(body, 'border'), selector).toBe(false)
+    }
+  })
+  it('sets every text size from the scale of the theme', () => {
+    for (const text of [spending, receipts]) {
+      for (const [, size] of text.matchAll(/font-size:\s*([^;]+);/g)) expect(size).toMatch(/^var\(--ck-text-(xs|sm|base|lg|xl|hero)\)$/)
+    }
   })
   it('gives the text column of a table a least width, so whole values do not squeeze it to letters', () => {
     for (const selector of ['.stats-effects-table tbody th', '.stats-effects-table tfoot th', '.stats-products-table tbody th']) {

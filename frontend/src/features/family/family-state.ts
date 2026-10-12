@@ -41,6 +41,16 @@ export function memberLine(member: FamilyMember): string {
   return `${name} · ${roleText(member)}${member.is_me ? ' · это вы' : ''}`
 }
 
+/** The line under the name of a member: the login when it differs from the name, then «это вы» or «член семьи».
+ * The head carries the mark «Главный» of its own, so the line does not repeat it. */
+export function memberMeta(member: FamilyMember): string {
+  const parts = [
+    ...(member.display_name === member.username ? [] : [member.username]),
+    ...(member.is_me ? ['это вы'] : member.role === 'member' ? ['член семьи'] : []),
+  ]
+  return parts.join(' · ')
+}
+
 /** The absolute invite address from the path of the server answer. */
 export function inviteUrl(path: string, origin: string): string {
   return new URL(path, origin).toString()

@@ -222,8 +222,8 @@ describe('theme contract in the files', () => {
       '--ck-logo-bg', '--ck-radius-sm', '--ck-radius', '--ck-radius-button', '--ck-radius-pill', '--ck-font-body', '--ck-font-display',
       // Mobile design 2026-10-12: the fonts of figures, the text scale, the teeth of the tape and the fades of a chip row.
       '--ck-font-figures', '--ck-font-display-figures',
-      '--ck-text-xs', '--ck-text-sm', '--ck-text-base', '--ck-text-lg', '--ck-text-xl', '--ck-text-hero', '--ck-tape-tooth', '--ck-fade-size',
-      '--ck-bottom-nav-height', '--ck-safe-bottom', '--ck-bottom-occupied', '--ck-action-bar-room',
+      '--ck-text-2xs', '--ck-text-xs', '--ck-text-sm', '--ck-text-base', '--ck-text-lg', '--ck-text-xl', '--ck-text-hero', '--ck-tape-tooth', '--ck-fade-size',
+      '--ck-bottom-nav-height', '--ck-top-bar-height', '--ck-safe-bottom', '--ck-bottom-occupied', '--ck-action-bar-room',
       '--ck-z-action-bar', '--ck-z-top-bar', '--ck-z-bottom-nav', '--ck-z-menu-sheet', '--ck-z-sheet', '--ck-z-skip-link',
     ])
   })
@@ -293,9 +293,9 @@ describe('theme contract in the files', () => {
     expect(dark).toContain('--ck-font-display-figures: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;')
   })
 
-  it('defines the text scale of a phone: 13 / 15 / 16 / 18 / 22 / 40 px', () => {
-    const scale = Object.fromEntries([...dark.matchAll(/--ck-text-(xs|sm|base|lg|xl|hero): ([\d.]+)rem;/g)].map((match) => [match[1], Number(match[2]) * 16]))
-    expect(scale).toEqual({ xs: 13, sm: 15, base: 16, lg: 18, xl: 22, hero: 40 })
+  it('defines the text scale of a phone: 12 (the words of the bottom bar) / 13 / 15 / 16 / 18 / 22 / 40 px', () => {
+    const scale = Object.fromEntries([...dark.matchAll(/--ck-text-(2xs|xs|sm|base|lg|xl|hero): ([\d.]+)rem;/g)].map((match) => [match[1], Number(match[2]) * 16]))
+    expect(scale).toEqual({ '2xs': 12, xs: 13, sm: 15, base: 16, lg: 18, xl: 22, hero: 40 })
   })
 
   it('orders the layers: action bar, top bar, bottom navigation, menu, sheet, skip link', () => {

@@ -22,7 +22,7 @@ export function ReceiptDeleteActions({ receiptId, initial = { kind: 'idle' }, na
   useEffect(() => { if (asking) confirmButton.current?.focus() }, [asking])
 
   const bar = <div className="receipt-actions receipt-delete-bar ck-action-bar">
-    <button type="button" className="receipt-secondary" onClick={() => setStep(askDelete())}>Удалить чек</button>
+    <button type="button" className="receipt-secondary" aria-label="Удалить чек" onClick={() => setStep(askDelete())}>Удалить</button>
   </div>
   if (step.kind === 'idle') return bar
 

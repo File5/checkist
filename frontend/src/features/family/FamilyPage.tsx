@@ -7,9 +7,11 @@ import type { Family, FamilyMember } from '../../api/family'
 import type { LocalApiResult } from '../../api/types'
 import Sheet from '../../components/Sheet'
 import { loadSession } from '../../session'
-import { familyFailure, familyTexts, inviteUrl, memberLine } from './family-state'
+import { initials } from '../../lib/people'
+import { familyFailure, familyTexts, inviteUrl, memberMeta } from './family-state'
 import type { FamilyAction } from './family-state'
 import '../auth/Auth.css'
+import './Family.css'
 
 /** Something shown once: a new password or an invite address. */
 export type FamilySecret = { kind: 'password'; username: string; value: string } | { kind: 'invite'; value: string }
@@ -30,26 +32,52 @@ export type FamilyViewProps = {
   onCopy: (value: string) => void
 }
 
+const star = <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m12 2.5 2.8 6.1 6.7.7-5 4.5 1.4 6.6L12 17l-5.9 3.4 1.4-6.6-5-4.5 6.7-.7L12 2.5Z" /></svg>
+const chevron = <svg className="family-chevron" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 6l6 6-6 6" /></svg>
+const linkIcon = <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" /><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" /></svg>
+
 function Secret({ secret, onCopy }: { secret: FamilySecret; onCopy: (value: string) => void }) {
-  return <div className="ck-auth-panel" role="status" data-family-secret={secret.kind}>
-    <p>{secret.kind === 'password' ? `Пароль для ${secret.username}:` : 'Ссылка-приглашение:'}</p>
-    <p className="ck-auth-username"><code>{secret.value}</code></p>
-    <p className="ck-auth-rules">{secret.kind === 'password' ? familyTexts.passwordOnce : familyTexts.inviteOnce}</p>
-    <div className="ck-auth-actions"><button type="button" className="ck-auth-secondary" onClick={() => onCopy(secret.value)}>Скопировать</button></div>
-  </div>
+  return <section className="ck-auth-panel family-secret" role="status" data-family-secret={secret.kind}>
+    <p className="family-secret-label">{secret.kind === 'password' ? `Пароль для ${secret.username}` : 'Ссылка-приглашение'}</p>
+    <p className="family-secret-value"><code>{secret.value}</code></p>
+    <p className="family-note">{secret.kind === 'password' ? familyTexts.passwordOnce : familyTexts.inviteOnce}</p>
+    <button type="button" className="ck-auth-primary" onClick={() => onCopy(secret.value)}>Скопировать</button>
+  </section>
 }
 
-function NameForm({ id, label, initial, submitLabel, busy, onSubmit }: {
-  id: string; label: string; initial: string; submitLabel: string; busy: boolean; onSubmit: (name: string) => void
+/** A field as a row of the card: the words on the left, the field on the right; the whole row is its label. */
+function RowField({ id, label, value, placeholder, type = 'text', autoComplete = 'off', maxLength = 150, onChange }: {
+  id: string; label: string; value: string; placeholder?: string; type?: string; autoComplete?: string; maxLength?: number; onChange: (value: string) => void
 }) {
+  return <label className="family-field" htmlFor={id}>
+    <span>{label}</span>
+    <input id={id} type={type} autoComplete={autoComplete} value={value} maxLength={maxLength} placeholder={placeholder}
+      autoCapitalize="none" spellCheck={false} onChange={(event) => onChange(event.target.value)} />
+  </label>
+}
+
+function CreateForm({ busy, onCreate }: { busy: boolean; onCreate: (name: string) => void }) {
+  const [name, setName] = useState('')
+  const submit = (event: FormEvent) => { event.preventDefault(); if (!busy && name.trim()) onCreate(name.trim()) }
+  return <form className="ck-auth-panel" onSubmit={submit} noValidate aria-labelledby="family-create-heading">
+    <h2 id="family-create-heading">Семьи пока нет</h2>
+    <p className="family-note">{familyTexts.noFamily}</p>
+    <div className="family-fields">
+      <RowField id="family-create-name" label="Название" value={name} placeholder="Семья Ивановых" maxLength={100} onChange={setName} />
+    </div>
+    <button type="submit" className="ck-auth-primary" aria-disabled={busy || undefined}>Создать семью</button>
+  </form>
+}
+
+function RenameForm({ initial, busy, onSubmit }: { initial: string; busy: boolean; onSubmit: (name: string) => void }) {
   const [name, setName] = useState(initial)
   const submit = (event: FormEvent) => { event.preventDefault(); if (!busy && name.trim()) onSubmit(name.trim()) }
-  return <form className="ck-auth-panel" onSubmit={submit} noValidate>
+  return <form className="ck-auth family-confirm" onSubmit={submit} noValidate>
     <div className="ck-auth-field">
-      <label htmlFor={id}>{label}</label>
-      <input id={id} value={name} maxLength={100} required onChange={(event) => setName(event.target.value)} />
+      <label htmlFor="family-rename">Название семьи</label>
+      <input id="family-rename" value={name} maxLength={100} required onChange={(event) => setName(event.target.value)} />
     </div>
-    <div className="ck-auth-actions"><button type="submit" aria-disabled={busy || undefined}>{submitLabel}</button></div>
+    <div className="ck-auth-actions"><button type="submit" className="ck-auth-primary" aria-disabled={busy || undefined}>Сохранить</button></div>
   </form>
 }
 
@@ -59,64 +87,102 @@ function AddMemberForm({ busy, onAdd }: { busy: boolean; onAdd: FamilyViewProps[
     event.preventDefault()
     if (!busy && values.username.trim()) onAdd({ ...values, username: values.username.trim() })
   }
-  const field = (name: keyof typeof values, label: string, type = 'text', autoComplete = 'off') => <div className="ck-auth-field">
-    <label htmlFor={`family-${name}`}>{label}</label>
-    <input id={`family-${name}`} type={type} autoComplete={autoComplete} value={values[name]} maxLength={150}
-      onChange={(event) => setValues({ ...values, [name]: event.target.value })} />
-  </div>
+  const set = (name: keyof typeof values) => (value: string) => setValues({ ...values, [name]: value })
   return <form className="ck-auth-panel" onSubmit={submit} noValidate aria-labelledby="family-add-heading" data-family-add>
     <h2 id="family-add-heading">Добавить человека</h2>
-    <p className="ck-auth-rules">Новая учётная запись сразу в вашей семье. Пароль можно не вводить — он будет создан.</p>
-    {field('username', 'Логин')}
-    {field('first_name', 'Имя для показа')}
-    {field('password', 'Пароль (необязательно)', 'text', 'new-password')}
-    <div className="ck-auth-actions"><button type="submit" aria-disabled={busy || undefined}>Создать учётную запись</button></div>
+    <p className="family-note family-sub">Новая учётная запись сразу в вашей семье.</p>
+    <div className="family-fields">
+      <RowField id="family-username" label="Логин" value={values.username} placeholder="латиницей" onChange={set('username')} />
+      <RowField id="family-first_name" label="Имя для показа" value={values.first_name} placeholder="например, Катя" onChange={set('first_name')} />
+      <RowField id="family-password" label="Пароль" value={values.password} placeholder="создадим сами" autoComplete="new-password" onChange={set('password')} />
+    </div>
+    <button type="submit" className="ck-auth-primary" aria-disabled={busy || undefined}>Создать учётную запись</button>
   </form>
 }
 
 export function FamilyView({ family, busy, message, secret, onCreate, onRename, onAdd, onInvite, onRevoke, onAsk, onCopy }: FamilyViewProps) {
+  const [renaming, setRenaming] = useState(false)
+  const [managing, setManaging] = useState<FamilyMember | null>(null)
   const household = family.household
-  const status = message && <p className="ck-auth-rules" role="status" data-family-message>{message}</p>
+  const status = message && <p className="family-notice" role="status" data-family-message>{message}</p>
   if (!household) {
     return <div className="ck-auth" data-family="none">
-      <section className="ck-auth-panel"><p>{familyTexts.noFamily}</p></section>
-      <NameForm id="family-create-name" label="Название семьи" initial="" submitLabel="Создать семью" busy={busy} onSubmit={onCreate} />
       {status}
+      <CreateForm busy={busy} onCreate={onCreate} />
     </div>
   }
   const head = family.is_head
+  const count = household.members.length
   return <div className="ck-auth" data-family={head ? 'head' : 'member'}>
     {status}
     {secret && <Secret secret={secret} onCopy={onCopy} />}
     <section className="ck-auth-panel" aria-labelledby="family-members-heading">
-      <h2 id="family-members-heading">{household.name}</h2>
-      <ul className="ck-auth-rules" data-family-members>
-        {household.members.map((member) => <li key={member.username}>
-          <span>{memberLine(member)}</span>
-          {head && !member.is_me && <span className="ck-auth-actions">
-            <button type="button" className="ck-auth-secondary" onClick={() => onAsk({ kind: 'head', member })}>Сделать главным</button>
-            <button type="button" className="ck-auth-secondary" onClick={() => onAsk({ kind: 'remove', member })}>Убрать из семьи</button>
-          </span>}
-        </li>)}
+      <div className="ck-auth-head">
+        <h2 id="family-members-heading">{household.name}</h2>
+        {head && <button type="button" className="ck-auth-link" aria-haspopup="dialog" aria-expanded={renaming} aria-controls="family-rename-sheet"
+          onClick={() => setRenaming(true)}>Переименовать</button>}
+      </div>
+      <p className="family-sub">{peopleCount(count)}</p>
+      <ul className="family-members" data-family-members>
+        {household.members.map((member, index) => {
+          const face = <>
+            <span className={`family-avatar family-tone-${(index % 6) + 1}`} aria-hidden="true">{initials(member.display_name)}</span>
+            <span className="family-member-text">
+              <span className="family-member-name">{member.display_name}</span>
+              {memberMeta(member) && <span className="family-member-meta">{memberMeta(member)}</span>}
+            </span>
+          </>
+          return <li key={member.username}>
+            {head && !member.is_me
+              ? <button type="button" className="family-member family-member-button" aria-haspopup="dialog" aria-controls="family-member-sheet"
+                aria-expanded={managing?.username === member.username} data-family-manage onClick={() => setManaging(member)}>
+                {face}{chevron}
+              </button>
+              : <div className="family-member">
+                {face}
+                {member.role === 'head' && <span className="family-role">{star}Главный</span>}
+              </div>}
+          </li>
+        })}
       </ul>
-      {!head && <div className="ck-auth-actions">
-        <button type="button" className="ck-auth-secondary" data-family-leave onClick={() => onAsk({ kind: 'leave' })}>Выйти из семьи</button>
-      </div>}
+      {!head && <button type="button" className="ck-auth-danger" data-family-leave onClick={() => onAsk({ kind: 'leave' })}>Выйти из семьи</button>}
     </section>
     {head && <>
       <AddMemberForm busy={busy} onAdd={onAdd} />
       <section className="ck-auth-panel" aria-labelledby="family-invite-heading" data-family-invites>
         <h2 id="family-invite-heading">Приглашение</h2>
-        <p className="ck-auth-rules">Для человека, у которого уже есть учётная запись. {familyTexts.inviteOnce}</p>
-        {family.invites.length > 0 && <ul className="ck-auth-rules">{family.invites.map((invite) => <li key={invite.id}>
-          Действует до <time dateTime={invite.expires_at}>{new Date(invite.expires_at).toLocaleDateString('ru-RU')}</time>{' '}
-          <button type="button" className="ck-auth-secondary" onClick={() => onRevoke(invite.id)}>Отозвать</button>
+        <p className="family-note family-sub">Для человека, у которого уже есть учётная запись. {familyTexts.inviteOnce}</p>
+        {family.invites.length > 0 && <ul className="family-invites" aria-label="Действующие приглашения">{family.invites.map((invite) => <li key={invite.id} className="family-invite">
+          <span className="family-invite-icon">{linkIcon}</span>
+          <span className="family-member-text">
+            <span>Приглашение</span>
+            <span className="family-member-meta">до <time dateTime={invite.expires_at}>{new Date(invite.expires_at).toLocaleDateString('ru-RU')}</time></span>
+          </span>
+          <button type="button" className="ck-auth-danger" onClick={() => onRevoke(invite.id)}>Отозвать</button>
         </li>)}</ul>}
-        <div className="ck-auth-actions"><button type="button" aria-disabled={busy || undefined} onClick={busy ? undefined : onInvite}>Создать приглашение</button></div>
+        <button type="button" className="ck-auth-secondary" aria-disabled={busy || undefined} onClick={busy ? undefined : onInvite}>Создать приглашение</button>
       </section>
-      <NameForm key={household.name} id="family-rename" label="Название семьи" initial={household.name} submitLabel="Переименовать" busy={busy} onSubmit={onRename} />
+      <Sheet open={managing !== null} onClose={() => setManaging(null)} title={managing?.display_name ?? ''} id="family-member-sheet">
+        {managing && <div className="ck-auth family-confirm">
+          {memberMeta(managing) && <p className="family-note">{memberMeta(managing)}</p>}
+          <div className="ck-auth-actions">
+            <button type="button" className="ck-auth-secondary" onClick={() => { setManaging(null); onAsk({ kind: 'head', member: managing }) }}>Сделать главным</button>
+            <button type="button" className="ck-auth-danger" onClick={() => { setManaging(null); onAsk({ kind: 'remove', member: managing }) }}>Убрать из семьи</button>
+          </div>
+        </div>}
+      </Sheet>
+      <Sheet open={renaming} onClose={() => setRenaming(false)} title="Переименовать семью" id="family-rename-sheet">
+        <RenameForm key={household.name} initial={household.name} busy={busy} onSubmit={(name) => { setRenaming(false); onRename(name) }} />
+      </Sheet>
     </>}
   </div>
+}
+
+const peopleCount = (count: number) => {
+  const tens = count % 100
+  const units = count % 10
+  const word = tens >= 11 && tens <= 14 ? 'человек' : units >= 2 && units <= 4 ? 'человека' : 'человек'
+  return `${count} ${word} · видят траты друг друга`
 }
 
 const confirmTexts = (confirm: FamilyConfirm) => {
@@ -190,10 +256,12 @@ export default function FamilyPage({ joinToken }: { joinToken?: string }) {
       onAsk={setConfirm}
       onCopy={(value) => { void navigator.clipboard?.writeText(value).then(() => setMessage('Скопировано.'), () => setMessage('Скопируйте вручную.')) }} />
     <Sheet open={confirm !== null} onClose={() => setConfirm(null)} title={asked?.title ?? ''} id="family-confirm">
-      <p>{asked?.text}</p>
-      <div className="ck-auth-actions">
-        <button type="button" data-family-confirm onClick={answer}>{asked?.action}</button>
-        <button type="button" className="ck-auth-secondary" onClick={() => setConfirm(null)}>Отмена</button>
+      <div className="ck-auth family-confirm">
+        <p>{asked?.text}</p>
+        <div className="ck-auth-actions">
+          <button type="button" className={confirm?.kind === 'head' ? 'ck-auth-primary' : 'ck-auth-danger'} data-family-confirm onClick={answer}>{asked?.action}</button>
+          <button type="button" className="ck-auth-secondary" onClick={() => setConfirm(null)}>Отмена</button>
+        </div>
       </div>
     </Sheet>
   </>

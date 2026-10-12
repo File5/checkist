@@ -38,9 +38,14 @@ describe('classification stylesheet guards (text of the rules, not rendering)', 
     // Dates stay whole by the rule of the shell for <time>: no rule of this screen may undo it.
     expect(rules(css).filter((item) => /white-space\s*:\s*(normal|pre-wrap|pre-line)/.test(item.body)).map((item) => item.selector)).toEqual([])
   })
-  it('keeps the size of the text', () => {
+  it('takes every size of the text from the scale of the theme', () => {
     const sizes = [...css.matchAll(/font-size\s*:\s*([^;]+);/g)].map((match) => match[1].trim())
-    expect(sizes.every((size) => /^\d+(\.\d+)?rem$/.test(size))).toBe(true)
-    expect(Math.min(...sizes.map(parseFloat))).toBe(0.8)
+    expect(sizes.length).toBeGreaterThan(5)
+    for (const size of sizes) expect(size).toMatch(/^var\(--ck-text-(xs|sm|base|lg|xl)\)$/)
+  })
+  it('draws the blocks as cards of the artifact and never lets a child widen the screen', () => {
+    expect(rule('.ck-class-panel')).toContain('background: var(--ck-surface); box-shadow: var(--ck-card-shadow);')
+    expect(rule('.ck-class > *')).toBe('min-width: 0;')
+    expect(rule('.ck-class-state')).toContain('border-radius: var(--ck-radius-pill);')
   })
 })

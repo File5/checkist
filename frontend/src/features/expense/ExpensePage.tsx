@@ -15,31 +15,41 @@ import { saveMessage } from './labels'
 import { draftFromParse } from './parse-text'
 import TextHint from './TextHint'
 import {
-  categoryChips, categoryTree, chipLabel, dateChoice, dayBefore, sentIndexes, draftBody, draftFromReceipt, emptyDraft, fieldScrollDelta, linesTotal,
-  filledLines, LINES_MAX, newLine, saveLabel, savedNotice, serverErrors, setExpenseNotice, todayISO, updatedNotice, visibleChips,
+  categoryChips, categoryTree, chipParent, chipToneId, dateChoice, sumText, dayBefore, sentIndexes, draftBody, draftFromReceipt, emptyDraft, fieldScrollDelta,
+  linesTotal, filledLines, LINES_MAX, newLine, saveLabel, savedNotice, serverErrors, setExpenseNotice, shortDay, todayISO, updatedNotice, visibleChips,
 } from './expense-form'
-import ChipScroller from '../../components/ChipScroller'
 import Sheet from '../../components/Sheet'
+import { categoryTone } from '../../lib/category-tone'
+import { useNarrow } from '../../lib/cards'
+import { currencySymbol } from '../../lib/money'
+import { ownerName, personName } from '../../lib/people'
+import { DeleteSpend } from './ManualSpendActions'
 import type { ExpenseDraft, ExpenseErrors, LineDraft } from './expense-form'
 import './Expense.css'
 
-type Loaded = { draft: ExpenseDraft; chips: Category[] }
+type Loaded = { draft: ExpenseDraft; chips: Category[]; byline?: string }
 type LoadState = { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'read-only' } | { kind: 'ok'; data: Loaded }
 
+/** A name, not a literal: the guard of date fields (theme/date-fields-css.test.ts) counts a literal argument as a field. */
 const dateField = 'date'
+const errorId = (name: string) => `expense-${name.replaceAll('.', '-')}-error`
 const fieldError = (errors: ExpenseErrors, name: string) => errors[name]
-  ? <p className="receipt-field-error" id={`expense-${name.replaceAll('.', '-')}-error`}>{errors[name]}</p> : null
-const describedBy = (errors: ExpenseErrors, name: string) => errors[name] ? `expense-${name.replaceAll('.', '-')}-error` : undefined
+  ? <p className="expense-error" id={errorId(name)}>{errors[name]}</p> : null
+const describedBy = (errors: ExpenseErrors, name: string) => errors[name] ? errorId(name) : undefined
 
 export type ExpenseFormProps = {
   draft: ExpenseDraft; chips: Category[]; errors: ExpenseErrors; saving: boolean; failure?: string
-  /** `undefined` — a new spend; otherwise the page of the spend is where «Отмена» leads. */
+  /** `undefined` — a new spend; otherwise the spend being changed: the form ends with «Удалить трату». */
   receiptId?: number
   onChange: (draft: ExpenseDraft) => void; onSubmit: () => void
   /** The calendar date of the device, for «Сегодня» and «Вчера». */
   today?: string
   /** Tests: «Все категории» already open. */
   initialSheet?: boolean
+  /** «Добавит: Андрей · видна всей семье» under the fields; nothing when unknown. */
+  byline?: string
+  /** A phone: the deletion asks in a sheet. */
+  narrow?: boolean
 }
 
 /** A focused field of the form stays above the save bar and the keyboard of a phone: after the focus and whenever the
@@ -70,56 +80,95 @@ function useKeyboardSafeFields(form: RefObject<HTMLFormElement | null>) {
   }, [form])
 }
 
+/** After a refused save the first field with a message gets the focus: on a phone it may be far above the save bar. */
+function useFocusFirstError(form: RefObject<HTMLFormElement | null>, errors: ExpenseErrors) {
+  useEffect(() => {
+    const element = form.current
+    const message = element?.querySelector<HTMLElement>('.expense-error')
+    if (!element || !message) return
+    const owner = element.querySelector<HTMLElement>(`[aria-describedby~="${message.id}"]`)
+    const target = owner instanceof HTMLInputElement || owner instanceof HTMLTextAreaElement ? owner : owner?.querySelector<HTMLElement>('button')
+    target?.focus()
+  }, [form, errors])
+}
+
+/** The calendar of «Когда»: a round button over the native date field, which stays the real, labelled control. A mouse
+ * gets the picker from `showPicker`; a touch screen opens it by itself. */
+function CalendarIcon() {
+  return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true" focusable="false">
+    <rect x="3" y="5" width="18" height="16" rx="2" /><path d="M16 3v4M8 3v4M3 10h18" />
+  </svg>
+}
+const openPicker = (input: HTMLInputElement) => {
+  if (typeof window === 'undefined' || window.matchMedia?.('(pointer: coarse)').matches) return
+  try { input.showPicker?.() } catch { /* not allowed here: the field still takes the keyboard */ }
+}
+
 /** The form itself, without loading and saving: the markup tests render it directly. */
-export function ExpenseForm({ draft, chips, errors, saving, failure, receiptId, onChange, onSubmit, today = todayISO(), initialSheet = false }: ExpenseFormProps) {
+export function ExpenseForm({ draft, chips, errors, saving, failure, receiptId, onChange, onSubmit, today = todayISO(), initialSheet = false, byline, narrow = false }: ExpenseFormProps) {
   const [sheet, setSheet] = useState(initialSheet)
   const [search, setSearch] = useState('')
   const formRef = useRef<HTMLFormElement>(null)
+  const added = useRef<number | undefined>(undefined)
   const itemized = filledLines(draft.lines).length > 0
   const sum = linesTotal(draft.lines)
   // Errors name a position by its place among the sent ones: an untouched empty row is not sent.
   const sent = sentIndexes(draft.lines)
   const shown = visibleChips(chips, draft.category, false)
   const choice = dateChoice(draft.date, today)
+  const symbol = currencySymbol(draft.currency)
+  // «₸ KZT»: the sign before the code, where the currency has one.
+  const signed = symbol !== '' && symbol !== draft.currency
   const set = (patch: Partial<ExpenseDraft>) => onChange({ ...draft, ...patch })
   const setLine = (key: number, patch: Partial<LineDraft>) => set({ lines: draft.lines.map((line) => line.key === key ? { ...line, ...patch } : line) })
+  const addLine = () => { const line = newLine(); added.current = line.key; set({ lines: [...draft.lines, line] }) }
   const submit = (event: FormEvent) => { event.preventDefault(); onSubmit() }
   useKeyboardSafeFields(formRef)
+  useFocusFirstError(formRef, errors)
+  // A new position is typed right away.
+  useEffect(() => {
+    if (added.current === undefined) return
+    document.getElementById(`expense-line-${added.current}-name`)?.focus()
+    added.current = undefined
+  }, [draft.lines])
   return <form ref={formRef} className="expense-form" onSubmit={submit} noValidate aria-busy={saving}>
-    {failure && <p className="expense-failure" role="alert">{failure}</p>}
-    {errors.form && <p className="expense-failure" role="alert">{errors.form}</p>}
-    <div className="expense-amount receipt-field">
-      <label htmlFor="expense-amount">{itemized ? 'Сумма позиций' : 'Сумма'}</label>
+    <section className="expense-card expense-amount">
+      <label htmlFor="expense-amount" className="expense-label">{itemized ? 'Сумма позиций' : 'Сумма'}</label>
       <div className="expense-amount-row">
         <input id="expense-amount" className="expense-amount-input ck-hero-figure" inputMode="decimal" autoComplete="off" enterKeyHint="done"
-          placeholder="0" value={itemized ? (sum ?? '') : draft.amount} readOnly={itemized} aria-invalid={Boolean(errors.amount)}
+          placeholder="0" value={itemized ? (sum === undefined ? '' : sumText(sum)) : draft.amount} readOnly={itemized} aria-invalid={Boolean(errors.amount)}
           aria-describedby={describedBy(errors, 'amount')} onChange={(event) => set({ amount: event.target.value })} />
-        <label className="expense-currency">
+        <label className={`expense-currency${signed ? ' expense-currency-signed' : ''}`}>
+          {signed && <span className="expense-currency-sign" aria-hidden="true">{symbol}</span>}
           <span className="expense-visually-hidden">Валюта</span>
           <input value={draft.currency} maxLength={3} autoCapitalize="characters" autoComplete="off" spellCheck={false}
             aria-invalid={Boolean(errors.currency)} aria-describedby={describedBy(errors, 'currency')}
             onChange={(event) => set({ currency: event.target.value.toUpperCase() })} />
         </label>
       </div>
-      {itemized && <p className="receipt-note">Сумма считается по позициям.</p>}
+      {itemized && <p className="expense-hint-note">Сумма считается по позициям.</p>}
       {fieldError(errors, 'amount')}
       {fieldError(errors, 'currency')}
-    </div>
+    </section>
 
-    <fieldset className="expense-categories" aria-describedby={describedBy(errors, 'category')}>
-      <legend>Категория{itemized && ' позиций без своей'}</legend>
-      <ChipScroller label="Частые категории">
+    <fieldset className="expense-card expense-categories" aria-describedby={describedBy(errors, 'category')}>
+      <legend className="expense-label">Категория{itemized && ' позиций без своей'}</legend>
+      {chips.length > 0 && <div className="expense-chips">
         {shown.map((category) => <button type="button" key={category.id} className="expense-chip"
           aria-pressed={draft.category === category.id} title={category.path.map((step) => step.name).join(' › ') || category.name}
-          onClick={() => set({ category: draft.category === category.id && itemized ? null : category.id })}>{chipLabel(category)}</button>)}
-        {chips.length > 0 && <button type="button" className="expense-chip expense-more" aria-haspopup="dialog" aria-expanded={sheet}
-          onClick={() => setSheet(true)}>Все категории</button>}
-      </ChipScroller>
-      {!chips.length && <p className="receipt-note">Категорий пока нет: их заводят в каталоге.</p>}
+          onClick={() => set({ category: draft.category === category.id && itemized ? null : category.id })}>
+          <span className="expense-dot" style={{ '--expense-tone': `var(--ck-cat-${categoryTone(chipToneId(category))})` } as CSSProperties} aria-hidden="true" />
+          {chipParent(category) && <span className="expense-visually-hidden">{chipParent(category)} › </span>}
+          <span className="expense-chip-name">{category.name}</span>
+        </button>)}
+        <button type="button" className="expense-chip expense-more" aria-haspopup="dialog" aria-expanded={sheet}
+          onClick={() => setSheet(true)}>Все категории…</button>
+      </div>}
+      {!chips.length && <p className="expense-hint-note">Категорий пока нет: их заводят в каталоге.</p>}
       {fieldError(errors, 'category')}
     </fieldset>
     <Sheet open={sheet} onClose={() => setSheet(false)} title="Все категории">
-      <div className="receipt-field">
+      <div className="expense-search">
         <label htmlFor="expense-category-search">Найти категорию</label>
         <input id="expense-category-search" type="search" autoComplete="off" value={search} onChange={(event) => setSearch(event.target.value)} />
       </div>
@@ -128,66 +177,83 @@ export function ExpenseForm({ draft, chips, errors, saving, failure, receiptId, 
         return rows.length ? <ul className="expense-tree" aria-label="Категории">{rows.map(({ category, depth, label }) => <li key={category.id}
           style={{ '--expense-depth': depth } as CSSProperties}>
           <button type="button" className="expense-tree-item" aria-pressed={draft.category === category.id}
-            onClick={() => { set({ category: category.id }); setSheet(false) }}>{label}</button>
-        </li>)}</ul> : <p className="receipt-note" role="status">Ничего не нашлось.</p>
+            onClick={() => { set({ category: category.id }); setSheet(false) }}>
+            <span className="expense-dot" style={{ '--expense-tone': `var(--ck-cat-${categoryTone(chipToneId(category))})` } as CSSProperties} aria-hidden="true" />
+            {label}
+          </button>
+        </li>)}</ul> : <p className="expense-hint-note" role="status">Ничего не нашлось.</p>
       })()}
     </Sheet>
 
-    <fieldset className="expense-dates" aria-describedby={describedBy(errors, dateField)}>
-      <legend>Дата</legend>
-      <div className="expense-date-row">
-        <button type="button" className="expense-chip" aria-pressed={choice === 'today'} onClick={() => set({ date: today })}>Сегодня</button>
-        <button type="button" className="expense-chip" aria-pressed={choice === 'yesterday'} onClick={() => set({ date: dayBefore(today) })}>Вчера</button>
-        <label className={`expense-date-chip${choice === 'other' ? ' expense-date-chip-chosen' : ''}`}>
-          <span className="expense-visually-hidden">Дата покупки</span>
-          <input id="expense-date" type="date" value={draft.date} aria-invalid={Boolean(errors.date)} aria-describedby={describedBy(errors, dateField)}
-            onChange={(event) => set({ date: event.target.value })} />
-        </label>
+    <section className="expense-card expense-details">
+      <div className="expense-row-block">
+        <div className="expense-row" role="group" aria-labelledby="expense-when-label" aria-describedby={describedBy(errors, dateField)}>
+          <span id="expense-when-label" className="expense-row-label">Когда</span>
+          <div className="expense-when">
+            <button type="button" className="expense-chip expense-day" aria-pressed={choice === 'today'} onClick={() => set({ date: today })}>Сегодня</button>
+            <button type="button" className="expense-chip expense-day" aria-pressed={choice === 'yesterday'} onClick={() => set({ date: dayBefore(today) })}>Вчера</button>
+            <label className={`expense-date-pick${choice === 'other' ? ' expense-date-pick-chosen' : ''}`}>
+              <CalendarIcon />
+              {choice === 'other' && /^\d{4}-\d{2}-\d{2}$/.test(draft.date) && <time dateTime={draft.date}>{shortDay(draft.date, today)}</time>}
+              <span className="expense-visually-hidden">Дата покупки</span>
+              <input id="expense-date" type="date" value={draft.date} aria-invalid={Boolean(errors.date)} aria-describedby={describedBy(errors, dateField)}
+                onClick={(event) => openPicker(event.currentTarget)} onChange={(event) => set({ date: event.target.value })} />
+            </label>
+          </div>
+        </div>
+        {fieldError(errors, dateField)}
       </div>
-      {fieldError(errors, dateField)}
-    </fieldset>
-    <div className="expense-grid">
-      <div className="receipt-field">
-        <label htmlFor="expense-place">Место <span className="receipt-note">необязательно</span></label>
-        <input id="expense-place" autoComplete="off" value={draft.place} placeholder="Без места" aria-invalid={Boolean(errors.place)}
-          aria-describedby={describedBy(errors, 'place')} onChange={(event) => set({ place: event.target.value })} />
+      <div className="expense-row-block">
+        <label className="expense-row" htmlFor="expense-place">
+          <span className="expense-row-label">Где</span>
+          <input id="expense-place" className="expense-row-input" autoComplete="off" value={draft.place} placeholder="Без места" aria-invalid={Boolean(errors.place)}
+            aria-describedby={describedBy(errors, 'place')} onChange={(event) => set({ place: event.target.value })} />
+        </label>
         {fieldError(errors, 'place')}
       </div>
-    </div>
-    <div className="receipt-field">
-      <label htmlFor="expense-note">Комментарий <span className="receipt-note">необязательно</span></label>
-      <textarea id="expense-note" rows={2} value={draft.note} aria-invalid={Boolean(errors.note)} aria-describedby={describedBy(errors, 'note')}
-        onChange={(event) => set({ note: event.target.value })} />
-      {fieldError(errors, 'note')}
-    </div>
-
-    <section className="expense-lines" aria-labelledby="expense-lines-heading">
-      <h3 id="expense-lines-heading">Позиции <span className="receipt-note">необязательно</span></h3>
-      {draft.lines.length > 0 && <ol className="expense-line-list">{draft.lines.map((line, index) => <li key={line.key} className="expense-line">
-        <div className="receipt-field">
-          <label htmlFor={`expense-line-${line.key}-name`}>Позиция {index + 1}</label>
-          <input id={`expense-line-${line.key}-name`} autoComplete="off" value={line.name} aria-invalid={Boolean(errors[`lines.${sent[index]}.name`])}
-            aria-describedby={describedBy(errors, `lines.${sent[index]}.name`)} onChange={(event) => setLine(line.key, { name: event.target.value })} />
+      <div className="expense-row-block">
+        <label className="expense-row" htmlFor="expense-note">
+          <span className="expense-row-label">Комментарий</span>
+          <textarea id="expense-note" className="expense-row-input" rows={1} value={draft.note} placeholder="Необязательно" aria-invalid={Boolean(errors.note)}
+            aria-describedby={describedBy(errors, 'note')} onChange={(event) => set({ note: event.target.value })} />
+        </label>
+        {fieldError(errors, 'note')}
+      </div>
+      <div className="expense-row-block expense-lines" role="group" aria-labelledby="expense-lines-heading">
+        <div className="expense-row">
+          <span id="expense-lines-heading" className="expense-row-label">Позиции</span>
+          {draft.lines.length < LINES_MAX && <button type="button" className="expense-add-line" onClick={addLine}>
+            <span aria-hidden="true">+</span> Добавить<span className="expense-visually-hidden"> позицию</span></button>}
+        </div>
+        {draft.lines.length > 0 && <ol className="expense-line-list">{draft.lines.map((line, index) => <li key={line.key} className="expense-line">
+          <div className="expense-line-fields">
+            <label className="expense-visually-hidden" htmlFor={`expense-line-${line.key}-name`}>Позиция {index + 1}</label>
+            <input id={`expense-line-${line.key}-name`} className="expense-line-name" autoComplete="off" placeholder="Название" value={line.name}
+              aria-invalid={Boolean(errors[`lines.${sent[index]}.name`])} aria-describedby={describedBy(errors, `lines.${sent[index]}.name`)}
+              onChange={(event) => setLine(line.key, { name: event.target.value })} />
+            <label className="expense-visually-hidden" htmlFor={`expense-line-${line.key}-amount`}>Сумма позиции {index + 1}</label>
+            <input id={`expense-line-${line.key}-amount`} className="expense-line-amount" inputMode="decimal" autoComplete="off" placeholder="0" value={line.amount}
+              aria-invalid={Boolean(errors[`lines.${sent[index]}.amount`])} aria-describedby={describedBy(errors, `lines.${sent[index]}.amount`)}
+              onChange={(event) => setLine(line.key, { amount: event.target.value })} />
+            <button type="button" className="expense-line-remove" aria-label={`Убрать позицию ${index + 1}`}
+              onClick={() => set({ lines: draft.lines.filter((other) => other.key !== line.key) })}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18M6 6l12 12" /></svg>
+            </button>
+          </div>
           {fieldError(errors, `lines.${sent[index]}.name`)}
-        </div>
-        <div className="receipt-field expense-line-amount">
-          <label htmlFor={`expense-line-${line.key}-amount`}>Сумма</label>
-          <input id={`expense-line-${line.key}-amount`} inputMode="decimal" autoComplete="off" value={line.amount}
-            aria-invalid={Boolean(errors[`lines.${sent[index]}.amount`])} aria-describedby={describedBy(errors, `lines.${sent[index]}.amount`)}
-            onChange={(event) => setLine(line.key, { amount: event.target.value })} />
           {fieldError(errors, `lines.${sent[index]}.amount`)}
-        </div>
-        <button type="button" className="expense-line-remove receipt-secondary" aria-label={`Убрать позицию ${index + 1}`}
-          onClick={() => set({ lines: draft.lines.filter((other) => other.key !== line.key) })}>Убрать</button>
-      </li>)}</ol>}
-      {fieldError(errors, 'lines')}
-      {draft.lines.length < LINES_MAX && <button type="button" className="receipt-secondary expense-add-line"
-        onClick={() => set({ lines: [...draft.lines, newLine()] })}>Добавить позицию</button>}
+        </li>)}</ol>}
+        {fieldError(errors, 'lines')}
+      </div>
     </section>
 
+    {byline && <p className="expense-byline">{byline}</p>}
+    {receiptId !== undefined && <DeleteSpend receiptId={receiptId} narrow={narrow} />}
+
     <div className="expense-actions ck-action-bar">
+      {failure && <p className="expense-failure" role="alert">{failure}</p>}
+      {errors.form && <p className="expense-failure" role="alert">{errors.form}</p>}
       <button type="submit" className="expense-save" disabled={saving}>{saving ? 'Сохраняем…' : saveLabel(draft)}</button>
-      <Link className="action-link" to={receiptId === undefined ? '/receipts' : `/receipts/${receiptId}`}>Отмена</Link>
     </div>
   </form>
 }
@@ -212,6 +278,8 @@ export default function ExpensePage({ receiptId }: { receiptId?: number }) {
   const [handed] = useState(() => receiptId === undefined ? peekHandoff() : undefined)
   const session = useSession()
   const owner = session.kind === 'user' ? session.user.username : undefined
+  const family = session.kind === 'user' && session.household !== null
+  const narrow = useNarrow()
   useEffect(() => () => clearHandoff(), [])
 
   useEffect(() => {
@@ -231,6 +299,7 @@ export default function ExpensePage({ receiptId }: { receiptId?: number }) {
       const [categoryData] = values as [{ results: Category[] }]
       let next: ExpenseDraft
       let frequent: number[] = []
+      let byline: string | undefined
       if (receiptId === undefined) {
         const defaults = values[1] as ManualDefaults
         next = handed ? draftFromPending(handed.body, categoryData.results) : emptyDraft(defaults.currency)
@@ -239,9 +308,10 @@ export default function ExpensePage({ receiptId }: { receiptId?: number }) {
         const receipt = values[1] as Receipt
         if (receipt.source !== 'manual') { setLoad({ kind: 'read-only' }); return }
         next = draftFromReceipt(receipt, (values[2] as { results: Line[] }).results)
+        byline = `Добавил: ${ownerName(receipt)} · ${receipt.hidden ? 'скрыта от семьи' : 'видна всей семье'}`
       }
       setDraft(next)
-      setLoad({ kind: 'ok', data: { draft: next, chips: categoryChips(categoryData.results, frequent) } })
+      setLoad({ kind: 'ok', data: { draft: next, chips: categoryChips(categoryData.results, frequent), byline } })
     })()
     return () => controller.abort()
   }, [receiptId, attempt, handed])
@@ -285,9 +355,12 @@ export default function ExpensePage({ receiptId }: { receiptId?: number }) {
   if (load.kind === 'read-only') return <RequestState kind="empty" message="Чек с фото не меняется: править можно только трату, внесённую вручную."
     action={<Link className="action-link" to={`/receipts/${receiptId}`}>К чеку</Link>} />
   const chips = load.data.chips
-  return <div className="receipts-page expense-page">
+  // Who adds the spend, said only in a family: a person alone adds everything themselves.
+  const byline = !family ? undefined : receiptId === undefined && session.kind === 'user'
+    ? `Добавит: ${personName(session.user.username, session.user.display_name)} · видна всей семье` : load.data.byline
+  return <div className="expense-page">
     {receiptId === undefined && <TextHint onFill={(parsed) => { setDraft(draftFromParse(parsed, chips)); setErrors({}); setFailure(undefined) }} />}
     <ExpenseForm draft={draft ?? load.data.draft} chips={chips} errors={errors} saving={saving} failure={failure}
-      receiptId={receiptId} onChange={setDraft} onSubmit={() => { void save() }} />
+      receiptId={receiptId} onChange={setDraft} onSubmit={() => { void save() }} byline={byline} narrow={narrow} />
   </div>
 }

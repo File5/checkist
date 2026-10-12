@@ -1,10 +1,14 @@
 import type { ReactNode } from 'react'
 
-export type RequestStateProps =
+export type RequestStateProps = (
   | { kind: 'loading'; message?: string }
   // message must be a local UI translation, never a server message/exception.
   | { kind: 'error'; title?: string; message?: string; onRetry: () => void; retryDisabled?: boolean; action?: ReactNode }
   | { kind: 'empty'; title?: string; message: string; action?: ReactNode }
+) & {
+  /** Inside a panel that is the card already: the words and the action without a card of their own. */
+  compact?: boolean
+}
 
 /** Mount within the request's own block; loading reserves space without a fixed height.
  * An empty or failed state is a card: an optional short title, the words, and the action slot — «Повторить» of
@@ -19,7 +23,7 @@ export default function RequestState(props: RequestStateProps) {
     && <button type="button" data-request-retry onClick={props.onRetry} disabled={props.retryDisabled}>Повторить</button>
   const action = props.kind === 'loading' ? undefined : props.action
   return (
-    <div className={`request-state request-state-${props.kind}`} aria-live="polite" aria-busy={props.kind === 'loading'}>
+    <div className={`request-state request-state-${props.kind}${props.compact ? ' request-state-compact' : ''}`} aria-live="polite" aria-busy={props.kind === 'loading'}>
       {title && <p className="request-state-title"><strong>{title}</strong></p>}
       <p>{message}</p>
       {props.kind === 'error' && !action && retry}

@@ -19,18 +19,17 @@ const ready = (currency: string | null, extra: Partial<Extract<SettingsState, { 
 
 describe('account settings', () => {
   it('shows the main currency select with every known currency and the name hint', () => {
-    const html = renderToStaticMarkup(<SettingsView displayName="Андрей" state={ready('KZT')} onCurrency={() => {}} />)
+    const html = renderToStaticMarkup(<SettingsView state={ready('KZT')} onCurrency={() => {}} />)
     expect(html).toContain(settingsTexts.heading)
     expect(html).toContain(settingsTexts.currency)
-    expect(html).toContain(settingsTexts.name)
     expect(html).toContain('KZT — Казахстанский тенге')
     expect(html).toContain(settingsTexts.none)
   })
 
   it('announces the saved value and the loading state', () => {
-    const saved = renderToStaticMarkup(<SettingsView displayName="a" state={ready('EUR', { notice: { kind: 'saved', text: settingsTexts.saved('EUR') } })} onCurrency={() => {}} />)
+    const saved = renderToStaticMarkup(<SettingsView state={ready('EUR', { notice: { kind: 'saved', text: settingsTexts.saved('EUR') } })} onCurrency={() => {}} />)
     expect(saved).toContain('Основная валюта — EUR.')
-    expect(renderToStaticMarkup(<SettingsView displayName="a" state={{ kind: 'loading' }} onCurrency={() => {}} />)).toContain('Загружаем')
+    expect(renderToStaticMarkup(<SettingsView state={{ kind: 'loading' }} onCurrency={() => {}} />)).toContain('Загружаем')
   })
 
   it('reads settings in «Я» and the settings answer', () => {

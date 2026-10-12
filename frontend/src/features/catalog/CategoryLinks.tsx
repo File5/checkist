@@ -37,7 +37,7 @@ export function CategoryBreadcrumbs({ path }: { path: NamedObject[] }) {
     <ol>
       <li><Link to="/catalog">Каталог</Link></li>
       {path.map((category, index) => <li key={category.id}>
-        <span aria-hidden="true"> / </span>
+        <span className="ck-catalog-crumb-mark" aria-hidden="true">›</span>
         {index === path.length - 1
           ? <span aria-current="page">{category.name}</span>
           : <Link to={{ kind: 'category', categoryId: category.id, query: { page: 1 } }}>{category.name}</Link>}

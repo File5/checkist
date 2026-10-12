@@ -122,18 +122,41 @@ export function categoriesText(receipt: Pick<ReceiptListItem, 'categories' | 'ca
   return names.slice(0, shown).join(', ') + (rest > 0 ? ` +${rest}` : '')
 }
 
-/** «Категории · Владелец · откуда · N позиций»: the list answers «на что». The owner only in a family; positions only
- * of a photo receipt; «Возврат» for a refund. */
+/** Where a row came from, for its badge: a photo receipt, a spend typed by hand or one imported from a bank statement. */
+export type SpendSource = 'photo' | 'manual' | 'statement'
+export function spendSource(receipt: Pick<ReceiptListItem, 'source' | 'note'>): SpendSource {
+  if (statementMark.test(receipt.note ?? '')) return 'statement'
+  return receipt.source === 'photo' ? 'photo' : 'manual'
+}
+
+/** «Владелец · Категории · выписка или N позиций»: who, then «на что». The owner only in a family; the badge of the row
+ * already says a photo or a hand-typed spend, so the words name only the bank of a statement and the positions of a
+ * photo; «Возврат» for a refund. A row with nothing else to say says where it came from. */
 export function rowMeta(receipt: ReceiptListItem, showOwner: boolean): string[] {
   const categories = categoriesText(receipt)
-  return [
-    ...(receipt.hidden ? ['скрыто'] : []),
-    ...(categories ? [categories] : []),
+  const source = spendSource(receipt)
+  const facts = [
     ...(showOwner ? [ownerName(receipt)] : []),
-    sourceMark(receipt.source, receipt.note),
+    ...(categories ? [categories] : []),
+    ...(source === 'statement' ? [sourceMark(receipt.source, receipt.note)] : []),
     ...(receipt.source === 'photo' ? [positions(receipt.lines_count)] : []),
     ...(receipt.operation === 'refund' ? ['Возврат'] : []),
   ]
+  return [
+    ...(receipt.hidden ? [hiddenFlag] : []),
+    ...(receipt.review_required || receipt.unmatched_products_count > 0 ? [reviewFlag] : []),
+    ...(facts.length ? facts : [sourceMark(receipt.source, receipt.note)]),
+  ]
+}
+
+/** The words of a row that ask for attention: drawn in the colour of a warning. */
+export const hiddenFlag = 'скрыто'
+export const reviewFlag = 'требует проверки'
+export const isRowFlag = (text: string) => text === hiddenFlag || text === reviewFlag
+
+/** «208 трат» under the list. */
+export function spendsCount(count: number): string {
+  return glue(count.toLocaleString('ru-RU'), plural(count, 'трата', 'траты', 'трат'))
 }
 
 /** The colour of a category: one mapping for every screen (src/lib/category-tone.ts). */

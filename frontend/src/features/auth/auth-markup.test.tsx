@@ -37,7 +37,7 @@ describe('sign-in form (Node server markup, not browser behavior)', () => {
     expect(tag(html, 'login-password')).toContain('name="password"')
     expect(tag(html, 'login-password')).toContain('type="password"')
     expect(tag(html, 'login-password')).toContain('autocomplete="current-password"')
-    expect(html).toContain('<button type="submit" data-auth-submit="true" aria-describedby="login-message">Войти</button>')
+    expect(html).toContain('<button type="submit" class="ck-auth-primary" data-auth-submit="true" aria-describedby="login-message">Войти</button>')
     expect(html).toContain('<div id="login-message" class="ck-auth-message" aria-live="polite"></div>')
   })
   it('leaves the only h1 to the shell', () => {
@@ -72,7 +72,7 @@ describe('sign-in form (Node server markup, not browser behavior)', () => {
   })
   it('keeps the button focusable during the request', () => {
     const html = loginHtml({ state: { kind: 'pending' } })
-    expect(html).toContain('<button type="submit" data-auth-submit="true" aria-disabled="true" aria-describedby="login-message">Входим…</button>')
+    expect(html).toContain('<button type="submit" class="ck-auth-primary" data-auth-submit="true" aria-disabled="true" aria-describedby="login-message">Входим…</button>')
     expect(html).not.toMatch(/<button[^>]*\sdisabled=""/)
   })
   it('is the whole screen: its own main around the shell heading, without header, menu, footer or links', () => {
@@ -81,7 +81,7 @@ describe('sign-in form (Node server markup, not browser behavior)', () => {
     expect(html.startsWith('<main id="main" class="ck-login">')).toBe(true)
     expect(html.endsWith('</main>')).toBe(true)
     expect(html.match(/<main\b/g)).toHaveLength(1)
-    expect(html).toContain('<div class="ck-login-panel"><h1 id="page-heading" tabindex="-1">Вход</h1><p class="ck-login-subtitle">')
+    expect(html).toContain('<div class="ck-login-panel"><div class="ck-login-title"><h1 id="page-heading" tabindex="-1">Вход</h1><p class="ck-login-subtitle">')
     expect(html).toContain('<section class="ck-auth" aria-labelledby="page-heading">')
     expect(html).not.toMatch(/<header\b|<nav\b|<footer\b|<a\b/)
   })
@@ -93,29 +93,29 @@ describe('sign-in form (Node server markup, not browser behavior)', () => {
     expect(image).toContain('alt="Чекист — продуктовая разведка"')
     expect(image).toMatch(/src="[^"]*logo-640[^"]*\.webp"/)
     expect(image).toMatch(/srcSet="[^"]*logo-640[^"]*\.webp 640w, [^"]*logo-1280[^"]*\.webp 1280w"/)
-    expect(image).toContain('sizes="(min-width: 720px) min(50vw, 560px), 33vh"')
+    expect(image).toContain('sizes="(min-width: 720px) min(50vw, 520px), 152px"')
     expect(image).toContain('width="640"')
     expect(image).toContain('height="640"')
     // One column on a phone follows the markup: the board first, the form under it.
     expect(html.indexOf('class="ck-login-board"')).toBeLessThan(html.indexOf('class="ck-login-panel"'))
     expect(html.indexOf('<img')).toBeLessThan(html.indexOf('<form'))
   })
-  it('words the screen: motto, invitation and the note under the form', () => {
+  it('words the screen: the motto over the form and the note under it, no joke on the card', () => {
     const html = loginHtml()
     // The joke of the brand stays in the name of the logo picture; the subtitle tells what the tool is.
     expect(html).toContain('<p class="ck-login-subtitle">Семейный бюджет</p>')
     expect(html).not.toContain('<p class="ck-login-subtitle">Продуктовая разведка</p>')
-    expect(html).toContain('<p class="ck-login-invite">Предъявите пропуск</p>')
+    // The jokes of the brand live in the footer of the shell: the card of the sign-in says only what it is.
+    expect(html).not.toContain('Предъявите пропуск')
     expect(html).toContain('<p class="ck-login-note">Пропуска выдаёт администратор</p>')
-    expect(html.indexOf('ck-login-invite')).toBeLessThan(html.indexOf('<form'))
+    expect(html.indexOf('ck-login-subtitle')).toBeLessThan(html.indexOf('<form'))
     expect(html.indexOf('ck-login-note')).toBeGreaterThan(html.indexOf('</form>'))
     expect(html).not.toContain('Вход пока не подключён')
   })
   it('hides the decoration from assistive technology', () => {
     const html = loginHtml()
     expect(html).toContain('<span class="ck-login-rays" aria-hidden="true"></span>')
-    expect(html).toContain('<div class="ck-login-rule" aria-hidden="true">')
-    for (const svg of html.match(/<svg[^>]*>/g) ?? []) if (!svg.includes('ck-login-star')) expect(svg).toContain('aria-hidden="true"')
+    for (const svg of html.match(/<svg[^>]*>/g) ?? []) expect(svg).toContain('aria-hidden="true"')
   })
   it('keeps the Tab order: name, password, «Войти», theme switch', () => {
     for (const html of [loginHtml(), loginHtml({ expired: true, state: failed('Неверное имя пользователя или пароль.') }), loginHtml({ state: { kind: 'pending' } })]) {
@@ -130,10 +130,10 @@ describe('sign-in form (Node server markup, not browser behavior)', () => {
       expect(html).not.toMatch(/\sdisabled=""/)
     }
   })
-  it('puts the ended-session notice over the form and the theme switch after the note', () => {
+  it('puts the ended-session notice over the form and the theme switch under the card', () => {
     const html = loginHtml({ expired: true })
     expect(html).toContain('<section class="ck-auth" aria-labelledby="page-heading"><p class="ck-auth-notice" data-auth-expired="true">Сеанс завершён. Войдите снова.</p><form')
-    expect(html).toMatch(/<p class="ck-login-note">[^<]*<\/p><div class="ck-login-footer"><button type="button" class="ck-theme-toggle" data-theme-current="dark">/)
+    expect(html).toMatch(/<p class="ck-login-note">[^<]*<\/p><\/div><div class="ck-login-footer"><button type="button" class="ck-theme-toggle" data-theme-current="dark">/)
   })
   it('mounts with empty fields and no message', () => {
     const html = renderToStaticMarkup(<LoginPage expired />)
@@ -148,9 +148,19 @@ describe('account page (Node server markup, not browser behavior)', () => {
   it('shows who is signed in as text and offers the sign-out', () => {
     const html = accountHtml({ username: '<b>synthetic</b>' })
     expect(html).toContain('<p class="ck-auth-username" data-auth-username="true">&lt;b&gt;synthetic&lt;/b&gt;</p>')
-    expect(html).toContain('<button type="button" class="ck-auth-secondary" data-auth-logout="true" aria-describedby="logout-message">Выйти</button>')
+    expect(html).toContain('<button type="button" class="ck-auth-danger" data-auth-logout="true" aria-describedby="logout-message">Выйти из аккаунта</button>')
   })
-  it('labels the three password fields for a password manager', () => {
+  it('shows the person with initials, the theme as two segments and the rows to «Семья» and «Выгрузка»', () => {
+    const html = accountHtml({ displayName: 'Андрей', family: { name: 'Семья Пустовых', head: true } })
+    expect(html).toContain('<span class="ck-auth-avatar" aria-hidden="true">А</span>')
+    expect(html).toContain('<h2 id="account-user-heading" class="ck-auth-profile-name">Андрей</h2>')
+    expect(html).toContain('<p class="ck-auth-hint" data-auth-family-name="true">Семья Пустовых · главный</p>')
+    // A server render sees the dark theme.
+    expect(html).toContain('<div class="ck-auth-segments" role="group" aria-labelledby="account-theme-label"><button type="button" class="ck-auth-segment" aria-pressed="false">Светлая</button><button type="button" class="ck-auth-segment" aria-pressed="true">Тёмная</button></div>')
+    expect(html).toMatch(/<a [^>]*href="\/family"[^>]*>/)
+    expect(accountHtml()).not.toContain('data-auth-family-name')
+  })
+    it('labels the three password fields for a password manager', () => {
     const html = accountHtml()
     expect(html).toContain('<label for="account-current_password">Текущий пароль</label>')
     expect(html).toContain('<label for="account-new_password">Новый пароль</label>')
@@ -165,7 +175,7 @@ describe('account page (Node server markup, not browser behavior)', () => {
     expect(html.match(/<form\b/g)).toHaveLength(1)
     expect(formTag(html)).toContain(' class="ck-auth-panel"')
     expect(formTag(html)).toContain(' method="post"')
-    expect(html).toContain('<button type="submit" data-auth-submit="true" aria-describedby="password-message">Сменить пароль</button>')
+    expect(html).toContain('<button type="submit" class="ck-auth-primary" data-auth-submit="true" aria-describedby="password-message">Сменить пароль</button>')
   })
   it('lists the four rules of a new password before any attempt', () => {
     const html = accountHtml()

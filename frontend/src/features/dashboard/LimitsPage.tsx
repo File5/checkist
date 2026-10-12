@@ -5,10 +5,12 @@ import type { BudgetLimit, BudgetLimitChange } from '../../api/budget'
 import { getCategories } from '../../api/catalog'
 import { getManualDefaults } from '../../api/receipts'
 import type { Category } from '../../api/types'
+import Icon from '../../components/Icon'
 import RequestState from '../../components/RequestState'
 import { Link } from '../../navigation'
 import { useSession } from '../../session'
 import { categoryTone, dashboardErrorMessage, formatMoney } from './dashboard-state'
+import { currencySymbol } from '../../lib/money'
 import {
   amountInput, changedRows, filterHistory, historyCategories, historyEntries, isDuplicateCreate, limitCurrencies, limitFailureMessage, limitFor,
   limitTree, openByDefault, parseCurrency, rowAction, saveBarLabel, subCategoriesText, visibleRows, withLimit, withoutLimit,
@@ -82,7 +84,7 @@ export function LimitHistory({ state, category = null, onCategory = () => {}, on
       </ol>
     </>
   }
-  return <section className="dash-card limits-history" aria-labelledby="limits-history-heading">
+  return <section className="ck-panel dash-card limits-history" aria-labelledby="limits-history-heading">
     <h2 id="limits-history-heading" className="limits-small-heading">История изменений</h2>
     {body}
   </section>
@@ -103,7 +105,7 @@ function AddCurrency({ onAdd }: { onAdd: (input: string) => string | undefined }
       <input id="limits-new-currency" value={value} maxLength={3} autoCapitalize="characters" autoComplete="off" spellCheck={false}
         placeholder="USD" aria-invalid={Boolean(error)} aria-describedby={error ? 'limits-new-currency-error' : undefined}
         onChange={(event) => setValue(event.target.value.toUpperCase())} />
-      <button type="submit" className="receipt-secondary">Добавить</button>
+      <button type="submit" className="ck-button-secondary">Добавить</button>
     </div>
     {error && <p className="receipt-field-error" id="limits-new-currency-error">{error}</p>}
   </form>
@@ -120,11 +122,11 @@ export function LimitsView({
   const changed = changedRows(categories, limits, currency, drafts)
   const saving = Object.entries(statuses).some(([key, status]) => key.endsWith(`:${currency}`) && status.kind === 'busy')
   return <div className="limits">
-    <p className="dash-note">{family
+    <p className="limits-intro">{family
       ? 'Лимит — сколько семья готова потратить на категорию за месяц. Лимиты общие: их видят и меняют все члены семьи.'
       : 'Лимит — сколько вы готовы потратить на категорию за месяц.'} Лимит можно задать и подкатегории: её траты входят
       и в её лимит, и в лимит категории выше.</p>
-    <section className="dash-card limits-currencies" aria-labelledby="limits-currency-heading">
+    <section className="ck-panel dash-card limits-currencies" aria-labelledby="limits-currency-heading">
       <h2 id="limits-currency-heading" className="limits-small-heading">Валюта</h2>
       <ChipScroller label="Валюта лимитов">
         {currencies.map((code) => <button key={code} type="button" className="dash-chip" aria-pressed={code === currency}
@@ -165,9 +167,9 @@ export function LimitsView({
                   value={draft ?? (limit ? amountInput(limit.amount) : '')} aria-invalid={invalid}
                   aria-describedby={status.kind === 'idle' || busy ? undefined : messageId}
                   onChange={(event) => onDraft(key, event.target.value)} />
-                <span className="limits-input-currency" aria-hidden="true">{currency}</span>
+                <span className="limits-input-currency" aria-hidden="true">{currencySymbol(currency)}</span>
               </span>
-              {limit && <button type="button" className="receipt-secondary limits-delete" disabled={busy}
+              {limit && <button type="button" className="ck-button-danger limits-delete" disabled={busy}
                 aria-label={`Удалить лимит «${category.name}»`} onClick={() => onDelete(limit)}>Удалить</button>}
             </div>
             {status.kind === 'error' && <p className="receipt-field-error" id={messageId} role="alert">{status.text}</p>}
@@ -175,7 +177,7 @@ export function LimitsView({
           </form>
           {depth === 0 && descendants > 0 && <button type="button" className="limits-toggle" aria-expanded={open}
             aria-label={`${open ? 'Скрыть' : 'Показать'} подкатегории «${category.name}»`}
-            onClick={() => onToggle(rootId, !open)}>{open ? 'Скрыть' : 'Показать'} {subCategoriesText(descendants)}</button>}
+            onClick={() => onToggle(rootId, !open)}><Icon name="forward" size={14} className={`ck-icon limits-toggle-chevron${open ? ' limits-toggle-open' : ''}`} />{open ? 'Скрыть' : 'Показать'} {subCategoriesText(descendants)}</button>}
         </li>
       })}
     </ul> : <RequestState kind="empty" message="Категорий пока нет: их заводят в каталоге." action={<Link className="action-link" to="/catalog">В каталог</Link>} />}
@@ -184,7 +186,7 @@ export function LimitsView({
         {saving ? 'Сохраняем…' : saveBarLabel(changed.length)}</button>
     </div>}
     {history && <LimitHistory state={history} category={historyCategory} onCategory={onHistoryCategory} onRetry={onHistoryRetry} />}
-    <p><Link className="dash-link" to="/">На главную</Link></p>
+    <p className="limits-back"><Link className="dash-link" to="/">На главную</Link></p>
   </div>
 }
 

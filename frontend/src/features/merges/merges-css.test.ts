@@ -86,11 +86,14 @@ describe('merge stylesheet guards (text of the rules, not rendering)', () => {
     expect(screens.match(/<th scope="col" className="ck-merge-name-head">/g)).toHaveLength(2)
   })
 
-  it('takes every colour from the theme tokens and keeps the size of the text', () => {
+  it('takes every colour from the theme tokens and every size of the text from the scale', () => {
     expect(css.match(/#[0-9a-f]{3,8}|(?:rgb|hsl)a?\(/gi)).toBeNull()
     const sizes = [...css.matchAll(/font-size\s*:\s*([^;]+);/g)].map((match) => match[1].trim())
-    expect(sizes.every((size) => /^\d+(\.\d+)?rem$/.test(size))).toBe(true)
-    expect(Math.min(...sizes.map(parseFloat))).toBe(0.85)
-    expect(value(rule('.ck-merge-table'), 'font-size')).toBe('0.95rem')
+    expect(sizes.length).toBeGreaterThan(5)
+    for (const size of sizes) expect(size).toMatch(/^var\(--ck-text-(xs|sm|base|lg|xl)\)$/)
+    expect(value(rule('.ck-merge-table'), 'font-size')).toBe('var(--ck-text-sm)')
+    // Cards of the artifact: the surface with the shadow of the theme; the groups of the list are rows of their card.
+    expect(rule('.ck-merge-panel')).toContain('background: var(--ck-surface); box-shadow: var(--ck-card-shadow);')
+    expect(rule('.ck-merge-card')).toContain('border-top: 1px solid var(--ck-divider);')
   })
 })

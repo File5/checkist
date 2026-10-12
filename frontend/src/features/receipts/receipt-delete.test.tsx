@@ -33,7 +33,8 @@ const view = (header: Receipt): ReceiptViewProps => ({
 describe('deleting a photo receipt (Vitest/SSR, not browser visual acceptance)', () => {
   it('offers «Удалить чек» on a photo receipt and keeps «Изменить / Удалить» of a manual spend', () => {
     const photo = renderToStaticMarkup(<ReceiptView {...view(receipt)} />)
-    expect(photo).toContain('>Удалить чек</button>')
+    // The tile says «Удалить»; its name is the whole phrase.
+    expect(photo).toContain('<button type="button" class="receipt-secondary" aria-label="Удалить чек">Удалить</button>')
     expect(photo).not.toContain('>Изменить<')
     const manual = renderToStaticMarkup(<ReceiptView {...view({ ...receipt, source: 'manual', store: null })} />)
     expect(manual).not.toContain('Удалить чек')
@@ -83,11 +84,11 @@ describe('deleting a photo receipt (Vitest/SSR, not browser visual acceptance)',
     expect(deletedNotice(false)).toBe('Чек удалён. Фото и его задание остались в «Обработке».')
   })
 
-  it('shows the notice once on «Чеки»', () => {
+  it('shows the notice once on «Траты»', () => {
     setReceiptsNotice('Чек удалён вместе с фото.')
     expect(getReceiptsNotice()).toBe('Чек удалён вместе с фото.')
     const html = renderToStaticMarkup(<ReceiptsView query={{ page: 1 }} state={{ kind: 'ok', data: emptyPage() }} retry={noop} notice={getReceiptsNotice()} />)
-    expect(html).toContain('<div class="receipts-page"><p class="expense-notice" role="status">Чек удалён вместе с фото.</p>')
+    expect(html).toContain('<div class="receipts-page spends-page"><p class="expense-notice" role="status">Чек удалён вместе с фото.</p>')
     clearReceiptsNotice()
     expect(getReceiptsNotice()).toBeUndefined()
     expect(renderToStaticMarkup(<ReceiptsView query={{ page: 1 }} state={{ kind: 'ok', data: emptyPage() }} retry={noop} />)).not.toContain('expense-notice')

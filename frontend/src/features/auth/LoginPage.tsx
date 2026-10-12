@@ -32,9 +32,9 @@ export type LoginViewProps = {
   heading?: ReactNode
 }
 
-/** The sign-in on the address the person opened: the whole screen with its own `<main>`, no shell around it.
-    A real form: a password manager offers to save and to fill it. The order in the markup is the Tab order:
-    name, password, «Войти», theme switch. */
+/** The sign-in on the address the person opened: the whole screen with its own `<main>`, no shell around it —
+    the logo as an app icon above a card with the form (two columns from 720 px). A real form: a password manager
+    offers to save and to fill it. The order in the markup is the Tab order: name, password, «Войти», theme switch. */
 export function LoginView({ state, expired, values, onChange, onSubmit, heading }: LoginViewProps) {
   const pending = state.kind === 'pending'
   const invalid = (field: string) => (state.kind === 'failed' && state.fields.includes(field)) || undefined
@@ -45,17 +45,13 @@ export function LoginView({ state, expired, values, onChange, onSubmit, heading 
         <div className="ck-login-board">
           <span className="ck-login-rays" aria-hidden="true" />
           <img className="ck-login-logo" src={logo640} srcSet={`${logo640} 640w, ${logo1280} 1280w`}
-            sizes="(min-width: 720px) min(50vw, 560px), 33vh" width="640" height="640" alt="Чекист — продуктовая разведка" />
+            sizes="(min-width: 720px) min(50vw, 520px), 152px" width="640" height="640" alt="Чекист — продуктовая разведка" />
         </div>
         <div className="ck-login-panel">
-          {heading}
-          <p className="ck-login-subtitle">Семейный бюджет</p>
-          <div className="ck-login-rule" aria-hidden="true">
-            <svg className="ck-login-star" viewBox="0 0 24 24" width="24" height="24" focusable="false">
-              <path d="m12 1.8 2.9 6.6 7.1.7-5.4 4.8 1.6 7-6.2-3.7-6.2 3.7 1.6-7L2 9.1l7.1-.7L12 1.8Z" />
-            </svg>
+          <div className="ck-login-title">
+            {heading}
+            <p className="ck-login-subtitle">Семейный бюджет</p>
           </div>
-          <p className="ck-login-invite">Предъявите пропуск</p>
           <section className="ck-auth" aria-labelledby="page-heading">
             {expired && <p className="ck-auth-notice" data-auth-expired>{sessionExpiredText}</p>}
             <form className="ck-auth-panel" method="post" noValidate onSubmit={submit}>
@@ -73,15 +69,15 @@ export function LoginView({ state, expired, values, onChange, onSubmit, heading 
               </div>
               <div className="ck-auth-actions">
                 {/* Not `disabled`: the button keeps focus during the request; the form state refuses a second press. */}
-                <button type="submit" data-auth-submit aria-disabled={pending || undefined} aria-describedby="login-message">{pending ? 'Входим…' : 'Войти'}</button>
+                <button type="submit" className="ck-auth-primary" data-auth-submit aria-disabled={pending || undefined} aria-describedby="login-message">{pending ? 'Входим…' : 'Войти'}</button>
                 <FormMessage state={state} id="login-message" />
               </div>
             </form>
           </section>
           <p className="ck-login-note">Пропуска выдаёт администратор</p>
-          <div className="ck-login-footer">
-            <ThemeToggle />
-          </div>
+        </div>
+        <div className="ck-login-footer">
+          <ThemeToggle />
         </div>
       </div>
     </main>

@@ -1,5 +1,8 @@
-/* «Динамика»: the panels of ReceiptsStats.css with the large numbers and category dots of «Главная».
-   Colours are tokens only, in both themes; a category is --ck-cat-N (src/lib/category-tone.ts), 0 — no category. */
+/* «Динамика» в языке артефакта (2026-10-13): карточки ReceiptsStats.css, сводка — карточка-герой, разбивки — строки
+   списка с точкой категории, суммой справа и тонкой полосой. Изменение — стрелка, знак и слова; больше потрачено или
+   дороже — тон «сверх» (--ck-over-text), меньше — тон успеха. Цвета — только токены, в обеих темах; категория —
+   --ck-cat-N (src/lib/category-tone.ts), 0 — без категории. Размеры текста — только шкала --ck-text-*. Раскладка
+   резиновая: правил по ширине окна здесь нет. */
 .trends-cat-0 { --trends-cat: var(--ck-series-other); }
 .trends-cat-1 { --trends-cat: var(--ck-cat-1); }
 .trends-cat-2 { --trends-cat: var(--ck-cat-2); }
@@ -10,114 +13,156 @@
 
 .trends-summary { display: grid; gap: 4px; min-width: 0; }
 .trends-summary p { margin: 0; }
-.trends-big { margin: 0; font-size: clamp(1.5rem, 7vw, 2.25rem); font-weight: 800; line-height: 1.1; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.trends-big { margin: 0; font-size: var(--ck-text-xl); font-weight: 800; line-height: 1.15; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .trends-value { white-space: nowrap; font-variant-numeric: tabular-nums; }
-.trends-lead { font-size: 1.1rem; font-weight: 650; }
-.trends-compare { margin: 0; color: var(--ck-text-muted); }
+.trends-lead { margin: 0; font-size: var(--ck-text-base); font-weight: 700; }
+.trends-compare { margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-sm); font-weight: 600; }
 .trends-compare-more { color: var(--ck-over-text); }
 .trends-compare-less { color: var(--ck-success-text); }
+/* «▲ на 10,50 % больше, чем в сентябре 2026» under a big sum. */
+.trends-change { margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-sm); font-weight: 600; }
+.trends-change-up { color: var(--ck-over-text); }
+.trends-change-down { color: var(--ck-success-text); }
 
-/* The opened month under the columns */
-.trends-month { display: grid; gap: 12px; min-width: 0; padding: 16px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius); background: var(--ck-surface-raised); }
+/* A change of a row: arrow and signed percent in the tone of the change, no frame — the row stays quiet. */
+.trends-badge { display: inline-flex; align-items: baseline; gap: 4px; color: var(--ck-text-muted); font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.trends-badge-up { color: var(--ck-over-text); }
+.trends-badge-down { color: var(--ck-success-text); }
+.trends-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.trends-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* The summary strip: cards with big numbers, like the hero card of «Главная». */
+.trends-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 16px; min-width: 0; }
+.trends-card { display: grid; gap: 8px; align-content: start; min-width: 0; padding: 20px; border-radius: var(--ck-radius); background: var(--ck-surface); box-shadow: var(--ck-card-shadow); }
+.trends-card p { margin: 0; }
+.trends-card-label { color: var(--ck-text-muted); font-size: var(--ck-text-sm); font-weight: 600; }
+.trends-card-label time { white-space: nowrap; }
+.trends-card-note { color: var(--ck-text-muted); font-size: var(--ck-text-xs); }
+
+/* The opened month under the columns: a raised plate, rows of a list with a dot, a thin bar and the sum. */
+.trends-month { display: grid; gap: 8px; min-width: 0; padding: 16px; border-radius: var(--ck-radius-button); background: var(--ck-surface-raised); }
 .trends-month-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; }
 .trends-month-title { margin: 0; font-weight: 700; }
 .trends-month-title time { white-space: nowrap; }
-.trends-rows { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
-.trends-row { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 44px; border-top: 1px solid var(--ck-divider); }
+.trends-rows { display: grid; margin: 0; padding: 0; list-style: none; }
+.trends-row { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 52px; padding: 6px 0; border-top: 1px solid var(--ck-divider); }
 .trends-row:first-child { border-top: 0; }
-.trends-dot { flex: 0 0 auto; width: 12px; height: 12px; border-radius: 50%; background: var(--trends-cat); }
-.trends-row-name { flex: 1 1 auto; min-width: 0; font-weight: 600; }
-.trends-row .trends-value { flex: 0 0 auto; margin-left: auto; color: var(--ck-text-muted); }
-.trends-links { display: flex; flex-wrap: wrap; gap: 4px 20px; margin: 0; }
-.trends-link { display: inline-flex; align-items: center; min-height: 44px; color: var(--ck-link); font-weight: 600; white-space: nowrap; }
+.trends-dot { flex: 0 0 auto; width: 10px; height: 10px; border-radius: 50%; background: var(--trends-cat); }
+.trends-row-main { display: grid; flex: 1 1 auto; gap: 4px; min-width: 0; }
+.trends-row-name { min-width: 0; font-size: var(--ck-text-sm); font-weight: 700; }
+a.trends-row-name { color: var(--ck-text); text-decoration: none; }
+a.trends-row-name:hover { color: var(--ck-link); text-decoration: underline; text-underline-offset: 3px; }
+.trends-row-bar { display: block; height: 6px; overflow: hidden; border-radius: 3px; background: var(--ck-track); }
+.trends-row-bar span { display: block; height: 100%; border-radius: inherit; background: var(--trends-cat); }
+.trends-row > .trends-value { flex: 0 0 auto; min-width: 6.5em; margin-left: auto; font-size: var(--ck-text-sm); font-weight: 700; text-align: right; }
+.trends-links { display: flex; flex-wrap: wrap; gap: 0 20px; margin: 0; }
+.trends-link { display: inline-flex; align-items: center; min-height: 44px; color: var(--ck-link); font-weight: 700; text-decoration: none; white-space: nowrap; }
+.trends-link:hover { color: var(--ck-link-hover); text-decoration: underline; text-underline-offset: 3px; }
 
 /* Category over time */
 .trends-picker { max-width: 480px; }
 .trends-category-name { margin: 0; font-weight: 700; }
 
-/* Prices */
+/* Prices: what got dearer and cheaper as rows of a list — the name, the change on the right, the prices under it. */
 .trends-movers-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 16px 24px; }
-.trends-movers { display: grid; gap: 8px; align-content: start; min-width: 0; }
+.trends-movers { display: grid; gap: 4px; align-content: start; min-width: 0; }
 .trends-mover-list { display: grid; margin: 0; padding: 0; list-style: none; }
-.trends-mover { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding: 10px 0; border-top: 1px solid var(--ck-divider); }
+.trends-mover { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0 12px; padding: 8px 0; border-top: 1px solid var(--ck-divider); }
 .trends-mover:first-child { border-top: 0; }
-.trends-mover-name { display: inline-flex; align-items: center; min-height: 44px; min-width: 0; color: var(--ck-link); font-weight: 600; }
-.trends-mover-prices, .trends-mover-months { grid-column: 1 / -1; }
-.trends-counts { margin: 0; font-weight: 600; }
-.trends-subheading { margin: 0; font-size: 0.95rem; }
+.trends-mover-name { display: inline-flex; align-items: center; min-width: 0; min-height: 44px; color: var(--ck-text); font-size: var(--ck-text-sm); font-weight: 700; text-decoration: none; }
+.trends-mover-name:hover { color: var(--ck-link); text-decoration: underline; text-underline-offset: 3px; }
+.trends-mover-prices, .trends-mover-months { grid-column: 1 / -1; font-size: var(--ck-text-xs); }
+.trends-mover-prices { color: var(--ck-text); }
+.trends-counts { margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-sm); font-weight: 600; }
+.trends-subheading { margin: 0; font-size: var(--ck-text-sm); font-weight: 700; }
 
-/* A change: arrow, sign and words; the tone is a second sign, never the only one. More spent or dearer — warning. */
-.trends-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border: 1px solid var(--ck-neutral-border); border-radius: 999px; background: var(--ck-neutral-bg); color: var(--ck-text); font-size: 0.9rem; font-weight: 700; line-height: 1.5; white-space: nowrap; font-variant-numeric: tabular-nums; vertical-align: middle; }
-.trends-badge-up { border-color: var(--ck-warning-border); background: var(--ck-warning-bg); color: var(--ck-warning-text); }
-.trends-badge-down { border-color: var(--ck-success-border); background: var(--ck-success-bg); color: var(--ck-success-text); }
-.trends-mover .trends-badge { align-self: center; }
-.trends-big .trends-badge { font-size: 1.4rem; padding: 4px 14px; }
-.trends-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-
-/* The summary strip: cards with big numbers, like «Главная». */
-.trends-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 16px; }
-.trends-card { display: grid; gap: 8px; align-content: start; min-width: 0; padding: 20px; border: 1px solid var(--ck-border); border-radius: 20px; background: var(--ck-surface); box-shadow: 0 1px 2px var(--ck-panel-shadow); }
-.trends-card p { margin: 0; }
-.trends-card-label { color: var(--ck-text-muted); font-weight: 600; }
-.trends-card-label time { white-space: nowrap; }
-.trends-card-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
-.trends-card-note { color: var(--ck-text-muted); }
-
-/* «Месяц к месяцу» */
-.trends-table-scroll { overflow-x: auto; max-width: 100%; }
+/* «Месяц к месяцу», a wide screen: the table. */
+/* Positioned, so the hidden words of a change (absolute, 1 px) scroll inside the frame instead of widening the page. */
+.trends-table-scroll { position: relative; overflow-x: auto; max-width: 100%; }
 .trends-table-scroll:focus-visible { outline: 3px solid var(--ck-focus); outline-offset: 2px; }
 .trends-table { width: 100%; border-collapse: collapse; }
-.trends-table th, .trends-table td { padding: 8px 10px; border-bottom: 1px solid var(--ck-divider); text-align: left; vertical-align: middle; }
-.trends-table thead th { color: var(--ck-text-muted); font-size: 0.85rem; font-weight: 600; }
-.trends-table tbody th { font-weight: 600; }
-.trends-table tbody th a { color: var(--ck-link); }
-.trends-sub-row th { padding-left: 28px; font-weight: 400; }
-.trends-sub { padding-left: 16px; }
+.trends-table th, .trends-table td { padding: 10px; border-bottom: 1px solid var(--ck-divider); text-align: left; vertical-align: middle; }
+.trends-table thead th { color: var(--ck-text-muted); font-size: var(--ck-text-xs); font-weight: 600; }
+/* The name keeps its words whole and stays in sight while the months scroll under it; the cell draws its own line. */
+.trends-table tbody th { min-width: 200px; font-weight: 700; overflow-wrap: break-word; }
+.trends-table tbody th, .trends-table thead th:first-child { position: sticky; left: 0; z-index: 1; background: var(--ck-surface); box-shadow: inset -1px 0 0 var(--ck-divider); }
+.trends-table tbody th a { color: var(--ck-text); text-decoration: none; }
+.trends-table tbody th a:hover { color: var(--ck-link); text-decoration: underline; text-underline-offset: 3px; }
+.trends-sub-row th { padding-left: 28px; }
+.trends-table .trends-sub-row th { font-weight: 600; }
 .trends-number { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .trends-table th.trends-number { text-align: right; }
 .trends-spark { display: block; overflow: visible; }
 .trends-spark path { fill: none; stroke: var(--ck-series-1); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .trends-spark circle { fill: var(--ck-series-1); }
-
-/* «Лимиты по месяцам»: a cell per month with the share of the limit; over the limit — the over colours, an arrow and «сверх». */
-.trends-limits { display: grid; gap: 20px; margin: 0; padding: 0; list-style: none; }
-.trends-limit { display: grid; gap: 10px; min-width: 0; }
-.trends-limit-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
-.trends-limit-amount { margin-left: auto; color: var(--ck-text-muted); }
-.trends-cells { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
-.trends-cell { display: grid; gap: 4px; min-width: 0; padding: 8px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius-sm); background: var(--ck-surface); }
-.trends-cell-month { color: var(--ck-text-muted); font-size: 0.85rem; white-space: nowrap; }
-.trends-cell-percent { font-weight: 700; }
-.trends-cell-bar { display: block; height: 6px; overflow: hidden; border-radius: 3px; background: var(--ck-track); }
-.trends-cell-bar span { display: block; height: 100%; border-radius: 3px; background: var(--ck-accent); }
-.trends-cell-over { border-color: var(--ck-warning-border); background: var(--ck-warning-bg); }
-.trends-cell-over .trends-cell-percent, .trends-cell-word { color: var(--ck-over-text); }
-.trends-cell-over .trends-cell-bar span { background: var(--ck-over-bar); }
-.trends-cell-word { font-size: 0.8rem; font-weight: 600; }
-/* A month without a limit is quiet; ◆ marks a month where the limit changed, the list under the row says how (no tooltip on a phone). */
-.trends-cell-none .trends-cell-percent { color: var(--ck-text-muted); font-weight: 400; }
-.trends-cell-change { color: var(--ck-accent); }
-.trends-limit-changes { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; color: var(--ck-text-muted); font-size: 0.85rem; }
-.trends-limit-changes span { color: var(--ck-accent); }
-
-/* «Месяц к месяцу»: the sparkline with its first month, and on a phone every month of the period, newest first. */
-.trends-row-trend { display: inline-flex; align-items: center; gap: 6px; }
+.trends-row-trend { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
 .trends-spark-from { color: var(--ck-text-muted); font-size: var(--ck-text-xs); white-space: nowrap; }
-.trends-month-strip { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
-.trends-month-strip-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 4px 10px; min-height: 36px; border-top: 1px solid var(--ck-divider); }
+
+/* «Месяц к месяцу», a phone: a row of a list per category that opens to every month of the window. */
+.trends-mm-caption { margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-xs); }
+.trends-mm { margin: 0; padding: 0; list-style: none; }
+.trends-mm-row + .trends-mm-row { border-top: 1px solid var(--ck-divider); }
+.trends-mm-summary { display: grid; gap: 4px; min-height: 64px; padding: 10px 0; cursor: pointer; list-style: none; }
+.trends-mm-summary::-webkit-details-marker { display: none; }
+.trends-mm-summary:focus-visible { outline: 3px solid var(--ck-focus); outline-offset: 2px; border-radius: var(--ck-radius-sm); }
+.trends-mm-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.trends-mm-name { flex: 1 1 auto; min-width: 0; overflow: hidden; font-size: var(--ck-text-sm); font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.trends-mm-last { flex: none; font-size: var(--ck-text-sm); font-weight: 700; }
+/* The chevron says the row opens; it turns when it is open. */
+.trends-mm-head::after { content: ""; flex: none; width: 7px; height: 7px; margin: 0 2px 3px 4px; border-right: 2px solid var(--ck-text-muted); border-bottom: 2px solid var(--ck-text-muted); transform: rotate(45deg); }
+.trends-mm-details[open] .trends-mm-head::after { margin-bottom: -3px; transform: rotate(-135deg); }
+.trends-mm-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; padding-left: 20px; padding-right: 23px; font-size: var(--ck-text-xs); }
+.trends-mm-sub .trends-mm-head { padding-left: 20px; }
+.trends-mm-sub .trends-mm-meta { padding-left: 40px; }
+.trends-mm-sub .trends-mm-name { font-weight: 600; }
+.trends-mm-none { color: var(--ck-text-muted); }
+.trends-mm-body { display: grid; gap: 8px; min-width: 0; padding: 0 0 12px 20px; }
+.trends-mm-sub .trends-mm-body { padding-left: 40px; }
+.trends-mm-totals { display: grid; gap: 4px; margin: 0; padding-top: 6px; border-top: 1px solid var(--ck-divider); font-size: var(--ck-text-sm); }
+.trends-mm-totals > div { display: flex; justify-content: space-between; gap: 12px; }
+.trends-mm-totals dt { color: var(--ck-text-muted); }
+.trends-mm-totals dd { margin: 0; font-weight: 700; }
+.trends-month-strip { display: grid; margin: 0; padding: 0; list-style: none; font-size: var(--ck-text-sm); }
+.trends-month-strip-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 4px 12px; min-height: 36px; border-top: 1px solid var(--ck-divider); }
 .trends-month-strip-row:first-child { border-top: 0; }
 .trends-month-strip-row time { white-space: nowrap; }
-.trends-month-strip-change { justify-self: end; white-space: nowrap; }
+.trends-month-strip-change { justify-self: end; min-width: 76px; text-align: right; white-space: nowrap; }
 
-/* The period: ready periods in one sideways row, the period in words, «Свой период» inline or in a sheet. */
+/* «Лимиты по месяцам»: a limit is a row of the list with its months under it — the month, a bar of the share used,
+   the percent, and the sum against the limit. Over the limit — the over colours, an arrow and «сверх». */
+.trends-limits { display: grid; gap: 20px; margin: 0; padding: 0; list-style: none; }
+.trends-limit { display: grid; gap: 10px; min-width: 0; }
+.trends-limit + .trends-limit { padding-top: 20px; border-top: 1px solid var(--ck-divider); }
+.trends-limit-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.trends-limit-head .trends-row-name { flex: 1 1 auto; }
+.trends-limit-amount { flex: none; color: var(--ck-text-muted); font-size: var(--ck-text-xs); font-weight: 600; }
+.trends-cells { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.trends-cell { display: grid; grid-template-columns: 76px minmax(0, 1fr) auto; grid-template-areas: "month bar percent" ". sums sums"; align-items: center; gap: 2px 10px; min-width: 0; }
+.trends-cell-month { grid-area: month; color: var(--ck-text-muted); font-size: var(--ck-text-xs); font-weight: 600; white-space: nowrap; }
+.trends-cell-bar { grid-area: bar; display: block; height: 8px; overflow: hidden; border-radius: 4px; background: var(--ck-track); }
+.trends-cell-bar span { display: block; height: 100%; border-radius: inherit; background: var(--trends-cat); }
+.trends-cell-percent { grid-area: percent; font-size: var(--ck-text-sm); font-weight: 700; text-align: right; }
+.trends-cell-sums { grid-area: sums; min-width: 0; color: var(--ck-text-muted); font-size: var(--ck-text-xs); }
+.trends-cell-over .trends-cell-bar span { background: var(--ck-over-bar); }
+.trends-cell-over .trends-cell-percent, .trends-cell-word { color: var(--ck-over-text); font-weight: 700; }
+/* ◆ marks a month where the limit changed; the list under the row says how (no tooltip on a phone). */
+.trends-cell-change { color: var(--ck-accent-text); }
+.trends-limit-foot { display: grid; gap: 2px; min-width: 0; }
+.trends-limit-note { margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-xs); }
+.trends-limit-changes { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; color: var(--ck-text-muted); font-size: var(--ck-text-xs); }
+.trends-limit-changes span { color: var(--ck-accent-text); }
+
+/* The period: on a phone «Свой период» and the ready periods in one row, the period in words under it. */
 .trends-period { display: grid; gap: 8px; min-width: 0; }
-.trends-period-current { margin: 0; }
+.trends-period-bar { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.trends-period-bar > .ck-chip-scroller { flex: 1 1 auto; min-width: 0; }
+.trends-period-open { flex: none; min-height: 44px; padding: 8px 16px; border: 1px solid var(--ck-link); border-radius: var(--ck-radius-pill); background: var(--ck-surface); color: var(--ck-link); font-weight: 700; white-space: nowrap; }
+.trends-period-open:hover:not(:disabled) { border-color: var(--ck-link-hover); background: var(--ck-surface-raised); color: var(--ck-link-hover); }
+.trends-period-current { margin: 0; padding: 0 4px; color: var(--ck-text-muted); font-size: var(--ck-text-xs); }
+.trends-period-current strong { color: var(--ck-text); }
 .trends-period-current time { white-space: nowrap; }
-.trends-period-label { color: var(--ck-text-muted); }
 .trends-chip-off { opacity: 0.55; cursor: default; }
-.trends-period-open { justify-self: start; min-height: 48px; }
-.trends-period-custom { display: grid; gap: 8px; min-width: 0; }
+.trends-period-custom { display: grid; gap: 8px; min-width: 0; padding: 20px; border-radius: var(--ck-radius); background: var(--ck-surface); box-shadow: var(--ck-card-shadow); }
 .trends-period-form { display: grid; gap: 12px; min-width: 0; max-width: 560px; }
 .trends-period-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .trends-period-form .stats-note { margin: 0; }
-.trends-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

@@ -175,6 +175,14 @@ export function needsAddressReset(failure: SpendingFailure): boolean {
 export function hasScopeFilters(query: SpendingQuery): boolean {
   return Boolean(query.date_from || query.date_to || query.country || query.currency || query.store?.length)
 }
+/**
+ * How many filters of the form narrow the answer, for «Фильтры (N)» on a phone: own dates (a ready period is a chip,
+ * not a filter), the country, the currency and the stores.
+ */
+export function filterCount(query: SpendingQuery, today: string): number {
+  const dates = (query.date_from || query.date_to) && activePreset(query, today) === undefined ? 1 : 0
+  return dates + (query.country ? 1 : 0) + (query.currency ? 1 : 0) + (query.store?.length ? 1 : 0)
+}
 export function hasFilters(query: SpendingQuery): boolean {
   return hasScopeFilters(query) || Boolean(query.category || query.generic)
 }

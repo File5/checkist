@@ -4,7 +4,7 @@ import RequestState from '../../components/RequestState'
 import { useLocalRequestFocus } from '../../components/useLocalRequestFocus'
 import { useNarrow } from '../../lib/cards'
 import { formatPrice, formatQuantity } from '../../lib/format'
-import { formatMoney } from '../../lib/money'
+import { currencySymbol, formatMoney } from '../../lib/money'
 import { Link, receiptsStatsHref } from '../../navigation'
 import type { ReceiptsStatsQuery } from '../../navigation'
 import { DateRange } from './period'
@@ -156,7 +156,7 @@ export function CompareCurrencySection({ block, data }: { block: CompareCurrency
   )
   return (
     <article className="stats-currency" aria-labelledby={id}>
-      <h4 id={id}>{block.currency}</h4>
+      <h4 id={id}>Чеки в {currencySymbol(block.currency)}</h4>
       <div className="stats-verdict" data-kind={result.kind}>
         <p className="stats-verdict-headline">{result.headline}</p>
         {result.lead && <p>{result.lead}</p>}
@@ -182,9 +182,9 @@ export function CompareCurrencySection({ block, data }: { block: CompareCurrency
 function CompareBody({ state, query, onRetry }: CompareBlockProps) {
   switch (state.kind) {
     case 'idle': return <RequestState kind="empty"
-      message="Выберите базовый и текущий периоды в форме выше или готовую пару периодов — здесь появится разбор: изменился ли средний чек и что на него повлияло." />
+      message="Выберите готовую пару периодов или свои периоды в фильтрах — здесь появится разбор: изменился ли средний чек и что на него повлияло." />
     case 'invalid': return <RequestState kind="empty"
-      message={`Сравнение не построено. ${[...new Set(Object.values(state.errors))].join(' ')} Исправьте отмеченные поля в форме выше.`} />
+      message={`Сравнение не построено. ${[...new Set(Object.values(state.errors))].join(' ')} Исправьте отмеченные поля в фильтрах.`} />
     case 'loading': return <RequestState kind="loading" message="Считаем сравнение периодов…" />
     case 'error': return canRetry(state)
       ? <RequestState kind="error" message={failureMessage(state)} onRetry={onRetry} />

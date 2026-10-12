@@ -40,9 +40,12 @@ describe('spending screen markup (Vitest/SSR — not what the browser shows, foc
     expect(html).toContain('<caption>Траты по категориям, EUR</caption>')
     expect(html).toContain('<caption>Траты по категориям, KZT</caption>')
     const plain = text(html)
-    expect(plain).toContain('Итого по чекам 13 042 €')
-    expect(plain).toContain('Чеков 373 чека')
-    expect(plain).toContain('Итого по чекам 438 092 ₸')
+    // The total of a currency is the label over the sum, like the hero card of «Главная»: the first block carries the
+    // one hero sum of the screen, the second a large one.
+    expect(plain).toContain('Итого по чекам, € 13 042 € 373 чека')
+    expect(plain).toContain('Итого по чекам, ₸ 438 092 ₸')
+    expect(html).toMatch(/<p class="spending-total ck-hero-figure">13[\s\u00a0\u202f]042[\s\u00a0\u202f]€<\/p>/)
+    expect(count(html, /ck-hero-figure/g)).toBe(1)
     expect(plain).toContain('Продукты питания 2 240 строк · 372 чека. 5 591 € 42,73 %')
     expect(plain).toContain('Суммы в разных валютах не складываются и не пересчитываются')
     expect(plain).toContain('разница — -43 €')
@@ -72,11 +75,12 @@ describe('spending screen markup (Vitest/SSR — not what the browser shows, foc
   })
   it('offers the four breakdowns as links of the same filters', () => {
     const html = render({ date_from: '2026-01-01', group_by: 'product' }, ok('spending-product.json'))
-    expect(html).toContain('<nav aria-label="Разбивка трат">')
-    expect(html).toContain('<a href="/stats?date_from=2026-01-01">Категории</a>')
-    expect(html).toContain('<a href="/stats?date_from=2026-01-01&amp;group_by=generic">Обобщённые продукты</a>')
-    expect(html).toContain('<a aria-current="true" href="/stats?date_from=2026-01-01&amp;group_by=product">Товары</a>')
-    expect(html).toContain('<a href="/stats?date_from=2026-01-01&amp;group_by=store">Магазины</a>')
+    // Chips in one sideways row.
+    expect(html).toContain('<nav class="spending-groupings" aria-label="Разбивка трат"><div class="ck-chip-scroller"><div class="ck-chip-scroller-track" role="region" aria-label="Разбивка" tabindex="0">')
+    expect(html).toContain('<a class="ck-chip" href="/stats?date_from=2026-01-01">Категории</a>')
+    expect(html).toContain('<a class="ck-chip" href="/stats?date_from=2026-01-01&amp;group_by=generic">Обобщённые продукты</a>')
+    expect(html).toContain('<a class="ck-chip" aria-current="true" href="/stats?date_from=2026-01-01&amp;group_by=product">Товары</a>')
+    expect(html).toContain('<a class="ck-chip" href="/stats?date_from=2026-01-01&amp;group_by=store">Магазины</a>')
     expect(html).toMatch(/<h2 [^>]*data-request-focus-target[^>]*>Траты по товарам<\/h2>/)
     expect(html).toContain('<a href="/catalog/products/24">Demo Hähnchenbrust 600g</a>')
     expect(text(html)).toContain('Прочее Ещё 25 товаров с меньшими суммами, одной строкой. Показать состав 1 201 € 73,17 %')
@@ -87,10 +91,10 @@ describe('spending screen markup (Vitest/SSR — not what the browser shows, foc
     const html = render({ category: 1, currency: 'EUR' }, ok('spending-category-drilldown.json'))
     expect(html).toContain('<nav class="spending-path" aria-label="Путь в тратах">')
     expect(html).toContain('<li><a href="/stats?currency=EUR">Все траты</a></li><li><span aria-current="page">Продукты питания</span></li>')
-    expect(html).toContain('<a class="action-link" href="/stats?currency=EUR">На уровень выше</a>')
+    expect(html).toContain('<a class="spending-up" href="/stats?currency=EUR">На уровень выше</a>')
     expect(html).toContain('<a href="/stats?currency=EUR&amp;group_by=generic&amp;category=1">Продукты питания: товары без подкатегории</a>')
     const plain = text(html)
-    expect(plain).toContain('Сумма строк товаров 5 591 €')
+    expect(plain).toContain('Сумма строк товаров, € 5 591 €')
     expect(plain).toContain('сумма чеков и её разница с суммой строк не показываются')
     expect(plain).not.toContain('Итого по чекам')
   })
@@ -116,7 +120,7 @@ describe('spending screen markup (Vitest/SSR — not what the browser shows, foc
     expect(html).not.toContain('spending-currency')
     // The filters and the breakdown switch are usable meanwhile.
     expect(html).toContain('Применить фильтры')
-    expect(html).toContain('<a href="/stats?group_by=store">Магазины</a>')
+    expect(html).toContain('<a class="ck-chip" href="/stats?group_by=store">Магазины</a>')
   })
   it('keeps the previous answer in place, marked busy, while new filters load', () => {
     const last = { query: {}, data: read('spending-category.json') }
@@ -219,7 +223,7 @@ describe('composition of «Прочее» (Vitest/SSR — not what the browser s
     expect(plain).toContain('В составе „Прочего“: Ещё 25 товаров с меньшими суммами, одной строкой Чтобы увидеть их, сузьте период или откройте обобщённый продукт. 1 201 € 73,17 %')
     expect(plain).toContain('В составе „Прочего“: Ещё 8 товаров с меньшими суммами, одной строкой Чтобы увидеть их, сузьте период или откройте обобщённый продукт. 28 278 ₸ 41,92 %')
     // The totals and the row of «Прочее» itself are those of the usual answer.
-    for (const fact of ['Итого по чекам 1 639 €', 'Итого по чекам 67 313 ₸']) { expect(text(before)).toContain(fact); expect(plain).toContain(fact) }
+    for (const fact of ['Итого по чекам, € 1 639 €', 'Итого по чекам, ₸ 67 313 ₸']) { expect(text(before)).toContain(fact); expect(plain).toContain(fact) }
     // Order: regular rows, «Прочее», its composition, then the special rows.
     const order = ['Demo Hähnchenbrust 600g', '>Прочее<', 'ck-pie-child"', 'Ещё 25 товаров', 'ck-pie-child-status', '>Строки без товара<'].map((part) => html.indexOf(part))
     expect(order).toEqual([...order].sort((a, b) => a - b))
@@ -293,12 +297,12 @@ describe('composition of «Прочее» (Vitest/SSR — not what the browser s
   })
   it('keeps other in the links that only change the data and drops it in the links to another list', () => {
     const html = render({ ...open, country: 'DE' }, state, { tail })
-    expect(html).toContain('<a href="/stats?country=DE&amp;group_by=product&amp;other=open">Всё время</a>')
-    expect(html).toContain('<a href="/stats?date_from=2025-01-01&amp;date_to=2025-12-31&amp;country=DE&amp;group_by=product&amp;other=open">Прошлый год</a>')
-    expect(html).toContain('<a href="/stats?date_from=2026-01-01&amp;date_to=2026-09-30&amp;country=DE&amp;group_by=store">Магазины</a>')
-    expect(html).toContain('<a aria-current="true" href="/stats?date_from=2026-01-01&amp;date_to=2026-09-30&amp;country=DE&amp;group_by=product">Товары</a>')
+    expect(html).toContain('<a class="ck-chip" href="/stats?country=DE&amp;group_by=product&amp;other=open">Всё время</a>')
+    expect(html).toContain('<a class="ck-chip" href="/stats?date_from=2025-01-01&amp;date_to=2025-12-31&amp;country=DE&amp;group_by=product&amp;other=open">Прошлый год</a>')
+    expect(html).toContain('<a class="ck-chip" href="/stats?date_from=2026-01-01&amp;date_to=2026-09-30&amp;country=DE&amp;group_by=store">Магазины</a>')
+    expect(html).toContain('<a class="ck-chip" aria-current="true" href="/stats?date_from=2026-01-01&amp;date_to=2026-09-30&amp;country=DE&amp;group_by=product">Товары</a>')
     const drill = render({ category: 1, currency: 'EUR', other: 'open' }, ok('spending-category-drilldown.json'))
-    expect(drill).toContain('<a class="action-link" href="/stats?currency=EUR">На уровень выше</a>')
+    expect(drill).toContain('<a class="spending-up" href="/stats?currency=EUR">На уровень выше</a>')
     expect(drill).toContain('<li><a href="/stats?currency=EUR">Все траты</a></li>')
     expect(drill).toContain('<a href="/stats?currency=EUR&amp;category=2">')
     const empty = render({ date_from: '2018-01-01', date_to: '2018-12-31', group_by: 'store', other: 'open' }, ok('spending-empty.json'))
@@ -336,16 +340,17 @@ describe('spending filters markup', () => {
   })
   it('marks the preset of the current period and links the others with the same filters', () => {
     const html = render({ date_from: '2026-01-01', date_to: '2026-12-31', country: 'DE' }, ok('spending-category.json'))
-    expect(html).toContain('<nav aria-label="Быстрый выбор периода">')
-    expect(html).toContain('<a aria-current="true" href="/stats?date_from=2026-01-01&amp;date_to=2026-12-31&amp;country=DE">Этот год</a>')
-    expect(html).toContain('<a href="/stats?date_from=2026-10-01&amp;date_to=2026-10-31&amp;country=DE">Этот месяц</a>')
-    expect(html).toContain('<a href="/stats?date_from=2026-09-01&amp;date_to=2026-09-30&amp;country=DE">Прошлый месяц</a>')
-    expect(html).toContain('<a href="/stats?date_from=2025-01-01&amp;date_to=2025-12-31&amp;country=DE">Прошлый год</a>')
-    expect(html).toContain('<a href="/stats?country=DE">Всё время</a>')
+    // On a wide screen (the server render) the chips stand above the form; on a phone beside «Фильтры».
+    expect(html).toContain('<nav class="spending-presets" aria-label="Быстрый выбор периода"><div class="ck-chip-scroller"><div class="ck-chip-scroller-track" role="region" aria-label="Готовые периоды" tabindex="0">')
+    expect(html).toContain('<a class="ck-chip" aria-current="true" href="/stats?date_from=2026-01-01&amp;date_to=2026-12-31&amp;country=DE">Этот год</a>')
+    expect(html).toContain('<a class="ck-chip" href="/stats?date_from=2026-10-01&amp;date_to=2026-10-31&amp;country=DE">Этот месяц</a>')
+    expect(html).toContain('<a class="ck-chip" href="/stats?date_from=2026-09-01&amp;date_to=2026-09-30&amp;country=DE">Прошлый месяц</a>')
+    expect(html).toContain('<a class="ck-chip" href="/stats?date_from=2025-01-01&amp;date_to=2025-12-31&amp;country=DE">Прошлый год</a>')
+    expect(html).toContain('<a class="ck-chip" href="/stats?country=DE">Всё время</a>')
   })
   it('has no reset and no selection at the root', () => {
     const html = render({}, ok('spending-category.json'))
-    expect(html).toContain('<a aria-current="true" href="/stats">Всё время</a>')
+    expect(html).toContain('<a class="ck-chip" aria-current="true" href="/stats">Всё время</a>')
     expect(html).not.toContain('>Сбросить фильтры<')
     expect(html).toContain('Все магазины. Можно выбрать до 20.')
     expect(count(html, /<input type="checkbox" name="store"/g)).toBe(3)

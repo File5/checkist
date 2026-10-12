@@ -194,6 +194,9 @@ export default function PieChart({
   const active = activePieKey(highlight, items.map((item) => item.key))
   const activeItem = items.find((item) => item.key === active)
 
+  // The thin bar under a legend name compares the items for the eye, the largest one full; the share column is the number.
+  const largest = Math.max(0, ...items.map((item) => item.value))
+  const barWidth = (item: PieChartItem) => (largest > 0 && item.value > 0 ? Math.max(2, Math.round((item.value / largest) * 1000) / 10) : 0)
   const toneList = pieTones(items.map((item) => item.tone), seriesColors)
   const tones = new Map(items.map((item, index) => [item.key, toneList[index]]))
   const handlers = (key: string) => highlightHandlers(dispatch, key)
@@ -286,6 +289,9 @@ export default function PieChart({
                         {item.href ? <LinkComponent to={item.href}>{item.label}</LinkComponent> : item.label}
                         {item.note && <span className="ck-chart-note">{item.note}</span>}
                         {!drawn && <span className="ck-chart-note">{excludedNote}</span>}
+                        {drawn && barWidth(item) > 0 && (
+                          <span className={`ck-pie-bar ${swatchClass}`} aria-hidden="true"><span style={{ width: `${barWidth(item)}%` }} /></span>
+                        )}
                         {item.action && (
                           <LinkComponent to={item.action.href} className="ck-pie-action" aria-expanded={item.action.expanded} aria-label={item.action.ariaLabel}>
                             {item.action.label}

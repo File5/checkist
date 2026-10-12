@@ -1,13 +1,17 @@
 import { useId, useReducer, useRef } from 'react'
 import type { CountryEntry } from '../../api/countries'
 import type { Page, Results, StoreEntry } from '../../api/types'
+import ChipScroller from '../../components/ChipScroller'
+import ResponsiveFilters from '../../components/ResponsiveFilters'
+import { useNarrow } from '../../lib/cards'
 import { Link, navigate, spendingHref } from '../../navigation'
 import type { SpendingQuery } from '../../navigation'
 import { maxStatsStores } from '../../navigation/routes'
 import { storeLabel } from '../product/state'
+import { useChipInView } from './chip-in-view'
 import type { RequestState } from '../product/state'
 import {
-  activePreset, applyFilters, filterDraft, formReducer, hasScopeFilters, initForm, presetHref, presetLabels, presets,
+  activePreset, applyFilters, filterCount, filterDraft, formReducer, hasScopeFilters, initForm, presetHref, presetLabels, presets,
   requestKey, resetFiltersHref, sameDraft, serverFieldErrors,
 } from './spending-state'
 import type { FilterField, SpendingFailure, TextField } from './spending-state'
@@ -73,17 +77,21 @@ export default function SpendingFilters({ query, failure, reference, today }: {
     {error(field)}
   </div>
   const active = activePreset(query, today)
+  const narrow = useNarrow()
+  const presetsRef = useChipInView<HTMLElement>(`${active ?? ''}-${narrow}`)
+  // The ready periods: on a wide screen above the form, on a phone in one row beside «Фильтры», the form in a sheet.
+  const chips = <nav ref={presetsRef} className="spending-presets" aria-label="Быстрый выбор периода">
+    <ChipScroller label="Готовые периоды">
+      {presets.map((preset) => <Link key={preset} className="ck-chip" to={presetHref(query, preset, today)}
+        aria-current={active === preset ? 'true' : undefined}>{presetLabels[preset]}</Link>)}
+    </ChipScroller>
+  </nav>
 
-  return <section className="spending-panel" aria-labelledby={`${id}-heading`}>
+  return <section className="spending-panel spending-filters" aria-labelledby={`${id}-heading`}>
     <h2 id={`${id}-heading`}>Период и фильтры</h2>
-    <nav aria-label="Быстрый выбор периода">
-      <ul className="spending-chips">
-        {presets.map((preset) => <li key={preset}>
-          <Link to={presetHref(query, preset, today)} aria-current={active === preset ? 'true' : undefined}>{presetLabels[preset]}</Link>
-        </li>)}
-      </ul>
-    </nav>
-    <form ref={formRef} noValidate onSubmit={(event) => {
+    {!narrow && chips}
+    <ResponsiveFilters count={filterCount(query, today)} summary={chips}>
+    <form ref={formRef} className="spending-form" noValidate onSubmit={(event) => {
       event.preventDefault()
       const result = applyFilters(query, draft)
       dispatch({ type: 'invalid', errors: result.errors })
@@ -144,5 +152,6 @@ export default function SpendingFilters({ query, failure, reference, today }: {
         }}>Сбросить фильтры</button>}
       </div>
     </form>
+    </ResponsiveFilters>
   </section>
 }

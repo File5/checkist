@@ -59,14 +59,14 @@ export default function ReceiptFilters({ query, failure }: { query: ReceiptsQuer
       </p>}
       {Object.keys(errors).length > 0 && <p className="receipt-field-error" role="alert">Исправьте поля фильтров.</p>}
       <div className="receipt-actions ck-action-bar">
-        <button type="submit">Применить фильтры</button>
+        <button type="submit">Применить</button>
         {(hasFilters(query) || JSON.stringify(draft) !== JSON.stringify(filterDraft(query))) &&
           <button type="button" className="receipt-secondary" onClick={() => {
             setForm({ source, draft: filterDraft({ page: 1 }), errors: {} })
             navigate({ kind: 'receipts', query: { page: 1 } })
             const search = formRef.current?.elements.namedItem('q') as HTMLElement | null
             search?.focus()
-          }}>Сбросить фильтры</button>}
+          }}>Сбросить</button>}
       </div>
     </form>
   </section>

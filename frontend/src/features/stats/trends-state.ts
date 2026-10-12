@@ -90,7 +90,11 @@ export function monthlyChart(block: TrendsMonthlyCurrency, query: TrendsQuery): 
 export const monthHref = (query: TrendsQuery, month: string) => trendsHref({ ...query, month: query.month === month ? undefined : month })
 export const closeMonthHref = (query: TrendsQuery) => trendsHref({ ...query, month: undefined })
 
-export interface BreakdownRow { key: string; label: string; tone: number; amount: string; href?: string }
+export interface BreakdownRow {
+  key: string; label: string; tone: number; amount: string; href?: string
+  /** Width of the thin bar, 0–100: the largest part of the month is full; a part that is not positive has none. */
+  bar: number
+}
 export interface MonthBreakdown {
   month: string
   title: string
@@ -108,11 +112,19 @@ export function monthBreakdown(block: TrendsMonthlyCurrency, month: string | und
   const [year, number] = entry.month.split('-').map(Number)
   const last = new Date(Date.UTC(year, number, 0)).getUTCDate()
   const period = { date_from: `${entry.month}-01`, date_to: `${entry.month}-${String(last).padStart(2, '0')}`, currency: block.currency }
+  const values = [...entry.categories.map((part) => decimalNumber(part.amount) ?? 0), decimalNumber(entry.uncategorized) ?? 0]
+  const largest = Math.max(0, ...values)
+  const bar = (value: Decimal) => {
+    const number = decimalNumber(value) ?? 0
+    return largest > 0 && number > 0 ? Math.max(2, Math.round((number / largest) * 100)) : 0
+  }
   const rows: BreakdownRow[] = entry.categories.map((part) => ({
     key: String(part.id), label: names.get(part.id) ?? '', tone: categoryTone(part.id), amount: amount(part.amount),
-    href: spendingHref({ ...period, category: part.id }),
+    href: spendingHref({ ...period, category: part.id }), bar: bar(part.amount),
   }))
-  if (decimalNumber(entry.uncategorized) !== 0) rows.push({ key: uncategorizedKey, label: uncategorizedLabel, tone: 0, amount: amount(entry.uncategorized) })
+  if (decimalNumber(entry.uncategorized) !== 0) {
+    rows.push({ key: uncategorizedKey, label: uncategorizedLabel, tone: 0, amount: amount(entry.uncategorized), bar: bar(entry.uncategorized) })
+  }
   return { month: entry.month, title: monthName(entry.month), total: amount(entry.total), rows, spendingHref: spendingHref(period) }
 }
 
@@ -323,6 +335,8 @@ export interface LimitCell {
 export interface LimitRow {
   key: string; name: string; currency: string; amount: string | null; cells: LimitCell[]; overCount: number; limitedCount: number
   changes: string[]
+  /** The colour of the top-level category (`--ck-cat-N`), the same as its columns; 0 — the category is gone. */
+  tone: number
 }
 
 /** «лимит изменён: 120 000 → 150 000», «лимит задан: 150 000», «лимит снят (был 120 000)»: whole units, rounded up. */
@@ -354,6 +368,7 @@ export function limitRows(limits: readonly TrendsLimit[]): LimitRow[] {
       currency: limit.currency, amount: limit.amount === null ? null : money(limit.amount, limit.currency), cells,
       overCount: cells.filter((cell) => cell.over).length, limitedCount: cells.filter((cell) => !cell.none).length,
       changes: cells.flatMap((cell) => (cell.change ? [`${cell.title}: ${cell.change}`] : [])),
+      tone: categoryTone(category?.path[0]?.id ?? category?.id),
     }
   })
 }
