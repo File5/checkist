@@ -6,6 +6,12 @@
 
 Значение элемента — ``Σ (amount − discount_amount)`` его строк. Скидка на весь чек по
 строкам не распределяется и видна разницей ``receipts_total − lines_paid``.
+
+Категория строки — категория её товара, а у строки без товара — собственная
+``ReceiptLine.category`` (трата, внесённая вручную). Такая строка в разбивке по
+категориям лежит в своей категории, по обобщённым продуктам и товарам — в особом
+элементе ``no_product``. Чеки без магазина (``store`` NULL) в разбивке по магазинам —
+особый элемент ``no_store``. Строка без товара и без категории — ``unmatched``, как раньше.
 """
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -19,7 +25,7 @@ from receipts.models import ReceiptLine
 
 GROUPS = ("category", "generic", "product", "store")
 # Особые элементы в порядке ответа: в «прочее» не сворачиваются.
-SPECIAL = ("unmatched", "service", "deposit")
+SPECIAL = ("unmatched", "service", "deposit", "no_product", "no_store")
 # Служебные категория и обобщённый продукт, куда импорт кладёт новые товары.
 UNASSIGNED_NAME = "Не разобрано"
 
@@ -33,20 +39,21 @@ class LineRow(NamedTuple):
 
     currency: str
     receipt_id: int
-    store_id: int
+    store_id: int | None
     product_id: int | None
     kind: str
     unit: str
     paid: Decimal
     lines: int
     quantity: Decimal
+    category_id: int | None = None  # ReceiptLine.category: только у строки без товара
 
 
 class ReceiptRow(NamedTuple):
     """Чеки одного магазина в одной валюте."""
 
     currency: str
-    store_id: int
+    store_id: int | None
     count: int
     total: Decimal
 
@@ -108,7 +115,7 @@ def collect(receipts, product_ref=None):
     """
     lines = [
         LineRow(*row) for row in ReceiptLine.objects.filter(receipt__in=receipts.values("pk"))
-        .values("receipt__currency_id", "receipt_id", "receipt__store_id", "kind", "unit")
+        .values("receipt__currency_id", "receipt_id", "receipt__store_id", "kind", "unit", "category_id")
         .annotate(
             owner=product_ref if product_ref is not None else F("product_id"),
             paid=Sum(F("amount") - F("discount_amount")), lines=Count("pk"), quantity_sum=Sum("quantity"),
@@ -116,7 +123,7 @@ def collect(receipts, product_ref=None):
         .order_by()
         .values_list(
             "receipt__currency_id", "receipt_id", "receipt__store_id", "owner", "kind", "unit",
-            "paid", "lines", "quantity_sum",
+            "paid", "lines", "quantity_sum", "category_id",
         )
     ]
     totals = [
@@ -146,10 +153,14 @@ class _Bucket:
 
 
 def _special(row, product):
-    """Особый элемент строки либо ``None`` для строки сопоставленного товара."""
+    """Особый элемент строки либо ``None`` для строки товара или категории."""
     if row.kind != _KIND.PRODUCT:
         return _SPECIAL_KINDS[row.kind]
-    return "unmatched" if product is None else None
+    return "unmatched" if product is None and row.category_id is None else None
+
+
+def _store_key(store_id):
+    return ("no_store", None, False) if store_id is None else ("store", store_id, False)
 
 
 def _category_key(tree, category_id, parent):
@@ -198,7 +209,9 @@ def summarize(data, *, group_by="category", limit=10, tree=None, category=None, 
     ``group_by="store"``.
 
     С фильтром ``category`` или ``generic`` считаются только строки сопоставленных
-    товаров: особых элементов нет, ``receipts_total`` и ``difference`` — ``None``,
+    товаров (с фильтром ``category`` — и строки без товара с категорией внутри неё,
+    они в элементе ``no_product`` при разбивке по продуктам и товарам): других особых
+    элементов нет, ``receipts_total`` и ``difference`` — ``None``,
     ``receipts_count`` — чеки с такими строками, значение магазина — сумма этих строк.
     Без фильтра значение магазина — ``Σ Receipt.total``.
     """
@@ -209,22 +222,25 @@ def summarize(data, *, group_by="category", limit=10, tree=None, category=None, 
     for row in data.lines:
         product = data.products.get(row.product_id) if row.kind == _KIND.PRODUCT else None
         special = _special(row, product)
+        category_id = product.category_id if product is not None else row.category_id
         if filtered and (
             special
-            or (generic is not None and product.generic_id != generic)
-            or (inside is not None and product.category_id not in inside)
+            or (generic is not None and (product is None or product.generic_id != generic))
+            or (inside is not None and category_id not in inside)
         ):
             continue
         if group_by == "store":
-            key = ("store", row.store_id, False)
+            key = _store_key(row.store_id)
         elif special:
             key = (special, None, False)
+        elif product is None and group_by in ("product", "generic"):
+            key = ("no_product", None, False)
         elif group_by == "product":
             key = ("product", row.product_id, False)
         elif group_by == "generic":
             key = ("generic", product.generic_id, False)
         else:
-            key = _category_key(tree, product.category_id, category)
+            key = _category_key(tree, category_id, category)
         buckets.setdefault(row.currency, {}).setdefault(key, _Bucket()).add(row)
 
     receipts = {}
@@ -256,7 +272,7 @@ def summarize(data, *, group_by="category", limit=10, tree=None, category=None, 
         if group_by == "store" and not filtered:
             # Магазин с чеками без строк тоже элемент; сумма и число чеков — из чеков.
             for store_id in by_store:
-                found.setdefault(("store", store_id, False), _Bucket())
+                found.setdefault(_store_key(store_id), _Bucket())
         items = [item(key, bucket) for key, bucket in found.items()]
         if group_by == "store" and not filtered:
             for entry in items:

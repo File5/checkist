@@ -23,6 +23,7 @@
         "id": 61,
         "name": "Молоко 1 л"
       },
+      "category": null,
       "matching_status": "matched",
       "tax_rate": {
         "id": 1,

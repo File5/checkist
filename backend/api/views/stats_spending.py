@@ -60,7 +60,7 @@ class SpendingView(LocalAPIView):
         data = spending.collect(stats_common.receipts(request, scope, period), stats_common.owner_product_id())
         stores = None
         if group_by == "store":
-            ids = {row.store_id for row in data.receipts}
+            ids = {row.store_id for row in data.receipts if row.store_id is not None}
             stores = {
                 store.pk: common.store_brief(store)
                 for store in Store.objects.filter(pk__in=ids).select_related("merchant")

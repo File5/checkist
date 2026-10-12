@@ -79,6 +79,9 @@ class ReceiptAdminForm(EmptyJSONFormMixin, forms.ModelForm):
         cleaned = super().clean()
         store = cleaned.get("store")
         fiscal = cleaned.get("fiscal")
+        # «Без места» бывает только у ручной траты; чек с фото, как прежде, — с магазином.
+        if store is None and self.instance.source == Receipt.Source.PHOTO and "store" not in self.errors:
+            self.add_error("store", forms.ValidationError("Обязательное поле.", code="required"))
         if store is None or not fiscal or cleaned.get("fiscal_key", True):
             return cleaned
         # Значение попадает в cleaned_data до проверки ограничений модели,
@@ -410,6 +413,12 @@ class ReceiptAdmin(admin.ModelAdmin):
 
     def get_form(self, request, obj=None, change=False, **kwargs):
         form = super().get_form(request, obj, change=change, **kwargs)
+        source = form.base_fields.get("source")
+        if source is not None:
+            # Источник задаёт API ручной траты; чек из админки — как прежде, «с фото», с правилами
+            # дубликатов. Отключено, а не readonly: иначе Django не проверит ограничения с условием
+            # по source, и дубль дойдёт до БД.
+            source.disabled = True
         owner = form.base_fields.get("owner")
         if owner is not None and obj is not None and obj.pk is not None:
             # Владелец сохранённого чека не меняется: вырезки и фото привязаны к тому же

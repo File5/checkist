@@ -380,7 +380,9 @@ def receipts_queryset(request):
     lines = ReceiptLine.objects.filter(receipt_id=OuterRef("pk"))
     return Receipt.objects.filter(owner_q(request)).select_related("store__merchant").annotate(
         lines_count=related_count(lines, "receipt_id"),
-        unmatched_products_count=related_count(lines.filter(kind="product", product__isnull=True), "receipt_id"),
+        # Строка ручной траты с категорией не «несопоставленный товар»: она вписана суммой в категорию.
+        unmatched_products_count=related_count(
+            lines.filter(kind="product", product__isnull=True, category__isnull=True), "receipt_id"),
         image_count=related_count(images, "receipt_id"),
         preview_file=Subquery(images.order_by("-created_at", "-id").values("file")[:1]),
         has_review=Exists(images.filter(REVIEW_IMAGES)),
@@ -390,14 +392,16 @@ def receipts_queryset(request):
 def receipt_object(receipt):
     base = f"/api/receipts/{receipt.pk}"
     return {
-        "id": receipt.pk, "store": store_object(receipt.store), "currency": receipt.currency_id,
+        "id": receipt.pk, "source": receipt.source,
+        # null — «Без места»: только у траты, внесённой вручную.
+        "store": None if receipt.store_id is None else store_object(receipt.store), "currency": receipt.currency_id,
         "operation": receipt.operation, "purchased_on": iso_date(receipt.purchased_on),
         "purchased_at": utc_datetime(receipt.purchased_at), "total": amount(receipt.total),
         "discount_total": amount(receipt.discount_total), "prices_include_tax": receipt.prices_include_tax,
         "origin": "recognized" if receipt.image_count else "legacy/manual",
         "review_required": bool(receipt.has_review or receipt.unmatched_products_count),
         "lines_count": receipt.lines_count, "unmatched_products_count": receipt.unmatched_products_count,
-        "receipt_images_count": receipt.image_count,
+        "receipt_images_count": receipt.image_count, "note": receipt.note,
         "preview_image_url": settings.MEDIA_URL + receipt.preview_file if receipt.preview_file else None,
         "created_at": utc_datetime(receipt.created_at), "updated_at": utc_datetime(receipt.updated_at),
         "lines_url": base + "/lines/", "discounts_url": base + "/discounts/", "taxes_url": base + "/taxes/",
@@ -421,6 +425,7 @@ def line_object(line):
         "quantity": quantity(line.quantity), "unit": line.unit, "unit_price": price(line.unit_price),
         "amount": amount(line.amount), "discount_amount": amount(line.discount_amount), "paid_amount": amount(paid),
         "product": {"id": line.product_id, "name": line.product.name} if line.product_id else None,
+        "category": {"id": line.category_id, "name": line.category.name} if line.category_id else None,
         "matching_status": "matched" if line.product_id else "unmatched",
         "tax_rate": tax_rate_object(line.tax_rate), "tax_code": line.tax_code, "tax_amount": amount(line.tax_amount),
         "is_excise": line.is_excise, "is_marked": line.is_marked,

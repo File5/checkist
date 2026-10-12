@@ -23,11 +23,12 @@ def validate_receipt(receipt):
     line_ids = {line.pk for line in lines}
 
     try:
-        local_date = receipt.purchased_at.astimezone(ZoneInfo(store.timezone)).date()
+        # Трата «Без места» (store NULL) пояса магазина не имеет: дату не с чем сверить.
+        local_date = None if store is None else receipt.purchased_at.astimezone(ZoneInfo(store.timezone)).date()
     except (KeyError, ValueError, OSError):  # ZoneInfoNotFoundError — подкласс KeyError
         problems.append(f"store.timezone: неизвестный часовой пояс «{store.timezone}».")
     else:
-        if receipt.purchased_on != local_date:
+        if local_date is not None and receipt.purchased_on != local_date:
             problems.append(
                 f"purchased_on: {receipt.purchased_on} не совпадает с датой purchased_at "
                 f"в поясе магазина {store.timezone} ({local_date})."
