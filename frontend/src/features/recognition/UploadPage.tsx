@@ -59,7 +59,7 @@ export default function UploadPage() {
   const load = useCallback((signal: AbortSignal) => getRecognitionCsrf({ signal }), [])
   // Absent is polled so the warning disappears once the worker starts; any other state stops the polling.
   const { state: config, request } = useRequest(load, isExecutorAbsent)
-  // A shot taken with «Снять чек» of the «＋» menu on another screen arrives here and is sent like one taken on this page.
+  // A file from «Снять чек» or «Из галереи» of the «＋» menu (or «Главная») arrives here and is sent like a shot taken on this page.
   const [file, setFile] = useState<File | undefined>(peekQuickShot)
   // Pixel size of the chosen photo, read from its preview; undefined until the preview has loaded or failed.
   const [measured, setMeasured] = useState<Measured>()

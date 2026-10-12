@@ -79,23 +79,27 @@ function usePopup() {
   return { open, toggle, list, wrapperProps, onListClick, onToggle: () => dispatch('toggle') }
 }
 
-/** «＋» of the phone's bar: a raised round button and a small sheet with «Снять чек» and «Добавить трату».
- * «Снять чек» opens the camera from the very press (the field stays mounted outside of the sheet). */
+/** «＋» of the phone's bar: a raised round button and a small sheet with «Снять чек», «Из галереи» and «Добавить трату».
+ * «Снять чек» opens the camera and «Из галереи» the picker from the very press (both fields stay mounted outside
+ * of the sheet); the chosen file goes to the upload page and is sent by itself. */
 function AddMenu() {
   const { open, toggle, list, wrapperProps, onListClick, onToggle } = usePopup()
-  const shot = useQuickShot()
+  const shot = useQuickShot('camera')
+  const gallery = useQuickShot('gallery')
   return (
     <div className="main-add" {...wrapperProps}>
       {/* Hidden wherever the menu is a row of links. */}
       <button type="button" className="main-add-toggle" ref={toggle} aria-expanded={open} aria-controls={ADD_LIST_ID}
-        aria-label="Добавить: снять чек или добавить трату" onClick={onToggle}>
+        aria-label="Добавить: снять чек, выбрать из галереи или добавить трату" onClick={onToggle}>
         <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false"><path d="M11 4h2v7h7v2h-7v7h-2v-7H4v-2h7z" /></svg>
       </button>
       <div className="main-add-list" id={ADD_LIST_ID} ref={list} onClick={onListClick}>
         <button type="button" className="main-add-action" onClick={shot.open}>Снять чек</button>
+        <button type="button" className="main-add-action main-add-gallery" onClick={gallery.open}>Из галереи</button>
         <Link className="main-add-action" to="/receipts/new">Добавить трату</Link>
       </div>
       {shot.field}
+      {gallery.field}
     </div>
   )
 }

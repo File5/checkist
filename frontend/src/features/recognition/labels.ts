@@ -65,7 +65,7 @@ export function errorText(error: LocalApiFailure, mutation = false): string {
 }
 /** Texts of the upload screen: picking, reduction, sending and its stop. */
 export const uploadLabels = {
-  pick: 'Выбрать файл', camera: 'Снять чек', cancel: 'Отменить отправку',
+  pick: 'Выбрать файл', camera: 'Снять чек', gallery: 'Из галереи', cancel: 'Отменить отправку',
   submit: 'Загрузить фото', retry: 'Повторить загрузку', sending: 'Отправляем фото…', reducing: 'Уменьшаем фото…',
   progress: 'Отправка фото',
   stageReducing: 'Уменьшаем фото перед отправкой. Это может занять несколько секунд.',

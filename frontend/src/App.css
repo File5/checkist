@@ -200,6 +200,8 @@ footer { border-top: 1px solid var(--ck-divider); color: var(--ck-text-muted); p
   .brand-bar .main-add[data-open] .main-add-list { display: flex; flex-direction: column; gap: 8px; position: absolute; left: 50%; bottom: 100%; z-index: var(--ck-z-menu-sheet); width: min(280px, calc(100% - 16px)); margin-bottom: 12px; padding: 12px; border: 1px solid var(--ck-header-border); border-radius: var(--ck-radius); background: var(--ck-header-bg); box-shadow: 0 4px 16px var(--ck-popover-shadow); transform: translateX(-50%); }
   .brand-bar .main-add-list .main-add-action { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 48px; padding: 10px 16px; border-radius: var(--ck-radius-button); font-weight: 600; text-decoration: none; white-space: nowrap; }
   .brand-bar .main-add-list a.main-add-action { border: 1px solid var(--ck-link); background: var(--ck-surface); color: var(--ck-link); }
+  /* «Из галереи»: the second way to the same upload, drawn like the link and not like the filled camera button. */
+  .brand-bar .main-add-list .main-add-gallery { border: 1px solid var(--ck-link); background: var(--ck-surface); color: var(--ck-link); }
 }
 
 @media (forced-colors: active) {
