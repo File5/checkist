@@ -20,7 +20,7 @@ import { MergedProductHint, ProductMergeNotice } from '../merges/MergeMarks'
 import { useProductMergeLookup } from '../merges/marks'
 import { ProductClassificationNotice } from '../classification/ClassificationMarks'
 import { markFor, useProductClassificationMarks } from '../classification/marks'
-import { ResponsiveFilters } from '../recognition/_tmp-foundation'
+import ResponsiveFilters from '../../components/ResponsiveFilters'
 import './Product.css'
 
 function FilterForm({ query, product, stores, selectedStore, failures, apply, reset, onStores }: {
@@ -67,6 +67,8 @@ function FilterForm({ query, product, stores, selectedStore, failures, apply, re
         event.preventDefault()
         const result = validateFilters(form.draft)
         if (Object.keys(result.errors).length) {
+          // On a phone the form is in a sheet that a submit closes: a refused submit stays there, next to its messages.
+          event.stopPropagation()
           setForm({ ...form, errors: result.errors })
           const field = Object.keys(result.errors)[0]
           formRef.current?.querySelector<HTMLElement>(`#product-${field}`)?.focus()

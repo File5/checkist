@@ -16,7 +16,7 @@ describe('phone view of the catalog (SSR markup and the text of the rules)', () 
   it('draws the categories of the first level as one row of chips with their counts in figures', () => {
     const child = { ...category, id: 3, name: 'Сыры', parent_id: 2, depth: 2, path: [...category.path, { id: 3, name: 'Сыры' }], products_total: 12 }
     const html = renderToStaticMarkup(<CategoryChips categories={[category, child]} label="Категории" />)
-    expect(html).toMatch(/^<div class="ck-chip-scroller" role="region" aria-label="Категории" tabindex="0"><ul class="ck-chip-scroller-list">/)
+    expect(html).toMatch(/^<div class="ck-chip-scroller"><div class="ck-chip-scroller-track" role="region" aria-label="Категории" tabindex="0"><a class="ck-chip"/)
     expect(html).toContain('<a class="ck-chip" href="/catalog/categories/2">Молочные продукты<span class="ck-catalog-chip-count ck-figures">1</span></a>')
     // Deeper levels are chips of the category page, not of this row.
     expect(html).not.toContain('Сыры')

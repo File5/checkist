@@ -15,7 +15,7 @@ describe('phone view of the classification screen', () => {
       action={{ kind: 'idle' }} onRun={noop} onRetryAction={noop} onRetryState={noop} onRetryList={noop}
       onAction={noop} onOpen={noop} onClose={noop} />)
     const nav = /<nav class="ck-class-filter" aria-label="Состояние записей">([\s\S]*?)<\/nav>/.exec(html)?.[1] ?? ''
-    expect(nav).toMatch(/^<div class="ck-chip-scroller" role="region" aria-label="Состояния" tabindex="0"><ul class="ck-chip-scroller-list">/)
+    expect(nav).toMatch(/^<div class="ck-chip-scroller"><div class="ck-chip-scroller-track" role="region" aria-label="Состояния" tabindex="0"><a /)
     expect(nav).toMatch(/<a class="ck-chip" aria-current="true" href="\/catalog\/classification\?status=confirmed">Подтверждённые<\/a>/)
   })
 

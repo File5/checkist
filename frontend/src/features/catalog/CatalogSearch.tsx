@@ -5,7 +5,7 @@ import { numbered } from '../../lib/text'
 import { buildRoute, navigate } from '../../navigation'
 import type { CatalogRoute } from '../../navigation'
 import { fieldError, resetFilters, searchError, withGeneric, withSearch } from './catalog-state'
-import { ResponsiveFilters } from '../recognition/_tmp-foundation'
+import ResponsiveFilters from '../../components/ResponsiveFilters'
 
 type Props = { route: CatalogRoute; generics?: CategoryGeneric[]; error?: ApiFailure }
 

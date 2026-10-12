@@ -18,7 +18,7 @@ import MergeBlock from './MergeBlock'
 import { activeMembers, apiStatus } from './state'
 import { useActionFocus, useMergeActions } from './useMergeActions'
 import './Merges.css'
-import { ResponsiveFilters } from '../recognition/_tmp-foundation'
+import ResponsiveFilters from '../../components/ResponsiveFilters'
 
 const filters: { value: NonNullable<MergesQuery['status']> | ''; label: string }[] = [
   { value: '', label: 'Ожидают подтверждения' }, { value: 'confirmed', label: 'Подтверждённые' },

@@ -40,6 +40,8 @@ def normalize_upload(value):
     value["job"]["id"] = 31
     value["job"]["photo_id"] = 11
     value["job"]["created_at"] = "2026-10-04T12:35:00Z"
+    value["job"]["display_url"] = "/media/originals/test/preview-1600-v1.webp"
+    value["job"]["thumb_url"] = "/media/originals/test/thumb-400-v1.webp"
     return value
 
 

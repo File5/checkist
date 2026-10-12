@@ -5,13 +5,14 @@ import type { Job, ReceiptImageDetail } from '../../api/recognition'
 import { isJobDetail, isReceiptImageDetail } from '../../api/recognition-schema'
 import { publicFixture } from '../../api/recognition-test-support'
 import JobSummary from './JobSummary'
+import JobThumb from './JobThumb'
 import { CropPin } from './ReceiptImages'
 import ReviewForm from './ReviewForm'
 import type { ReviewFormProps } from './ReviewForm'
 import { cropToggleLabel, jobsFilterCount, lineAmountText, lineCardId, lineDetailsForced, lineIssues, stickyOpen } from './mobile-state'
 import { createReview, reviewReducer } from './review-state'
 import type { ReviewEdit, ReviewState } from './review-state'
-import { filtersLabel } from './_tmp-foundation-state'
+import { filtersButtonLabel } from '../../components/filters-label'
 
 function image(): ReceiptImageDetail { const value = publicFixture('receipt-image.json'); if (!isReceiptImageDetail(value)) throw new Error('Invalid fixture'); return value }
 function job(): Job { const value = publicFixture('job-running.json'); if (!isJobDetail(value)) throw new Error('Invalid fixture'); return value }
@@ -31,7 +32,7 @@ describe('pure rules of the phone view of recognition', () => {
     expect(jobsFilterCount({})).toBe(0)
     expect(jobsFilterCount({ status: 'failed' })).toBe(1)
     expect(jobsFilterCount({ status: 'failed', photo: 3, needs_review: 1 })).toBe(3)
-    expect(filtersLabel(0)).toBe('Фильтры'); expect(filtersLabel(2)).toBe('Фильтры (2)')
+    expect(filtersButtonLabel(jobsFilterCount({})), 'no filter').toBe('Фильтры'); expect(filtersButtonLabel(jobsFilterCount({ status: 'failed', photo: 3 }), 'Фильтры заданий')).toBe('Фильтры заданий (2)')
   })
   it('lists the lines with problems in the order of the form, each once with its texts', () => {
     const state = start()
@@ -94,6 +95,12 @@ describe('phone markup of the job screens (SSR)', () => {
   it('pins the crop with a button that folds it', () => {
     const html = renderToStaticMarkup(<CropPin><img alt="Вырезка" /></CropPin>)
     expect(html).toMatch(/^<div class="ck-rec-crop-pin"><button type="button" class="ck-review-secondary ck-rec-crop-toggle" aria-expanded="true" aria-controls="([^"]+)">Скрыть фото<\/button><div id="\1" class="ck-rec-crop-image"><img alt="Вырезка"\/><\/div><\/div>$/)
+  })
+  it('draws the miniature of a job row from the job itself, without a request of its own', () => {
+    expect(job().thumb_url).toBe('/media/originals/test/thumb-400-v1.webp')
+    expect(renderToStaticMarkup(<JobThumb job={job()} />))
+      .toBe('<div class="ck-rec-thumb" aria-hidden="true"><img src="/media/originals/test/thumb-400-v1.webp" alt="" loading="lazy" decoding="async"/></div>')
+    expect(renderToStaticMarkup(<JobThumb job={{ thumb_url: null, display_url: null }} />)).toBe('<div class="ck-rec-thumb" aria-hidden="true"></div>')
   })
   it('gives a row of the jobs list a status pill and the date, and folds the counters', () => {
     const html = renderToStaticMarkup(<JobSummary job={job()} compact />)

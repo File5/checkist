@@ -11,7 +11,8 @@ import { errorText, isExecutorAbsent, sizeText, uploadExecutorNote, uploadLabels
 import { autoSendStep, createUpload, fileFormat, formatBytes, formatName, isPdf, pdfPageCount, pdfSummary, pickAccept, progressValue, setJobNotice, uploadMessage, validateFormat } from './upload-state'
 import { useRequest } from './useRequest'
 import { createPreview } from './preview'
-import { clearQuickShot, galleryAccept, onQuickShot, peekQuickShot } from './quick-shot'
+import { clearQuickShot, onQuickShot, peekQuickShot } from './quick-shot'
+import { useQuickShot } from './QuickShot'
 import { useNarrow } from '../../lib/cards'
 import { useStickyOpen } from './mobile-state'
 import './Upload.css'
@@ -67,7 +68,8 @@ export default function UploadPage() {
   const [measured, setMeasured] = useState<Measured>()
   const fileInput = useRef<HTMLInputElement>(null)
   const cameraInput = useRef<HTMLInputElement>(null)
-  const galleryInput = useRef<HTMLInputElement>(null)
+  // «Из галереи» is the one mechanism of the «＋» menu: its file comes back through onQuickShot below and is sent by itself.
+  const gallery = useQuickShot('gallery')
   const narrow = useNarrow()
   // The photo just taken with «Снять чек»: it is sent by itself once, as soon as it can be.
   const autoSend = useRef<File | undefined>(file)
@@ -116,7 +118,7 @@ export default function UploadPage() {
   // Like job actions, the upload pauses background reads before touching the server.
   useEffect(() => { if (!sending) return; request.pause(); return () => request.resume(false) }, [sending, request])
   // A closed picker or camera returns no file: the photo already chosen stays.
-  // A shot of the camera and a photo of the gallery are sent by themselves, as from the «＋» menu; «Выбрать файл» waits for the button.
+  // A shot of the camera is sent by itself, as from the «＋» menu; «Выбрать файл» waits for the button.
   const pick = (event: ChangeEvent<HTMLInputElement>, sendNow: boolean) => {
     const next = event.target.files?.[0]
     event.target.value = ''
@@ -169,10 +171,10 @@ export default function UploadPage() {
       {/* The picking buttons stand low, right above the main action: in reach of the thumb on a phone. */}
       <div className="ck-rec-actions ck-upload-pick" role="group" aria-label="Выбор фото">
         <button type="button" className="ck-upload-camera" disabled={pickDisabled} aria-describedby={described} onClick={() => cameraInput.current?.click()}>{uploadLabels.camera}</button>
-        <button type="button" className="ck-upload-gallery ck-upload-secondary" disabled={pickDisabled} aria-describedby={described} onClick={() => galleryInput.current?.click()}>{uploadLabels.gallery}</button>
+        <button type="button" className="ck-upload-gallery ck-upload-secondary" disabled={pickDisabled} aria-describedby={described} onClick={gallery.open}>{uploadLabels.gallery}</button>
         <button type="button" className="ck-upload-secondary" disabled={pickDisabled} aria-describedby={described} onClick={() => fileInput.current?.click()}>{uploadLabels.pick}</button>
         <input ref={cameraInput} id="recognition-camera" className="ck-upload-input" type="file" accept="image/*" capture="environment" tabIndex={-1} aria-hidden="true" disabled={pickDisabled} onChange={(event) => pick(event, true)} />
-        <input ref={galleryInput} id="recognition-gallery" className="ck-upload-input" type="file" accept={galleryAccept} tabIndex={-1} aria-hidden="true" disabled={pickDisabled} onChange={(event) => pick(event, true)} />
+        {gallery.field}
         <input ref={fileInput} id="recognition-file" className="ck-upload-input" type="file" accept={pickAccept} tabIndex={-1} aria-hidden="true" disabled={pickDisabled} onChange={(event) => pick(event, false)} />
       </div>
       <p id="recognition-cloud-warning" className="ck-rec-warning">Фото передаётся облачной модели распознавания. Отправляйте только фото, которое вы готовы передать сервису.</p>

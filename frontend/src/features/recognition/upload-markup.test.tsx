@@ -30,14 +30,16 @@ describe('upload screen markup (SSR)', () => {
     expect(fields).toHaveLength(3)
     const [camera, gallery, file] = fields
     expect(camera).toContain('id="recognition-camera"'); expect(camera).toContain('accept="image/*"'); expect(camera).not.toContain('pdf'); expect(camera).toContain('capture="environment"')
-    // The same field as «Из галереи» of the «＋» menu: the photo library, the camera and Files of the phone.
-    expect(gallery).toContain('id="recognition-gallery"'); expect(gallery).toContain('accept="image/*,.heic,.heif,application/pdf"'); expect(gallery).not.toContain('capture')
+    // The field of useQuickShot('gallery'), the one mechanism of «Из галереи» («＋» menu, «Главная», this page):
+    // the photo library, the camera and Files of the phone; its file comes back through onQuickShot and is sent by itself.
+    expect(gallery).toContain('class="ck-quick-shot-input"'); expect(gallery).toContain('accept="image/*,.heic,.heif,application/pdf"'); expect(gallery).not.toContain('capture')
     expect(file).toContain('id="recognition-file"'); expect(file).toContain('accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf,.jpg,.jpeg,.png,.webp,.heic,.heif,.pdf"')
     expect(file).not.toContain('capture')
     for (const field of fields) {
       expect(field).toContain('type="file"'); expect(field).not.toContain('multiple')
       // Pressed by its button only: out of the Tab order and of the accessibility tree.
-      expect(field).toContain('class="ck-upload-input"'); expect(field).toContain('tabindex="-1"'); expect(field).toContain('aria-hidden="true"')
+      if (field !== gallery) expect(field).toContain('class="ck-upload-input"')
+      expect(field).toContain('tabindex="-1"'); expect(field).toContain('aria-hidden="true"')
       expect(field).not.toMatch(/\sdisabled/)
     }
   })
@@ -62,7 +64,8 @@ describe('upload screen markup (SSR)', () => {
       const item = button(html, label)
       expect(item).toContain('disabled=""'); expect(item).toContain('aria-describedby="recognition-cloud-warning recognition-pick-wait"')
     }
-    for (const field of tags(html, 'input')) expect(field).toContain('disabled=""')
+    // The gallery field of useQuickShot has no `disabled`: its button is the one that waits.
+    for (const field of tags(html, 'input').filter((tag) => !tag.includes('ck-quick-shot-input'))) expect(field).toContain('disabled=""')
     expect(html).toContain(`<p id="recognition-pick-wait" class="ck-rec-note">${note}</p>`)
     expect(button(html, 'Загрузить фото')).toContain('disabled=""')
   })

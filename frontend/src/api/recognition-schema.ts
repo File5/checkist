@@ -78,6 +78,7 @@ export const isJob = object<Job>({
   created_at: isISODateTime, started_at: nullable(isISODateTime), finished_at: nullable(isISODateTime),
   cancel_requested_at: nullable(isISODateTime), heartbeat_at: nullable(isISODateTime), stalled: bool, executor: isExecutor,
   progress: isJobProgress, review_required: bool, error: nullable(isRecognitionError), actions: isJobActions, items_count: count(10),
+  display_url: nullable(mediaPath), thumb_url: nullable(mediaPath),
 })
 export const isJobDetail: Guard<JobDetail> = (value): value is JobDetail => isJob(value)
   && object<{ items: JobItem[] }>({ items: boundedArray(isJobItem, 10) })(value)

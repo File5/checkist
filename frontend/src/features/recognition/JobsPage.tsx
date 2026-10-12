@@ -13,7 +13,7 @@ import { useNarrow } from '../../lib/cards'
 import ActionButtons from './ActionButtons'
 import JobSummary from './JobSummary'
 import JobThumb from './JobThumb'
-import { ResponsiveFilters } from './_tmp-foundation'
+import ResponsiveFilters from '../../components/ResponsiveFilters'
 import { jobsFilterCount } from './mobile-state'
 import RequestBlock from './RequestBlock'
 import { isActive, jobLabels } from './labels'
@@ -47,7 +47,7 @@ export default function JobsPage({ query }: JobsPageProps) {
         {data.results.length === 0 ? <RequestState kind="empty" message={status || photo || needs_review ? 'По выбранным фильтрам заданий нет.' : 'Фото ещё не загружались.'} action={status || photo || needs_review ? <Link to={{ kind: 'jobs', query: { page: 1 } }}>Сбросить фильтры</Link> : <Link to="/receipts/upload">Загрузить фото</Link>} />
           : <ul className="ck-rec-list">{data.results.map((job) => <li key={job.id} className={`ck-rec-card${narrow ? ' ck-rec-job-row' : ''}`}>
             {narrow ? <div className="ck-rec-job-head">
-              <JobThumb photoId={job.photo_id} />
+              <JobThumb key={job.thumb_url ?? job.id} job={job} />
               <div className="ck-rec-job-title">
                 <h3><Link to={{ kind: 'job', jobId: job.id }}>{numbered('Задание', job.id)}</Link></h3>
                 <p><span className="ck-rec-pair">{numbered('Фото', job.photo_id)}</span>{job.retry_of !== null && <> · повтор <span className="ck-rec-pair">{numbered('задания', job.retry_of)}</span></>}</p>

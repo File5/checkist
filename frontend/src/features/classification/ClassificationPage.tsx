@@ -27,7 +27,7 @@ import type { ListReads } from './page-lifecycle'
 import { areaFate, areaKey, listParams, openArea, openedArea, stateActive } from './state'
 import type { OpenArea, Opened } from './state'
 import { useActionFocus, useAreaFocus, useClassificationActions, useNoticeFocus } from './useClassificationActions'
-import { ChipScroller } from '../recognition/_tmp-foundation'
+import ChipScroller from '../../components/ChipScroller'
 import './Classification.css'
 
 const ownFocus = { [focusOwnerAttribute]: '' }
@@ -54,16 +54,15 @@ export function ClassificationView({ query, state, list, action, open, notice, o
   const stateData = state.kind === 'ok' ? state.data : undefined
   const area = list.kind === 'ok' ? openArea(open, list.data.results) : undefined
   const narrow = useNarrow()
-  const filterItems = (className?: string) => filters.map((item) => <li key={item.value}>
-    <Link className={className} to={{ kind: 'classification', query: { ...(item.value && { status: item.value }), ...(query.product !== undefined && { product: query.product }), page: 1 } }}
-      aria-current={item.value === filter.value ? 'true' : undefined}>{item.label}</Link>
-  </li>)
+  const filterLink = (item: typeof filters[number], className?: string) => <Link key={item.value} className={className} to={{ kind: 'classification', query: { ...(item.value && { status: item.value }), ...(query.product !== undefined && { product: query.product }), page: 1 } }}
+    aria-current={item.value === filter.value ? 'true' : undefined}>{item.label}</Link>
   const title = `${query.product === undefined ? filter.label : `${numbered('Записи товара', query.product)} · ${filter.label}`} · Страница ${query.page.toLocaleString('ru-RU')}`
   return <div className="ck-class" ref={rootRef}>
     <StatePanel state={state} action={action} unavailable={unavailable} onRun={onRun} onRetry={onRetryState} resultRef={panelResult ? resultRef : undefined} />
     {/* A phone: the states are one row of chips scrolled sideways instead of wrapped buttons. */}
     <nav className="ck-class-filter" aria-label="Состояние записей">
-      {narrow ? <ChipScroller label="Состояния">{filterItems('ck-chip')}</ChipScroller> : <ul>{filterItems()}</ul>}
+      {narrow ? <ChipScroller label="Состояния">{filters.map((item) => filterLink(item, 'ck-chip'))}</ChipScroller>
+        : <ul>{filters.map((item) => <li key={item.value}>{filterLink(item)}</li>)}</ul>}
     </nav>
     <ClassificationBlock title={title} id="class-list-title" state={list} retry={onRetryList}
       recovery={list.kind === 'error' && list.error.reason === 'page_out_of_range'

@@ -94,6 +94,8 @@
       "can_retry": false
     },
     "items_count": 2,
+    "display_url": "/media/originals/test/preview-1600-v1.webp",
+    "thumb_url": "/media/originals/test/thumb-400-v1.webp",
     "items": [
       {
         "image_id": 41,
