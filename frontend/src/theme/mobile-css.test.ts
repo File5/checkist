@@ -44,7 +44,8 @@ describe('utilities of the mobile design in tokens.css (text of the rules, not r
   it('tears the bottom of a tape card by a mask only where masks work: elsewhere it is a plain card', () => {
     const supports = '@supports (mask-repeat: repeat-x) or (-webkit-mask-repeat: repeat-x) {'
     expect(tokens.split(supports)).toHaveLength(2)
-    const tape = tokens.slice(tokens.indexOf(supports))
+    const start = tokens.indexOf(supports)
+    const tape = tokens.slice(start, tokens.indexOf('\n}\n', start) + 2)
     expect(tape).toContain('-webkit-mask: conic-gradient(')
     expect(tape).toMatch(/\n\s*mask: conic-gradient\(/)
     expect(tape).toContain('var(--ck-tape-tooth)')
