@@ -69,6 +69,17 @@
 .dash-limit-name, .limits-name { flex: 1 1 auto; min-width: 0; font-weight: 600; }
 .dash-limit-value, .limits-current { flex: 0 0 auto; color: var(--ck-text-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
 
+/* Подкатегории с лимитами под строкой корня: отступ до имени корня (точка 12 px + зазор 10 px), тоньше полоса,
+   мельче текст; цвет полосы — цвет корня (--dash-cat наследуется от .dash-limit). Глубже — ещё по 12 px. */
+.dash-sublimit-list { display: grid; gap: 10px; margin: 2px 0 0; padding: 0 0 0 22px; list-style: none; }
+.dash-sublimit .dash-sublimit-list { padding-left: 12px; }
+.dash-sublimit { display: grid; gap: 6px; min-width: 0; }
+.dash-sublimit-name { flex: 1 1 auto; min-width: 0; overflow-wrap: normal; font-size: 0.875rem; font-weight: 600; }
+.dash-sublimit-value { font-size: 0.875rem; white-space: nowrap; }
+.dash-sublimit-over { font-size: 0.875rem; }
+.dash-bar-small { height: 6px; border-radius: 3px; }
+.dash-bar-small .dash-bar-fill { border-radius: 3px; }
+
 /* Последние траты */
 .dash-recent-item { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 56px; padding: 8px 0; border-top: 1px solid var(--ck-divider); color: var(--ck-text); text-decoration: none; }
 .dash-recent-list li:first-child .dash-recent-item { border-top: 0; }
@@ -104,8 +115,14 @@
 .limits-delete { flex: 0 0 auto; }
 .limits-done { margin: 0; color: var(--ck-success-text); }
 .limits-row .receipt-field-error { margin: 0; }
+/* Подкатегория: отступ по глубине (до четырёх уровней), карточка плотнее, цвет — цвет её корня. */
+.limits-row-sub { margin-left: calc(var(--limits-depth, 1) * 16px); padding: 12px 16px; border-radius: 16px; }
+.limits-row-sub .limits-name { font-weight: 500; }
+.limits-toggle { justify-self: start; min-height: 44px; padding: 8px 12px; border: 1px solid var(--ck-border-field); border-radius: 22px; background: var(--ck-surface); color: var(--ck-link); font-weight: 600; white-space: nowrap; }
+.limits-toggle:hover:not(:disabled) { border-color: var(--ck-border-field); background: var(--ck-surface-raised); color: var(--ck-link); }
 
 @media (max-width: 540px) {
   .dash-card { padding: 16px; }
+  .limits-row-sub { margin-left: calc(var(--limits-depth, 1) * 10px); padding: 12px; }
   .limits-save { flex: 1 1 auto; }
 }

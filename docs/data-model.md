@@ -729,13 +729,13 @@ Inline внутри чека, все без пустых заготовок (`ex
 
 ## Бюджет: лимиты по категориям
 
-`budget.BudgetLimit` — месячный лимит трат в одной категории верхнего уровня и одной валюте (API — [api-contract](api-contract.md#реализовано-лимиты-бюджета-и-дашборд-месяца)).
+`budget.BudgetLimit` — месячный лимит трат в одной категории (любого уровня, с 2026-10-12; трата подкатегории входит и в лимит каждого предка) и одной валюте (API — [api-contract](api-contract.md#реализовано-лимиты-бюджета-и-дашборд-месяца)).
 
 | Поле | Тип | Смысл |
 | --- | --- | --- |
 | `household` | FK `accounts.Household`, NULL, CASCADE | владелец-семья |
 | `user` | FK пользователь, NULL, CASCADE | владелец-пользователь без семьи |
-| `category` | FK `catalog.Category`, CASCADE | категория верхнего уровня |
+| `category` | FK `catalog.Category`, CASCADE | категория любого уровня; уникальность — владелец + категория + валюта |
 | `currency` | FK `stores.Currency`, PROTECT | валюта лимита |
 | `amount` | Decimal(14, 2) | сумма в месяц |
 | `created_at`, `updated_at` | DateTime | |

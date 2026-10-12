@@ -320,7 +320,8 @@ class HttpTests(MediaRootMixin, TestCase):
         for role, moderates in ((MODERATOR, True), (USER, False)):
             me = self.get(role, "/api/me/")
             self.assertEqual(me["mode"], "accounts")
-            self.assertEqual(me["user"], {**self.ids["users"][role], "is_staff": False})
+            user = self.ids["users"][role]
+            self.assertEqual(me["user"], {**user, "display_name": user["username"], "is_staff": False})
             self.assertEqual(me["permissions"], {"moderate_catalog": moderates})
 
     def test_receipts_do_not_overlap(self):

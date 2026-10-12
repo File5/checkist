@@ -21,12 +21,15 @@ const listeners = new Set<() => void>()
 
 const sameUser = (a: Session, b: Session) => a.kind === 'user' && b.kind === 'user'
   && a.mode === b.mode && a.user.id === b.user.id
+const peopleKey = (household: NonNullable<Me['household']>) => (household.people ?? [])
+  .map((person) => `${person.username}\t${person.display_name}`).join('\n')
 const sameHousehold = (a: Me['household'], b: Me['household']) => a === b || (a !== null && b !== null
-  && a.id === b.id && a.name === b.name && a.members.join('\n') === b.members.join('\n'))
+  && a.id === b.id && a.name === b.name && a.members.join('\n') === b.members.join('\n') && peopleKey(a) === peopleKey(b))
 function same(a: Session, b: Session): boolean {
   if (a.kind === 'guest' && b.kind === 'guest') return a.expired === b.expired
   if (a.kind === 'user' && b.kind === 'user') {
-    return sameUser(a, b) && a.user.username === b.user.username && a.user.is_staff === b.user.is_staff
+    return sameUser(a, b) && a.user.username === b.user.username && a.user.display_name === b.user.display_name
+      && a.user.is_staff === b.user.is_staff
       && a.permissions.moderate_catalog === b.permissions.moderate_catalog && sameHousehold(a.household, b.household)
   }
   return a.kind === b.kind
@@ -39,8 +42,12 @@ function set(next: Session): void {
 }
 const userOf = (me: Me): Session => ({
   kind: 'user', mode: me.mode,
-  user: { id: me.user.id, username: me.user.username, is_staff: me.user.is_staff },
-  household: me.household === null ? null : { id: me.household.id, name: me.household.name, members: [...me.household.members] },
+  user: { id: me.user.id, username: me.user.username, is_staff: me.user.is_staff,
+    ...(me.user.display_name !== undefined && { display_name: me.user.display_name }) },
+  household: me.household === null ? null : {
+    id: me.household.id, name: me.household.name, members: [...me.household.members],
+    ...(me.household.people && { people: me.household.people.map((person) => ({ username: person.username, display_name: person.display_name })) }),
+  },
   permissions: { moderate_catalog: me.permissions.moderate_catalog },
 })
 

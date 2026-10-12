@@ -46,6 +46,22 @@ describe('schema of «Я» on the backend fixtures', () => {
     ['household', { id: 1, name: 'Семья', members: [''] }], ['household', { id: 1, name: null, members: ['a'] }],
     ['csrf_token', ''], ['csrf_token', 'with space'], ['csrf_token', 'a'.repeat(129)], ['csrf_token', null],
   ])('rejects %s = %j', (key, value) => { expect(isMe({ ...me(), [key]: value })).toBe(false) })
+  it('accepts names to show next to the usernames, and «Я» of an older server without them', () => {
+    const people = [{ username: 'synthetic-reader', display_name: 'Андрей' }, { username: 'synthetic-two', display_name: 'synthetic-two' }]
+    const family = { id: 4, name: 'Демо-семья', members: ['synthetic-reader', 'synthetic-two'], people }
+    expect(me().user.display_name).toBe('synthetic-reader')
+    expect(isMe({ ...me(), household: family })).toBe(true)
+    const { display_name: _name, ...older } = me().user
+    expect(_name).toBe('synthetic-reader')
+    expect(isMe({ ...me(), user: older, household: { ...family, people: undefined } })).toBe(false)
+    const { people: _people, ...olderFamily } = family
+    expect(_people).toBe(people)
+    expect(isMe({ ...me(), user: older, household: olderFamily })).toBe(true)
+    for (const broken of [null, 'Андрей', [{ username: '', display_name: 'x' }], [{ username: 'a' }], [{ username: 'a', display_name: 1 }]]) {
+      expect(isMe({ ...me(), household: { ...family, people: broken } }), JSON.stringify(broken)).toBe(false)
+    }
+    expect(isMe({ ...me(), user: { ...me().user, display_name: null } })).toBe(false)
+  })
   it('accepts the household of a family member and null without one', () => {
     expect(me().household).toBeNull()
     expect(isMe({ ...me(), household: { id: 4, name: 'Демо-семья', members: ['synthetic-reader', 'synthetic-two'] } })).toBe(true)

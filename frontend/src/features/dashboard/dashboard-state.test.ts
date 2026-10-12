@@ -97,11 +97,14 @@ describe('colours, avatars and recent spends', () => {
     expect(initials('anna_maria')).toBe('AM')
     expect(initials('лиза')).toBe('Л')
     expect(initials('__')).toBe('_')
+    expect(initials('Анна Мария')).toBe('АМ')
   })
   it('describes a recent spend', () => {
     const [photo, manual] = dashboardFixture().recent
     expect(recentMeta(photo)).toBe(`liza · ${nb('12 октября')} · ${nb('23 позиции')}`)
     expect(recentMeta(manual)).toBe(`andrey · ${nb('11 октября')} · вручную`)
+    expect(recentMeta({ ...photo, owner_name: 'Лиза' })).toBe(`Лиза · ${nb('12 октября')} · ${nb('23 позиции')}`)
+    expect(recentMeta({ ...photo, owner_name: '' })).toContain('liza · ')
     expect(recentMeta({ ...photo, lines_count: 1 })).toContain(nb('1 позиция'))
     expect(recentMeta({ ...photo, lines_count: 11 })).toContain(nb('11 позиций'))
     expect(badgeLetter('продукты', 'Magnum')).toBe('П')

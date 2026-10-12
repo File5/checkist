@@ -1,4 +1,6 @@
-import type { Dashboard, DashboardRecent, MonthCode } from '../../api/budget-types'
+import type { Dashboard, DashboardCategory, DashboardRecent, DashboardSubCategory, MonthCode } from '../../api/budget-types'
+import { ownerName, peopleOf } from '../../lib/people'
+import type { Person } from '../../lib/people'
 import type { Decimal, LocalApiFailure } from '../../api/types'
 import { NBSP, glue } from '../../lib/text'
 
@@ -112,11 +114,17 @@ export function progress(spent: Decimal, limit: Decimal | null): Progress | null
  * The same mapping as «Траты» (src/lib/category-tone.ts). */
 export { categoryTone } from '../../lib/category-tone'
 
-/** «А» for «andrey», «АМ» for «anna_maria»: up to two letters of the name's parts. */
-export function initials(username: string): string {
-  const parts = username.split(/[^\p{L}\p{N}]+/u).filter(Boolean)
-  const letters = (parts.length ? parts : [username]).slice(0, 2).map((part) => [...part][0] ?? '')
-  return letters.join('').toUpperCase() || '?'
+/** «А» for «Андрей», «АМ» for «anna_maria»: up to two letters of the name's parts (src/lib/people.ts). */
+export { initials } from '../../lib/people'
+
+/** The family of the month with names to show; the usernames stay the keys. */
+export function dashboardPeople(data: Dashboard): Person[] {
+  return peopleOf(data.members, data.people)
+}
+
+/** The limited sub-categories under a top-level row; an older server sends none. */
+export function subCategories(category: DashboardCategory | DashboardSubCategory): DashboardSubCategory[] {
+  return category.children ?? []
 }
 
 /** First letter of a category for its badge. */
@@ -124,11 +132,11 @@ export function badgeLetter(name: string | null, title: string): string {
   return ([...(name ?? title).trim()][0] ?? '•').toUpperCase()
 }
 
-/** «liza · 12 октября · 23 позиции», «вручную» for a spend without a receipt. */
+/** «Лиза · 12 октября · 23 позиции», «вручную» for a spend without a receipt; the name, or the username without one. */
 export function recentMeta(item: DashboardRecent): string {
   const what = item.source === 'manual' ? 'вручную'
     : glue(String(item.lines_count), plural(item.lines_count, 'позиция', 'позиции', 'позиций'))
-  return [item.owner, dayAndMonth(item.purchased_on), what].join(' · ')
+  return [ownerName(item), dayAndMonth(item.purchased_on), what].join(' · ')
 }
 
 /** «ещё 19 дней» до конца месяца. */
@@ -144,9 +152,11 @@ export function monthIsEmpty(data: Dashboard): boolean {
 /** The id of a category by its name, for the colour of a recent spend's badge: the dashboard sends the name only. */
 export function categoryIds(data: Dashboard): Map<string, number> {
   const ids = new Map<string, number>()
-  for (const block of data.currencies) for (const category of block.categories) {
+  const add = (category: DashboardCategory | DashboardSubCategory) => {
     if (category.category_id !== null && !ids.has(category.name)) ids.set(category.name, category.category_id)
+    subCategories(category).forEach(add)
   }
+  for (const block of data.currencies) block.categories.forEach(add)
   return ids
 }
 

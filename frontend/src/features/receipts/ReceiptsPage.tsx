@@ -8,6 +8,7 @@ import Pagination from '../../components/Pagination'
 import RequestState from '../../components/RequestState'
 import { useNarrow } from '../../lib/cards'
 import { formatPurchasedOn } from '../../lib/format'
+import { ownerName } from '../../lib/people'
 import { numbered } from '../../lib/text'
 import { buildReceiptsQuery, Link } from '../../navigation'
 import { useSession } from '../../session'
@@ -39,7 +40,7 @@ export function ReceiptList({ receipts, showOwner = false }: { receipts: Receipt
         <div><dt>Итог</dt><dd className="receipt-number receipt-total">{money(receipt.total, receipt.currency)}</dd></div>
         <div><dt>Строк</dt><dd>{receipt.lines_count.toLocaleString('ru-RU')}</dd></div>
         <div><dt>Операция</dt><dd>{receipt.operation === 'refund' ? 'Возврат' : 'Продажа'}</dd></div>
-        {showOwner && <div><dt>Добавил</dt><dd className="receipt-owner">{receipt.owner}</dd></div>}
+        {showOwner && <div><dt>Добавил</dt><dd className="receipt-owner">{ownerName(receipt)}</dd></div>}
       </dl>
       {receipt.unmatched_products_count > 0 && <p className="receipt-warning">Товары не сопоставлены: {receipt.unmatched_products_count.toLocaleString('ru-RU')}</p>}
       {receipt.review_required && <p className="receipt-warning">Данные требуют проверки</p>}

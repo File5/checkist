@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { FormEvent } from 'react'
+import type { CSSProperties, FormEvent } from 'react'
 import { createBudgetLimit, deleteBudgetLimit, getBudgetLimits, updateBudgetLimit } from '../../api/budget'
 import type { BudgetLimit } from '../../api/budget'
 import { getCategories } from '../../api/catalog'
@@ -10,7 +10,8 @@ import { Link } from '../../navigation'
 import { useSession } from '../../session'
 import { categoryTone, dashboardErrorMessage, formatMoney } from './dashboard-state'
 import {
-  amountInput, isDuplicateCreate, limitCurrencies, limitFailureMessage, limitFor, parseCurrency, rowAction, topLevelCategories, withLimit, withoutLimit,
+  amountInput, isDuplicateCreate, limitCurrencies, limitFailureMessage, limitFor, limitTree, openByDefault, parseCurrency, rowAction,
+  subCategoriesText, visibleRows, withLimit, withoutLimit,
 } from './limits-state'
 import './Dashboard.css'
 
@@ -21,6 +22,9 @@ const rowKey = (categoryId: number, currency: string) => `${categoryId}:${curren
 export type LimitsViewProps = {
   categories: Category[]; limits: BudgetLimit[]; currencies: string[]; currency: string; family: boolean
   drafts: Record<string, string>; statuses: Record<string, RowStatus>
+  /** Top-level rows the person opened (`true`) or closed (`false`); the others follow `openByDefault`. */
+  toggled?: Record<number, boolean>
+  onToggle?: (rootId: number, open: boolean) => void
   onCurrency: (currency: string) => void
   onAddCurrency: (input: string) => string | undefined
   onDraft: (key: string, value: string) => void
@@ -50,11 +54,17 @@ function AddCurrency({ onAdd }: { onAdd: (input: string) => string | undefined }
 }
 
 /** The limits screen without loading: the markup tests render it directly. */
-export function LimitsView({ categories, limits, currencies, currency, family, drafts, statuses, onCurrency, onAddCurrency, onDraft, onSave, onDelete }: LimitsViewProps) {
+export function LimitsView({
+  categories, limits, currencies, currency, family, drafts, statuses, toggled = {}, onToggle = () => {}, onCurrency, onAddCurrency, onDraft, onSave, onDelete,
+}: LimitsViewProps) {
+  const tree = limitTree(categories)
+  const opened = openByDefault(tree, limits, currency, drafts)
+  const isOpen = (rootId: number) => toggled[rootId] ?? opened.has(rootId)
   return <div className="limits">
     <p className="dash-note">{family
       ? 'Лимит — сколько семья готова потратить на категорию за месяц. Лимиты общие: их видят и меняют все члены семьи.'
-      : 'Лимит — сколько вы готовы потратить на категорию за месяц.'}</p>
+      : 'Лимит — сколько вы готовы потратить на категорию за месяц.'} Лимит можно задать и подкатегории: её траты входят
+      и в её лимит, и в лимит категории выше.</p>
     <section className="dash-card limits-currencies" aria-labelledby="limits-currency-heading">
       <h2 id="limits-currency-heading" className="limits-small-heading">Валюта</h2>
       <div className="dash-chips" role="group" aria-labelledby="limits-currency-heading">
@@ -64,7 +74,7 @@ export function LimitsView({ categories, limits, currencies, currency, family, d
       <AddCurrency onAdd={onAddCurrency} />
     </section>
     {categories.length ? <ul className="limits-list" aria-label={`Лимиты в ${currency}`}>
-      {categories.map((category) => {
+      {visibleRows(tree, isOpen).map(({ category, depth, rootId, descendants }) => {
         const key = rowKey(category.id, currency)
         const limit = limitFor(limits, category.id, currency)
         const draft = drafts[key]
@@ -74,11 +84,18 @@ export function LimitsView({ categories, limits, currencies, currency, family, d
         const inputId = `limit-${category.id}`
         const messageId = `${inputId}-message`
         const invalid = status.kind === 'error'
-        return <li key={key} className={`dash-card limits-row dash-cat-${categoryTone(category.id)}`}>
+        const open = isOpen(rootId)
+        // The indent stops at four levels: deeper rows would leave no room for the amount on a phone.
+        const indent = { '--limits-depth': Math.min(depth, 4) } as CSSProperties
+        return <li key={key}
+          className={`dash-card limits-row${depth ? ' limits-row-sub' : ''} dash-cat-${categoryTone(rootId)}`} style={depth ? indent : undefined}>
           <form className="limits-form" noValidate aria-busy={busy} onSubmit={(event) => { event.preventDefault(); onSave(category) }}>
             <div className="limits-row-head">
               <span className="dash-dot" aria-hidden="true" />
-              <label className="limits-name" htmlFor={inputId}>{category.name}</label>
+              <label className="limits-name" htmlFor={inputId}>
+                {depth > 0 && <span className="dash-visually-hidden">{category.path.slice(0, -1).map((step) => step.name).join(' › ')} › </span>}
+                {category.name}
+              </label>
               <span className="limits-current">{limit ? formatMoney(limit.amount, currency) : 'без лимита'}</span>
             </div>
             <div className="limits-controls">
@@ -96,6 +113,9 @@ export function LimitsView({ categories, limits, currencies, currency, family, d
             {status.kind === 'error' && <p className="receipt-field-error" id={messageId} role="alert">{status.text}</p>}
             {status.kind === 'done' && <p className="limits-done" id={messageId} role="status">{status.text}</p>}
           </form>
+          {depth === 0 && descendants > 0 && <button type="button" className="limits-toggle" aria-expanded={open}
+            aria-label={`${open ? 'Скрыть' : 'Показать'} подкатегории «${category.name}»`}
+            onClick={() => onToggle(rootId, !open)}>{open ? 'Скрыть' : 'Показать'} {subCategoriesText(descendants)}</button>}
         </li>
       })}
     </ul> : <RequestState kind="empty" message="Категорий пока нет: их заводят в каталоге." action={<Link className="action-link" to="/catalog">В каталог</Link>} />}
@@ -106,7 +126,7 @@ export function LimitsView({ categories, limits, currencies, currency, family, d
 type Loaded = { categories: Category[]; currency: string }
 type Load = { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'ok'; data: Loaded }
 
-/** `/budget/limits`: a limit per top-level category and currency, saved and deleted row by row. */
+/** `/budget/limits`: a limit per category (any level) and currency, saved and deleted row by row. */
 export default function LimitsPage() {
   const session = useSession()
   const family = session.kind === 'user' && session.household !== null
@@ -117,6 +137,7 @@ export default function LimitsPage() {
   const [currency, setCurrency] = useState<string>()
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [statuses, setStatuses] = useState<Record<string, RowStatus>>({})
+  const [toggled, setToggled] = useState<Record<number, boolean>>({})
   const controllers = useRef(new Map<string, AbortController>())
 
   useEffect(() => {
@@ -130,7 +151,7 @@ export default function LimitsPage() {
       }
       if (categories.kind !== 'ok' || saved.kind !== 'ok' || defaults.kind !== 'ok') return
       setLimits(saved.data)
-      setLoad({ kind: 'ok', data: { categories: topLevelCategories(categories.data.results), currency: defaults.data.currency } })
+      setLoad({ kind: 'ok', data: { categories: categories.data.results, currency: defaults.data.currency } })
     })
     return () => controller.abort()
   }, [attempt])
@@ -200,7 +221,8 @@ export default function LimitsPage() {
   }
 
   return <LimitsView categories={load.data.categories} limits={limits} currencies={currencies} currency={selected} family={family}
-    drafts={drafts} statuses={statuses} onCurrency={setCurrency}
+    drafts={drafts} statuses={statuses} toggled={toggled} onToggle={(rootId, open) => setToggled((all) => ({ ...all, [rootId]: open }))}
+    onCurrency={setCurrency}
     onAddCurrency={(input) => {
       const parsed = parseCurrency(input)
       if ('error' in parsed) return parsed.error

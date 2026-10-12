@@ -12,7 +12,7 @@ const base = (publicFixture('receipts.json') as { results: ReceiptListItem[] }).
 let next = 100
 const receipt = (fields: Partial<ReceiptListItem>): ReceiptListItem => ({ ...base, id: next++, ...fields })
 const manual = (fields: Partial<ReceiptListItem>) => receipt({ source: 'manual', store: null, preview_image_url: null, ...fields })
-const user = (household: { id: number; name: string; members: string[] } | null): Session => ({
+const user = (household: { id: number; name: string; members: string[]; people?: { username: string; display_name: string }[] } | null): Session => ({
   kind: 'user', mode: 'accounts', user: { id: 1, username: 'andrey', is_staff: false }, household, permissions: { moderate_catalog: false },
 })
 
@@ -83,8 +83,11 @@ describe('rows of «Траты»', () => {
   })
 
   it('says category, owner in a family and the count of positions', () => {
-    const row = receipt({ category: { id: 3, name: 'Продукты' }, owner: 'liza', lines_count: 23 })
-    expect(rowMeta(row, true)).toEqual(['Продукты', 'liza', `23${NBSP}позиции`])
+    const row = receipt({ category: { id: 3, name: 'Продукты' }, owner: 'liza', owner_name: 'Лиза', lines_count: 23 })
+    expect(rowMeta(row, true)).toEqual(['Продукты', 'Лиза', `23${NBSP}позиции`])
+    // A blank name or none at all (an older server): the username.
+    expect(rowMeta({ ...row, owner_name: '  ' }, true)[1]).toBe('liza')
+    expect(rowMeta({ ...row, owner_name: undefined }, true)[1]).toBe('liza')
     expect(rowMeta(row, false)).toEqual(['Продукты', `23${NBSP}позиции`])
     expect(rowMeta(receipt({ category: null, lines_count: 1, operation: 'refund' }), false)).toEqual([`1${NBSP}позиция`, 'Возврат'])
     expect(rowMeta(receipt({ category: null, lines_count: 0 }), false)).toEqual([`0${NBSP}позиций`])
@@ -113,6 +116,13 @@ describe('family filter and review banner', () => {
       { label: 'liza', owner: 'liza', current: false },
     ])
     expect(ownerChips(family, 'liza').map((chip) => chip.current)).toEqual([false, false, true])
+    // With names from «Я»: the chip shows the name, the filter keeps the username.
+    const named = user({ id: 4, name: 'Семья', members: ['andrey', 'liza'], people: [{ username: 'liza', display_name: 'Лиза' }] })
+    expect(ownerChips(named, 'liza')).toEqual([
+      { label: 'Вся семья', owner: undefined, current: false },
+      { label: 'andrey', owner: 'andrey', current: false },
+      { label: 'Лиза', owner: 'liza', current: true },
+    ])
     // An owner from the address that is not in the family marks no chip.
     expect(ownerChips(family, 'other').some((chip) => chip.current)).toBe(false)
   })

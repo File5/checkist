@@ -13,8 +13,9 @@ from rest_framework import status
 from rest_framework.response import Response
 
 from accounts.access import owner_q
+from accounts.people import display_name
 from budget import dashboard
-from budget.access import limit_owner, limits_q, members
+from budget.access import limit_owner, limits_q, people
 from budget.models import BudgetLimit
 from catalog.models import Category
 from config.exceptions import InvalidParameter
@@ -36,7 +37,7 @@ _AMOUNT = re.compile(r"[0-9]{1,12}(\.[0-9]{1,2})?")
 MESSAGES = {
     "unknown_field": "Неизвестное поле.",
     "required": "Обязательное поле.",
-    "category": "Категория верхнего уровня не найдена.",
+    "category": "Категория не найдена.",
     "currency": "Валюта не найдена.",
     "amount": "Сумма больше нуля, не больше двух знаков после запятой.",
     "duplicate": "Лимит для этой категории и валюты уже есть.",
@@ -84,7 +85,7 @@ def read_limit(data, *, partial):
         if key == "category_id":
             category = None
             if isinstance(value, int) and not isinstance(value, bool) and 0 < value < 2**63:
-                category = Category.objects.filter(pk=value, parent__isnull=True).first()
+                category = Category.objects.filter(pk=value).first()
             if category is None:
                 errors[key] = [MESSAGES["category"]]
             values["category"] = category
@@ -178,8 +179,17 @@ def _recent_object(receipt, category_name):
         title = receipt.note or category_name or "Без места"
     return {
         "id": receipt.pk, "source": receipt.source, "title": title, "category_name": category_name,
-        "owner": receipt.owner.get_username(), "purchased_on": common.iso_date(receipt.purchased_on),
+        "owner": receipt.owner.get_username(), "owner_name": display_name(receipt.owner),
+        "purchased_on": common.iso_date(receipt.purchased_on),
         "total": common.amount(receipt.total), "currency": receipt.currency_id, "lines_count": receipt.lines_total,
+    }
+
+
+def _category_object(row):
+    return {
+        "category_id": row.category_id, "name": row.name, "spent": common.amount(row.spent),
+        "limit": common.amount(row.limit), "limit_id": row.limit_id,
+        "children": [_category_object(child) for child in row.children],
     }
 
 
@@ -187,10 +197,7 @@ def _block_object(block):
     return {
         "currency": block.currency, "spent": common.amount(block.spent),
         "previous_spent": common.amount(block.previous_spent), "limit_total": common.amount(block.limit_total),
-        "categories": [{
-            "category_id": row.category_id, "name": row.name, "spent": common.amount(row.spent),
-            "limit": common.amount(row.limit), "limit_id": row.limit_id,
-        } for row in block.categories],
+        "categories": [_category_object(row) for row in block.categories],
     }
 
 
@@ -206,9 +213,11 @@ class DashboardView(LocalAPIView):
         receipts = Receipt.objects.filter(owner_q(request))
         product_ref = stats_common.owner_product_id()
         blocks = dashboard.currency_blocks(receipts, visible_limits(request), month, tree, product_ref)
+        family = people(request)
         return Response({
             "month": month.label(), "previous_month": month.previous().label(),
-            "days_left": dashboard.days_left(month, today), "members": members(request),
+            "days_left": dashboard.days_left(month, today),
+            "members": [item["username"] for item in family], "people": family,
             "currencies": [_block_object(block) for block in blocks],
             "recent": [_recent_object(*pair) for pair in dashboard.recent(receipts, tree, product_ref=product_ref)],
         })

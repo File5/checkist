@@ -18,8 +18,8 @@ function me(name = 'me.json', change: Partial<Me> = {}): Me {
 }
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status })
 const guestAnswer = () => json({ error: { code: 'not_authenticated', message: 'Требуется вход.' } }, 401)
-const reader: Session = { kind: 'user', mode: 'accounts', user: { id: 1, username: 'synthetic-reader', is_staff: false }, household: null, permissions: { moderate_catalog: false } }
-const local: Session = { kind: 'user', mode: 'local_single', user: { id: 1, username: 'local', is_staff: false }, household: null, permissions: { moderate_catalog: true } }
+const reader: Session = { kind: 'user', mode: 'accounts', user: { id: 1, username: 'synthetic-reader', display_name: 'synthetic-reader', is_staff: false }, household: null, permissions: { moderate_catalog: false } }
+const local: Session = { kind: 'user', mode: 'local_single', user: { id: 1, username: 'local', display_name: 'local', is_staff: false }, household: null, permissions: { moderate_catalog: true } }
 
 const fetchMock = vi.fn<typeof fetch>()
 const urls = () => fetchMock.mock.calls.map(([url]) => url)
@@ -147,6 +147,22 @@ describe('re-reading a known session', () => {
     await loadSession()
     expect(getSession()).toEqual(reader)
     expect(seen).toHaveLength(3)
+  })
+  it('keeps the names of the family and wakes subscribers when a name changes', async () => {
+    const people = [{ username: 'synthetic-reader', display_name: 'Андрей' }, { username: 'synthetic-two', display_name: 'Лиза' }]
+    const family = { id: 4, name: 'Демо-семья', members: ['synthetic-reader', 'synthetic-two'], people }
+    fetchMock.mockResolvedValueOnce(json(me('me.json', { household: family })))
+    await loadSession()
+    expect(getSession()).toEqual({ ...reader, household: family })
+    const snapshot = getSession()
+    fetchMock.mockResolvedValueOnce(json(me('me.json', { household: { ...family, people: people.map((person) => ({ ...person })) } })))
+    await loadSession()
+    expect(getSession()).toBe(snapshot)
+    const renamed = [people[0], { username: 'synthetic-two', display_name: 'Елизавета' }]
+    fetchMock.mockResolvedValueOnce(json(me('me.json', { household: { ...family, people: renamed } })))
+    await loadSession()
+    expect(getSession()).toMatchObject({ household: { people: renamed } })
+    expect(seen).toHaveLength(2)
   })
 })
 

@@ -175,7 +175,7 @@ class LoginTests(AuthMixin, TestCase):
         sign_in(client)
         response = sign_in(client, "synthetic-other")
         self.assertEqual(response.status_code, 200, response.content)
-        self.assertEqual(response.json()["user"], {"id": self.other.pk, "username": "synthetic-other", "is_staff": False})
+        self.assertEqual(response.json()["user"], {"id": self.other.pk, "username": "synthetic-other", "display_name": "synthetic-other", "is_staff": False})
         self.assert_signed_in(client, self.other)
 
     def test_sign_in_changes_the_csrf_token(self):
@@ -564,7 +564,7 @@ class MeTests(AuthMixin, TestCase):
             with self.subTest(account=account.username):
                 body = self.me(account).json()
                 self.assertEqual(body["mode"], "accounts")
-                self.assertEqual(body["user"], {"id": account.pk, "username": account.username, "is_staff": is_staff})
+                self.assertEqual(body["user"], {"id": account.pk, "username": account.username, "display_name": account.username, "is_staff": is_staff})
                 self.assertEqual(body["permissions"], {"moderate_catalog": moderate})
 
     def test_disabled_user_with_a_live_session_gets_401(self):
@@ -715,7 +715,7 @@ class SharedSessionTests(AuthMixin, TestCase):
         self.assertEqual(response.status_code, 302, response.content)
         self.assertEqual(response["Location"], ADMIN)
         body = client.get(ME).json()
-        self.assertEqual(body["user"], {"id": self.staff.pk, "username": "synthetic-staff", "is_staff": True})
+        self.assertEqual(body["user"], {"id": self.staff.pk, "username": "synthetic-staff", "display_name": "synthetic-staff", "is_staff": True})
         self.assertEqual(client.get("/api/countries/").status_code, 200)
 
     def test_api_sign_in_opens_the_admin(self):

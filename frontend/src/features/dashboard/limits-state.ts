@@ -1,9 +1,49 @@
 import type { BudgetLimit } from '../../api/budget-types'
 import type { Category, LocalApiFailure } from '../../api/types'
+import { glue } from '../../lib/text'
+import { plural } from './dashboard-state'
 
-/** Limits belong to top-level categories only: children are rolled up into them. */
-export function topLevelCategories(categories: Category[]): Category[] {
-  return categories.filter((category) => category.parent_id === null && category.depth === 0)
+/** A row of the limits screen: a category of any level; its spends include those of its descendants. */
+export type LimitTreeRow = {
+  category: Category
+  depth: number
+  /** The top-level category the row is under (itself for a top-level row): it opens and closes its sub-categories. */
+  rootId: number
+  /** How many sub-categories (all levels) a top-level row has; 0 for the others. */
+  descendants: number
+}
+
+/** The categories as a tree, in the order of `GET /api/categories/` (depth first, siblings by name). */
+export function limitTree(categories: Category[]): LimitTreeRow[] {
+  const rows = categories.map((category) => ({
+    category, depth: category.depth, rootId: category.path[0]?.id ?? category.id, descendants: 0,
+  }))
+  const roots = new Map(rows.filter((row) => row.depth === 0).map((row) => [row.category.id, row]))
+  for (const row of rows) {
+    const root = roots.get(row.rootId)
+    if (row.depth > 0 && root) root.descendants += 1
+  }
+  return rows
+}
+
+/** Top-level rows whose sub-categories are shown at first: those with a limit (or an unsaved amount) below them. */
+export function openByDefault(rows: LimitTreeRow[], limits: BudgetLimit[], currency: string, drafts: Record<string, string> = {}): Set<number> {
+  const open = new Set<number>()
+  for (const row of rows) {
+    if (row.depth === 0) continue
+    if (limitFor(limits, row.category.id, currency) || drafts[`${row.category.id}:${currency}`] !== undefined) open.add(row.rootId)
+  }
+  return open
+}
+
+/** What the screen lists: every top-level row, and the sub-categories of the open ones. */
+export function visibleRows(rows: LimitTreeRow[], open: (rootId: number) => boolean): LimitTreeRow[] {
+  return rows.filter((row) => row.depth === 0 || open(row.rootId))
+}
+
+/** «3 подкатегории», «1 подкатегория». */
+export function subCategoriesText(count: number): string {
+  return glue(String(count), plural(count, 'подкатегория', 'подкатегории', 'подкатегорий'))
 }
 
 export const limitMessages = {
@@ -77,8 +117,8 @@ export function withoutLimit(limits: BudgetLimit[], id: number): BudgetLimit[] {
 }
 
 /**
- * A create refused at `category_id`: the screen offers only top-level categories, so it is the pair «category and
- * currency» already taken — another family member saved a limit meanwhile (the server reports it at `category_id`).
+ * A create refused at `category_id`: the screen offers only categories it has just read, so it is the pair «category
+ * and currency» already taken — another family member saved a limit meanwhile (the server reports it at `category_id`).
  */
 export function isDuplicateCreate(failure: Pick<LocalApiFailure, 'reason' | 'fields'>, creating: boolean): boolean {
   return creating && failure.reason === 'invalid_parameter' && (failure.fields ?? []).includes('category_id')
@@ -91,7 +131,7 @@ export function limitFailureMessage(failure: Pick<LocalApiFailure, 'reason' | 'f
     case 'invalid_parameter': case 'invalid_request': {
       const fields = failure.fields ?? []
       if (fields.includes('amount')) return 'Сервер не принял сумму: нужна сумма больше нуля.'
-      if (fields.includes('category_id') || fields.includes('category')) return 'Для этой категории лимит не задаётся: выберите категорию верхнего уровня.'
+      if (fields.includes('category_id') || fields.includes('category')) return 'Этой категории уже нет. Обновите страницу.'
       if (fields.includes('currency')) return 'Сервер не принял валюту.'
       if (fields.includes('non_field_errors') || fields.includes('__all__')) return 'Лимит для этой категории и валюты уже есть. Обновите страницу.'
       return 'Сервер не принял лимит. Проверьте сумму и повторите.'

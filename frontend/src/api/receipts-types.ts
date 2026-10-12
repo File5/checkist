@@ -9,8 +9,9 @@ export type MatchingStatus = 'matched' | 'unmatched'
 export type TaxKind = 'vat' | 'exempt'
 export type TaxRate = { id: number; country: string; kind: TaxKind; rate: Decimal | null }
 export type Receipt = {
-  /** `owner` — username of who added the receipt (family members see each other's); `store: null` — «Без места», only for a manual spend. */
-  id: number; owner: string; source: ReceiptSource; store: Store | null; note: string; currency: CurrencyCode; operation: ReceiptOperation; purchased_on: ISODate; purchased_at: ISODateTime
+  /** `owner` — username of who added the receipt (family members see each other's), the key of the `owner` filter;
+   * `owner_name` — their name to show (missing from an older server); `store: null` — «Без места», only for a manual spend. */
+  id: number; owner: string; owner_name?: string; source: ReceiptSource; store: Store | null; note: string; currency: CurrencyCode; operation: ReceiptOperation; purchased_on: ISODate; purchased_at: ISODateTime
   total: Decimal; discount_total: Decimal; prices_include_tax: boolean; origin: 'recognized' | 'legacy/manual'; review_required: boolean
   lines_count: number; unmatched_products_count: number; receipt_images_count: number; preview_image_url: string | null
   /** WebP thumbnail (400 px) of the same crop, made on first request. */

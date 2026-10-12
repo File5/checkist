@@ -6,6 +6,7 @@ import type { CurrencyCode, Decimal, ISODate } from '../../api/types'
 import type { ReceiptListItem } from '../../api/receipts'
 import type { ReceiptsQuery } from '../../navigation'
 import type { Session } from '../../session'
+import { ownerName, peopleOf } from '../../lib/people'
 import { glue } from '../../lib/text'
 import { noPlace, recognizedText } from './state'
 
@@ -102,7 +103,7 @@ export function positions(count: number): string {
 export function rowMeta(receipt: ReceiptListItem, showOwner: boolean): string[] {
   return [
     ...(receipt.category ? [receipt.category.name] : []),
-    ...(showOwner ? [receipt.owner] : []),
+    ...(showOwner ? [ownerName(receipt)] : []),
     positions(receipt.lines_count),
     ...(receipt.operation === 'refund' ? ['Возврат'] : []),
   ]
@@ -113,12 +114,13 @@ export { categoryTone, categoryTones } from '../../lib/category-tone'
 
 export type OwnerChip = { label: string; owner: string | undefined; current: boolean }
 
-/** «Вся семья» and each member; without a household no chips at all. */
+/** «Вся семья» and each member; without a household no chips at all. The chip shows the name, the filter keeps the username. */
 export function ownerChips(session: Session, owner: string | undefined): OwnerChip[] {
   if (session.kind !== 'user' || session.household === null) return []
   return [
     { label: 'Вся семья', owner: undefined, current: owner === undefined },
-    ...session.household.members.map((member) => ({ label: member, owner: member, current: owner === member })),
+    ...peopleOf(session.household.members, session.household.people)
+      .map((person) => ({ label: person.display_name, owner: person.username, current: owner === person.username })),
   ]
 }
 

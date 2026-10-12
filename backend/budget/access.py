@@ -7,6 +7,7 @@
 from django.db.models import Q
 
 from accounts.access import household, request_user
+from accounts.people import household_people, person
 
 
 def limit_owner(request):
@@ -29,9 +30,14 @@ def limits_q(request, prefix=""):
     return Q(**{f"{prefix}user": owner["user"], f"{prefix}household__isnull": True})
 
 
-def members(request):
-    """members(request) -> list[str]; логины членов семьи по алфавиту, без семьи — ``[свой]``."""
+def people(request):
+    """people(request) -> list; члены семьи ``{"username", "display_name"}`` по логину, без семьи — ``[свой]``."""
     family = household(request)
     if family is None:
-        return [request_user(request).get_username()]
-    return sorted(family.memberships.values_list("user__username", flat=True))
+        return [person(request_user(request))]
+    return household_people(family)
+
+
+def members(request):
+    """members(request) -> list[str]; логины членов семьи по алфавиту, без семьи — ``[свой]``."""
+    return [item["username"] for item in people(request)]

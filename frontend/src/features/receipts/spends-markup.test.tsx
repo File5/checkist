@@ -12,15 +12,16 @@ const NBSP = ' '
 const noop = () => {}
 const base = (publicFixture('receipts.json') as Page<ReceiptListItem>).results[0]
 const rows: ReceiptListItem[] = [
-  { ...base, id: 1, purchased_on: '2026-10-12', currency: 'KZT', total: '18940.00', owner: 'liza', lines_count: 23,
+  { ...base, id: 1, purchased_on: '2026-10-12', currency: 'KZT', total: '18940.00', owner: 'liza', owner_name: 'Лиза', lines_count: 23,
     store: { ...base.store!, name: 'Magnum' }, category: { id: 3, name: 'Продукты' } },
   { ...base, id: 2, source: 'manual', store: null, preview_image_url: null, purchased_on: '2026-10-12', currency: 'KZT', total: '1060.00',
-    owner: 'andrey', lines_count: 1, first_line: 'Такси', category: { id: 8, name: 'Транспорт' } },
-  { ...base, id: 3, purchased_on: '2026-10-11', currency: 'EUR', total: '2.38', owner: 'andrey', category: null },
+    owner: 'andrey', owner_name: 'Андрей', lines_count: 1, first_line: 'Такси', category: { id: 8, name: 'Транспорт' } },
+  { ...base, id: 3, purchased_on: '2026-10-11', currency: 'EUR', total: '2.38', owner: 'andrey', owner_name: 'Андрей', category: null },
 ]
 const page = (results: ReceiptListItem[]): Page<ReceiptListItem> => ({ count: results.length, page: 1, page_size: 50, pages: 1, results })
 const family = ownerChips({ kind: 'user', mode: 'accounts', user: { id: 1, username: 'andrey', is_staff: false },
-  household: { id: 4, name: 'Семья', members: ['andrey', 'liza'] }, permissions: { moderate_catalog: false } }, 'liza')
+  household: { id: 4, name: 'Семья', members: ['andrey', 'liza'],
+    people: [{ username: 'andrey', display_name: 'Андрей' }, { username: 'liza', display_name: 'Лиза' }] }, permissions: { moderate_catalog: false } }, 'liza')
 
 describe('«Траты» on a phone (Vitest/SSR, not browser visual acceptance)', () => {
   it('shows days with their totals per currency and one linked row per receipt', () => {
@@ -30,7 +31,7 @@ describe('«Траты» on a phone (Vitest/SSR, not browser visual acceptance)'
     expect(html).toContain(`<span class="spends-day-sum">20${NBSP}000,00${NBSP}KZT</span>`)
     expect(html).toContain(`<span class="spends-day-sum">2,38${NBSP}EUR</span>`)
     expect(html.match(/<a class="spends-row" href="\/receipts\/\d+">/g)).toHaveLength(3)
-    expect(html).toContain(`<span class="spends-row-title">Magnum</span><span class="spends-row-meta">Продукты · liza · 23${NBSP}позиции</span>`)
+    expect(html).toContain(`<span class="spends-row-title">Magnum</span><span class="spends-row-meta">Продукты · Лиза · 23${NBSP}позиции</span>`)
     expect(html).toContain(`<span class="spends-row-amount">18${NBSP}940,00${NBSP}KZT</span>`)
     // A spend without a place is titled by its first line and says it has no receipt only to a screen reader.
     expect(html).toContain('<span class="spends-row-title">Такси<span class="spends-hidden"> (трата без чека)</span></span>')
@@ -74,8 +75,8 @@ describe('family chips and the review banner', () => {
     expect(html).toContain('<nav class="spends-chips" aria-label="Кто добавил">')
     expect(html.match(/<a [^>]*>[^<]*<\/a>/g)).toEqual([
       '<a class="spends-chip" href="/receipts?q=MILCH">Вся семья</a>',
-      '<a class="spends-chip" href="/receipts?q=MILCH&amp;owner=andrey">andrey</a>',
-      '<a class="spends-chip" aria-current="true" href="/receipts?q=MILCH&amp;owner=liza">liza</a>',
+      '<a class="spends-chip" href="/receipts?q=MILCH&amp;owner=andrey">Андрей</a>',
+      '<a class="spends-chip" aria-current="true" href="/receipts?q=MILCH&amp;owner=liza">Лиза</a>',
     ])
     expect(renderToStaticMarkup(<OwnerChips chips={[]} query={{ page: 1 }} />)).toBe('')
   })

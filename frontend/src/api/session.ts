@@ -7,18 +7,22 @@ import type { Guard } from './schema.ts'
 import { isAuthCsrf, isMe, isPasswordIssues, isRetryAfter } from './session-schema.ts'
 import type { PASSWORD_ISSUES } from './session-schema.ts'
 import type { RequestOptions } from './types.ts'
+import type { Person } from '../lib/people.ts'
 
 /** «Я»: the answer of `GET /api/me/`, of a sign-in and of a password change. */
 export type Me = {
   mode: 'accounts' | 'local_single'
-  user: { id: number; username: string; is_staff: boolean }
+  /** `display_name` — «Имя» from the admin, the username when it is empty; missing from an older server. */
+  user: { id: number; username: string; display_name?: string; is_staff: boolean }
   /** The family of the user: its members see each other's receipts. `null` — no family, and always in `local_single`. */
   household: Household | null
   permissions: { moderate_catalog: boolean }
   /** Token of the current session. Never render it. */
   csrf_token: string
 }
-export type Household = { id: number; name: string; members: string[] }
+/** `members` — usernames by the alphabet (the key of filters); `people` — the same people with names to show,
+ * missing from an older server (then the usernames are shown). */
+export type Household = { id: number; name: string; members: string[]; people?: Person[] }
 export type AuthCsrf = { csrf_token: string }
 export type PasswordIssue = (typeof PASSWORD_ISSUES)[number]
 export type AuthFailureReason =

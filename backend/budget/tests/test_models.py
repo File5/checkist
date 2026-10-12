@@ -55,12 +55,14 @@ class BudgetLimitModelTests(TestCase):
         other = make_user("synthetic-budget-other")
         self.make(user=other)
 
-    def test_clean_checks_owner_top_level_and_amount(self):
+    def test_clean_checks_owner_and_amount(self):
         limit = BudgetLimit(category=self.dairy, currency_id="KZT", amount=D("0"))
         with self.assertRaises(ValidationError) as caught:
             limit.clean()
-        self.assertEqual(set(caught.exception.message_dict), {"household", "category", "amount"})
+        self.assertEqual(set(caught.exception.message_dict), {"household", "amount"})
         BudgetLimit(user=self.user, category=self.food, currency_id="KZT", amount=D("1")).clean()
+        # Подкатегория — тоже: лимит задаётся категории любого уровня.
+        BudgetLimit(user=self.user, category=self.dairy, currency_id="KZT", amount=D("1")).clean()
 
     def test_category_with_limit_cannot_be_deleted(self):
         # PROTECT: the classification cleanup must not silently take a family's limit away with its category.

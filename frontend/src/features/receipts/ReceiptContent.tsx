@@ -4,6 +4,7 @@ import RecognitionIssues from '../../components/RecognitionIssues'
 import { useNarrow } from '../../lib/cards'
 import { imageLabels } from '../../lib/recognition-labels'
 import { formatObservedAt, formatPercent, formatPurchasedOn, formatQuantity } from '../../lib/format'
+import { ownerName } from '../../lib/people'
 import { glue, numbered } from '../../lib/text'
 import { Link } from '../../navigation'
 import ReceiptLineCards from './ReceiptLineCards'
@@ -37,7 +38,7 @@ export function ReceiptHeader({ receipt, showOwner = false }: { receipt: Receipt
       {!manual && <div><dt>Сумма скидок</dt><dd className="receipt-number">{money(receipt.discount_total, receipt.currency)}</dd></div>}
       <div><dt>Валюта</dt><dd>{receipt.currency}</dd></div>
       {!manual && <div><dt>Налог в ценах</dt><dd>{receipt.prices_include_tax ? 'Включён' : 'Не включён'}</dd></div>}
-      {showOwner && <div><dt>Добавил</dt><dd className="receipt-owner">{receipt.owner}</dd></div>}
+      {showOwner && <div><dt>Добавил</dt><dd className="receipt-owner">{ownerName(receipt)}</dd></div>}
     </dl>
     {receipt.unmatched_products_count > 0 && <p className="receipt-warning">Товары не сопоставлены: {receipt.unmatched_products_count.toLocaleString('ru-RU')}</p>}
     {receipt.review_required && <p className="receipt-warning">Данные требуют проверки. Проверьте несопоставленные товары и замечания к изображениям.</p>}
