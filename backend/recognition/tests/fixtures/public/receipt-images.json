@@ -78,7 +78,10 @@
         "discounts": [],
         "taxes": []
       },
-      "confirmed_at": null
+      "confirmed_at": null,
+      "display_url": "/media/crops/test/preview-1600-v1.webp",
+      "thumb_url": "/media/crops/test/thumb-400-v1.webp",
+      "download_url": "/media/originals/test/source.png?download=1"
     },
     {
       "id": 41,
@@ -101,7 +104,10 @@
       "clipped": false,
       "issues": [],
       "normalized_result": null,
-      "confirmed_at": null
+      "confirmed_at": null,
+      "display_url": "/media/crops/test/preview-1600-v1.webp",
+      "thumb_url": "/media/crops/test/thumb-400-v1.webp",
+      "download_url": "/media/originals/test/source.png?download=1"
     }
   ]
 }

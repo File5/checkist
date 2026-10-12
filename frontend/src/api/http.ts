@@ -47,7 +47,7 @@ export function readError(status: number, body: unknown, local: boolean): LocalA
     return { kind: 'error', reason: code, status, ...(fields ? { fields } : {}) }
   }
   const localCodes = {
-    400: ['unsupported_format', 'invalid_image', 'image_too_large'],
+    400: ['unsupported_format', 'invalid_image', 'image_too_large', 'invalid_pdf', 'pdf_encrypted', 'pdf_too_many_pages'],
     403: ['csrf_failed', 'permission_denied'],
     405: ['method_not_allowed'], 406: ['not_acceptable'],
     409: ['job_active', 'job_terminal', 'retry_not_allowed', 'merge_conflict', 'merge_resolved', 'merge_changed', 'merge_busy',

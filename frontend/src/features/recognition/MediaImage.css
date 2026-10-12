@@ -1,0 +1,6 @@
+/* «Скачать оригинал» next to a photo or a crop: the look of .action-link, only its place here. */
+.ck-media-download { justify-self: start; align-self: start; }
+.ck-media-meta { margin: 0; }
+@media (max-width: 540px) {
+  .ck-media-download { justify-self: stretch; text-align: center; }
+}

@@ -13,6 +13,7 @@ from api.common import amount, iso_date, percent, price, quantity, store_object,
 from receipts.decimal_math import price_context
 from receipts.models import Receipt, ReceiptLine
 from recognition.models import ProcessingJob, ReceiptImage, SourcePhoto
+from recognition.previews import variant_url
 from recognition.queue import WORKER_LOCK
 from recognition.statuses import EXECUTING_JOB_STATUSES
 
@@ -135,6 +136,18 @@ def media_url(file):
     return file.url if file else None
 
 
+def download_url(photo):
+    """The file the person gave: the PDF of a PDF upload, otherwise the original image; as an attachment."""
+    file = photo.document_file or photo.original_file
+    return file.url + "?download=1" if file else None
+
+
+def document_object(photo):
+    if not photo.document_file:
+        return None
+    return {"content_type": "application/pdf", "bytes": photo.document_bytes, "pages": photo.document_pages}
+
+
 def related_count(queryset, group):
     return Coalesce(Subquery(queryset.order_by().values(group).annotate(n=Count("pk")).values("n")[:1]),
                     Value(0), output_field=IntegerField())
@@ -165,6 +178,9 @@ def photo_object(photo):
         "width": photo.width, "height": photo.height,
         "original_url": media_url(photo.original_file), "preview_url": media_url(photo.upright_file),
         "latest_job_id": photo.latest_job_id, "receipt_images_count": photo.image_count,
+        "display_url": variant_url(photo.original_file.name, "display"),
+        "thumb_url": variant_url(photo.original_file.name, "thumb"),
+        "download_url": download_url(photo), "document": document_object(photo),
     }
 
 
@@ -221,7 +237,7 @@ def jobs_queryset(request):
 
 
 def images_queryset(request):
-    return ReceiptImage.objects.filter(owner_q(request, "photo__"))
+    return ReceiptImage.objects.filter(owner_q(request, "photo__")).select_related("photo")
 
 
 def job_object(job, executor, *, items=None):
@@ -370,6 +386,8 @@ def image_object(image, *, detail=False):
             image.issues, status=image.status, normalized=normalized),
         "normalized_result": normalized_public(image.normalized_result) if image.status == "needs_review" else None,
         "confirmed_at": confirmed_at(confirmed),
+        "display_url": variant_url(image.file.name, "display"), "thumb_url": variant_url(image.file.name, "thumb"),
+        "download_url": download_url(image.photo),
     }
     if detail:
         result.update(quad=quad, rotation_degrees=rotation)
@@ -404,6 +422,7 @@ def receipt_object(receipt):
         "lines_count": receipt.lines_count, "unmatched_products_count": receipt.unmatched_products_count,
         "receipt_images_count": receipt.image_count, "note": receipt.note,
         "preview_image_url": settings.MEDIA_URL + receipt.preview_file if receipt.preview_file else None,
+        "preview_thumb_url": variant_url(receipt.preview_file, "thumb"),
         "created_at": utc_datetime(receipt.created_at), "updated_at": utc_datetime(receipt.updated_at),
         "lines_url": base + "/lines/", "discounts_url": base + "/discounts/", "taxes_url": base + "/taxes/",
         "images_url": f"/api/recognition/receipt-images/?receipt={receipt.pk}",

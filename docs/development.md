@@ -554,6 +554,19 @@ Django admin работает на том же локальном Django, что
 
 Исправления F1/F2/F4 не меняют схему: откат — revert их кода и тестов, без `migrate ... zero`. Отдельный откат F4 — `git revert a686413`; данные, миграции, модели и settings не затрагиваются. Сохранённые данные остаются, а прежние дефекты возвращаются, в том числе потеря перенесённой строки при устаревшем DELETE и HTTP 500 при правке зависимостей удаляемой строки; утраченные данные revert не восстанавливает. Детали — в [ограничениях админки](data-model.md#ограничения-админки).
 
+### PDF и сжатые копии фото
+
+Загрузка PDF требует `pypdfium2` (в `backend/requirements.txt`; колёса для Linux amd64/arm64, macOS и Windows, системных пакетов не нужно): после обновления зависимостей — `pip install -r backend/requirements.txt`. Отрисовка идёт отдельным процессом `python -I backend/recognition/pdf_render.py` того же интерпретатора, со сроком 30 с; миграция `recognition.0005_sourcephoto_document` добавляет три пустые колонки.
+
+Сжатые копии (`preview-1600-v1.webp`, `thumb-400-v1.webp`) пишутся при первом запросе. Для уже загруженных фото и вырезок их можно написать заранее, чтобы первый просмотр не ждал:
+
+```powershell
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py media_previews backfill --dry-run
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py media_previews backfill
+```
+
+Вывод — JSON со счётчиками `written`, `present`, `missing_source`, `failed`; повторный запуск пишет только недостающее, код возврата 1 — если какая-то копия не написалась из существующего исходника. На сервере в Docker — `deploy/docker/ck manage media_previews backfill`. Команда необязательна: без неё копии появятся при первом просмотре.
+
 ## Данные, остановка и восстановление
 
 `migrate` создаёт технические, предметные и recognition-таблицы, вносит справочники: KZ/RU/DE, KZT/RUB/EUR и четыре ставки, создаёт пользователя `local` без пароля — владельца прежних чеков и фото. Пользователя admin создаёт человек. Чеки, магазины и товары вводятся через [админку](#админка), кодом либо автоимпортом OCR; произвольного API редактирования нет. На пустой БД списки пусты; новый receipts API показывает и несопоставленные строки. Тестовые записи — только QA. `postgres_data`/`redis_data` изолированы именем project, MEDIA/scratch — отдельными host-каталогами. Ни Compose down, ни откат recognition, ни ORM deletion не удаляют MEDIA. Перед откатом на ценных данных нужны pg_dump и копия MEDIA; crash может оставить orphan, cleanup исключён v1.

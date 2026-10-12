@@ -295,3 +295,34 @@ describe('who added the receipt (family)', () => {
     expect(ownerShown({ kind: 'loading' })).toBe(false)
   })
 })
+
+describe('compressed previews and the original download (SSR)', () => {
+  const receipts = publicFixture('receipts.json') as Page<Receipt>
+  const crop = () => images.results.find((image) => image.receipt_id === 71)!
+  it('lists receipts with the 400 px thumbnail, linked to the full crop', () => {
+    const html = renderToStaticMarkup(<ReceiptList receipts={receipts.results} />)
+    expect(html).toContain('src="/media/crops/test/thumb-400-v1.webp"')
+    expect(html).toContain('href="/media/crops/test/crop.png"')
+    expect(html).toContain('loading="lazy"')
+  })
+  it('shows a crop of the receipt by its WebP copy with a reserved size and «Скачать оригинал»', () => {
+    const html = renderToStaticMarkup(<ReceiptImages images={[crop()]} receiptId={71} />)
+    expect(html).toContain('src="/media/crops/test/preview-1600-v1.webp"')
+    expect(html).toContain('width="8" height="16"')
+    expect(html).toContain('<a class="action-link ck-media-download" href="/media/originals/test/source.png?download=1" download="">Скачать оригинал</a>')
+  })
+  it('names the PDF of a PDF bill and drops an unsafe download', () => {
+    const pdf = renderToStaticMarkup(<ReceiptImages images={[{ ...crop(), download_url: '/media/originals/u/source.pdf?download=1' }]} receiptId={71} />)
+    expect(pdf).toContain('download="">Скачать оригинал (PDF)</a>')
+    for (const url of [null, '/media/originals/u/source.pdf', 'https://example.com/a.pdf?download=1', '/media/../x.pdf?download=1', '/media/a.pdf?download=1&x=1']) {
+      const html = renderToStaticMarkup(<ReceiptImages images={[{ ...crop(), download_url: url }]} receiptId={71} />)
+      expect(html, String(url)).not.toContain('Скачать оригинал')
+    }
+  })
+  it('falls back to the full image when the server sends no copy or an unsafe one', () => {
+    const html = renderToStaticMarkup(<ReceiptMedia url="/media/crops/test/crop.png" display={null} alt="Вырезка" />)
+    expect(html).toContain('src="/media/crops/test/crop.png"')
+    const unsafe = renderToStaticMarkup(<ReceiptMedia url="/media/crops/test/crop.png" display="https://example.com/x.webp" alt="Вырезка" />)
+    expect(unsafe).toContain('src="/media/crops/test/crop.png"'); expect(unsafe).not.toContain('example.com')
+  })
+})

@@ -28,7 +28,7 @@ import './Receipts.css'
 
 export function ReceiptList({ receipts, showOwner = false }: { receipts: Receipt[]; showOwner?: boolean }) {
   return <ul className="receipt-list">{receipts.map((receipt) => <li key={receipt.id} className="receipt-list-card">
-    {receipt.preview_image_url && <ReceiptMedia url={receipt.preview_image_url} thumbnail alt={`Миниатюра чека №${receipt.id}`} />}
+    {receipt.preview_image_url && <ReceiptMedia url={receipt.preview_image_url} display={receipt.preview_thumb_url} thumbnail alt={`Миниатюра чека №${receipt.id}`} />}
     <div className="receipt-list-content">
       <h3><Link to={`/receipts/${receipt.id}`}>{receiptPlace(receipt)} · {numbered(receipt.source === 'manual' ? 'трата' : 'чек', receipt.id)}</Link>
         {receipt.source === 'manual' && <> <ManualMark /></>}</h3>

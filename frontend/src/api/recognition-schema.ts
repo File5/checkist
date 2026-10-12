@@ -1,11 +1,12 @@
 import { amount, array, bool, choice, currency, isId, isISODate, isISODateTime, nonNegativeInteger, nullable, object, price, quantity, text, unit } from './schema.ts'
+import { safeDownloadUrl } from '../lib/media.ts'
 import type { Check, Guard } from './schema.ts'
 import { lineKind, mediaPath, receiptOperation, taxKind } from './receipts-schema.ts'
 import type { ManualParse, ManualParseDraft, ManualParseLine } from './receipts-types.ts'
 import { executorStates, issueSeverities, jobStatuses } from './recognition-types.ts'
 import type {
   Bbox, Executor, IssueContext, Job, JobActions, JobDetail, JobItem, JobProgress, NormalizedDiscount, NormalizedLine,
-  NormalizedResult, NormalizedTax, NormalizedTaxRate, Photo, PhotoUpload, ProposedReceipt, QuadPoint,
+  NormalizedResult, NormalizedTax, NormalizedTaxRate, Photo, PhotoDocument, PhotoUpload, ProposedReceipt, QuadPoint,
   ReceiptImage, ReceiptImageDetail, RecognitionCsrf, RecognitionError, RecognitionIssue, RecognitionLimits, ReviewConfirmInput, ReviewConfirmResult,
   ReviewDiscountInput, ReviewLineInput, ReviewReceiptInput, ReviewTaxInput,
 } from './recognition-types.ts'
@@ -13,7 +14,7 @@ import type {
 export const jobStages = ['waiting', 'prepare', 'detect', 'crop', 'recognize', 'validate', 'import', 'finished'] as const
 export const imageStatuses = ['pending', 'running', 'imported', 'reused', 'updated', 'needs_review', 'failed', 'cancelled'] as const
 const format = choice('image/jpeg', 'image/png', 'image/webp')
-const uploadFormat = choice('image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif')
+const uploadFormat = choice('image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'application/pdf')
 const count = (max: number): Check => (value) => nonNegativeInteger(value) && (value as number) <= max
 const position: Check = (value) => isId(value) && value <= 10
 const finiteRange = (min: number, max: number): Check => (value) => typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max
@@ -31,9 +32,13 @@ export const isExecutor: Guard<Executor> = (value): value is Executor => {
   return true
 }
 export const isRecognitionLimits = object<RecognitionLimits>({
-  formats: (value) => Array.isArray(value) && value.length > 0 && value.length <= 5 && value.every(uploadFormat),
-  max_bytes: isId, max_pixels: isId, max_receipts: position,
+  formats: (value) => Array.isArray(value) && value.length > 0 && value.length <= 6 && value.every(uploadFormat),
+  max_bytes: isId, max_pixels: isId, max_receipts: position, max_pdf_pages: isId,
 })
+/** `?download=1` after a MEDIA path: the only form of `download_url`. */
+const downloadPath: Check = (value) => safeDownloadUrl(value) !== null
+const mediaVariants = { display_url: nullable(mediaPath), thumb_url: nullable(mediaPath), download_url: nullable(downloadPath) }
+const photoDocument = object<PhotoDocument>({ content_type: choice('application/pdf'), bytes: isId, pages: isId })
 export const isRecognitionCsrf = object<RecognitionCsrf>({
   // The fixture has a marker instead of Django's random token. Never render this value.
   csrf_token: (value) => typeof value === 'string' && /^[A-Za-z0-9_]{1,128}$/.test(value),
@@ -43,6 +48,7 @@ export const isPhoto = object<Photo>({
   id: isId, created_at: isISODateTime, content_type: format, bytes: isId,
   raw_width: isId, raw_height: isId, width: isId, height: isId,
   original_url: nullable(mediaPath), preview_url: nullable(mediaPath), latest_job_id: nullable(isId), receipt_images_count: nonNegativeInteger,
+  ...mediaVariants, document: nullable(photoDocument),
 })
 export const isJobProgress = object<JobProgress>({
   detected: nullable(count(10)), current_position: nullable(position), completed: count(10), imported: count(10),
@@ -103,7 +109,7 @@ const imageShape = object<ReceiptImage>({
   id: isId, photo_id: isId, job_id: isId, position, created_at: isISODateTime, status: choice(...imageStatuses),
   receipt_id: nullable(isId), receipt_deleted: bool, image_url: nullable(mediaPath), width: isId, height: isId,
   bbox: nullable(isBbox), clipped: bool, issues: boundedArray(isRecognitionIssue, 1000), normalized_result: nullable(isNormalizedResult),
-  confirmed_at: nullable(isISODateTime),
+  confirmed_at: nullable(isISODateTime), ...mediaVariants,
 })
 export const isReceiptImage: Guard<ReceiptImage> = (value): value is ReceiptImage => imageShape(value)
   && (value.status === 'needs_review' || value.normalized_result === null)

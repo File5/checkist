@@ -19,3 +19,10 @@ function unsafeCharacters(value: string): boolean {
     return code <= 31 || (code >= 127 && code <= 159)
   })
 }
+
+const DOWNLOAD = '?download=1'
+/** `download_url` of the API: a safe MEDIA path followed by exactly `?download=1`; anything else is null. */
+export function safeDownloadUrl(value: unknown): string | null {
+  if (typeof value !== 'string' || !value.endsWith(DOWNLOAD)) return null
+  return safeMediaUrl(value.slice(0, -DOWNLOAD.length)) === null ? null : value
+}

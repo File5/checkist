@@ -148,7 +148,8 @@ describe('page block states with public API data (SSR)', () => {
   it('keeps job and photo available when the crop block fails', () => {
     mocked.states = [success(fixture('job.json', isJobDetail)), success(fixture('photo.json', isPhoto)), { kind: 'error', error: { kind: 'error', reason: 'network' } }]
     const html = renderToStaticMarkup(<JobPage jobId={31} />)
-    expect(html).toContain('Завершено частично'); expect(html).toContain('src="/media/originals/test/source.png"')
+    expect(html).toContain('Завершено частично'); expect(html).toContain('src="/media/originals/test/preview-1600-v1.webp"')
+    expect(html).toContain('<a class="action-link ck-media-download" href="/media/originals/test/source.png?download=1" download="">Скачать оригинал</a>')
     expect(html).toContain('Вырезки чеков (2)'); expect(html).toContain('Нет ответа сервера'); expect(html).toContain('Повторить')
   })
   it('keeps review crops available when the source photo fails', () => {

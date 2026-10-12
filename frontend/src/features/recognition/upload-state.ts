@@ -7,17 +7,33 @@ import { errorText, uploadLabels } from './labels'
 
 const extensions: Record<string, string> = {
   jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', heic: 'image/heic', heif: 'image/heif',
+  pdf: 'application/pdf',
 }
 const types = new Set(Object.values(extensions))
 /** The «Выбрать файл» picker: every format of `extensions`, by type and by extension. */
 export const pickAccept = [...types, ...Object.keys(extensions).map((extension) => `.${extension}`)].join(',')
-export const unsupportedFormat = 'Формат не поддерживается. Выберите фото в JPEG, PNG, WebP или HEIC.'
+export const unsupportedFormat = 'Формат не поддерживается. Выберите фото в JPEG, PNG, WebP или HEIC либо PDF.'
 type Picked = Pick<File, 'name'> & { type?: string }
 /** The extension names the format; a file without a known one is judged by the type the browser reports. */
 export function fileFormat(file: Picked) {
   const type = file.type?.toLowerCase() ?? ''
   return extensions[file.name.split('.').pop()?.toLowerCase() ?? ''] ?? (types.has(type) ? type : null)
 }
+/** «JPEG», «HEIC», «PDF»: the name of a format for a person. */
+export function formatName(format: string) { return format.replace(/^(?:image|application)\//, '').toUpperCase() }
+/** A PDF bill or e-receipt: the server renders its pages into one image; the browser neither shows nor reduces it. */
+export function isPdf(file: Picked) { return fileFormat(file) === 'application/pdf' }
+/** Pages of a PDF read from its text, or null when they cannot be told (compressed object streams).
+ * Each page object is counted once by its object number, so an incrementally saved PDF is not counted twice.
+ * Only a hint for the person: the server counts the pages and refuses a longer PDF.
+ */
+export function pdfPageCount(text: string): number | null {
+  const pages = new Set<string>()
+  for (const match of text.matchAll(/(\d+)\s+\d+\s+obj\s*<<(?:(?!endobj)[\s\S]){0,4000}?\/Type\s*\/Page(?![A-Za-z])/g)) pages.add(match[1])
+  return pages.size || null
+}
+/** «PDF, 2 стр.» or «PDF» when the pages are unknown. */
+export function pdfSummary(pages: number | null) { return pages ? glue('PDF,', pages, 'стр.') : 'PDF' }
 /** HEIF/HEIC: the server converts it to JPEG; many browsers cannot even show it. */
 export function isHeif(file: Picked) { const format = fileFormat(file); return format === 'image/heic' || format === 'image/heif' }
 /** Format and emptiness: what no reduction can repair. */
@@ -105,7 +121,8 @@ export function createUpload(
       const unsupported = validateFormat(file, limits)
       if (unsupported) { publish({ kind: 'error', message: unsupported }); return }
       if (reduced && reduced.source !== file) reduced = undefined
-      const mustReduce = !reduced && reductionPlan({ ...size, bytes: file.size }, limits).kind === 'reduce'
+      // A PDF goes as it is: its limit is the bytes, the server renders the pages.
+      const mustReduce = !isPdf(file) && !reduced && reductionPlan({ ...size, bytes: file.size }, limits).kind === 'reduce'
       // Without a way to reduce, the former refusal stands.
       if (mustReduce && !reduce) { publish({ kind: 'error', message: validateFile(file, limits) ?? errorText({ kind: 'error', reason: 'image_too_large' }) }); return }
       const current = new AbortController()

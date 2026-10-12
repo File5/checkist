@@ -12,7 +12,11 @@
     "original_url": "/media/originals/test/source.png",
     "preview_url": null,
     "latest_job_id": 31,
-    "receipt_images_count": 2
+    "receipt_images_count": 2,
+    "display_url": "/media/originals/test/preview-1600-v1.webp",
+    "thumb_url": "/media/originals/test/thumb-400-v1.webp",
+    "download_url": "/media/originals/test/source.png?download=1",
+    "document": null
   },
   "job": {
     "id": 31,

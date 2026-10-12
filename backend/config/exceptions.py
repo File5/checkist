@@ -64,9 +64,12 @@ class RecognitionApiError(ApiError):
     ERRORS = {
         "csrf_failed": (403, "Проверка CSRF не пройдена."),
         "permission_denied": (403, "Доступ запрещён."),
-        "unsupported_format": (400, "Поддерживаются только JPEG, PNG и WebP."),
+        "unsupported_format": (400, "Поддерживаются только JPEG, PNG, WebP, HEIC и PDF."),
         "invalid_image": (400, "Не удалось прочитать изображение."),
         "image_too_large": (400, "Изображение превышает предел 40 мегапикселей."),
+        "invalid_pdf": (400, "Не удалось прочитать PDF."),
+        "pdf_encrypted": (400, "PDF защищён паролем. Сохраните его без пароля и загрузите снова."),
+        "pdf_too_many_pages": (400, "В PDF больше 3 страниц. Загрузите документ не длиннее 3 страниц."),
         "upload_too_large": (413, "Файл или запрос превышает допустимый размер."),
         "job_active": (409, "Для фото уже есть активное задание."),
         "job_terminal": (409, "Задание уже завершено."),
