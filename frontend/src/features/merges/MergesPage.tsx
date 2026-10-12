@@ -18,6 +18,7 @@ import MergeBlock from './MergeBlock'
 import { activeMembers, apiStatus } from './state'
 import { useActionFocus, useMergeActions } from './useMergeActions'
 import './Merges.css'
+import { ResponsiveFilters } from '../recognition/_tmp-foundation'
 
 const filters: { value: NonNullable<MergesQuery['status']> | ''; label: string }[] = [
   { value: '', label: 'Ожидают подтверждения' }, { value: 'confirmed', label: 'Подтверждённые' },
@@ -61,12 +62,15 @@ export function MergesView({ query, state, action, onDetect, onRetry, resultRef 
   return <div className="ck-merge">
     <div className="ck-merge-panel">
       <p className="ck-merge-note">Похожие названия одного продавца объединены предварительно: покупки уже показаны у оставляемого товара. Подтвердите слияние, отмените его или исключите лишнюю запись.</p>
-      <div className="ck-merge-field">
-        <label htmlFor="merge-status-filter">Состояние групп</label>
-        <select id="merge-status-filter" value={query.status ?? ''} onChange={changeStatus}>
-          {filters.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}
-        </select>
-      </div>
+      {/* A phone: the state of the groups opens from «Фильтры (N)», «Найти дубли» stays in sight. */}
+      <ResponsiveFilters count={query.status === undefined ? 0 : 1} title="Состояние групп">
+        <div className="ck-merge-field">
+          <label htmlFor="merge-status-filter">Состояние групп</label>
+          <select id="merge-status-filter" value={query.status ?? ''} onChange={changeStatus}>
+            {filters.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}
+          </select>
+        </div>
+      </ResponsiveFilters>
       <div className="ck-merge-actions">{detectButton}</div>
       <p ref={resultRef} tabIndex={-1} role="status" aria-live="polite" className={action.kind === 'failed' ? 'ck-merge-error' : 'ck-merge-result'}>
         {action.kind === 'done' || action.kind === 'failed' ? action.message : ''}
