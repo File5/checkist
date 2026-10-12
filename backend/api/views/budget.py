@@ -12,11 +12,11 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
 
-from accounts.access import owner_q
-from accounts.people import display_name
-from budget import dashboard
+from accounts.access import owner_q, request_user
+from accounts.people import display_name, person
+from budget import dashboard, history
 from budget.access import limit_owner, limits_q, people
-from budget.models import BudgetLimit
+from budget.models import BudgetLimit, BudgetLimitChange
 from catalog.models import Category
 from config.exceptions import InvalidParameter
 from receipts.models import Receipt
@@ -108,11 +108,11 @@ def read_limit(data, *, partial):
     return values
 
 
-def save_limit(limit):
-    """Сохранить; пара «категория и валюта» уже занята у этого владельца — ``400`` у ``category_id``."""
+def save_limit(limit, actor=None):
+    """Сохранить с записью в журнал; пара «категория и валюта» уже занята у этого владельца — ``400`` у ``category_id``."""
     try:
         with transaction.atomic():
-            limit.save()
+            history.save_limit(limit, actor)
     except IntegrityError:
         raise InvalidParameter({"category_id": [MESSAGES["duplicate"]]}) from None
     return limit
@@ -137,7 +137,7 @@ class LimitsView(LocalAPIView):
 
     def post(self, request):
         values = read_limit(manual_body(request), partial=False)
-        limit = save_limit(BudgetLimit(**limit_owner(request), **values))
+        limit = save_limit(BudgetLimit(**limit_owner(request), **values), request_user(request))
         return Response(limit_object(limit), status=status.HTTP_201_CREATED)
 
 
@@ -154,10 +154,10 @@ class LimitView(LocalAPIView):
         limit = common.get_or_404(visible_limits(request), path_id(pk))
         for name, value in read_limit(manual_body(request), partial=True).items():
             setattr(limit, name, value)
-        return Response(limit_object(save_limit(limit)))
+        return Response(limit_object(save_limit(limit, request_user(request))))
 
     def delete(self, request, pk):
-        common.get_or_404(visible_limits(request), path_id(pk)).delete()
+        history.delete_limit(common.get_or_404(visible_limits(request), path_id(pk)), request_user(request))
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -202,6 +202,16 @@ def _block_object(block):
     }
 
 
+def month_limits(request, month, today):
+    """Лимиты месяца дашборда: текущий и будущие — нынешние, прошлый — суммы того месяца по журналу."""
+    limits = visible_limits(request)
+    if month.first >= history.month_start(today):
+        return limits
+    changes = (BudgetLimitChange.objects.filter(limits_q(request))
+               .select_related("category"))
+    return history.limits_at(list(limits), list(changes), month.first)
+
+
 class DashboardView(LocalAPIView):
     """Месяц семьи: потрачено и прошлый месяц по валютам, категории с лимитами, последние траты."""
 
@@ -213,7 +223,7 @@ class DashboardView(LocalAPIView):
         tree = common.CategoryTree.load()
         receipts = Receipt.objects.filter(owner_q(request))
         product_ref = stats_common.owner_product_id()
-        blocks = dashboard.currency_blocks(receipts, visible_limits(request), month, tree, product_ref)
+        blocks = dashboard.currency_blocks(receipts, month_limits(request, month, today), month, tree, product_ref)
         family = people(request)
         return Response({
             "month": month.label(), "previous_month": month.previous().label(),

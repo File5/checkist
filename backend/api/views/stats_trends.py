@@ -16,6 +16,9 @@ from django.utils import timezone
 from rest_framework.response import Response
 
 from catalog.models import Product
+from budget import history as budget_history
+from budget.access import limits_q
+from budget.models import BudgetLimitChange
 from config.exceptions import ObjectNotFound
 from receipts import trends
 
@@ -192,20 +195,35 @@ class TrendsCategoryView(LocalAPIView):
         })
 
 
+def _limit_month(first, spent, percent, limit, changed):
+    before_after = changed.get(first)
+    return {
+        "month": trends.label(first), "spent": stats_common.money(spent), "percent": common.percent(percent),
+        "limit": stats_common.money(limit),
+        "change": None if before_after is None else {
+            "old": stats_common.money(before_after[0]), "new": stats_common.money(before_after[1])},
+    }
+
+
 class TrendsLimitsView(LocalAPIView):
-    """Лимиты пользователя и семьи и их исполнение в каждом месяце окна (текущая сумма лимита)."""
+    """Лимиты пользователя и семьи и их исполнение в каждом месяце окна — суммой лимита того месяца.
+
+    Строка — пара «категория и валюта» с лимитом сейчас либо хотя бы в одном месяце окна
+    (удалённый лимит — ``id`` и ``amount`` ``null``). У месяца — ``limit`` (сумма того месяца,
+    ``null`` — лимита не было, тогда и ``percent`` ``null``) и ``change`` — ``{old, new}``,
+    если лимит в этом месяце менялся.
+    """
 
     def get(self, request):
         params = Params(request.query_params)
         months = _window(params)
         params.check()
         tree = common.CategoryTree.load()
-        limits = [
-            (limit.pk, limit.category_id, limit.currency_id, limit.amount)
-            for limit in visible_limits(request).order_by("pk")
-        ]
-        rows = trends.collect_spending(_receipts(request), months, stats_common.owner_product_id()) if limits else None
-        history = trends.limit_history(rows, months, tree, limits) if limits else []
+        limits = list(visible_limits(request).order_by("pk"))
+        changes = list(BudgetLimitChange.objects.filter(limits_q(request)))
+        series = budget_history.series(limits, changes, months)
+        rows = trends.collect_spending(_receipts(request), months, stats_common.owner_product_id()) if series else None
+        history = trends.limit_history(rows, months, tree, series) if series else []
         return Response({
             **_head(months),
             "limits": [
@@ -214,8 +232,8 @@ class TrendsLimitsView(LocalAPIView):
                     "category": tree.category(row.category_id) if row.category_id in tree else None,
                     "currency": row.currency, "amount": stats_common.money(row.amount),
                     "months": [
-                        {"month": trends.label(first), "spent": stats_common.money(spent), "percent": common.percent(percent)}
-                        for first, spent, percent in zip(months, row.spent, row.percents)
+                        _limit_month(first, spent, percent, limit, row.changed)
+                        for first, spent, percent, limit in zip(months, row.spent, row.percents, row.amounts)
                     ],
                 }
                 for row in history

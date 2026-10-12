@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties, FormEvent } from 'react'
-import { createBudgetLimit, deleteBudgetLimit, getBudgetLimits, updateBudgetLimit } from '../../api/budget'
-import type { BudgetLimit } from '../../api/budget'
+import { createBudgetLimit, deleteBudgetLimit, getBudgetLimitHistory, getBudgetLimits, updateBudgetLimit } from '../../api/budget'
+import type { BudgetLimit, BudgetLimitChange } from '../../api/budget'
 import { getCategories } from '../../api/catalog'
 import { getManualDefaults } from '../../api/receipts'
 import type { Category } from '../../api/types'
@@ -10,8 +10,8 @@ import { Link } from '../../navigation'
 import { useSession } from '../../session'
 import { categoryTone, dashboardErrorMessage, formatMoney } from './dashboard-state'
 import {
-  amountInput, changedRows, isDuplicateCreate, limitCurrencies, limitFailureMessage, limitFor, limitTree, openByDefault, parseCurrency, rowAction,
-  saveBarLabel, subCategoriesText, visibleRows, withLimit, withoutLimit,
+  amountInput, changedRows, filterHistory, historyCategories, historyEntries, isDuplicateCreate, limitCurrencies, limitFailureMessage, limitFor,
+  limitTree, openByDefault, parseCurrency, rowAction, saveBarLabel, subCategoriesText, visibleRows, withLimit, withoutLimit,
 } from './limits-state'
 import ChipScroller from '../../components/ChipScroller'
 import './Dashboard.css'
@@ -33,6 +33,59 @@ export type LimitsViewProps = {
   /** «Сохранить» of the bar: every changed row of this currency at once. */
   onSaveAll?: (categories: Category[]) => void
   onDelete: (limit: BudgetLimit) => void
+  /** «История изменений»: left out — the section is not shown (the markup tests of the form). */
+  history?: HistoryState
+  historyCategory?: number | null
+  onHistoryCategory?: (categoryId: number | null) => void
+  onHistoryRetry?: () => void
+}
+
+export type HistoryState = { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'ok'; changes: BudgetLimitChange[] }
+
+/** «История изменений»: who changed which limit and when, newest first; a list that reads on a phone, a filter by category. */
+export function LimitHistory({ state, category = null, onCategory = () => {}, onRetry = () => {} }: {
+  state: HistoryState; category?: number | null; onCategory?: (categoryId: number | null) => void; onRetry?: () => void
+}) {
+  const entries = state.kind === 'ok' ? historyEntries(state.changes) : []
+  const options = historyCategories(entries)
+  const shown = filterHistory(entries, category)
+  const selected = shown.length === entries.length ? null : category
+  let body
+  if (state.kind === 'loading') body = <p className="dash-note" role="status">Загружаем историю…</p>
+  else if (state.kind === 'error') body = <RequestState kind="error" message={state.message} onRetry={onRetry} />
+  else if (!entries.length) body = <p className="dash-note">Лимиты пока не менялись.</p>
+  else {
+    body = <>
+      {options.length > 1 && <div className="limits-history-filter">
+        <label htmlFor="limits-history-category">Категория</label>
+        <select id="limits-history-category" value={selected ?? ''}
+          onChange={(event) => onCategory(event.target.value ? Number(event.target.value) : null)}>
+          <option value="">Все категории</option>
+          {options.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
+        </select>
+      </div>}
+      <ol className="limits-history-list">
+        {shown.map((entry) => <li key={entry.key} className="limits-history-item">
+          <div className="limits-history-meta">
+            <time dateTime={entry.dateTime}>{entry.date}</time>
+            <span className="limits-history-who">{entry.who}</span>
+          </div>
+          <div className="limits-history-category">{entry.category}</div>
+          <div className="limits-history-change">
+            <span className="ck-figures">{entry.text}</span>
+            {entry.badge && <span className={`limits-history-badge limits-history-${entry.direction}`}>
+              <span className="dash-visually-hidden">{entry.direction === 'up' ? 'больше на ' : 'меньше на '}</span>
+              <span className="ck-figures">{entry.badge}</span>
+            </span>}
+          </div>
+        </li>)}
+      </ol>
+    </>
+  }
+  return <section className="dash-card limits-history" aria-labelledby="limits-history-heading">
+    <h2 id="limits-history-heading" className="limits-small-heading">История изменений</h2>
+    {body}
+  </section>
 }
 
 function AddCurrency({ onAdd }: { onAdd: (input: string) => string | undefined }) {
@@ -59,7 +112,7 @@ function AddCurrency({ onAdd }: { onAdd: (input: string) => string | undefined }
 /** The limits screen without loading: the markup tests render it directly. */
 export function LimitsView({
   categories, limits, currencies, currency, family, drafts, statuses, toggled = {}, onToggle = () => {}, onCurrency, onAddCurrency, onDraft, onSave,
-  onSaveAll = (changed) => changed.forEach(onSave), onDelete,
+  onSaveAll = (changed) => changed.forEach(onSave), onDelete, history, historyCategory = null, onHistoryCategory, onHistoryRetry,
 }: LimitsViewProps) {
   const tree = limitTree(categories)
   const opened = openByDefault(tree, limits, currency, drafts)
@@ -130,6 +183,7 @@ export function LimitsView({
       <button type="button" className="limits-save" disabled={saving || !changed.length} onClick={() => onSaveAll(changed)}>
         {saving ? 'Сохраняем…' : saveBarLabel(changed.length)}</button>
     </div>}
+    {history && <LimitHistory state={history} category={historyCategory} onCategory={onHistoryCategory} onRetry={onHistoryRetry} />}
     <p><Link className="dash-link" to="/">На главную</Link></p>
   </div>
 }
@@ -149,6 +203,10 @@ export default function LimitsPage() {
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [statuses, setStatuses] = useState<Record<string, RowStatus>>({})
   const [toggled, setToggled] = useState<Record<number, boolean>>({})
+  const [history, setHistory] = useState<HistoryState>({ kind: 'loading' })
+  const [historyCategory, setHistoryCategory] = useState<number | null>(null)
+  // Bumped after every saved or deleted limit: the journal gains an entry.
+  const [historyAttempt, setHistoryAttempt] = useState(0)
   const controllers = useRef(new Map<string, AbortController>())
 
   useEffect(() => {
@@ -166,6 +224,16 @@ export default function LimitsPage() {
     })
     return () => controller.abort()
   }, [attempt])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    // The journal is read apart from the form: when it fails, the limits can still be changed.
+    void getBudgetLimitHistory({}, { signal: controller.signal }).then((result) => {
+      if (controller.signal.aborted || result.kind === 'aborted') return
+      setHistory(result.kind === 'ok' ? { kind: 'ok', changes: result.data.changes } : { kind: 'error', message: dashboardErrorMessage(result) })
+    })
+    return () => controller.abort()
+  }, [historyAttempt])
 
   useEffect(() => {
     const running = controllers.current
@@ -214,6 +282,7 @@ export default function LimitsPage() {
       return
     }
     setLimits((all) => withLimit(all, result.data))
+    setHistoryAttempt((value) => value + 1)
     clearDraft(key)
     setStatus(key, { kind: 'done', text: 'Сохранено.' })
   }
@@ -227,6 +296,7 @@ export default function LimitsPage() {
     // Already gone is what the person wanted.
     if (result.kind === 'error' && result.reason !== 'not_found') { setStatus(key, { kind: 'error', text: limitFailureMessage(result) }); return }
     setLimits((all) => withoutLimit(all, limit.id))
+    setHistoryAttempt((value) => value + 1)
     clearDraft(key)
     setStatus(key, { kind: 'done', text: 'Лимит удалён.' })
   }
@@ -242,5 +312,7 @@ export default function LimitsPage() {
       return undefined
     }}
     onDraft={(key, value) => { setDrafts((all) => ({ ...all, [key]: value })); setStatus(key, idle) }}
-    onSave={(category) => { void save(category) }} onDelete={(limit) => { void remove(limit) }} />
+    onSave={(category) => { void save(category) }} onDelete={(limit) => { void remove(limit) }}
+    history={history} historyCategory={historyCategory} onHistoryCategory={setHistoryCategory}
+    onHistoryRetry={() => { setHistory({ kind: 'loading' }); setHistoryAttempt((value) => value + 1) }} />
 }

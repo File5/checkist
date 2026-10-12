@@ -109,7 +109,7 @@ def currency_blocks(receipts, limits, month, tree, product_ref=None):
     """Блоки по валютам в порядке кода валюты.
 
     ``receipts`` — видимые запросу чеки, ``limits`` — видимые лимиты (queryset
-    ``BudgetLimit``), ``tree`` — ``api.common.CategoryTree``. Валюта попадает в ответ,
+    ``BudgetLimit`` либо список ``budget.history.limits_at`` для прошлого месяца), ``tree`` — ``api.common.CategoryTree``. Валюта попадает в ответ,
     если в ней есть чеки этого или прошлого месяца либо лимит. Лимит подкатегории даёт
     строку в ``children`` её корня (и строки промежуточных предков); корень без трат и
     своего лимита появляется ради неё с нулём.
@@ -127,7 +127,7 @@ def currency_blocks(receipts, limits, month, tree, product_ref=None):
                 by_category[(block.currency, item.id)] = row
     for currency, total in _totals(receipts, month.previous()).items():
         blocks.setdefault(currency, CurrencyBlock(currency)).previous_spent = total
-    limits = list(limits.order_by("pk"))
+    limits = list(limits.order_by("pk")) if hasattr(limits, "order_by") else list(limits)
     limited = {(limit.currency_id, limit.category_id) for limit in limits}
     subtree = {}  # category_id -> {валюта: потрачено}; считается один раз на узел
 

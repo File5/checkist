@@ -1,5 +1,8 @@
-import type { BudgetLimit } from '../../api/budget-types'
+import type { BudgetLimit, BudgetLimitChange } from '../../api/budget-types'
 import type { Category, LocalApiFailure } from '../../api/types'
+import { formatPercent } from '../../lib/format'
+import { formatMoney, formatMoneyNumber } from '../../lib/money'
+import { personName } from '../../lib/people'
 import { glue } from '../../lib/text'
 import { plural } from './dashboard-state'
 
@@ -161,4 +164,55 @@ export function changedRows(categories: Category[], limits: BudgetLimit[], curre
 export function saveBarLabel(count: number): string {
   if (count <= 0) return 'Сохранить'
   return `Сохранить · ${glue(count.toLocaleString('ru-RU'), plural(count, 'изменение', 'изменения', 'изменений'))}`
+}
+
+// --- «История изменений» ---
+
+/** An entry of «История изменений» as the screen shows it. `badge` — «▲ 25,00 %» for a raised limit, «▼ …» for a lowered one. */
+export type LimitHistoryEntry = {
+  key: string; dateTime: string; date: string; who: string; categoryId: number; category: string; text: string
+  direction: 'up' | 'down' | null; badge: string | null
+}
+
+const dateFormat = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })
+
+/** «12.10.2026» in the person's timezone; the server sends a UTC moment. */
+export function historyDate(changedAt: string): string {
+  const moment = new Date(changedAt)
+  return Number.isNaN(moment.getTime()) ? '—' : dateFormat.format(moment)
+}
+
+/** «120 000 → 150 000 KZT», «новый лимит 150 000 KZT», «удалён, был 120 000 KZT»: whole units rounded up. */
+export function historyChangeText(change: Pick<BudgetLimitChange, 'kind' | 'old_amount' | 'new_amount' | 'currency'>): string {
+  if (change.kind === 'created') return `новый лимит ${formatMoney(change.new_amount, change.currency)}`
+  if (change.kind === 'deleted') return `удалён, был ${formatMoney(change.old_amount, change.currency)}`
+  return `${formatMoneyNumber(change.old_amount)} → ${formatMoney(change.new_amount, change.currency)}`
+}
+
+/** The journal newest first, as the server sends it; who — the name to show, «—» when unknown (a limit from before the journal). */
+export function historyEntries(changes: readonly BudgetLimitChange[]): LimitHistoryEntry[] {
+  return changes.map((change) => {
+    const percent = change.kind === 'changed' ? change.change_percent : null
+    const direction = percent === null ? null : percent.startsWith('-') ? 'down' : /[1-9]/.test(percent) ? 'up' : null
+    return {
+      key: String(change.id), dateTime: change.changed_at, date: historyDate(change.changed_at),
+      who: change.changed_by ? personName(change.changed_by.username, change.changed_by.display_name) : '—',
+      categoryId: change.category.id, category: change.category.path.map((step) => step.name).join(' › ') || change.category.name,
+      text: historyChangeText(change), direction,
+      badge: direction === null || percent === null ? null : `${direction === 'up' ? '▲' : '▼'} ${formatPercent(percent.replace(/^-/, ''))}`,
+    }
+  })
+}
+
+/** The categories of the filter: those in the journal, by their path. */
+export function historyCategories(entries: readonly LimitHistoryEntry[]): { id: number; name: string }[] {
+  const names = new Map<number, string>()
+  for (const entry of entries) if (!names.has(entry.categoryId)) names.set(entry.categoryId, entry.category)
+  return [...names].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name, 'ru') || a.id - b.id)
+}
+
+/** The entries of one category, or all of them (`null`, or a category no longer in the journal). */
+export function filterHistory(entries: readonly LimitHistoryEntry[], categoryId: number | null): LimitHistoryEntry[] {
+  if (categoryId === null || !entries.some((entry) => entry.categoryId === categoryId)) return [...entries]
+  return entries.filter((entry) => entry.categoryId === categoryId)
 }

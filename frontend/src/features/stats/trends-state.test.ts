@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { TrendsMonthlyCurrency, TrendsPricesCurrency } from '../../api/trends'
 import { sparkline } from '../../lib/charts/sparkline'
 import {
-  categoryChart, categoryParams, changeBadge, closeMonthHref, indexChart, indexSummary, inMonth, lastMonthChange, limitRows, loadingOf,
+  categoryChart, categoryParams, changeBadge, closeMonthHref, indexChart, indexSummary, inMonth, lastMonthChange, limitChangeText, limitRows, loadingOf,
   monthBreakdown, monthHref, monthlyChart, monthName, monthRowHeadings, monthRows, moverCounts, moverRows, optionLabel, partsChart,
   sinceMonth, spendSummary, uncategorizedKey, windowParams,
 } from './trends-state'
@@ -131,12 +131,33 @@ describe('«Категория во времени»', () => {
 describe('«Лимиты по месяцам»', () => {
   it('marks over-limit months by more than colour and counts them', () => {
     const [eur] = limitRows(limitsFixture().limits)
-    expect([eur.name, nb(eur.amount)]).toEqual(['Продукты питания', '80 EUR'])
+    expect([eur.name, nb(eur.amount!)]).toEqual(['Продукты питания', '80 EUR'])
     expect(eur.cells.map((cell) => [nb(cell.percent), cell.over, cell.fill])).toEqual([
       ['86,16 %', false, 86], ['103,68 %', true, 100], ['88,63 %', false, 89], ['92,91 %', false, 93], ['95,94 %', false, 96], ['107,64 %', true, 100],
     ])
     expect(eur.overCount).toBe(2)
     expect(limitRows([{ ...limitsFixture().limits[0], category: null }])[0].name).toBe('Категория удалена')
+  })
+  it('uses the limit of each month, marks the months it changed and a month without a limit', () => {
+    const base = limitsFixture().limits[0]
+    const months = [
+      { month: '2026-06', spent: '100.00', percent: null, limit: null, change: null },
+      { month: '2026-07', spent: '100.00', percent: '50.00', limit: '200.00', change: { old: null, new: '200.00' } },
+      { month: '2026-08', spent: '150.00', percent: '125.00', limit: '120000.40', change: { old: '200.00', new: '120000.40' } },
+      { month: '2026-09', spent: '0.00', percent: null, limit: null, change: { old: '120000.40', new: null } },
+    ]
+    const [row] = limitRows([{ ...base, id: null, amount: null, months }])
+    expect(row.amount).toBeNull()
+    expect(row.key).toBe(`deleted:${base.category!.id}:EUR`)
+    expect(row.cells.map((cell) => [cell.none, nb(cell.percent), nb(cell.limit), cell.over])).toEqual([
+      [true, 'без лимита', 'без лимита', false], [false, '50,00 %', '200 EUR', false],
+      [false, '125,00 %', '120 001 EUR', true], [true, 'без лимита', 'без лимита', false],
+    ])
+    expect([row.overCount, row.limitedCount]).toEqual([1, 2])
+    expect(row.changes.map(nb)).toEqual([
+      'июль 2026: лимит задан: 200', 'август 2026: лимит изменён: 200 → 120 001', 'сентябрь 2026: лимит снят (был 120 001)',
+    ])
+    expect(nb(limitChangeText({ old: '120000.00', new: '150000.00' }))).toBe('лимит изменён: 120 000 → 150 000')
   })
 })
 

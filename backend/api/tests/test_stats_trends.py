@@ -327,15 +327,15 @@ class TrendsAPITests(TrendsFixture, TestCase):
                          [(food.pk, "EUR", "5.00"), (dairy.pk, "EUR", "2.00"), (housing.pk, "KZT", "32000.00")])
         self.assertEqual(body["limits"][0]["category"]["id"], self.food.pk)
         self.assertEqual(body["limits"][0]["months"], [
-            {"month": "2026-06", "spent": "5.00", "percent": "100.00"},
-            {"month": "2026-07", "spent": "0.00", "percent": "0.00"},
-            {"month": "2026-08", "spent": "5.40", "percent": "108.00"},
-            {"month": "2026-09", "spent": "4.00", "percent": "80.00"},
-        ])
+            {"month": "2026-06", "spent": "5.00", "percent": "100.00", "limit": "5.00", "change": None},
+            {"month": "2026-07", "spent": "0.00", "percent": "0.00", "limit": "5.00", "change": None},
+            {"month": "2026-08", "spent": "5.40", "percent": "108.00", "limit": "5.00", "change": None},
+            {"month": "2026-09", "spent": "4.00", "percent": "80.00", "limit": "5.00", "change": None},
+        ])  # лимит без журнала (заведён мимо сервиса) — текущей суммой во всех месяцах
         self.assertEqual([entry["percent"] for entry in body["limits"][1]["months"]], ["100.00", "0.00", "120.00", "200.00"])
         self.assertEqual([entry["percent"] for entry in body["limits"][2]["months"]], ["93.75", "0.00", "100.00", "109.38"])
         BudgetLimit.objects.all().delete()
-        with self.assertNumQueries(3):  # категории, пользователь local, лимиты — чеки не читаются
+        with self.assertNumQueries(4):  # категории, пользователь local, лимиты, журнал — чеки не читаются
             self.assertEqual(self.get(LIMITS)["limits"], [])
 
     def test_manual_spends_do_not_make_a_price_block(self):
@@ -416,7 +416,7 @@ class TrendsAPITests(TrendsFixture, TestCase):
     def test_query_count_does_not_grow_with_data(self):
         # Категории, строки, итоги чеков, товары; у цен — покупки и имена.
         BudgetLimit.objects.create(user=local_user(), category=self.food, currency_id="EUR", amount=D("5"))
-        cases = ((MONTHLY, 4), (CATEGORY, 4), (PRICES, 2), (LIMITS, 6), (RANGE, 1))
+        cases = ((MONTHLY, 4), (CATEGORY, 4), (PRICES, 2), (LIMITS, 7), (RANGE, 1))
 
         def measure():
             for url, expected in cases:

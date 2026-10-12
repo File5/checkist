@@ -172,19 +172,26 @@ export function LimitsBlock({ state, onRetry }: { state: BlockState<TrendsLimits
           <li key={row.key} className="trends-limit">
             <div className="trends-limit-head">
               <span className="trends-row-name">{row.name}</span>
-              <span className="trends-value trends-limit-amount">{row.amount} в месяц</span>
+              <span className="trends-value trends-limit-amount">{row.amount === null ? 'лимит удалён' : `сейчас ${row.amount} в месяц`}</span>
             </div>
             <ol className="trends-cells" aria-label={`${row.name}: доля лимита по месяцам`}>
               {row.cells.map((cell) => (
-                <li key={cell.month} className={`trends-cell${cell.over ? ' trends-cell-over' : ''}`} title={`${cell.title}: ${cell.spent}, ${cell.percent} лимита`}>
-                  <span className="trends-cell-month"><time dateTime={`${cell.month}-01`}>{cell.short}</time></span>
+                <li key={cell.month} className={`trends-cell${cell.over ? ' trends-cell-over' : ''}${cell.none ? ' trends-cell-none' : ''}`}
+                  title={`${cell.title}: ${cell.spent}${cell.none ? ', без лимита' : `, ${cell.percent} лимита ${cell.limit}`}${cell.change ? `; ${cell.change}` : ''}`}>
+                  <span className="trends-cell-month">
+                    <time dateTime={`${cell.month}-01`}>{cell.short}</time>
+                    {cell.change && <span className="trends-cell-change"><span aria-hidden="true"> ◆</span><span className="trends-visually-hidden">, {cell.change}</span></span>}
+                  </span>
                   <span className="trends-cell-percent trends-value">{cell.over && <span aria-hidden="true">▲ </span>}{cell.percent}</span>
                   <span className="trends-cell-bar" aria-hidden="true"><span style={{ width: `${cell.fill}%` }} /></span>
                   {cell.over && <span className="trends-cell-word">сверх</span>}
                 </li>
               ))}
             </ol>
-            <p className="stats-note">{row.overCount === 0 ? 'Ни разу не вышли за лимит.' : `Сверх лимита: ${row.overCount} из ${row.cells.length} мес.`}</p>
+            <p className="stats-note">{row.overCount === 0 ? 'Ни разу не вышли за лимит.' : `Сверх лимита: ${row.overCount} из ${row.limitedCount} мес.`}</p>
+            {row.changes.length > 0 && <ul className="trends-limit-changes" aria-label={`${row.name}: изменения лимита`}>
+              {row.changes.map((text) => <li key={text}><span aria-hidden="true">◆ </span>{text}</li>)}
+            </ul>}
           </li>
         ))}
       </ul>
@@ -192,7 +199,7 @@ export function LimitsBlock({ state, onRetry }: { state: BlockState<TrendsLimits
   }
   return (
     <Panel title="Лимиты по месяцам" state={state}
-      note="Сколько процентов месячного лимита потрачено в каждом месяце; лимит — нынешняя сумма. Больше 100 % — сверх лимита.">
+      note="Сколько процентов лимита того месяца потрачено в каждом месяце; ◆ — в этом месяце лимит меняли. Больше 100 % — сверх лимита.">
       {body}
     </Panel>
   )

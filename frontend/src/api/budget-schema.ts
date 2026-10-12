@@ -1,7 +1,7 @@
-import { amount, array, choice, currency, isId, isISODate, nonNegativeInteger, nullable, object, record, text } from './schema.ts'
+import { amount, array, choice, currency, isId, isISODate, isISODateTime, nonNegativeInteger, nullable, object, record, text } from './schema.ts'
 import type { Check, Guard } from './schema.ts'
 import type {
-  BudgetLimit, CategorySpendCurrency, CategorySpendItem, CategorySpendLine, CategorySpendPart, CategorySpends, Dashboard, DashboardCategory,
+  BudgetLimit, BudgetLimitChange, BudgetLimitHistory, BudgetLimitSeries, CategorySpendCurrency, CategorySpendItem, CategorySpendLine, CategorySpendPart, CategorySpends, Dashboard, DashboardCategory,
   DashboardCurrency, DashboardRecent, DashboardSubCategory,
 } from './budget-types.ts'
 import { isPerson } from '../lib/people.ts'
@@ -64,3 +64,27 @@ export type BudgetLimitList = BudgetLimit[] | { results: BudgetLimit[] }
 export const isBudgetLimitList: Guard<BudgetLimitList> = (value): value is BudgetLimitList =>
   Array.isArray(value) ? value.every(isBudgetLimit)
     : record(value) && Array.isArray(value.results) && value.results.every(isBudgetLimit)
+
+const categoryRef = object<BudgetLimitChange['category']>({ id: isId, name: text, path: array(named) })
+const limitChangeShape = object<BudgetLimitChange>({
+  id: isId, changed_at: isISODateTime, effective_month: isMonthCode, kind: choice('created', 'changed', 'deleted'), category: categoryRef,
+  currency, old_amount: nullable(amount), new_amount: nullable(amount), change_percent: nullable(amount), changed_by: nullable(isPerson),
+})
+/** The kind agrees with the amounts: a new limit has no old amount, a deleted one no new amount. */
+const limitChange: Check = (value) => limitChangeShape(value) && {
+  created: value.old_amount === null && value.new_amount !== null,
+  changed: value.old_amount !== null && value.new_amount !== null,
+  deleted: value.old_amount !== null && value.new_amount === null,
+}[value.kind]
+const limitSeries = object<BudgetLimitSeries>({
+  category: categoryRef, currency, limit_id: nullable(isId), amount: nullable(amount),
+  months: array(object<BudgetLimitSeries['months'][number]>({ month: isMonthCode, amount: nullable(amount) })),
+})
+const limitHistoryShape = object<BudgetLimitHistory>({
+  months: isId, month_from: isMonthCode, month_to: isMonthCode, changes: array(limitChange), series: array(limitSeries),
+})
+/** Every series has every month of the window. */
+export const isBudgetLimitHistory: Guard<BudgetLimitHistory> = (value): value is BudgetLimitHistory => limitHistoryShape(value)
+  && value.month_from <= value.month_to
+  && value.series.every((row) => row.months.length === value.months && row.months[0]?.month === value.month_from
+    && row.months.at(-1)?.month === value.month_to)

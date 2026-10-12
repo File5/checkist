@@ -1,7 +1,9 @@
 import { invalidIds } from './http.ts'
 import { getLocalJson, mutate } from './local.ts'
-import { isBudgetLimit, isBudgetLimitList, isCategorySpends, isDashboard, isMonthCode } from './budget-schema.ts'
-import type { BudgetLimit, BudgetLimitInput, CategorySpends, Dashboard, MonthCode } from './budget-types.ts'
+import { isBudgetLimit, isBudgetLimitHistory, isBudgetLimitList, isCategorySpends, isDashboard, isMonthCode } from './budget-schema.ts'
+import type {
+  BudgetLimit, BudgetLimitHistory, BudgetLimitHistoryParams, BudgetLimitInput, CategorySpends, Dashboard, MonthCode,
+} from './budget-types.ts'
 import type { LocalApiResult, RequestOptions } from './types.ts'
 
 export type * from './budget-types.ts'
@@ -42,4 +44,14 @@ export async function updateBudgetLimit(id: number, amount: string, options: Req
 export async function deleteBudgetLimit(id: number, options: RequestOptions = {}): Promise<LocalApiResult<null>> {
   return invalidIds({ id }, options.signal)
     ?? mutate(`budget/limits/${id}/`, '', (value): value is null => value === null, options, false, undefined, { method: 'DELETE' })
+}
+
+/** The journal of the limits the person sees (the family's, or one's own) and each limit by month of the window. */
+export async function getBudgetLimitHistory(params: BudgetLimitHistoryParams = {}, options: RequestOptions = {}): Promise<LocalApiResult<BudgetLimitHistory>> {
+  if (options.signal?.aborted) return { kind: 'aborted' }
+  const { category, currency, from, to } = params
+  if (from !== undefined && !isMonthCode(from)) return { kind: 'error', reason: 'invalid_parameter', fields: ['from'] }
+  if (to !== undefined && !isMonthCode(to)) return { kind: 'error', reason: 'invalid_parameter', fields: ['to'] }
+  return (category === undefined ? null : invalidIds({ category }, options.signal))
+    ?? getLocalJson('budget/limits/history/', { category, currency, from, to }, isBudgetLimitHistory, options)
 }

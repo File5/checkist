@@ -1,4 +1,4 @@
-import type { CurrencyCode, Decimal, ISODate } from './types.ts'
+import type { CategoryRef, CurrencyCode, Decimal, ISODate, ISODateTime } from './types.ts'
 import type { ReceiptSource } from './receipts-types.ts'
 import type { Person } from '../lib/people.ts'
 
@@ -64,3 +64,23 @@ export type CategorySpends = {
 export type BudgetLimit = { id: number; category_id: number; category_name: string; currency: CurrencyCode; amount: Decimal }
 /** Body of `POST /api/budget/limits/`. */
 export type BudgetLimitInput = { category_id: number; currency: CurrencyCode; amount: Decimal }
+
+/** What a change did: a new limit (`old_amount` null), another amount, or a deleted limit (`new_amount` null). */
+export type BudgetLimitChangeKind = 'created' | 'changed' | 'deleted'
+/** An entry of the limits journal: who changed which limit and when; it counts from `effective_month` on.
+ * `change_percent` — (new − old) / old × 100, only for `changed`; `changed_by` is null when unknown (limits saved before the journal). */
+export type BudgetLimitChange = {
+  id: number; changed_at: ISODateTime; effective_month: MonthCode; kind: BudgetLimitChangeKind; category: CategoryRef
+  currency: CurrencyCode; old_amount: Decimal | null; new_amount: Decimal | null; change_percent: Decimal | null
+  changed_by: Person | null
+}
+/** The limit of a pair «category and currency» in every month of the window; `amount` null — no limit that month. */
+export type BudgetLimitSeries = {
+  category: CategoryRef; currency: CurrencyCode; limit_id: number | null; amount: Decimal | null
+  months: { month: MonthCode; amount: Decimal | null }[]
+}
+/** `GET /api/budget/limits/history/`: changes newest first and the limit of each pair by month. */
+export type BudgetLimitHistory = {
+  months: number; month_from: MonthCode; month_to: MonthCode; changes: BudgetLimitChange[]; series: BudgetLimitSeries[]
+}
+export type BudgetLimitHistoryParams = { category?: number; currency?: CurrencyCode; from?: MonthCode; to?: MonthCode }

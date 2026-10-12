@@ -102,7 +102,16 @@ export type TrendsPricesCurrency = {
 }
 export type TrendsPrices = TrendsWindow & { currencies: TrendsPricesCurrency[] }
 
-export type TrendsLimitMonth = { month: MonthLabel; spent: Decimal; percent: Decimal }
-/** A monthly limit at its current amount and the share of it used in every month of the window. */
-export type TrendsLimit = { id: number; category: CategoryRef | null; currency: CurrencyCode; amount: Decimal; months: TrendsLimitMonth[] }
+/** The limit changed this month: the amount before the month and in it (null — no limit then). */
+export type TrendsLimitChange = { old: Decimal | null; new: Decimal | null }
+/** A month of a limit: `limit` — the limit of that month (null — none, then `percent` is null too); `change` — set when
+ * the limit changed this month. */
+export type TrendsLimitMonth = {
+  month: MonthLabel; spent: Decimal; percent: Decimal | null; limit: Decimal | null; change: TrendsLimitChange | null
+}
+/** A limit and the share of the month's limit used in every month of the window. A limit deleted since has `id` and
+ * `amount` (the current one) null. */
+export type TrendsLimit = {
+  id: number | null; category: CategoryRef | null; currency: CurrencyCode; amount: Decimal | null; months: TrendsLimitMonth[]
+}
 export type TrendsLimits = TrendsWindow & { limits: TrendsLimit[] }

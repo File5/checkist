@@ -357,37 +357,49 @@ def category_series(rows, months, tree, category):
 
 @dataclass
 class LimitRow:
-    """Лимит и его исполнение в каждом месяце окна: траты категории с потомками в валюте лимита."""
+    """Лимит и его исполнение в каждом месяце окна: траты категории с потомками в валюте лимита.
 
-    id: int
+    ``amounts`` — сумма лимита в каждом месяце (``budget.history``: последнее изменение не
+    позже месяца; ``None`` — лимита в месяце не было), ``amount`` — текущая (``None`` — удалён).
+    """
+
+    id: int | None
     category_id: int
     currency: str
-    amount: Decimal
+    amount: Decimal | None
     spent: list  # Decimal на каждый месяц окна
+    amounts: list  # Decimal | None на каждый месяц окна
+    changed: dict = field(default_factory=dict)  # месяц -> (до, после), где лимит в месяце менялся
 
     @property
     def percents(self):
-        """Доля лимита на каждый месяц, %; лимит всегда положителен (ограничение БД)."""
+        """Доля лимита месяца, %; без лимита в месяце — ``None``. Лимит всегда положителен (ограничение БД)."""
         with price_context():
-            return [round_decimal(value * 100 / self.amount, 2) for value in self.spent]
+            return [None if limit is None else round_decimal(value * 100 / limit, 2)
+                    for value, limit in zip(self.spent, self.amounts)]
 
 
-def limit_history(rows, months, tree, limits):
-    """``limits`` — ``(id, category_id, currency, amount)``; текущая сумма лимита применяется ко всем месяцам окна.
+def limit_history(rows, months, tree, series):
+    """``series`` — ``budget.history.series``: у каждого месяца окна своя сумма лимита.
 
-    Порядок — по валюте, затем по порядку дерева категорий.
+    Порядок — по валюте, затем по порядку дерева категорий; удалённые — после текущих той же категории.
     """
     order = {pk: index for index, pk in enumerate(tree.ordered_ids())}
     result = []
-    for pk, category_id, currency, amount in limits:
+    for item in series:
+        category_id, currency = item.category_id, item.currency
         inside = set(tree.descendant_ids(category_id)) if category_id in tree else {category_id}
         by_month = {}
         for line_currency, month, kind, line_category, product_id, paid, _count in rows.lines:
             if line_currency == currency and _line_category(rows, kind, line_category, product_id) in inside:
                 with price_context():
                     by_month[month] = by_month.get(month, _ZERO) + paid
-        result.append(LimitRow(pk, category_id, currency, amount, [by_month.get(first, _ZERO) for first in months]))
-    return sorted(result, key=lambda row: (row.currency, order.get(row.category_id, len(order)), row.id))
+        limit = item.limit
+        result.append(LimitRow(
+            None if limit is None else limit.pk, category_id, currency, None if limit is None else limit.amount,
+            [by_month.get(first, _ZERO) for first in months], list(item.amounts), dict(item.changed)))
+    return sorted(result, key=lambda row: (row.currency, order.get(row.category_id, len(order)),
+                                           row.id is None, row.id or 0))
 
 
 # --- индекс цен ---

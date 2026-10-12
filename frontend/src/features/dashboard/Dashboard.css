@@ -185,6 +185,22 @@
 .limits-toggle { justify-self: start; min-height: 44px; padding: 8px 12px; border: 1px solid var(--ck-border-field); border-radius: 22px; background: var(--ck-surface); color: var(--ck-link); font-weight: 600; white-space: nowrap; }
 .limits-toggle:hover:not(:disabled) { border-color: var(--ck-border-field); background: var(--ck-surface-raised); color: var(--ck-link); }
 
+/* «История изменений» на экране лимитов: запись — строка списка; дата и кто, категория, «старое → новое» и ▲/▼ с процентом. */
+.limits-history { display: grid; gap: 12px; min-width: 0; }
+.limits-history-filter { display: grid; gap: 6px; min-width: 0; }
+.limits-history-filter label { font-weight: 600; }
+.limits-history-filter select { min-height: 44px; min-width: 0; max-width: 100%; padding: 8px 12px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-surface); color: var(--ck-text); font-size: var(--ck-text-base); }
+.limits-history-list { margin: 0; padding: 0; list-style: none; }
+.limits-history-item { display: grid; gap: 4px; min-width: 0; padding: 12px 0; }
+.limits-history-item + .limits-history-item { border-top: 1px solid var(--ck-divider); }
+.limits-history-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--ck-text-muted); font-size: var(--ck-text-sm); }
+.limits-history-meta time { white-space: nowrap; }
+.limits-history-category { font-weight: 600; }
+.limits-history-change { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.limits-history-badge { font-size: var(--ck-text-sm); font-weight: 700; white-space: nowrap; }
+.limits-history-up { color: var(--ck-over-text); }
+.limits-history-down { color: var(--ck-success-text); }
+
 @media (max-width: 540px) {
   .dash-card { padding: 16px; }
   /* The quick actions sit in the thumb zone: last on the screen, pinned above the navigation by ck-action-bar. */

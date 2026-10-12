@@ -2,7 +2,7 @@ import { amount, array, bool, currency, isId, named, nonNegativeInteger, nullabl
 import type { Check, Guard } from './schema.ts'
 import type {
   TrendsCategory, TrendsCategoryCurrency, TrendsCategoryMonth, TrendsCategoryOption, TrendsCategoryRow, TrendsIndexPoint, TrendsLegendCategory,
-  TrendsLimit, TrendsLimitMonth, TrendsLimits, TrendsSummary,
+  TrendsLimit, TrendsLimitChange, TrendsLimitMonth, TrendsLimits, TrendsSummary,
   TrendsMonthly, TrendsMonthlyCurrency, TrendsMonthPart, TrendsMonthSpend, TrendsMover, TrendsPrice, TrendsPrices, TrendsPricesCurrency,
   TrendsRange, TrendsWindow,
 } from './trends-types.ts'
@@ -85,8 +85,11 @@ const pricesShape = object<TrendsPrices>({ ...windowFields, currencies: array(pr
 export const isTrendsPrices: Guard<TrendsPrices> = (value): value is TrendsPrices => pricesShape(value)
   && distinct(value.currencies) && fullWindow(value, value.currencies.map((block) => block.points))
 
-const limitMonth = object<TrendsLimitMonth>({ month, spent: amount, percent })
-const limit = object<TrendsLimit>({ id: isId, category: nullable(categoryRef), currency, amount, months: array(limitMonth) })
+const limitChange = object<TrendsLimitChange>({ old: nullable(amount), new: nullable(amount) })
+const limitMonth = object<TrendsLimitMonth>({
+  month, spent: amount, percent: nullable(percent), limit: nullable(amount), change: nullable(limitChange),
+})
+const limit = object<TrendsLimit>({ id: nullable(isId), category: nullable(categoryRef), currency, amount: nullable(amount), months: array(limitMonth) })
 const limitsShape = object<TrendsLimits>({ ...windowFields, limits: array(limit) })
 export const isTrendsLimits: Guard<TrendsLimits> = (value): value is TrendsLimits => limitsShape(value)
   && fullWindow(value, value.limits.map((entry) => entry.months))

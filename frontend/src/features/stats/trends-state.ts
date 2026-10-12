@@ -1,7 +1,7 @@
 /** «Динамика» without React: requests from the address, chart series and the texts around them. Pure. */
 import { decimalNumber } from '../../api/stats'
 import type {
-  TrendsCategory, TrendsCategoryCurrency, TrendsCategoryParams, TrendsLimit, TrendsMonthlyCurrency, TrendsMover, TrendsParams,
+  TrendsCategory, TrendsCategoryCurrency, TrendsCategoryParams, TrendsLimit, TrendsLimitChange, TrendsMonthlyCurrency, TrendsMover, TrendsParams,
   TrendsPricesCurrency,
 } from '../../api/trends'
 import type { Decimal } from '../../api/types'
@@ -9,7 +9,7 @@ import type { LineChartPoint, LineChartSeries, StackedColumn, StackedLegendEntry
 import { formatAxisTick } from '../../lib/charts/scale'
 import { categoryTone } from '../../lib/category-tone'
 import { formatPercent, formatPrice } from '../../lib/format'
-import { formatMoney } from '../../lib/money'
+import { formatMoney, formatMoneyNumber } from '../../lib/money'
 import { glue } from '../../lib/text'
 import { spendingHref, trendsHref } from '../../navigation'
 import type { TrendsQuery } from '../../navigation'
@@ -312,21 +312,48 @@ export function partsChart(block: TrendsCategoryCurrency, name: string, months: 
 
 // --- «Лимиты по месяцам» ---
 
-export interface LimitCell { month: string; title: string; short: string; percent: string; spent: string; over: boolean; fill: number }
-export interface LimitRow { key: string; name: string; currency: string; amount: string; cells: LimitCell[]; overCount: number }
-/** Every limit with a cell per month: the share used, over the limit marked by more than colour (the word «сверх»). */
+/** A cell of a month: the share of that month's limit. `none` — no limit that month; `change` — the limit changed this
+ * month, in words («лимит изменён: 120 000 → 150 000»). */
+export interface LimitCell {
+  month: string; title: string; short: string; percent: string; spent: string; limit: string; none: boolean; over: boolean; fill: number
+  change?: string
+}
+/** `amount` — the limit now, `null` when it was deleted since. `changes` — «Август: лимит изменён: …» for every
+ * month of the window where it changed: a phone has no tooltip. */
+export interface LimitRow {
+  key: string; name: string; currency: string; amount: string | null; cells: LimitCell[]; overCount: number; limitedCount: number
+  changes: string[]
+}
+
+/** «лимит изменён: 120 000 → 150 000», «лимит задан: 150 000», «лимит снят (был 120 000)»: whole units, rounded up. */
+export function limitChangeText(change: TrendsLimitChange): string {
+  if (change.old === null) return `лимит задан: ${formatMoneyNumber(change.new)}`
+  if (change.new === null) return `лимит снят (был ${formatMoneyNumber(change.old)})`
+  return `лимит изменён: ${formatMoneyNumber(change.old)} → ${formatMoneyNumber(change.new)}`
+}
+
+/** Every limit with a cell per month: the share of that month's limit used, over the limit marked by more than colour
+ * (the word «сверх»). */
 export function limitRows(limits: readonly TrendsLimit[]): LimitRow[] {
   return limits.map((limit) => {
     const cells = limit.months.map((entry): LimitCell => {
-      const value = decimalNumber(entry.percent) ?? 0
+      const monthLimit = entry.limit
+      const none = monthLimit === null || entry.percent === null
+      const value = none ? 0 : decimalNumber(entry.percent) ?? 0
       return {
-        month: entry.month, title: monthName(entry.month), short: monthName(entry.month, true), percent: formatPercent(entry.percent),
-        spent: money(entry.spent, limit.currency), over: value > 100, fill: Math.max(0, Math.min(100, Math.round(value))),
+        month: entry.month, title: monthName(entry.month), short: monthName(entry.month, true),
+        percent: none ? 'без лимита' : formatPercent(entry.percent), spent: money(entry.spent, limit.currency),
+        limit: none ? 'без лимита' : money(monthLimit, limit.currency), none, over: value > 100,
+        fill: Math.max(0, Math.min(100, Math.round(value))), ...(entry.change ? { change: limitChangeText(entry.change) } : {}),
       }
     })
+    const category = limit.category
     return {
-      key: String(limit.id), name: limit.category ? optionLabel(limit.category.path.map((node) => node.name)) : 'Категория удалена',
-      currency: limit.currency, amount: money(limit.amount, limit.currency), cells, overCount: cells.filter((cell) => cell.over).length,
+      key: limit.id === null ? `deleted:${category?.id ?? 0}:${limit.currency}` : String(limit.id),
+      name: category ? optionLabel(category.path.map((node) => node.name)) : 'Категория удалена',
+      currency: limit.currency, amount: limit.amount === null ? null : money(limit.amount, limit.currency), cells,
+      overCount: cells.filter((cell) => cell.over).length, limitedCount: cells.filter((cell) => !cell.none).length,
+      changes: cells.flatMap((cell) => (cell.change ? [`${cell.title}: ${cell.change}`] : [])),
     }
   })
 }

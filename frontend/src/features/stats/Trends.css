@@ -94,6 +94,11 @@
 .trends-cell-over .trends-cell-percent, .trends-cell-word { color: var(--ck-over-text); }
 .trends-cell-over .trends-cell-bar span { background: var(--ck-over-bar); }
 .trends-cell-word { font-size: 0.8rem; font-weight: 600; }
+/* A month without a limit is quiet; ◆ marks a month where the limit changed, the list under the row says how (no tooltip on a phone). */
+.trends-cell-none .trends-cell-percent { color: var(--ck-text-muted); font-weight: 400; }
+.trends-cell-change { color: var(--ck-accent); }
+.trends-limit-changes { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; color: var(--ck-text-muted); font-size: 0.85rem; }
+.trends-limit-changes span { color: var(--ck-accent); }
 
 /* «Месяц к месяцу»: the sparkline with its first month, and on a phone every month of the period, newest first. */
 .trends-row-trend { display: inline-flex; align-items: center; gap: 6px; }
@@ -115,3 +120,4 @@
 .trends-period-form { display: grid; gap: 12px; min-width: 0; max-width: 560px; }
 .trends-period-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .trends-period-form .stats-note { margin: 0; }
+.trends-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
