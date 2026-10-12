@@ -1,6 +1,7 @@
 /* Synthetic data for the standalone preview of the chart components (charts-preview/index.html).
    Nothing here is used by the application; shops, products and sums are invented. */
-import { formatAmount, formatPercent, formatPrice } from '../../format.ts'
+import { formatPercent, formatPrice } from '../../format.ts'
+import { formatMoney } from '../../money.ts'
 import { LineChart, PieChart, chartNumber } from '../index.ts'
 import type { LineChartSeries, PieChartItem } from '../index.ts'
 
@@ -18,7 +19,7 @@ function pieItems(rows: SpendingRow[]): PieChartItem[] {
     const value = chartNumber(row.amount) ?? 0
     return {
       key: row.key, label: row.label, value, tone: row.tone, note: row.note,
-      valueText: formatAmount(row.amount, 'EUR'),
+      valueText: formatMoney(row.amount, 'EUR'),
       shareText: value > 0 ? formatPercent(((value / positive) * 100).toFixed(2)) : '—',
       href: row.link === false || row.tone ? undefined : `#${row.key}`,
     }
@@ -58,7 +59,7 @@ const prices: LineChartSeries[] = [
 ]
 const receiptSeries = (key: string, label: string, shortLabel: string, values: (number | null)[]): LineChartSeries => ({
   key, label, shortLabel,
-  points: months(2026, 1, values).map((point) => ({ ...point, valueText: formatAmount(point.value.toFixed(2), 'EUR') })),
+  points: months(2026, 1, values).map((point) => ({ ...point, valueText: formatMoney(point.value.toFixed(2), 'EUR') })),
 })
 const receipts: LineChartSeries[] = [
   receiptSeries('avg', 'Средний чек', 'средний', [45.12, 44.79, 46.62, 43.55, 46.36, null, 47.1, 48.02, 49.4]),
@@ -82,10 +83,10 @@ export default function ChartsDemo() {
           </p>
         </div>
         <Example title="Круговая: траты по категориям" note="Наведите на сектор или строку таблицы, пройдите Tab по ссылкам. Сектор меньше 2 % подписан только в таблице, отрицательная сумма в круг не входит.">
-          <PieChart title="Траты по категориям, EUR" items={categories} centerLabel="Сумма строк" centerValue={formatAmount('13527.79', 'EUR')} />
+          <PieChart title="Траты по категориям, EUR" items={categories} centerLabel="Сумма строк" centerValue={formatMoney('13527.79', 'EUR')} />
         </Example>
         <Example title="Круговая: один сектор 100 %" note="Полное кольцо без шва.">
-          <PieChart title="Траты по магазинам, EUR" items={pieItems([{ key: 'store', label: 'Zahlenfrisch, Musterstadt', amount: '812.40', link: false }])} centerLabel="Всего" centerValue={formatAmount('812.40', 'EUR')} headers={{ name: 'Магазин', value: 'Сумма чеков', share: 'Доля' }} />
+          <PieChart title="Траты по магазинам, EUR" items={pieItems([{ key: 'store', label: 'Zahlenfrisch, Musterstadt', amount: '812.40', link: false }])} centerLabel="Всего" centerValue={formatMoney('812.40', 'EUR')} headers={{ name: 'Магазин', value: 'Сумма чеков', share: 'Доля' }} />
         </Example>
         <Example title="Круговая: 11 товаров" note="Девятый и следующие сектора повторяют цвета со штриховкой; подписи не наезжают друг на друга.">
           <PieChart title="Траты по товарам, EUR" items={products} />

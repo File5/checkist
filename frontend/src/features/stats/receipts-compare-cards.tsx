@@ -1,7 +1,8 @@
 import type { CompareCurrency, CompareProduct } from '../../api/stats'
 import { Card, CardList } from '../../lib/cards'
 import type { CardFact } from '../../lib/cards'
-import { formatAmount, formatPrice, formatQuantity } from '../../lib/format'
+import { formatPrice, formatQuantity } from '../../lib/format'
+import { formatMoney } from '../../lib/money'
 import { glue } from '../../lib/text'
 import { Link } from '../../navigation'
 import { signedAmount, signedPercent } from './receipts-wording'
@@ -69,7 +70,7 @@ export function ProductCards({ block, columns, caption, labelledBy }: { block: C
             pair('price', columns.price, formatPrice(item.base.price, currency, item.unit), formatPrice(item.current.price, currency, item.unit)),
             { key: 'price-change', label: columns.priceChange, value: signedPercent(item.price_change_percent) },
             pair('quantity', columns.quantity, formatQuantity(item.base.quantity, item.unit), formatQuantity(item.current.quantity, item.unit)),
-            pair('amount', columns.amount, formatAmount(item.base.amount, currency), formatAmount(item.current.amount, currency)),
+            pair('amount', columns.amount, formatMoney(item.base.amount, currency), formatMoney(item.current.amount, currency)),
           ]} />
       ))}
     </CardList>

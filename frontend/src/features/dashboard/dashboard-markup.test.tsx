@@ -57,7 +57,7 @@ describe('«Главная» markup (Vitest/SSR, not browser visual acceptance)'
     expect(cafe).toContain('dash-bar dash-bar-over')
     expect(cafe).toContain(`Сверх лимита на <span class="dash-value">${nb('4 300 KZT')}</span>`)
     const transport = between(limits, 'dash-cat-5', '</li>')
-    expect(transport).toContain(`<span class="dash-limit-value">${nb('21 500,50 KZT')}</span>`)
+    expect(transport).toContain(`<span class="dash-limit-value">${nb('21 501 KZT')}</span>`)
     expect(transport).not.toContain('dash-bar')
     expect(between(limits, 'dash-cat-1', '</li>')).toContain('Не разобрано')
     expect(between(limits, 'Дом', '</li>')).toContain('aria-valuenow="0"')

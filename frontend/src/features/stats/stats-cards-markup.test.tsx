@@ -91,7 +91,7 @@ describe('cards of the terms of the change (Vitest/SSR, not browser acceptance)'
       'Количество позицийстал покупать больше позиций за поход', 'Цены на те же товарывыросли цены на те же товары',
       'Состав покупокдругой состав покупок: позиции в среднем дороже', effectsTotalTitle,
     ])
-    expect(narrow.list[0].facts.map((fact) => fact.value)).toEqual([`+8,65${NBSP}EUR`, `+46,23${NBSP}%`])
+    expect(narrow.list[0].facts.map((fact) => fact.value)).toEqual([`+9${NBSP}EUR`, `+46,23${NBSP}%`])
   })
 
   it('ends with the total of the table as the only total card', () => {
@@ -126,8 +126,8 @@ describe('cards of the terms of the change (Vitest/SSR, not browser acceptance)'
     // A dash is a value of the table, not an empty fact: the pair stays.
     expect(list.at(-1)!.facts.map((fact) => fact.value)).toEqual([rows.foot[0].values[0], '—'])
     const values = list.flatMap((card) => card.facts.map((fact) => fact.value))
-    expect(values).toContain(`-3,10${NBSP}EUR`)
-    expect(values).toContain(`0,00${NBSP}EUR`)
+    expect(values).toContain(`-4${NBSP}EUR`)
+    expect(values).toContain(`0${NBSP}EUR`)
   })
 
   it('has no dates, links or buttons, as the table has none', () => {
@@ -182,7 +182,7 @@ describe('cards of the products bought in both periods (Vitest/SSR, not browser 
     expect(first[0].value).toBe(`<span class="stats-number">6,17${NBSP}EUR/шт${NBSP}→</span> <span class="stats-number">7,87${NBSP}EUR/шт</span>`)
     expect(first[1].value).toBe(`+27,49${NBSP}%`)
     expect(first[2].value).toBe(`<span class="stats-number">19${NBSP}шт${NBSP}→</span> <span class="stats-number">18${NBSP}шт</span>`)
-    expect(first[3].value).toBe(`<span class="stats-number">117,23${NBSP}EUR${NBSP}→</span> <span class="stats-number">141,59${NBSP}EUR</span>`)
+    expect(first[3].value).toBe(`<span class="stats-number">118${NBSP}EUR${NBSP}→</span> <span class="stats-number">142${NBSP}EUR</span>`)
     for (const fact of narrow.list.flatMap((card) => card.facts)) {
       // An ordinary space stands only between the two sides of a pair.
       expect(text(fact.value).split(' ').length, fact.value).toBe(fact.kind === 'text' ? 2 : 1)

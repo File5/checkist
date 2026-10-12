@@ -1,4 +1,5 @@
-import { formatAmount, formatPurchasedOn } from '../lib/format'
+import { formatPurchasedOn } from '../lib/format'
+import { formatMoney } from '../lib/money'
 import { navigate } from '../navigation'
 import { spendAmount } from './pending'
 import type { PendingSpend } from './pending'
@@ -29,7 +30,7 @@ export function PendingSpendsView({ state, onSend, onFix, onDelete }: PendingSpe
       return <li key={spend.id} className="pending-spend">
         <span>{place(spend)}</span>
         <time dateTime={spend.body.purchased_on}>{formatPurchasedOn(spend.body.purchased_on ?? null)}</time>
-        <span className="pending-spend-amount">{amount ? formatAmount(amount, spend.body.currency ?? '') : '—'}</span>
+        <span className="pending-spend-amount">{amount ? formatMoney(amount, spend.body.currency ?? '') : '—'}</span>
         <span className="pending-spend-actions">
           <button type="button" className="receipt-secondary" onClick={() => onFix(spend)}>Исправить</button>
           <button type="button" className="receipt-secondary" onClick={() => onDelete(spend)}>Удалить</button>
