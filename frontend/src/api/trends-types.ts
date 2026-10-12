@@ -19,18 +19,43 @@ export type TrendsMonthSpend = {
   /** Services, deposits, lines without a category and receipt-wide discounts: `total − Σ categories`; may be negative. */
   uncategorized: Decimal
 }
+/** A category with its amount in every month of the window (`amounts[i]` — month `i`). */
+export type TrendsCategoryRow = NamedObject & {
+  parent_id: number | null
+  depth: number
+  /** Lines lying in the category itself, not in a sub-category (only among the parts of «Категория во времени»). */
+  direct: boolean
+  total: Decimal
+  amounts: Decimal[]
+  /** The last month of the window against the one before it; `null` when that one is zero or absent. */
+  change_percent: Decimal | null
+}
+/** The last month of the window against the previous one and against the average of the window. */
+export type TrendsSummary = {
+  month: MonthLabel; spent: Decimal
+  previous_month: MonthLabel | null; previous: Decimal | null
+  change_percent: Decimal | null
+  average_change_percent: Decimal | null
+}
 /** One currency; every month of the window is present, an empty one with zeros. */
 export type TrendsMonthlyCurrency = {
   currency: CurrencyCode; total: Decimal; average: Decimal
   /** Top-level categories of the window by their total, descending. */
   categories: TrendsLegendCategory[]
   months: TrendsMonthSpend[]
+  summary: TrendsSummary
+  /** «Месяц к месяцу»: every top-level category, then its direct sub-categories with spending. */
+  rows: TrendsCategoryRow[]
 }
 export type TrendsMonthly = TrendsWindow & { currencies: TrendsMonthlyCurrency[] }
 
 export type TrendsCategoryOption = NamedObject & { path: string[]; depth: number }
 export type TrendsCategoryMonth = { month: MonthLabel; amount: Decimal; lines_count: number }
-export type TrendsCategoryCurrency = { currency: CurrencyCode; total: Decimal; average: Decimal; months: TrendsCategoryMonth[] }
+export type TrendsCategoryCurrency = {
+  currency: CurrencyCode; total: Decimal; average: Decimal; months: TrendsCategoryMonth[]
+  /** Direct sub-categories with spending and, last, the category's own lines (`direct`); empty without sub-categories. */
+  parts: TrendsCategoryRow[]
+}
 export type TrendsCategory = TrendsWindow & {
   /** The asked category, or the one the server suggests without `category`; `null` — nothing was spent in the window. */
   category: CategoryRef | null
@@ -57,7 +82,18 @@ export type TrendsPricesCurrency = {
   points: TrendsIndexPoint[]
   /** Products (with a unit) bought in at least two months of the window. */
   products_total: number
+  /** Of them: the last price is higher / lower than the first one. */
+  risen_total: number
+  fallen_total: number
+  /** The last month with an index, when it is not the first one, and that index − 100. */
+  index_month: MonthLabel | null
+  change_percent: Decimal | null
   risers: TrendsMover[]
   fallers: TrendsMover[]
 }
 export type TrendsPrices = TrendsWindow & { currencies: TrendsPricesCurrency[] }
+
+export type TrendsLimitMonth = { month: MonthLabel; spent: Decimal; percent: Decimal }
+/** A monthly limit at its current amount and the share of it used in every month of the window. */
+export type TrendsLimit = { id: number; category: CategoryRef | null; currency: CurrencyCode; amount: Decimal; months: TrendsLimitMonth[] }
+export type TrendsLimits = TrendsWindow & { limits: TrendsLimit[] }

@@ -6,23 +6,31 @@ import { useLocalRequestFocus } from '../../components/useLocalRequestFocus'
 import { LineChart, StackedColumns } from '../../lib/charts'
 import { Link, navigate } from '../../navigation'
 import type { TrendsQuery } from '../../navigation'
-import type { StatsRequestState } from './receipts-request'
 import { canRetry, failureMessage } from './receipts-state'
 import {
   categoryChart, categoryHeading, categoryHref, closeMonthHref, formatMonthStart, formatMonthTick, indexAxis, indexChart, indexSummary,
-  lastMonthChange, monthBreakdown, monthStart, monthlyChart, monthlySummary, moneyAxis, moverRows, optionLabel,
+  lastMonthChange, monthBreakdown, monthStart, monthlyChart, monthlySummary, moneyAxis, moverCounts, moverRows, optionLabel, partsChart,
 } from './trends-state'
-import type { MoverRow } from './trends-state'
+import { loadingOf } from './trends-state'
+import type { BlockState, ChangeBadge, MoverRow } from './trends-state'
 
-type BlockState<T> = StatsRequestState<T>
-const loadingOf = <T,>(state: BlockState<T>) => (state.kind === 'idle' ? { kind: 'loading' as const } : state)
 
-function Failure({ state, onRetry }: { state: Exclude<BlockState<unknown>, { kind: 'ok' | 'idle' | 'loading' }>; onRetry: () => void }) {
+/** A change as arrow, sign and words — never colour alone. `up` is the warning tone: more spent, prices grew. */
+export function Badge({ badge, label }: { badge: ChangeBadge; label?: string }) {
+  return (
+    <span className={`trends-badge trends-badge-${badge.tone}`} title={label ? `${badge.words} ${label}` : badge.words}>
+      <span aria-hidden="true">{badge.arrow}</span> <span className="trends-value">{badge.text}</span>
+      <span className="trends-hidden"> ({badge.words}{label ? ` ${label}` : ''})</span>
+    </span>
+  )
+}
+
+export function Failure({ state, onRetry }: { state: Exclude<BlockState<unknown>, { kind: 'ok' | 'idle' | 'loading' }>; onRetry: () => void }) {
   return canRetry(state) ? <RequestState kind="error" message={failureMessage(state)} onRetry={onRetry} />
     : <RequestState kind="empty" message={failureMessage(state)} />
 }
 
-function Panel({ title, note, state, children }: { title: string; note?: string; state: { kind: string }; children: ReactNode }) {
+export function Panel({ title, note, state, children }: { title: string; note?: string; state: { kind: string }; children: ReactNode }) {
   const id = useId()
   const phase = useMemo(() => ({ kind: state.kind === 'idle' ? 'loading' : state.kind } as { kind: 'loading' | 'ok' | 'error' }), [state])
   const block = useLocalRequestFocus<HTMLElement>(phase)
@@ -122,6 +130,7 @@ function CategoryPicker({ options, query, current }: { options: readonly TrendsC
 function CategoryCurrency({ block, several, name }: { block: TrendsCategoryCurrency; several: boolean; name: string }) {
   const id = useId()
   const series = useMemo(() => categoryChart(block), [block])
+  const parts = useMemo(() => partsChart(block, name, block.months.map((entry) => entry.month)), [block, name])
   const change = lastMonthChange(block)
   const summary = monthlySummary(block)
   return (
@@ -136,6 +145,11 @@ function CategoryCurrency({ block, several, name }: { block: TrendsCategoryCurre
       </div>
       <LineChart title={`${name}: траты по месяцам, ${block.currency}`} series={series} interval="month" zeroBaseline
         formatX={formatMonthStart} formatTick={formatMonthTick} formatValue={moneyAxis} valueAxisLabel={block.currency} intervalHeader="Месяц" />
+      {parts && <>
+        <h5 className="trends-subheading">Из чего складывается</h5>
+        <StackedColumns title={`${name}: подкатегории по месяцам, ${block.currency}`} columns={parts.columns} legend={parts.legend}
+          formatX={formatMonthStart} formatTick={formatMonthTick} formatValue={moneyAxis} valueAxisLabel={block.currency} />
+      </>}
     </article>
   )
 }
@@ -187,7 +201,9 @@ function Movers({ title, rows, tone }: { title: string; rows: readonly MoverRow[
           {rows.map((row) => (
             <li key={row.key} className="trends-mover">
               <Link className="trends-mover-name" to={`/catalog/products/${row.productId}`}>{row.name}</Link>
-              <span className={`trends-badge trends-compare-${tone}`}>{row.change}</span>
+              <span className={`trends-badge trends-badge-${tone === 'more' ? 'up' : 'down'}`}>
+                <span aria-hidden="true">{tone === 'more' ? '▲' : '▼'}</span> <span className="trends-value">{row.change}</span>
+              </span>
               <span className="trends-mover-prices"><span className="trends-value">{row.old}</span> → <span className="trends-value">{row.next}</span></span>
               <span className="trends-mover-months stats-note">{row.oldMonth} → {row.newMonth}</span>
             </li>
@@ -208,7 +224,8 @@ function PricesCurrency({ block, several }: { block: TrendsPricesCurrency; sever
     <article className="stats-currency trends-currency" aria-labelledby={id}>
       <div className="trends-summary">
         <h4 id={id}>{several ? block.currency : 'Индекс цен семьи'}</h4>
-        {summary && <p className={`trends-compare trends-compare-${summary.tone} trends-lead`}>{summary.text}</p>}
+        {summary && <p className="trends-lead">{summary.text} <Badge badge={summary.badge} /></p>}
+        <p className="trends-counts">{moverCounts(block)}</p>
       </div>
       <LineChart title={`Индекс цен семьи, ${block.currency}`} series={series} interval="month"
         formatX={formatMonthStart} formatTick={formatMonthTick} formatValue={indexAxis} intervalHeader="Месяц"
