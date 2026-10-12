@@ -35,7 +35,12 @@
       "lines_url": "/api/receipts/71/lines/",
       "discounts_url": "/api/receipts/71/discounts/",
       "taxes_url": "/api/receipts/71/taxes/",
-      "images_url": "/api/recognition/receipt-images/?receipt=71"
+      "images_url": "/api/recognition/receipt-images/?receipt=71",
+      "first_line": "MILCH 1 L",
+      "category": {
+        "id": 81,
+        "name": "Тест"
+      }
     }
   ]
 }

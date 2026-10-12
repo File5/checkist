@@ -17,7 +17,7 @@ vi.mock('../session', async (importOriginal) => ({
 
 describe('new page wiring (SSR only, no browser interaction)', () => {
   it.each<[NavigableRoute, string, string, string]>([
-    [{ kind: 'receipts', query: { page: 2 } }, 'Чеки', 'Страница 2', '/receipts'],
+    [{ kind: 'receipts', query: { page: 2 } }, 'Траты', 'Страница 2', '/receipts'],
     [{ kind: 'upload' }, 'Загрузка фото чеков', 'Получаем лимиты и токен безопасности…', '/receipts'],
     [{ kind: 'receipt', receiptId: 71 }, 'Чек', 'Страница чека\u00a0№71', '/receipts'],
     [{ kind: 'jobs', query: { page: 3 } }, 'Обработка', 'Задания · Страница 3', '/recognition/jobs'],

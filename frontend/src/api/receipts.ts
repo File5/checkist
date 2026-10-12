@@ -1,17 +1,17 @@
 import { invalidIds } from './http.ts'
 import { mutate } from './local.ts'
 import { getLocalJson } from './recognition.ts'
-import { isDiscount, isLine, isManualDefaults, isReceipt, isTax } from './receipts-schema.ts'
+import { isDiscount, isLine, isManualDefaults, isReceipt, isReceiptListItem, isTax } from './receipts-schema.ts'
 import { isManualParse } from './recognition-schema.ts'
 import { page } from './schema.ts'
 import type { LocalApiResult, Page, PageParams, RequestOptions } from './types.ts'
-import type { Discount, Line, ManualDefaults, ManualParse, ManualSpendInput, Receipt, ReceiptLineParams, ReceiptParams, Tax } from './receipts-types.ts'
+import type { Discount, Line, ManualDefaults, ManualParse, ManualSpendInput, Receipt, ReceiptLineParams, ReceiptListItem, ReceiptParams, Tax } from './receipts-types.ts'
 
 export type * from './receipts-types.ts'
 
-export async function getReceipts(params: ReceiptParams = {}, options: RequestOptions = {}): Promise<LocalApiResult<Page<Receipt>>> {
+export async function getReceipts(params: ReceiptParams = {}, options: RequestOptions = {}): Promise<LocalApiResult<Page<ReceiptListItem>>> {
   return invalidIds({ store: params.store, product: params.product }, options.signal)
-    ?? getLocalJson('receipts/', params, page(isReceipt), options)
+    ?? getLocalJson('receipts/', params, page(isReceiptListItem), options)
 }
 export async function getReceipt(id: number, options: RequestOptions = {}): Promise<LocalApiResult<Receipt>> {
   return invalidIds({ id }, options.signal) ?? getLocalJson(`receipts/${id}/`, {}, isReceipt, options)

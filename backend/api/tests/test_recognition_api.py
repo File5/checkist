@@ -264,7 +264,7 @@ def public_data():
     merchant = Merchant.objects.create(id=51, country_id="DE", legal_name="PRIVATE LEGAL", brand_name="Тестовый магазин", tax_id="PRIVATE TAX")
     store = Store.objects.create(id=51, merchant=merchant, country_id="DE", city="Berlin",
         address_raw="Teststrasse 12", timezone="Europe/Berlin")
-    category = Category.objects.create(name="Тест")
+    category = Category.objects.create(id=81, name="Тест")
     generic = GenericProduct.objects.create(name="Молоко", category=category, base_unit="l")
     product = Product.objects.create(id=61, generic=generic, name="Молоко 1 л")
     receipt = Receipt.objects.create(id=71, owner=photo.owner, store=store, currency_id="EUR", operation="sale",

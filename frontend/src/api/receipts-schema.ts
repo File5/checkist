@@ -1,7 +1,7 @@
 import { safeMediaUrl } from '../lib/media.ts'
 import { amount, array, bool, choice, country, currency, isId, isISODate, isISODateTime, named, nonNegativeInteger, nullable, object, price, quantity, record, store, text, unit } from './schema.ts'
 import type { Guard } from './schema.ts'
-import type { Discount, Line, ManualDefaults, Receipt, Tax, TaxRate } from './receipts-types.ts'
+import type { Discount, Line, ManualDefaults, Receipt, ReceiptListItem, Tax, TaxRate } from './receipts-types.ts'
 
 export const receiptOperation = choice('sale', 'refund')
 export const receiptSource = choice('photo', 'manual')
@@ -21,6 +21,12 @@ const isReceiptShape = object<Receipt>({
 /** Only a manual spend may come without a store. */
 export const isReceipt: Guard<Receipt> = (value): value is Receipt => isReceiptShape(value)
   && (value.store !== null || value.source === 'manual')
+/** A field that an older server may leave out: missing and null pass, anything else must pass `check`. */
+const optional = (value: Record<string, unknown>, key: string, check: (field: unknown) => boolean) =>
+  !Object.hasOwn(value, key) || value[key] === null || check(value[key])
+/** The list item: a receipt plus `first_line` and `category`, each optional or null. */
+export const isReceiptListItem: Guard<ReceiptListItem> = (value): value is ReceiptListItem => isReceipt(value)
+  && optional(value, 'first_line', text) && optional(value, 'category', named)
 export const isManualDefaults = object<ManualDefaults>({ currency, frequent_categories: array(isId) })
 const translations = (value: unknown) => record(value) && Object.entries(value).every(
   ([key, val]) => /^[a-z]{2,3}(?:-[A-Za-z]{2,4})?$/.test(key) && text(val),

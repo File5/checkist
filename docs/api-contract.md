@@ -625,7 +625,7 @@ Query разбирается существующим `Params`: неизвест
 | GET `/recognition/receipt-images/` | photo/job/receipt ID (AND), page/page_size, ordering ±created_at | Page ReceiptImage без quad/rotation_degrees |
 | GET `/recognition/receipt-images/{id}/` | нет | ReceiptImage detail |
 | POST `/recognition/receipt-images/{id}/confirm/` | JSON `{receipt,lines,discounts,taxes}` до 1 MiB, без Idempotency-Key | 200 `{image,job}`; 409 job_active / review_unavailable / review_resolved / review_busy / review_invalid |
-| GET `/receipts/` | store/product ID, country/currency, operation, date_from/date_to, q, page/page_size, ordering ±purchased_at | Page Receipt, default -purchased_at |
+| GET `/receipts/` | store/product ID, country/currency, operation, date_from/date_to, q, owner (логин), page/page_size, ordering ±purchased_at | Page Receipt + `first_line`, `category` ([список «Траты»](#список-траты-фильтр-owner-и-поля-строки)), default -purchased_at |
 | GET `/receipts/{id}/` | нет | Receipt header, дочерние массивы отдельными страницами |
 | GET `/receipts/{id}/lines/` | page/page_size, kind, matching=matched/unmatched | Page Line, position/id |
 | GET `/receipts/{id}/discounts/` | page/page_size | Page Discount, position/id |
@@ -921,6 +921,21 @@ List и detail `/api/recognition/receipt-images/` отдают у **каждог
 ### Receipt, Line, Discount, Tax
 
 Receipt содержит ровно `id,owner,source,store,currency,operation,purchased_on,purchased_at,total,discount_total,prices_include_tax,origin,review_required,lines_count,unmatched_products_count,receipt_images_count,note,preview_image_url,created_at,updated_at,lines_url,discounts_url,taxes_url,images_url`. `owner` — логин того, кто добавил чек (владельца фото). Store — прежний `api.common.store_object`, без вложенного Merchant; `null` — «Без места», бывает только у `source=manual` ([трата без чека](#реализовано-трата-без-чека)). `source` — `photo` (чек с фото и всё прежнее) либо `manual`; `note` — комментарий человека, у чеков с фото пустая строка. `origin="recognized"` при наличии связанной вырезки, иначе `"legacy/manual"`: это вычисляемый индикатор связи, без новой provenance-модели. Preview — последняя связанная вырезка по created_at/id, при отсутствии null. `review_required` — несопоставленный товар, связанная вырезка needs_review или issues у неуспешной вырезки; замечания успешных вырезок сами по себе review не требуют. Несопоставленный товар может требовать проверки Receipt, хотя импорт и Job уже succeeded. Canonical Receipt не содержит непринятый результат: его смотрят через ReceiptImage.
+
+#### Список «Траты»: фильтр owner и поля строки
+
+`GET /api/receipts/?owner=<логин>` — только чеки, добавленные этим членом семьи. Фильтр применяется поверх правила доступа (`owner_q`): видны чеки свои и семьи, поэтому логин вне семьи, неизвестный логин и логин из чужой семьи дают пустую страницу `200` (`count: 0`), не ошибку; без семьи находится только свой логин, в `local_single` — `local`. Пустое значение (`?owner=`) — без фильтра, повтор — последнее значение, управляющие символы — `400 invalid_parameter` с `fields.owner`. Сочетается с остальными фильтрами через AND.
+
+Объект **списка** (только `GET /api/receipts/`, не деталь и не ответы трат) несёт сверх полей Receipt два поля для строки экрана «Траты»:
+
+- `first_line` — `name` первой строки чека по `position, id`; `null`, если строк нет. Клиент берёт его заголовком траты без места.
+- `category` — `{"id","name"}` категории **верхнего уровня**, если все строки чека, у которых категория известна, сводятся к одному корню; иначе `null` (строк с категорией нет либо корней несколько). Категория строки — категория обобщённого продукта товара, если товар есть, иначе `ReceiptLine.category` (как в статистике); строки без неё не учитываются. «Не разобрано» отдаётся как есть.
+
+Стоимость: обе величины — подзапросы того же запроса страницы; дерево категорий читается одним запросом и только когда на странице есть строка с категорией (список — `count` + страница + дерево). Моделей, миграций и индексов нет.
+
+```json
+{"id":71,"owner":"local","source":"photo","…":"…","first_line":"MILCH 1 L","category":{"id":81,"name":"Тест"}}
+```
 
 ```json
 {"id":101,"position":1,"kind":"product","parent_id":null,"name":"MILCH 1 L","name_i18n":{},"store_item_code":"M1","barcode":"","quantity":"2.000","unit":"pcs","unit_price":"1.2900","amount":"2.58","discount_amount":"0.20","paid_amount":"2.38","product":{"id":61,"name":"Молоко 1 л"},"matching_status":"matched","tax_rate":{"id":3,"country":"DE","kind":"vat","rate":"7.00"},"tax_code":"A","tax_amount":null,"is_excise":false,"is_marked":false}

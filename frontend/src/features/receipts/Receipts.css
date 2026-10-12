@@ -80,3 +80,32 @@
 /* A spend entered by hand: a small mark next to the place. */
 .receipt-source-mark { display: inline-block; padding: 2px 8px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); color: var(--ck-text-muted); font-size: 0.8rem; font-weight: 400; white-space: nowrap; vertical-align: middle; }
 .receipt-line-category { display: block; margin-top: 8px; }
+/* «Траты»: the family filter, the review banner and, on a phone, days with rows (SpendDays.tsx). Colours — tokens only. */
+.spends-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.spends-chips ul { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; margin: 0; padding: 0; }
+.spends-chip { display: inline-flex; align-items: center; min-height: 44px; padding: 0 18px; border: 1px solid var(--ck-border); border-radius: 999px; background: var(--ck-surface); color: var(--ck-text); font-weight: 600; text-decoration: none; white-space: nowrap; }
+.spends-chip:hover { border-color: var(--ck-text-muted); }
+.spends-chip[aria-current="true"] { background: var(--ck-text); border-color: var(--ck-text); color: var(--ck-bg); }
+.spends-review { margin: 0; border-radius: 16px; background: var(--ck-warning-bg); color: var(--ck-warning-text); }
+.spends-review a { display: flex; align-items: center; min-height: 44px; padding: 8px 16px; color: inherit; font-weight: 600; text-underline-offset: 3px; }
+.spends-days { display: grid; gap: 20px; }
+.spends-day-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; }
+.spends-day h3 { margin: 0; font-size: 1rem; }
+.spends-day-total { margin: 0; color: var(--ck-text-muted); font-size: 0.9rem; }
+.spends-day-sum { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.spends-rows { margin: 8px 0 0; padding: 0; list-style: none; border: 1px solid var(--ck-border); border-radius: 20px; background: var(--ck-surface); overflow: hidden; }
+.spends-rows > li + li { border-top: 1px solid var(--ck-divider); }
+.spends-row { display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 12px 16px; color: var(--ck-text); text-decoration: none; }
+.spends-row:hover .spends-row-title { text-decoration: underline; text-underline-offset: 3px; }
+.spends-badge { display: grid; flex: none; place-items: center; width: 40px; height: 40px; border-radius: 12px; background: var(--ck-neutral-bg); color: var(--ck-text-muted); }
+.spends-badge svg { fill: currentColor; }
+.spends-badge[data-tone="1"] { background: var(--ck-cat-1-tint); color: var(--ck-cat-1); }
+.spends-badge[data-tone="2"] { background: var(--ck-cat-2-tint); color: var(--ck-cat-2); }
+.spends-badge[data-tone="3"] { background: var(--ck-cat-3-tint); color: var(--ck-cat-3); }
+.spends-badge[data-tone="4"] { background: var(--ck-cat-4-tint); color: var(--ck-cat-4); }
+.spends-badge[data-tone="5"] { background: var(--ck-cat-5-tint); color: var(--ck-cat-5); }
+.spends-badge[data-tone="6"] { background: var(--ck-cat-6-tint); color: var(--ck-cat-6); }
+.spends-row-main { display: grid; flex: 1; gap: 2px; min-width: 0; }
+.spends-row-title { font-weight: 700; overflow-wrap: anywhere; }
+.spends-row-meta { color: var(--ck-text-muted); font-size: 0.9rem; }
+.spends-row-amount { flex: none; font-variant-numeric: tabular-nums; font-weight: 700; white-space: nowrap; }
