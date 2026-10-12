@@ -138,7 +138,8 @@ class ReceiptsAPITests(TestCase):
                 purchased_at=self.receipt.purchased_at + timedelta(minutes=i), purchased_on=self.receipt.purchased_on,
                 total="1", receipt_number=f"PRIVATE {i}")
         for size in (1, 5):
-            for path, queries in (("/api/receipts/", 2), ("/api/receipts/71/lines/", 3),
+            # The list reads the category tree once when its page has a line with a category (only receipt 71 here).
+            for path, queries in (("/api/receipts/", 2 if size == 1 else 3), ("/api/receipts/71/lines/", 3),
                                   ("/api/receipts/71/discounts/", 3), ("/api/receipts/71/taxes/", 3)):
                 with self.subTest(path=path, size=size), self.assertNumQueries(queries):
                     response = self.client.get(path + f"?page_size={size}")

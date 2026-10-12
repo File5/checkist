@@ -93,5 +93,5 @@ export type ReviewTaxInput = { tax_rate: NormalizedTaxRate; tax_code: string | n
 export type ReviewConfirmInput = { receipt: ReviewReceiptInput; lines: ReviewLineInput[]; discounts: ReviewDiscountInput[]; taxes: ReviewTaxInput[] }
 export type ReviewConfirmResult = { image: ReceiptImageDetail; job: JobDetail }
 export type PhotoParams = PageParams & { ordering?: 'created_at' | '-created_at' }
-export type JobParams = PhotoParams & { photo?: number; status?: JobStatus }
+export type JobParams = PhotoParams & { photo?: number; status?: JobStatus; needs_review?: 1 }
 export type ReceiptImageParams = PhotoParams & { photo?: number; job?: number; receipt?: number }

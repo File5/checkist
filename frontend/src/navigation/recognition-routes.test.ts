@@ -8,6 +8,7 @@ describe('receipt and recognition routes', () => {
     { kind: 'jobs', query: { page: 1 } }, { kind: 'job', jobId: 31 },
     { kind: 'receipts', query: { q: 'Чек + 20% & молоко', store: 1, product: 2, country: 'DE', currency: 'EUR', operation: 'refund', date_from: '2026-10-01', date_to: '2026-10-04', page: 2, page_size: 1, ordering: 'purchased_at' } },
     { kind: 'jobs', query: { photo: 11, status: 'partial_succeeded', page: 2, page_size: 1, ordering: 'created_at' } },
+    { kind: 'jobs', query: { needs_review: 1, page: 1 } },
   ])('round trips $kind and accepts trailing slash', (route) => {
     const href = buildRoute(route)
     expect(parseRoute(href)).toEqual(route)
@@ -26,6 +27,12 @@ describe('receipt and recognition routes', () => {
   })
   it.each(['/receipts/1/lines', '/receipts//', '/recognition', '/recognition/jobs/1/extra'])('rejects unknown path %s', (url) => {
     expect(parseRoute(url).kind).toBe('not-found')
+  })
+  it('needs_review=1 is the only filter value kept; 0 is the default list', () => {
+    expect(parseJobsQuery('needs_review=1').query).toEqual({ needs_review: 1, page: 1 })
+    expect(parseJobsQuery('needs_review=0')).toEqual({ query: { page: 1 }, invalidFields: [] })
+    expect(parseJobsQuery('needs_review=yes').invalidFields).toEqual(['needs_review'])
+    expect(buildJobsQuery({ needs_review: 1, page: 1 })).toBe('?needs_review=1')
   })
   it('shows invalid-query with explicit reset for bad list parameters', () => {
     expect(parseRoute('/recognition/jobs?photo=0&status=unknown&page=0&page_size=201')).toEqual({ kind: 'invalid-query', path: '/recognition/jobs', fields: ['photo', 'status', 'page', 'page_size'], resetTo: '/recognition/jobs' })

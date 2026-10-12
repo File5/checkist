@@ -3,27 +3,27 @@ import type { FocusEvent, MouseEvent, RefObject } from 'react'
 import { Link } from '../navigation'
 import type { Route } from '../navigation'
 import type { Session } from '../session'
-import { menuItems } from './menu-items'
+import { useQuickShot } from '../features/recognition/QuickShot'
+import { menuItems, ADD_AFTER } from './menu-items'
 import type { MenuItem } from './menu-items'
 import { MORE_MENU_CLOSED, PRESS_END_EVENTS, moreMenuStep } from './more-menu'
 
 const MORE_LIST_ID = 'main-more-list'
+const ADD_LIST_ID = 'main-add-list'
 
 function item({ key, to, label, current, account }: MenuItem) {
   return <Link key={key} className={account ? 'account-link' : undefined} to={to} aria-label={account ? `Аккаунт: ${label}` : undefined}
     aria-current={current ? 'page' : undefined}>{label}</Link>
 }
 
-/** The main menu of the shell: one `nav` for every width. In the header it is a row of links; on a phone the
- * stylesheet pins it to the bottom of the window and keeps the links after the third one behind «Ещё».
+/** A button and the list it opens, as in the bottom bar of a phone: «Ещё» and «＋» behave alike.
+ * Only the button opens the list; Esc, a press outside, an action of the list and the focus that leaves close it.
  */
-export default function MainMenu({ session, route, menuRef }: { session: Session; route: Route; menuRef: RefObject<HTMLElement | null> }) {
-  const { primary, more } = menuItems(session, route)
+function usePopup() {
   const [{ open }, dispatch] = useReducer(moreMenuStep, MORE_MENU_CLOSED)
   const toggle = useRef<HTMLButtonElement>(null)
   const list = useRef<HTMLDivElement>(null)
   const wrapper = useRef<HTMLDivElement>(null)
-  const currentInMore = more.find((entry) => entry.current)
 
   useEffect(() => {
     if (!open) return
@@ -62,23 +62,63 @@ export default function MainMenu({ session, route, menuRef }: { session: Session
   // the reducer hears both in that order and leaves the list open for the click. A touch reports the press
   // as pointerdown long before the blur and as mousedown right before it; both are listened to.
   const onPress = () => dispatch('press')
-  const onRelease = () => dispatch('release')
-  const onBlur = (event: FocusEvent<HTMLDivElement>) => {
-    if (!event.currentTarget.contains(event.relatedTarget)) dispatch('focus-left')
+  const wrapperProps = {
+    ref: wrapper,
+    'data-open': open ? '' : undefined,
+    onBlur: (event: FocusEvent<HTMLDivElement>) => {
+      if (!event.currentTarget.contains(event.relatedTarget)) dispatch('focus-left')
+    },
+    onPointerDown: onPress,
+    onMouseDown: onPress,
+    onPointerCancel: () => dispatch('release'),
   }
   const onListClick = (event: MouseEvent<HTMLDivElement>) => {
-    dispatch(event.target instanceof Element && event.target.closest('a') ? 'navigate' : 'release')
+    // A link or an action button of the list closes it; a press of its empty place only ends the press.
+    dispatch(event.target instanceof Element && event.target.closest('a, button') ? 'navigate' : 'release')
   }
+  return { open, toggle, list, wrapperProps, onListClick, onToggle: () => dispatch('toggle') }
+}
+
+/** «＋» of the phone's bar: a raised round button and a small sheet with «Снять чек» and «Добавить трату».
+ * «Снять чек» opens the camera from the very press (the field stays mounted outside of the sheet). */
+function AddMenu() {
+  const { open, toggle, list, wrapperProps, onListClick, onToggle } = usePopup()
+  const shot = useQuickShot()
+  return (
+    <div className="main-add" {...wrapperProps}>
+      {/* Hidden wherever the menu is a row of links. */}
+      <button type="button" className="main-add-toggle" ref={toggle} aria-expanded={open} aria-controls={ADD_LIST_ID}
+        aria-label="Добавить: снять чек или добавить трату" onClick={onToggle}>
+        <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false"><path d="M11 4h2v7h7v2h-7v7h-2v-7H4v-2h7z" /></svg>
+      </button>
+      <div className="main-add-list" id={ADD_LIST_ID} ref={list} onClick={onListClick}>
+        <button type="button" className="main-add-action" onClick={shot.open}>Снять чек</button>
+        <Link className="main-add-action" to="/receipts/new">Добавить трату</Link>
+      </div>
+      {shot.field}
+    </div>
+  )
+}
+
+/** The main menu of the shell: one `nav` for every width. In the header it is a row of links; on a phone the
+ * stylesheet pins it to the bottom of the window: «Главная · Траты · ＋ · Статистика · Ещё», the links after
+ * the third one behind «Ещё».
+ */
+export default function MainMenu({ session, route, menuRef }: { session: Session; route: Route; menuRef: RefObject<HTMLElement | null> }) {
+  const { primary, more, add } = menuItems(session, route)
+  const { open, toggle, list, wrapperProps, onListClick, onToggle } = usePopup()
+  const currentInMore = more.find((entry) => entry.current)
 
   return (
     <nav className="main-navigation" aria-label="Основная навигация" ref={menuRef}>
-      {primary.map(item)}
-      {more.length > 0 && <div className="main-more" ref={wrapper} data-open={open ? '' : undefined} onBlur={onBlur}
-        onPointerDown={onPress} onMouseDown={onPress} onPointerCancel={onRelease}>
+      {primary.slice(0, ADD_AFTER).map(item)}
+      {add && <AddMenu />}
+      {primary.slice(ADD_AFTER).map(item)}
+      {more.length > 0 && <div className="main-more" {...wrapperProps}>
         {/* Hidden wherever the menu is a row of links. The current section is named: the mark alone is for the eye. */}
         <button type="button" className="main-more-toggle" ref={toggle} aria-expanded={open} aria-controls={MORE_LIST_ID}
           aria-label={currentInMore ? `Ещё, текущий раздел: ${currentInMore.label}` : undefined}
-          data-current={currentInMore ? '' : undefined} onClick={() => dispatch('toggle')}>Ещё</button>
+          data-current={currentInMore ? '' : undefined} onClick={onToggle}>Ещё</button>
         <div className="main-more-list" id={MORE_LIST_ID} ref={list} onClick={onListClick}>
           {more.map(item)}
         </div>

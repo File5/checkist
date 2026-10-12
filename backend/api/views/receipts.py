@@ -1,10 +1,12 @@
-from django.db.models import Exists, OuterRef, Q
+from django.contrib.postgres.aggregates import ArrayAgg
+from django.db.models import Exists, OuterRef, Q, Subquery
+from django.db.models.functions import Coalesce
 from rest_framework import status
 from rest_framework.exceptions import ParseError, UnsupportedMediaType
 from rest_framework.response import Response
 
 from accounts.access import owner_q, request_user
-from api.common import get_or_404, utc_datetime
+from api.common import CategoryTree, get_or_404, utc_datetime
 from api.pagination import paginate
 from api.params import Params
 from api.recognition_serialization import (
@@ -56,6 +58,35 @@ def manual_invalid(error):
     return InvalidParameter({name: [MANUAL_MESSAGES[reason]] for name, reason in error.fields.items()})
 
 
+def with_list_fields(receipts):
+    """Поля строки списка «Траты»: первая позиция и категории строк — подзапросами, без запроса на чек.
+
+    Категория строки — категория товара, если товар есть, иначе ``ReceiptLine.category``
+    (как в статистике); строки без неё не учитываются.
+    """
+    lines = ReceiptLine.objects.filter(receipt_id=OuterRef("pk"))
+    categories = (lines.annotate(spent_category=Coalesce("product__generic__category_id", "category_id"))
+                  .filter(spent_category__isnull=False).order_by().values("receipt_id")
+                  .annotate(ids=ArrayAgg("spent_category", distinct=True)).values("ids"))
+    return receipts.annotate(first_line=Subquery(lines.order_by("position", "id").values("raw_name")[:1]),
+                             line_category_ids=Subquery(categories))
+
+
+def list_items(receipts):
+    """Объекты списка: ``receipt_object`` + ``category`` (общая категория верхнего уровня либо null) + ``first_line``.
+
+    Дерево категорий читается одним запросом и только если на странице есть строки с категорией.
+    """
+    tree = CategoryTree.load() if any(receipt.line_category_ids for receipt in receipts) else None
+    items = []
+    for receipt in receipts:
+        roots = {tree.path_ids(pk)[0] for pk in receipt.line_category_ids or () if pk in tree}
+        root = roots.pop() if len(roots) == 1 else None
+        items.append({**receipt_object(receipt), "first_line": receipt.first_line or None,
+                      "category": None if root is None else {"id": root, "name": tree.name(root)}})
+    return items
+
+
 class ReceiptsView(LocalAPIView):
     def get(self, request):
         params = Params(request.query_params)
@@ -66,8 +97,12 @@ class ReceiptsView(LocalAPIView):
         operation = params.choice("operation", Receipt.Operation.values)
         date_from, date_to = params.date_range()
         search = params.search()
+        # Логин того, кто добавил; видны только чеки семьи, поэтому чужой или неизвестный логин — пустой список.
+        owner = params.raw("owner")
         params.check()
         receipts = receipts_queryset(request)
+        if owner is not None:
+            receipts = receipts.filter(owner__username=owner)
         for field, value in (("store_id", store), ("store__country_id", country),
                              ("currency_id", currency), ("operation", operation),
                              ("purchased_on__gte", date_from), ("purchased_on__lte", date_to)):
@@ -81,7 +116,9 @@ class ReceiptsView(LocalAPIView):
             receipts = receipts.filter(Q(store__merchant__brand_name__icontains=search)
                                        | Q(store__name__icontains=search) | Q(note__icontains=search)
                                        | Q(Exists(matching_line)))
-        return Response(paginate(receipts.order_by(ordering, "-id" if ordering.startswith("-") else "id"), page, receipt_object))
+        data = paginate(with_list_fields(receipts).order_by(ordering, "-id" if ordering.startswith("-") else "id"), page)
+        data["results"] = list_items(list(data["results"]))
+        return Response(data)
 
 
 def own_receipt(request, pk):

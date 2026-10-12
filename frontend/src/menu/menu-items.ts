@@ -16,11 +16,17 @@ export type Menu = {
   primary: MenuItem[]
   /** Links that the phone keeps behind «Ещё»; empty when everything fits. */
   more: MenuItem[]
+  /** The round «＋» of the phone's bar («Снять чек», «Добавить трату»), after the second link: a signed-in person only. */
+  add: boolean
 }
 
-/** The bottom bar of a phone holds four things: four links, or three links and «Ещё». */
+/** The bottom bar of a phone holds four things besides «＋»: four links, or three links and «Ещё». */
 export const BAR_SLOTS = 4
+/** How many links stand before «＋» in the bar: «Главная · Траты · ＋ · Статистика · Ещё». */
+export const ADD_AFTER = 2
 
+/** The month dashboard at '/' and its limits at '/budget/limits'. */
+const homeKinds: Route['kind'][] = ['dashboard', 'limits']
 const catalogKinds: Route['kind'][] = ['catalog', 'category', 'product', 'merges', 'merge', 'classification']
 const receiptKinds: Route['kind'][] = ['receipts', 'upload', 'expense-new', 'expense-edit', 'receipt']
 const statsKinds: Route['kind'][] = ['spending', 'receipts-stats']
@@ -34,9 +40,10 @@ function allItems(session: Session, route: Route): MenuItem[] {
   // While «Я» is being read, and when it could not be read, nothing is known about the person.
   if (session.kind !== 'user') return [health]
   const items: MenuItem[] = [
-    { key: 'catalog', to: '/catalog', label: 'Каталог', current: catalogKinds.includes(route.kind) },
-    { key: 'receipts', to: '/receipts', label: 'Чеки', current: receiptKinds.includes(route.kind) },
+    { key: 'home', to: '/', label: 'Главная', current: homeKinds.includes(route.kind) },
+    { key: 'receipts', to: '/receipts', label: 'Траты', current: receiptKinds.includes(route.kind) },
     { key: 'stats', to: '/stats', label: 'Статистика', current: statsKinds.includes(route.kind) },
+    { key: 'catalog', to: '/catalog', label: 'Каталог', current: catalogKinds.includes(route.kind) },
     { key: 'jobs', to: '/recognition/jobs', label: 'Обработка', current: jobKinds.includes(route.kind) },
     health,
   ]
@@ -51,6 +58,7 @@ function allItems(session: Session, route: Route): MenuItem[] {
  */
 export function menuItems(session: Session, route: Route): Menu {
   const items = allItems(session, route)
-  if (items.length <= BAR_SLOTS) return { primary: items, more: [] }
-  return { primary: items.slice(0, BAR_SLOTS - 1), more: items.slice(BAR_SLOTS - 1) }
+  const add = session.kind === 'user'
+  if (items.length <= BAR_SLOTS) return { primary: items, more: [], add }
+  return { primary: items.slice(0, BAR_SLOTS - 1), more: items.slice(BAR_SLOTS - 1), add }
 }

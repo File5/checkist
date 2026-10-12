@@ -618,14 +618,14 @@ Query разбирается существующим `Params`: неизвест
 | POST `/recognition/photos/` | multipart `file`, без Idempotency-Key | 202 `{reused:false,photo,job}`; точный повтор — 200 `{reused:true,photo,job}`; `Location` на job |
 | GET `/recognition/photos/` | page/page_size, ordering ±created_at, default -created_at | Page Photo |
 | GET `/recognition/photos/{id}/` | нет | Photo |
-| GET `/recognition/jobs/` | photo ID, status, page/page_size, ordering ±created_at | Page Job без `items` |
+| GET `/recognition/jobs/` | photo ID, status, `needs_review=1` (есть вырезка `needs_review` и задание не повторялось — ждёт человека; `0` — без фильтра), page/page_size, ordering ±created_at | Page Job без `items` |
 | GET `/recognition/jobs/{id}/` | нет | Job с `items`, до 10 вырезок |
 | POST `/recognition/jobs/{id}/cancel/` | JSON `{}` | 202 Job cancel_requested; 200 Job cancelled; 409 job_terminal |
 | POST `/recognition/jobs/{id}/retry/` | JSON `{}`, без Idempotency-Key | 202 новый Job; 409 job_active / retry_not_allowed |
 | GET `/recognition/receipt-images/` | photo/job/receipt ID (AND), page/page_size, ordering ±created_at | Page ReceiptImage без quad/rotation_degrees |
 | GET `/recognition/receipt-images/{id}/` | нет | ReceiptImage detail |
 | POST `/recognition/receipt-images/{id}/confirm/` | JSON `{receipt,lines,discounts,taxes}` до 1 MiB, без Idempotency-Key | 200 `{image,job}`; 409 job_active / review_unavailable / review_resolved / review_busy / review_invalid |
-| GET `/receipts/` | store/product ID, country/currency, operation, date_from/date_to, q, page/page_size, ordering ±purchased_at | Page Receipt, default -purchased_at |
+| GET `/receipts/` | store/product ID, country/currency, operation, date_from/date_to, q, owner (логин), page/page_size, ordering ±purchased_at | Page Receipt + `first_line`, `category` ([список «Траты»](#список-траты-фильтр-owner-и-поля-строки)), default -purchased_at |
 | GET `/receipts/{id}/` | нет | Receipt header, дочерние массивы отдельными страницами |
 | GET `/receipts/{id}/lines/` | page/page_size, kind, matching=matched/unmatched | Page Line, position/id |
 | GET `/receipts/{id}/discounts/` | page/page_size | Page Discount, position/id |
@@ -921,6 +921,21 @@ List и detail `/api/recognition/receipt-images/` отдают у **каждог
 ### Receipt, Line, Discount, Tax
 
 Receipt содержит ровно `id,owner,source,store,currency,operation,purchased_on,purchased_at,total,discount_total,prices_include_tax,origin,review_required,lines_count,unmatched_products_count,receipt_images_count,note,preview_image_url,created_at,updated_at,lines_url,discounts_url,taxes_url,images_url`. `owner` — логин того, кто добавил чек (владельца фото). Store — прежний `api.common.store_object`, без вложенного Merchant; `null` — «Без места», бывает только у `source=manual` ([трата без чека](#реализовано-трата-без-чека)). `source` — `photo` (чек с фото и всё прежнее) либо `manual`; `note` — комментарий человека, у чеков с фото пустая строка. `origin="recognized"` при наличии связанной вырезки, иначе `"legacy/manual"`: это вычисляемый индикатор связи, без новой provenance-модели. Preview — последняя связанная вырезка по created_at/id, при отсутствии null. `review_required` — несопоставленный товар, связанная вырезка needs_review или issues у неуспешной вырезки; замечания успешных вырезок сами по себе review не требуют. Несопоставленный товар может требовать проверки Receipt, хотя импорт и Job уже succeeded. Canonical Receipt не содержит непринятый результат: его смотрят через ReceiptImage.
+
+#### Список «Траты»: фильтр owner и поля строки
+
+`GET /api/receipts/?owner=<логин>` — только чеки, добавленные этим членом семьи. Фильтр применяется поверх правила доступа (`owner_q`): видны чеки свои и семьи, поэтому логин вне семьи, неизвестный логин и логин из чужой семьи дают пустую страницу `200` (`count: 0`), не ошибку; без семьи находится только свой логин, в `local_single` — `local`. Пустое значение (`?owner=`) — без фильтра, повтор — последнее значение, управляющие символы — `400 invalid_parameter` с `fields.owner`. Сочетается с остальными фильтрами через AND.
+
+Объект **списка** (только `GET /api/receipts/`, не деталь и не ответы трат) несёт сверх полей Receipt два поля для строки экрана «Траты»:
+
+- `first_line` — `name` первой строки чека по `position, id`; `null`, если строк нет. Клиент берёт его заголовком траты без места.
+- `category` — `{"id","name"}` категории **верхнего уровня**, если все строки чека, у которых категория известна, сводятся к одному корню; иначе `null` (строк с категорией нет либо корней несколько). Категория строки — категория обобщённого продукта товара, если товар есть, иначе `ReceiptLine.category` (как в статистике); строки без неё не учитываются. «Не разобрано» отдаётся как есть.
+
+Стоимость: обе величины — подзапросы того же запроса страницы; дерево категорий читается одним запросом и только когда на странице есть строка с категорией (список — `count` + страница + дерево). Моделей, миграций и индексов нет.
+
+```json
+{"id":71,"owner":"local","source":"photo","…":"…","first_line":"MILCH 1 L","category":{"id":81,"name":"Тест"}}
+```
 
 ```json
 {"id":101,"position":1,"kind":"product","parent_id":null,"name":"MILCH 1 L","name_i18n":{},"store_item_code":"M1","barcode":"","quantity":"2.000","unit":"pcs","unit_price":"1.2900","amount":"2.58","discount_amount":"0.20","paid_amount":"2.38","product":{"id":61,"name":"Молоко 1 л"},"matching_status":"matched","tax_rate":{"id":3,"country":"DE","kind":"vat","rate":"7.00"},"tax_code":"A","tax_amount":null,"is_excise":false,"is_marked":false}
@@ -1660,6 +1675,50 @@ Line несёт ещё `category` (`{"id","name"}` либо `null`, после `
 - Модели передаются: `today`, `default_currency`, коды валют, категории каталога (`id`, `name`, `parent_id`, без «Не разобрано», до 500) и текст. Fake (`RECEIPT_OCR_PROVIDER=fake`) отвечает без модели: сумма — последнее число текста, категория — первая по id, дата — `today`; сценарий — `MANUAL_PARSE_FAKE_SCENARIO` (`simple`, `invalid_output`, `provider_error`, `timeout`).
 - Воркер: в каждом проходе сначала запрос разбора (один на проход), затем задание распознавания, затем пакет предположений категорий. Задание, которое уже идёт, не прерывается: разбор ждёт его конца (клиент перестаёт ждать через 150 с). Пока идёт разбор, `executor.state` — `idle`, не `busy`.
 - Откат: `manage.py migrate receipts 0006_manual_expense` (удаляет таблицу запросов; чеки не трогает).
+
+## Реализовано: лимиты бюджета и дашборд месяца
+
+Шаг 4 [семейного бюджета](plans/2026-10-12-family-budget-design.md): месячные лимиты по категориям верхнего уровня и сводка месяца для главного экрана. Модель — [data-model](data-model.md#бюджет-лимиты-по-категориям) (`budget.BudgetLimit`), расчёт — `backend/budget/dashboard.py`, правило доступа к лимитам — `backend/budget/access.py`, представления — `backend/api/views/budget.py`.
+
+Доступ, CSRF и `Cache-Control: no-store` — как у трат без чека: `local_single` — `DEBUG` + `ALLOW_LOCAL_RECOGNITION_API=1` + loopback (запись — с CSRF), `accounts` — вход (без него `401 not_authenticated`) и CSRF для записи. Тело записи — объект JSON до 4 КБ, `Content-Type: application/json` (иначе `415`; пустое или не объект — `400 invalid_request`).
+
+### Лимиты: `/api/budget/limits/`
+
+У пользователя с семьёй лимиты общие на семью: их видят и правят все её члены, новый лимит пишется на семью. Без семьи (и в `local_single`) — свои. Личные лимиты, заведённые до вступления в семью, после вступления не видны (остаются в БД и админке). Чужой лимит — `404 not_found` тем же телом, что несуществующий.
+
+| Метод и путь | Ответ |
+| --- | --- |
+| `GET /api/budget/limits/` | `200` — страница `{count, page, page_size, pages, results}` (по умолчанию 50), порядок — имя категории, валюта, `id` |
+| `POST /api/budget/limits/` | тело `{"category_id", "currency", "amount"}` → `201` — лимит |
+| `GET /api/budget/limits/{id}/` | `200` — лимит |
+| `PATCH /api/budget/limits/{id}/` | любые из `category_id`, `currency`, `amount` → `200` — лимит |
+| `DELETE /api/budget/limits/{id}/` | `204` без тела |
+
+```json
+{"id": 7, "category_id": 3, "category_name": "Продукты", "currency": "KZT", "amount": "120000.00"}
+```
+
+- `category_id` — целое, id существующей категории **верхнего уровня**; `currency` — существующий код из трёх букв (регистр не важен); `amount` — сумма в месяц > 0, строка или число JSON, не больше 12 целых и 2 дробных знаков (запятая допустима), как `total` траты.
+- Пара «категория и валюта» уникальна у владельца (семьи либо пользователя): повтор, в том числе `PATCH` на занятую пару, — `400 invalid_parameter`, `fields.category_id`: `Лимит для этой категории и валюты уже есть.`
+- Прочие ошибки — `400 invalid_parameter` с `fields`: `category_id` (`Категория верхнего уровня не найдена.`), `currency` (`Валюта не найдена.`), `amount` (`Сумма больше нуля, не больше двух знаков после запятой.`), отсутствующее поле `POST` — `Обязательное поле.`, неизвестный ключ — `Неизвестное поле.`, пустой `PATCH` — `fields.body`: `Укажите хотя бы одно поле.` При отказе ничего не сохраняется.
+
+### `GET /api/dashboard/?month=ГГГГ-ММ`
+
+Месяц семьи (видимость чеков — `owner_q`: свои и членов семьи). `month` — по умолчанию текущий в поясе сервера (`TIME_ZONE`); иначе `ГГГГ-ММ` с годом 1901–9999, ошибка — `400 invalid_parameter`, `fields.month`: `Месяц в формате ГГГГ-ММ.` Запись — `405`.
+
+```json
+{"month": "2026-10", "previous_month": "2026-09", "days_left": 19, "members": ["andrey", "liza"],
+ "currencies": [{"currency": "KZT", "spent": "287450.00", "previous_spent": "326100.00", "limit_total": "400000.00",
+   "categories": [{"category_id": 3, "name": "Продукты", "spent": "92300.00", "limit": "120000.00", "limit_id": 7}]}],
+ "recent": [{"id": 12, "source": "photo", "title": "Magnum", "category_name": "Продукты", "owner": "liza",
+   "purchased_on": "2026-10-12", "total": "18940.00", "currency": "KZT", "lines_count": 23}]}
+```
+
+- Месяц — по локальной дате чека `purchased_on`, прошлый месяц — так же. `days_left` — дней до конца месяца, включая сегодня, если месяц текущий; иначе `0`. `members` — логины членов семьи по алфавиту, без семьи — `[свой]` (`local_single` — `["local"]`).
+- `currencies` — по коду валюты; валюты не складываются. Блок есть, если в валюте есть чеки этого или прошлого месяца либо лимит. `spent` / `previous_spent` — `Σ Receipt.total` месяца (заплачено, со скидкой на весь чек; возврат — со своим знаком), как `totals.receipts_total` в [`/api/stats/spending/`](#get-apistatsspending); нет чеков — `"0.00"`. `limit_total` — сумма лимитов валюты либо `null`.
+- `categories` — категории верхнего уровня: категория строки — категория товара, у строки без товара — `ReceiptLine.category` (ручная трата); потомки сворачиваются в корень, «Не разобрано» — как есть. `spent` — `Σ (amount − discount_amount)` строк. Строки без категории, услуги и залоги в категории не попадают (они только в `spent` блока), поэтому сумма категорий может быть меньше `spent`. Категория с лимитом есть и без трат (`"0.00"`). `limit` / `limit_id` — лимит этой категории и валюты либо `null`. Порядок — `spent` по убыванию, затем имя и id.
+- `recent` — последние 10 чеков и трат по `purchased_at` (затем `-id`) за всё время, не только за месяц. `title` — вывеска магазина; без магазина — комментарий траты, иначе `category_name`, иначе `Без места`. `category_name` — корень с наибольшей суммой строк чека либо `null`. `owner` — логин того, кто добавил; `lines_count` — все строки чека.
+- Число запросов не зависит от объёма данных. Слитые товары относятся к оставляемому, как в статистике.
 
 ## Планируется
 

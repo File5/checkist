@@ -2,7 +2,7 @@
 .ck-theme-toggle {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   min-width: 44px; min-height: 44px; padding: 8px 14px;
-  border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm);
+  border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-button);
   background: var(--ck-surface); color: var(--ck-text);
   font: inherit; line-height: 1.2; text-align: left; cursor: pointer;
 }
@@ -12,7 +12,7 @@
 .ck-theme-icon { flex: 0 0 20px; fill: var(--ck-accent-text); }
 .ck-theme-label { min-width: 0; overflow-wrap: anywhere; }
 
-/* On the header bar, dark in both themes: header tokens instead of the page ones. */
+/* On the header bar: header tokens instead of the page ones (the same colours as a card in each theme). */
 .ck-theme-toggle.ck-theme-toggle-header { border-color: var(--ck-header-text-muted); background: var(--ck-header-bg); color: var(--ck-header-text); }
 .ck-theme-toggle.ck-theme-toggle-header:hover:not(:disabled) { background: var(--ck-header-hover-bg); border-color: var(--ck-header-text); }
 .ck-theme-toggle.ck-theme-toggle-header:active:not(:disabled) { background: var(--ck-header-hover-bg); border-color: var(--ck-header-accent); }

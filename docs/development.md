@@ -576,6 +576,8 @@ Django admin работает на том же локальном Django, что
 
 Новую миграцию создаёт `makemigrations <app>`; проверьте её применение и откат на пустой QA-БД и обновите [data-model.md](data-model.md).
 
+Лимиты бюджета и дашборд (`budget`, `/api/budget/limits/`, `/api/dashboard/`) — приложение `budget` в полном списке тестов ([verification.md](verification.md)); отдельно — `manage.py test budget --noinput` (модель, откат `budget.0001_initial`, API лимитов и дашборда; все тесты, кроме `MonthTests`, — `integration`).
+
 ## Проверки API чтения
 
 После изменения `backend/api/`, `backend/config/exceptions.py` или `backend/receipts/prices.py` выполните в QA-среде полный набор тестов с приложением `api` и HTTP-сценарии из [verification.md](verification.md#http-api-чтения). Тесты `api` без тега БД не требуют и запускаются без Docker:

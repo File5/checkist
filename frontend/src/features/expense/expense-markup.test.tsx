@@ -12,7 +12,6 @@ import { emptyDraft, messages, newLine } from './expense-form'
 import type { ExpenseDraft } from './expense-form'
 import { ExpenseForm } from './ExpensePage'
 import { ManualSpendActions } from './ManualSpendActions'
-import QuickExpense from './QuickExpense'
 
 const noop = () => {}
 const category = (id: number, name: string): Category => ({
@@ -65,9 +64,6 @@ describe('«Добавить трату» form (Vitest/SSR, not browser visual a
   })
   it('leads «Отмена» of an edit back to the spend', () => {
     expect(form(emptyDraft('KZT', '2026-10-12'), { receiptId: 90, saving: true })).toContain('href="/receipts/90"')
-  })
-  it('offers the floating «Добавить трату»', () => {
-    expect(renderToStaticMarkup(<QuickExpense />)).toBe('<a class="ck-quick-expense" href="/receipts/new">Добавить трату</a>')
   })
 })
 

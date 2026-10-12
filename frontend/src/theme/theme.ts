@@ -3,13 +3,17 @@ import { useSyncExternalStore } from 'react'
 export type Theme = 'dark' | 'light'
 
 export const themeStorageKey = 'checkist.theme'
+/** The theme without a choice of the person and without a system preference (a server render, no matchMedia). */
 export const defaultTheme: Theme = 'dark'
+/** The media query that tells the system preference; the inline script of index.html asks the same one. */
+export const lightSchemeQuery = '(prefers-color-scheme: light)'
 /** Page background of each theme for `<meta name="theme-color">`; the same values as `--ck-bg` in tokens.css. */
-export const themeColors: Record<Theme, string> = { dark: '#141110', light: '#f6efdc' }
+export const themeColors: Record<Theme, string> = { dark: '#0e1316', light: '#f3f5f7' }
 
-/** Anything but a saved `light` is the dark theme: first visit, garbage, another type. */
-export function parseTheme(value: unknown): Theme {
-  return value === 'light' ? 'light' : defaultTheme
+/** A saved `light` or `dark` is the choice of the person; anything else (first visit, garbage, another type)
+ * is no choice, and the theme of the system — `fallback` — applies. */
+export function parseTheme(value: unknown, fallback: Theme = defaultTheme): Theme {
+  return value === 'light' || value === 'dark' ? value : fallback
 }
 
 export function nextTheme(theme: Theme): Theme {
@@ -25,7 +29,9 @@ export type ThemeEnvironment = {
   write: (theme: Theme) => void
   /** Reflects the theme outside React: `data-theme` on `<html>` and the theme-color meta. */
   apply: (theme: Theme) => void
-  /** Reports a change of the saved value made elsewhere (another tab). */
+  /** The theme of the system (`prefers-color-scheme`); used while the person has not chosen. */
+  system?: () => Theme
+  /** Reports a change of the saved value made elsewhere (another tab) or of the system theme. */
   listen?: (listener: () => void) => () => void
 }
 
@@ -37,12 +43,21 @@ export function createThemeStore(environment: ThemeEnvironment) {
   const listeners = new Set<() => void>()
   let stopListening: (() => void) | undefined
 
-  function read(): Theme {
+  function system(): Theme {
     try {
-      return parseTheme(environment.read())
+      return environment.system?.() ?? defaultTheme
     } catch {
       return defaultTheme
     }
+  }
+  function read(): Theme {
+    let saved: string | null = null
+    try {
+      saved = environment.read()
+    } catch {
+      // Blocked storage: the system theme still applies.
+    }
+    return parseTheme(saved, system())
   }
   function apply(value: Theme) {
     try {
@@ -111,18 +126,31 @@ function browserTheme() {
     read: () => window.localStorage.getItem(themeStorageKey),
     write: (theme) => window.localStorage.setItem(themeStorageKey, theme),
     apply: applyThemeToDocument,
+    system: () => (window.matchMedia(lightSchemeQuery).matches ? 'light' : 'dark'),
     listen: (listener) => {
       const onStorage = (event: StorageEvent) => {
         if (event.key === themeStorageKey || event.key === null) listener()
       }
       window.addEventListener('storage', onStorage)
-      return () => window.removeEventListener('storage', onStorage)
+      // The system theme changes (the phone switches to night): followed while the person has not chosen.
+      let scheme: MediaQueryList | undefined
+      try {
+        scheme = window.matchMedia(lightSchemeQuery)
+        scheme.addEventListener('change', listener)
+      } catch {
+        scheme = undefined
+      }
+      return () => {
+        window.removeEventListener('storage', onStorage)
+        scheme?.removeEventListener('change', listener)
+      }
     },
   })
   return store
 }
 
-/** Current theme and its switch. A server render (renderToStaticMarkup) always sees the dark theme. */
+/** Current theme and its switch: the saved choice, otherwise the system theme. A server render
+ * (renderToStaticMarkup) always sees the dark theme. */
 export function useTheme() {
   const current = browserTheme()
   const theme = useSyncExternalStore(current.subscribe, current.getSnapshot, current.getServerSnapshot)

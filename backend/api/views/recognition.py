@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Exists, OuterRef
 from django.middleware.csrf import get_token
 from rest_framework.exceptions import ParseError
 from rest_framework.response import Response
@@ -14,9 +15,9 @@ from api.recognition_serialization import (
 )
 from config.exceptions import InvalidParameter, InvalidRequest, ObjectNotFound, RecognitionApiError
 from recognition.images import ImageError
-from recognition.models import ProcessingJob, SourcePhoto
+from recognition.models import ProcessingJob, ReceiptImage, SourcePhoto
 from recognition.queue import QueueError, create_job, create_retry, request_cancel
-from recognition.statuses import ACTIVE_JOB_STATUSES, JobStatus
+from recognition.statuses import ACTIVE_JOB_STATUSES, ImageStatus, JobStatus
 from recognition.storage import StorageError, accept_upload
 
 from .recognition_base import BoundedMultiPartParser, EmptyObjectParser, LocalAPIView, request_owner
@@ -104,12 +105,19 @@ class JobsView(LocalAPIView):
         params, page, ordering = list_controls(request)
         photo = params.integer("photo")
         status = params.choice("status", JobStatus.values)
+        needs_review = params.boolean("needs_review")
         params.check()
         jobs = jobs_queryset(request)
         if photo is not None:
             jobs = jobs.filter(photo_id=photo)
         if status is not None:
             jobs = jobs.filter(status=status)
+        if needs_review:
+            # Waiting for a person: a crop to confirm, and the job was not retried (the retry replaces it).
+            jobs = jobs.filter(
+                Exists(ReceiptImage.objects.filter(job=OuterRef("pk"), status=ImageStatus.NEEDS_REVIEW)),
+                retries__isnull=True,
+            )
         executor = executor_object()
         return Response(paginate(jobs.order_by(*ordering), page, lambda job: job_object(job, executor)))
 

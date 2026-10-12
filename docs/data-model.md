@@ -727,6 +727,26 @@ Inline внутри чека, все без пустых заготовок (`ex
 
 **Откат F6** — revert коммита задачи F6 (`git log --oneline --grep='F6'`), только кода/регрессий и согласованной документации. Модели, settings, миграции, данные и журнал действий не меняются; новые миграции не нужны. Откат возвращает риск HTTP 500 при DELETE+UPDATE, перестановке позиций/ставок и занятии unique-ключа после clean. Сохраняются ограничения и риски предыдущего состояния F4; ранее потерянные данные revert не восстанавливает.
 
+## Бюджет: лимиты по категориям
+
+`budget.BudgetLimit` — месячный лимит трат в одной категории верхнего уровня и одной валюте (API — [api-contract](api-contract.md#реализовано-лимиты-бюджета-и-дашборд-месяца)).
+
+| Поле | Тип | Смысл |
+| --- | --- | --- |
+| `household` | FK `accounts.Household`, NULL, CASCADE | владелец-семья |
+| `user` | FK пользователь, NULL, CASCADE | владелец-пользователь без семьи |
+| `category` | FK `catalog.Category`, CASCADE | категория верхнего уровня |
+| `currency` | FK `stores.Currency`, PROTECT | валюта лимита |
+| `amount` | Decimal(14, 2) | сумма в месяц |
+| `created_at`, `updated_at` | DateTime | |
+
+- Ограничения БД: `budget_limit_one_owner` — задан ровно один из `household` / `user`; `budget_limit_amount_positive` — `amount > 0`; частичные уникальные `budget_limit_household_category_currency_uniq` (`household` не NULL) и `budget_limit_user_category_currency_uniq` (`user` не NULL).
+- «Верхний уровень» БД не проверяет: его проверяют API и `clean()` формы админки. Категорию, перенесённую под другую уже после создания лимита, дашборд показывает отдельной строкой со своим лимитом.
+- Владелец нового лимита — семья пользователя, без семьи — сам пользователь (`budget/access.py::limit_owner`); видимость — `limits_q`. Удаление семьи или пользователя удаляет лимит; категорию и валюту с лимитом удалить нельзя (`PROTECT`) — уборка созданных категорий в `classification` такую категорию оставляет (`kept`).
+- Админка: `BudgetLimit` — обычная правка (список, фильтр по валюте, поиск по категории, семье и логину). F4/F6 не затронуты.
+
+**Откат** `budget.0001_initial` — `manage.py migrate budget zero`: удаляет таблицу лимитов (лимиты теряются, чеки не меняются). Откат `accounts.0002_household_membership` теперь откатывает и `budget`.
+
 ## Миграции и откат
 
 | Порядок | Миграция | Содержимое |
@@ -743,7 +763,7 @@ Inline внутри чека, все без пустых заготовок (`ex
 | 10 | `catalog.0002_alter_product_options` | Только состояние: право `moderate_catalog` у `Product` |
 | 11 | `receipts.0006_manual_expense` | [Трата без чека](#трата-без-чека): `Receipt.source` (default `photo`), `Receipt.note`, `Receipt.store` nullable, `ReceiptLine.category`; три ограничения дедупликации пересозданы с `source='photo'` в условии. Откат при ручных тратах отказывает |
 
-Таблица перечисляет миграции трёх предметных приложений. Остальные собственные: `recognition.0001_initial`, `0002_sourcephoto_owner`, `0003_assign_local_owner`, `0004_sourcephoto_owner_required` (то же для фото: колонка и индекс, передача `local`, NOT NULL с `rec_photo_owner_sha256_uniq` до снятия `unique` с `sha256`); `merges.0001_initial`, `0002_actor_fields`; `classification.0001_initial`, `0002_actor_fields`; `accounts.0001_initial`. **Всего собственных миграций 20** (`catalog` 2, `stores` 3, `receipts` 6, `recognition` 4, `merges` 2, `classification` 2, `accounts` 1); вместе с 18 стандартными, о которых говорит прежний замер, — 38; `receipts.0006` добавлена после прогона QA разделения пользователей (37).
+Таблица перечисляет миграции трёх предметных приложений. Остальные собственные: `recognition.0001_initial`, `0002_sourcephoto_owner`, `0003_assign_local_owner`, `0004_sourcephoto_owner_required` (то же для фото: колонка и индекс, передача `local`, NOT NULL с `rec_photo_owner_sha256_uniq` до снятия `unique` с `sha256`); `merges.0001_initial`, `0002_actor_fields`; `classification.0001_initial`, `0002_actor_fields`; `accounts.0001_initial`. **Всего собственных миграций 20** (`catalog` 2, `stores` 3, `receipts` 6, `recognition` 4, `merges` 2, `classification` 2, `accounts` 1); вместе с 18 стандартными, о которых говорит прежний замер, — 38; `receipts.0006` добавлена после прогона QA разделения пользователей (37). Позже добавлены `accounts.0002_household_membership`, `receipts.0007_manual_parse_request` и `budget.0001_initial` ([лимиты](#бюджет-лимиты-по-категориям); зависит от `accounts.0002`, `catalog.0002`, `stores.0003`).
 
 Миграции владельца снимают `statement_timeout` на время своей транзакции (`SET LOCAL statement_timeout = 0`): `UPDATE` всех чеков и построение unique-индексов в 2000 мс могут не уложиться. Время на копии dev-базы не замерялось.
 

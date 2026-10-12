@@ -11,7 +11,7 @@ import { errorText, isExecutorAbsent, sizeText, uploadExecutorNote, uploadLabels
 import { autoSendStep, createUpload, fileFormat, formatBytes, pickAccept, progressValue, setJobNotice, uploadMessage, validateFormat } from './upload-state'
 import { useRequest } from './useRequest'
 import { createPreview } from './preview'
-import { clearQuickShot, peekQuickShot } from './quick-shot'
+import { clearQuickShot, onQuickShot, peekQuickShot } from './quick-shot'
 import './Upload.css'
 
 /** `null` — the browser could not show the photo, so its pixel size stays unknown. */
@@ -44,7 +44,7 @@ export default function UploadPage() {
   const load = useCallback((signal: AbortSignal) => getRecognitionCsrf({ signal }), [])
   // Absent is polled so the warning disappears once the worker starts; any other state stops the polling.
   const { state: config, request } = useRequest(load, isExecutorAbsent)
-  // A shot taken with the floating «Снять чек» on another screen arrives here and is sent like one taken on this page.
+  // A shot taken with «Снять чек» of the «＋» menu on another screen arrives here and is sent like one taken on this page.
   const [file, setFile] = useState<File | undefined>(peekQuickShot)
   // Pixel size of the chosen photo, read from its preview; undefined until the preview has loaded or failed.
   const [measured, setMeasured] = useState<Measured>()
@@ -62,6 +62,11 @@ export default function UploadPage() {
   ), [request])
   const state = useSyncExternalStore(upload.subscribe, upload.getSnapshot, upload.getServerSnapshot)
   useEffect(() => upload.dispose, [upload])
+  // «Снять чек» of the «＋» menu while this page is open: the new shot replaces the chosen photo and is sent by itself.
+  useEffect(() => onQuickShot((next) => {
+    autoSend.current = next
+    upload.reset(); setMeasured(undefined); setFile(next)
+  }), [upload])
   // Only an explicit refresh disables the buttons; background polling must not make them flicker.
   const [manualRefresh, setManualRefresh] = useState(false)
   const refreshConfig = useCallback(() => {

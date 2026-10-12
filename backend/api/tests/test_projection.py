@@ -444,9 +444,10 @@ SKIPPED_ROUTES = {
         "только POST",
     ),
     "receipts-manual-parse-detail": "запрос «Трата словами» своего пользователя; id чеков в нём нет",
+    "budget-limit": "лимит семьи или пользователя; id чеков в нём нет",
     **dict.fromkeys(
         ("api-not-found", "recognition-not-found", "receipts-not-found", "product-merges-not-found",
-         "product-classifications-not-found", "stats-not-found"),
+         "product-classifications-not-found", "stats-not-found", "budget-not-found"),
         "ответ 404 без данных",
     ),
     **dict.fromkeys(
@@ -515,7 +516,8 @@ class NoForeignReceiptIdTests(ProjectionMixin, TestCase):
             "/api/stats/spending/", "/api/stats/spending/?group_by=product", "/api/stats/spending/?group_by=store",
             "/api/stats/receipts/series/", f"/api/stats/receipts/compare/?{PERIODS}",
             "/api/product-merges/", "/api/product-classifications/", "/api/product-classifications/status/",
-            "/api/product-classifications/runs/",
+            "/api/product-classifications/runs/", "/api/budget/limits/", "/api/dashboard/",
+            "/api/dashboard/?month=2026-06",
         ]
         paths += [f"/api/categories/{pk}/" for pk in Category.objects.values_list("pk", flat=True)]
         for pk in GenericProduct.objects.values_list("pk", flat=True):
@@ -549,6 +551,8 @@ class NoForeignReceiptIdTests(ProjectionMixin, TestCase):
                 self.assertLessEqual({pk for pk in ids if pk is not None}, receipts)
                 links = {int(pk) for pk in RECEIPT_LINK.findall(response.content.decode("utf-8"))}
                 self.assertLessEqual(links, receipts)
+                if path.startswith("/api/dashboard/"):  # последние траты несут id чека в «id»
+                    self.assertLessEqual({row["id"] for row in response.json()["recent"]}, receipts)
                 if path.startswith("/api/receipts/?") or path == "/api/receipts/":
                     self.assertEqual({row["id"] for row in response.json()["results"]}, receipts)
         return routes, found
