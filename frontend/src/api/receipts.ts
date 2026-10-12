@@ -2,9 +2,10 @@ import { invalidIds } from './http.ts'
 import { mutate } from './local.ts'
 import { getLocalJson } from './recognition.ts'
 import { isDiscount, isLine, isManualDefaults, isReceipt, isTax } from './receipts-schema.ts'
+import { isManualParse } from './recognition-schema.ts'
 import { page } from './schema.ts'
 import type { LocalApiResult, Page, PageParams, RequestOptions } from './types.ts'
-import type { Discount, Line, ManualDefaults, ManualSpendInput, Receipt, ReceiptLineParams, ReceiptParams, Tax } from './receipts-types.ts'
+import type { Discount, Line, ManualDefaults, ManualParse, ManualSpendInput, Receipt, ReceiptLineParams, ReceiptParams, Tax } from './receipts-types.ts'
 
 export type * from './receipts-types.ts'
 
@@ -40,4 +41,13 @@ export async function updateManualSpend(id: number, input: ManualSpendInput, opt
 export async function deleteManualSpend(id: number, options: RequestOptions = {}): Promise<LocalApiResult<null>> {
   return invalidIds({ id }, options.signal)
     ?? mutate(`receipts/${id}/`, '', (value): value is null => value === null, options, false, undefined, { method: 'DELETE' })
+}
+
+/** «Трата словами»: `202` with the queued request; `today` — the local date of the device for «вчера» and the like.
+ * More than three unfinished requests (or 30 an hour) — `429 parse_limit`. */
+export function requestManualParse(text: string, today: string, options: RequestOptions = {}): Promise<LocalApiResult<ManualParse>> {
+  return mutate('receipts/manual/parse/', JSON.stringify({ text, today }), isManualParse, options)
+}
+export async function getManualParse(id: number, options: RequestOptions = {}): Promise<LocalApiResult<ManualParse>> {
+  return invalidIds({ id }, options.signal) ?? getLocalJson(`receipts/manual/parse/${id}/`, {}, isManualParse, options)
 }

@@ -1,4 +1,5 @@
 import type { CurrencyCode, Decimal, ISODate, ISODateTime, NamedObject, PageParams, Store, Unit } from './types.ts'
+import type { Executor } from './recognition-types.ts'
 
 export type ReceiptOperation = 'sale' | 'refund'
 /** `manual` — a spend without a receipt: no photo, may have no store, editable through the API. */
@@ -37,4 +38,18 @@ export type ManualLineInput = { name: string; amount: Decimal; quantity?: Decima
 export type ManualSpendInput = {
   total?: Decimal; currency?: CurrencyCode; category?: number | null; purchased_on?: ISODate
   store_name?: string | null; note?: string; lines?: ManualLineInput[]
+}
+
+/** «Трата словами»: the text waits for the worker; `draft` is a body of `POST /api/receipts/manual/` once `succeeded`. */
+export type ManualParseStatus = 'queued' | 'running' | 'succeeded' | 'failed'
+export type ManualParseLine = { name: string; amount: Decimal; quantity: Decimal | null; category: number | null }
+export type ManualParseDraft = {
+  total: Decimal | null; currency: CurrencyCode; category: number | null; purchased_on: ISODate
+  store_name: string | null; note: string; lines: ManualParseLine[]
+}
+export type ManualParse = {
+  id: number; status: ManualParseStatus; draft: ManualParseDraft | null
+  /** Only with `failed`; the message is a fixed server text, the client shows its own by `code`. */
+  error: { code: string; message: string } | null
+  created_at: ISODateTime; finished_at: ISODateTime | null; executor: Executor
 }

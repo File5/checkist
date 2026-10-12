@@ -10,6 +10,8 @@ import { Link, navigate } from '../../navigation'
 import { errorMessage } from '../receipts/state'
 import type { Failure } from '../receipts/state'
 import { saveMessage } from './labels'
+import { draftFromParse } from './parse-text'
+import TextHint from './TextHint'
 import {
   categoryChips, chipLabel, sentIndexes, draftBody, draftFromReceipt, emptyDraft, linesTotal, filledLines, LINES_MAX, newLine,
   savedNotice, serverErrors, setExpenseNotice, updatedNotice, visibleChips,
@@ -209,8 +211,10 @@ export default function ExpensePage({ receiptId }: { receiptId?: number }) {
     onRetry={() => { setLoad({ kind: 'loading' }); setAttempt((value) => value + 1) }} />
   if (load.kind === 'read-only') return <RequestState kind="empty" message="Чек с фото не меняется: править можно только трату, внесённую вручную."
     action={<Link className="action-link" to={`/receipts/${receiptId}`}>К чеку</Link>} />
+  const chips = load.data.chips
   return <div className="receipts-page expense-page">
-    <ExpenseForm draft={draft ?? load.data.draft} chips={load.data.chips} errors={errors} saving={saving} failure={failure}
+    {receiptId === undefined && <TextHint onFill={(parsed) => { setDraft(draftFromParse(parsed, chips)); setErrors({}); setFailure(undefined) }} />}
+    <ExpenseForm draft={draft ?? load.data.draft} chips={chips} errors={errors} saving={saving} failure={failure}
       receiptId={receiptId} onChange={setDraft} onSubmit={() => { void save() }} />
   </div>
 }

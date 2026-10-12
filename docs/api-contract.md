@@ -1636,6 +1636,31 @@ Line несёт ещё `category` (`{"id","name"}` либо `null`, после `
 - Три правила дедупликации чека к ручным тратам не применяются (условие `source='photo'` у ограничений, `find_duplicates` их не ищет): две одинаковые траты за день — две траты. Ручная трата не наблюдение цены (`observation_q` — только `source=photo`): история цен, сводки, сравнение и ряды цен её не видят.
 - Списки: `/api/receipts/?q=` ищет также по `note`; фильтры `store` и `country` трату «Без места» не находят. Статистика — как у чека: категория строки, `no_product`, `no_store` ([траты](#get-apistatsspending)); `/api/stats/receipts/*` считают трату походом.
 
+### Трата словами: разбор текста в черновик формы
+
+Человек пишет «такси до аэропорта 4500» или «молоко 450, хлеб 230 в магните» — сервер возвращает черновик формы траты; сам разбор ничего не сохраняет. Codex CLI со входом есть только рядом с `recognition_worker` (в Docker — контейнер `recognition`, у `web` его нет), поэтому разбор — очередь: `POST` пишет строку `ManualParseRequest` (миграция `receipts.0007_manual_parse_request`), воркер выполняет один текстовый вызов, клиент опрашивает `GET`. Код — `backend/receipts/manual_parse.py`, промпт — `receipts/prompts/manual_parse.txt`, схема ответа — `receipts/schemas/manual_parse.schema.json`. Доступ, CSRF, `no-store` и видимость (`owner_q`: чужая строка — `404`, семья видит строки друг друга) — как у трат выше.
+
+| Метод и путь | Ответ |
+| --- | --- |
+| `POST /api/receipts/manual/parse/` | тело `{"text": "…", "today": "ГГГГ-ММ-ДД"?}` → `202` — объект ниже в `queued` |
+| `GET /api/receipts/manual/parse/{id}/` | `200` — объект ниже |
+
+```json
+{"id": 7, "status": "succeeded", "created_at": "…Z", "finished_at": "…Z", "error": null,
+ "draft": {"total": "4500", "currency": "KZT", "category": 12, "purchased_on": "2026-10-12", "store_name": null,
+           "note": "до аэропорта", "lines": []},
+ "executor": {"available": true, "state": "idle", "last_seen_at": null}}
+```
+
+- `text` — 1–500 символов после обрезки пробелов; `today` — дата устройства для «вчера», «в субботу» (не дальше суток от даты сервера), без него — дата сервера (`TIME_ZONE`). Иначе `400 invalid_parameter` с `fields` `text` / `today`, неизвестный ключ — `Неизвестное поле.`.
+- Лимит (защита подписки Codex): не больше 3 незавершённых (`queued` / `running`) и 30 запросов за час на пользователя, иначе `429 parse_limit` — ничего не создаётся.
+- `status`: `queued` → `running` → `succeeded` | `failed`. `draft` — только у `succeeded`: ровно тело `POST /api/receipts/manual/` (`total` строкой или `null`, `currency` — названная в тексте либо валюта по умолчанию, `category` — id из каталога или `null`, `purchased_on` — названная дата либо `today`, `store_name` или `null`, `note` — строка, `lines` — `[{"name", "amount", "quantity" | null, "category" | null}]`; с позициями `total` — их сумма). Без суммы или категории черновик неполон — их дополняет человек.
+- `error` — только у `failed`: `{"code", "message"}` с фиксированным текстом. Коды: `invalid_output` (ответ не прошёл схему или правила `manual.parse`), `timeout` (`MANUAL_PARSE_TIMEOUT_SECONDS`, по умолчанию 90), `expired` (ждал воркера дольше 5 минут — модель не спрашивалась), `worker_lost` (воркер остановился или lease истекла; повтора нет — человек отправляет текст снова), `internal_error`, коды провайдера (`auth_required`, `network_unavailable`, `rate_limited`, `provider_unavailable`, `configuration_error`, `invalid_input`). Сырой ответ модели не хранится и в API не попадает.
+- `executor` — как у распознавания: `state: "absent"` у `queued` значит, что воркера нет и ответа не будет.
+- Модели передаются: `today`, `default_currency`, коды валют, категории каталога (`id`, `name`, `parent_id`, без «Не разобрано», до 500) и текст. Fake (`RECEIPT_OCR_PROVIDER=fake`) отвечает без модели: сумма — последнее число текста, категория — первая по id, дата — `today`; сценарий — `MANUAL_PARSE_FAKE_SCENARIO` (`simple`, `invalid_output`, `provider_error`, `timeout`).
+- Воркер: в каждом проходе сначала запрос разбора (один на проход), затем задание распознавания, затем пакет предположений категорий. Задание, которое уже идёт, не прерывается: разбор ждёт его конца (клиент перестаёт ждать через 150 с). Пока идёт разбор, `executor.state` — `idle`, не `busy`.
+- Откат: `manage.py migrate receipts 0006_manual_expense` (удаляет таблицу запросов; чеки не трогает).
+
 ## Планируется
 
 Вход через внешних провайдеров, регистрация и сброс пароля по почте, API ручного редактирования/сопоставления, клиент статистики (серверная часть — [выше](#реализовано-статистика-трат-походы-и-ряды-цен-серверная-часть)) и дашборд на главной, хранение курсов и production hosting не реализованы. Сквозное выполнение HTTP/worker/import с fake проверено С6; исторический реальный smoke С6 сохранил needs_review без автоимпорта. В И4 реальный Codex на single/double создал 2 Receipt, 6 строк и 5 товаров без дублей ([результаты](verification.md#фактические-результаты-и4)). Реальные фото и новый UI требуют [ручной приёмки](verification.md#ручная-приёмка-ocr-человеком); формы HTTP-слоя С5 не изменены.
