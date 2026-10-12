@@ -4,10 +4,14 @@
 # Targets: `app` (web and celery), `recognition` (app + Codex CLI), `proxy` (Caddy + the built SPA
 # + admin static). `frontend-build` and `static` are build stages only: Node never reaches a server.
 
-# Codex CLI release and the SHA-256 of its archives; change the three values together.
+# Codex CLI release and the SHA-256 of its archives; change the five values together.
+# codex-code-mode-host ships as a separate archive of the same release: without it Codex
+# prints an `error` item before the turn, and the worker rejects every answer as invalid_output.
 ARG CODEX_VERSION=0.162.0
 ARG CODEX_SHA256_AMD64=8daf67f6261161aa5939d8d42a516032d760406216779d7ce6040f242140ff73
 ARG CODEX_SHA256_ARM64=15162a9b59edf8e512b27414ec0b7db22e6424a1262b0eee8666643e0d295c2f
+ARG CODEX_HOST_SHA256_AMD64=dee8bf3df637c68e1495b928d643b76d4ad44f94e4f0ed79fe8482fa79e23d97
+ARG CODEX_HOST_SHA256_ARM64=18d99b055d2ef4a2af51f1144919bd8a208f4f79ace389b7775341d6903cf7e9
 
 
 FROM node:24.21.0-trixie-slim AS frontend-build
@@ -51,16 +55,24 @@ RUN DJANGO_DEBUG=1 DJANGO_STATIC_ROOT=/var/lib/checkist/static python manage.py 
 FROM scratch AS codex-amd64
 ARG CODEX_VERSION
 ARG CODEX_SHA256_AMD64
+ARG CODEX_HOST_SHA256_AMD64
 ADD --checksum=sha256:${CODEX_SHA256_AMD64} \
     https://github.com/openai/codex/releases/download/rust-v${CODEX_VERSION}/codex-x86_64-unknown-linux-musl.tar.gz \
     /codex.tar.gz
+ADD --checksum=sha256:${CODEX_HOST_SHA256_AMD64} \
+    https://github.com/openai/codex/releases/download/rust-v${CODEX_VERSION}/codex-code-mode-host-x86_64-unknown-linux-musl.tar.gz \
+    /codex-code-mode-host.tar.gz
 
 FROM scratch AS codex-arm64
 ARG CODEX_VERSION
 ARG CODEX_SHA256_ARM64
+ARG CODEX_HOST_SHA256_ARM64
 ADD --checksum=sha256:${CODEX_SHA256_ARM64} \
     https://github.com/openai/codex/releases/download/rust-v${CODEX_VERSION}/codex-aarch64-unknown-linux-musl.tar.gz \
     /codex.tar.gz
+ADD --checksum=sha256:${CODEX_HOST_SHA256_ARM64} \
+    https://github.com/openai/codex/releases/download/rust-v${CODEX_VERSION}/codex-code-mode-host-aarch64-unknown-linux-musl.tar.gz \
+    /codex-code-mode-host.tar.gz
 
 FROM codex-${TARGETARCH} AS codex-archive
 
@@ -71,11 +83,15 @@ FROM app AS recognition
 USER root
 # bubblewrap: the Linux sandbox of Codex (`-s read-only`) looks for a system bwrap.
 RUN --mount=type=bind,from=codex-archive,source=/codex.tar.gz,target=/tmp/codex.tar.gz \
+    --mount=type=bind,from=codex-archive,source=/codex-code-mode-host.tar.gz,target=/tmp/codex-code-mode-host.tar.gz \
     apt-get update \
     && apt-get install -y --no-install-recommends bubblewrap \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir /tmp/codex \
     && tar -xzf /tmp/codex.tar.gz -C /tmp/codex \
+    && tar -xzf /tmp/codex-code-mode-host.tar.gz -C /tmp/codex \
+    && install -m 0755 /tmp/codex/codex-code-mode-host-*-unknown-linux-musl /usr/local/bin/codex-code-mode-host \
+    && rm /tmp/codex/codex-code-mode-host-*-unknown-linux-musl \
     && install -m 0755 /tmp/codex/codex-*-unknown-linux-musl /usr/local/bin/codex \
     && rm -rf /tmp/codex
 USER checkist

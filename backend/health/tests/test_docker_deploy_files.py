@@ -399,6 +399,9 @@ class DockerDeployFilesTests(SimpleTestCase):
         self.assertNotIn(":latest", dockerfile)
         self.assertRegex(dockerfile, r"(?m)^ARG CODEX_VERSION=\d+\.\d+\.\d+$")
         self.assertEqual(len(re.findall(r"(?m)^ARG CODEX_SHA256_[A-Z0-9]+=[0-9a-f]{64}$", dockerfile)), 2)
+        # Without codex-code-mode-host Codex prints an `error` item before the turn: every answer is invalid_output.
+        self.assertEqual(len(re.findall(r"(?m)^ARG CODEX_HOST_SHA256_[A-Z0-9]+=[0-9a-f]{64}$", dockerfile)), 2)
+        self.assertIn("/usr/local/bin/codex-code-mode-host", dockerfile)
         for target in ("app", "proxy", "recognition"):
             with self.subTest(target=target):
                 self.assertIn(f"    target: {target}\n", text("compose.prod.yaml"))
