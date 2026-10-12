@@ -261,6 +261,8 @@ PRODUCT_CLASSIFICATION_AUTO_SUGGEST = classification_suggest_flag in {"1", "true
 PRODUCT_CLASSIFICATION_TIMEOUT_SECONDS = env_integer("PRODUCT_CLASSIFICATION_TIMEOUT_SECONDS", 180, 1, 2400)
 PRODUCT_CLASSIFICATION_BATCH_SIZE = env_integer("PRODUCT_CLASSIFICATION_BATCH_SIZE", 25, 1, 50)
 PRODUCT_CLASSIFICATION_RUN_LIMIT = env_integer("PRODUCT_CLASSIFICATION_RUN_LIMIT", 200, 1, 1000)
+# «Трата словами»: deadline of one text-only model request (receipts.manual_parse).
+MANUAL_PARSE_TIMEOUT_SECONDS = env_integer("MANUAL_PARSE_TIMEOUT_SECONDS", 90, 1, 600)
 MEDIA_ROOT = env_directory("MEDIA_ROOT", BASE_DIR.parent / "media")
 # Fixed v1 prefix shared with the client URL guards and Vite dev/preview proxy.
 MEDIA_URL = os.environ.get("MEDIA_URL", "/media/")

@@ -4,15 +4,15 @@ from rest_framework.exceptions import ParseError, UnsupportedMediaType
 from rest_framework.response import Response
 
 from accounts.access import owner_q, request_user
-from api.common import get_or_404
+from api.common import get_or_404, utc_datetime
 from api.pagination import paginate
 from api.params import Params
 from api.recognition_serialization import (
-    discount_object, line_object, receipt_object, receipts_queryset, tax_object,
+    discount_object, executor_object, line_object, receipt_object, receipts_queryset, tax_object,
 )
 from config.exceptions import InvalidParameter, InvalidRequest, RecognitionApiError
-from receipts import manual
-from receipts.models import Receipt, ReceiptLine
+from receipts import manual, manual_parse
+from receipts.models import ManualParseRequest, Receipt, ReceiptLine
 
 from .recognition import path_id
 from .recognition_base import JsonObjectParser, LocalAPIView
@@ -109,6 +109,61 @@ class ManualReceiptView(LocalAPIView):
         except manual.ManualInvalid as error:
             raise manual_invalid(error) from None
         return Response(receipt_object(get_or_404(receipts_queryset(request), receipt.pk)), status=status.HTTP_201_CREATED)
+
+
+# Коды сбоя разбора -> фиксированные тексты; сырой ответ модели в API не попадает.
+PARSE_ERRORS = {
+    "invalid_output": "Не удалось разобрать текст. Заполните форму вручную.",
+    "timeout": "Разбор не уложился в срок. Попробуйте ещё раз или заполните форму вручную.",
+    "expired": "Разбор не дождался исполнителя. Заполните форму вручную.",
+    "worker_lost": "Исполнитель остановился во время разбора. Попробуйте ещё раз.",
+    "auth_required": "Разбор сейчас недоступен: исполнителю нужен вход в Codex.",
+}
+PARSE_ERROR_DEFAULT = "Разбор сейчас недоступен. Заполните форму вручную."
+
+
+def parse_object(row):
+    error = None
+    if row.error_code:
+        error = {"code": row.error_code, "message": PARSE_ERRORS.get(row.error_code, PARSE_ERROR_DEFAULT)}
+    return {
+        "id": row.pk, "status": row.status, "draft": row.draft if row.status == ManualParseRequest.Status.SUCCEEDED else None,
+        "error": error, "created_at": utc_datetime(row.created_at), "finished_at": utc_datetime(row.finished_at),
+        "executor": executor_object(),
+    }
+
+
+class ManualParseView(LocalAPIView):
+    """``POST`` — поставить текст «Трата словами» в очередь воркера; ``202`` и строка запроса."""
+
+    http_method_names = ["post", "options"]
+    parser_classes = [JsonObjectParser]
+
+    def post(self, request):
+        data = manual_body(request)
+        errors = {key: ["Неизвестное поле."] for key in data if key not in ("text", "today")}
+        text = data.get("text")
+        if not isinstance(text, str) or not text.strip():
+            errors["text"] = ["Напишите, на что потрачено и сколько."]
+        elif len(text.strip()) > manual_parse.TEXT_MAX:
+            errors["text"] = [f"Не длиннее {manual_parse.TEXT_MAX} символов."]
+        today = None
+        if data.get("today") is not None and (today := manual_parse.client_today(data["today"])) is None:
+            errors["today"] = ["Дата в формате ГГГГ-ММ-ДД, не дальше суток от даты сервера."]
+        if errors:
+            raise InvalidParameter(errors)
+        try:
+            row = manual_parse.request(request_user(request), text.strip(), today)
+        except manual_parse.ParseLimit:
+            raise RecognitionApiError("parse_limit") from None
+        return Response(parse_object(row), status=status.HTTP_202_ACCEPTED)
+
+
+class ManualParseDetailView(LocalAPIView):
+    """``GET`` — состояние запроса и черновик формы; чужой запрос — ``404``."""
+
+    def get(self, request, pk):
+        return Response(parse_object(get_or_404(ManualParseRequest.objects.filter(owner_q(request)), path_id(pk))))
 
 
 class ReceiptView(LocalAPIView):

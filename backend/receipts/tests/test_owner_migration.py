@@ -20,7 +20,7 @@ User = get_user_model()
 
 BEFORE = [("receipts", "0002_alter_receipttax_options")]
 OWNER_MIGRATIONS = ["0003_receipt_owner", "0004_assign_local_owner", "0005_receipt_owner_required"]
-LATER_MIGRATIONS = ["0006_manual_expense"]
+LATER_MIGRATIONS = ["0006_manual_expense", "0007_manual_parse_request"]
 PURCHASED_AT = datetime(2026, 3, 14, 11, 30, tzinfo=timezone.utc)
 PURCHASED_ON = date(2026, 3, 14)
 FISCAL_KEY = "xa:0000000000000001:101"

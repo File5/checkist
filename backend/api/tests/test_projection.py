@@ -440,9 +440,10 @@ SKIPPED_ROUTES = {
         ("auth-login", "auth-logout", "auth-password", "recognition-cancel", "recognition-retry",
          "recognition-image-confirm", "product-merges-detect", "product-merges-confirm", "product-merges-cancel",
          "product-merges-exclude", "product-classifications-confirm-many", "product-classifications-confirm",
-         "product-classifications-reject"),
+         "product-classifications-reject", "receipts-manual-parse"),
         "только POST",
     ),
+    "receipts-manual-parse-detail": "запрос «Трата словами» своего пользователя; id чеков в нём нет",
     **dict.fromkeys(
         ("api-not-found", "recognition-not-found", "receipts-not-found", "product-merges-not-found",
          "product-classifications-not-found", "stats-not-found"),

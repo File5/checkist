@@ -1,7 +1,9 @@
 """Host worker; PostgreSQL owns both the queue and the singleton lock.
 
-Two kinds of work: a recognition job always comes first; when none waits, one
-batch of a product classification run is executed (classification/QUEUE.md).
+Three kinds of work, one unit a pass: a manual spend parse request («Трата
+словами», one short text-only call, someone waits on the form) comes first; then
+a recognition job; when neither waits, one batch of a product classification run
+(classification/QUEUE.md).
 """
 import logging
 import os
@@ -30,6 +32,7 @@ from recognition.providers.codex_cli import child_environment
 from recognition.providers.factory import get_provider
 from recognition.providers.fake import SCENARIOS
 from recognition.statuses import EXECUTING_JOB_STATUSES
+from receipts import manual_parse
 
 logger = logging.getLogger(__name__)
 
@@ -187,6 +190,27 @@ def build_classifier(*, fake_scenario=None):
         raise CommandError("Product classification provider configuration is invalid.") from None
 
 
+def build_text_parser():
+    """The «Трата словами» parser of the same provider; a failure never selects the fake."""
+    try:
+        return manual_parse.get_parser()
+    except ProviderError:
+        raise CommandError("Manual spend parse provider configuration is invalid.") from None
+
+
+def parse_text(row, *, parser, slot):
+    """One parse request; an unexpected error fails the request, never the worker."""
+    try:
+        return manual_parse.execute(row, parser=parser, is_stopped=SlotWatch(slot))
+    except (OperationalError, InterfaceError):
+        raise
+    except Exception as error:
+        logger.error("Manual spend parse failed: %s", type(error).__name__)  # never its text
+        manual_parse.fail(row, "internal_error")
+        row.refresh_from_db()
+        return row
+
+
 class SlotWatch:
     """is_stopped of a classification batch: the worker lost its singleton session.
 
@@ -240,7 +264,7 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument(
             "--once", action="store_true",
-            help="Recover leases and process at most one unit of work (a job, else one classification batch), then exit.",
+            help="Recover leases and process at most one unit of work (a parse request, else a job, else one classification batch), then exit.",
         )
         parser.add_argument("--fake-scenario", choices=SCENARIOS, help="Server-only demo scenario; requires the fake provider.")
         parser.add_argument(
@@ -249,19 +273,26 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        active = active_run = None
+        active = active_run = active_parse = None
         try:
             with worker_slot() as slot:
                 provider = validate_startup(fake_scenario=options["fake_scenario"])
                 classifier = build_classifier(fake_scenario=options.get("classification_fake_scenario"))
+                text_parser = build_text_parser()
                 self.stdout.write("Recognition worker ready.")
                 try:
                     while True:
                         check_slot(slot)
                         queue.recover_expired_jobs()
                         classification_queue.recover_expired_runs()
-                        active = queue.claim_job()
-                        if active is not None:
+                        manual_parse.recover_expired()
+                        # A person waits on the form: a short parse goes before a long OCR job.
+                        active_parse = manual_parse.claim()
+                        if active_parse is not None:
+                            result = parse_text(active_parse, parser=text_parser, slot=slot)
+                            self.stdout.write(f"Manual parse {result.pk}: {result.status}")
+                            active_parse = None
+                        elif (active := queue.claim_job()) is not None:
                             with LeaseHeartbeat(active, slot) as heartbeat:
                                 result = process_job(active, provider=provider, is_stopped=heartbeat.has_lost)
                             self.stdout.write(f"Job {result.pk}: {result.status}")
@@ -278,6 +309,8 @@ class Command(BaseCommand):
                         # Signals interrupt this idle wait too; no further claim.
                         Event().wait(1)
                 except KeyboardInterrupt:
+                    if active_parse is not None:
+                        manual_parse.fail(active_parse, "worker_lost")
                     if active is not None:
                         release_active(active)
                     if active_run is not None:
