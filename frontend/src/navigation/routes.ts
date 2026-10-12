@@ -100,6 +100,17 @@ export interface ReceiptsStatsQuery extends StatsScopeQuery {
   interval?: ReceiptsStatsInterval
 }
 
+/** Window lengths of «Динамика», in months; 12 is the default and never stands in a parsed query. */
+export const trendsMonthChoices = [6, 12, 24] as const
+export type TrendsMonths = typeof trendsMonthChoices[number]
+
+/** `/stats/trends`. `month` — the column opened in «Траты по месяцам»; `category` — the category of «Категория во времени». */
+export interface TrendsQuery {
+  months?: Exclude<TrendsMonths, 12>
+  category?: number
+  month?: string
+}
+
 export type CatalogRoute =
   | { kind: 'catalog'; query: CatalogQuery }
   | { kind: 'category'; categoryId: number; query: CatalogQuery }
@@ -112,6 +123,8 @@ export type NavigableRoute = CatalogRoute
   | { kind: 'product'; productId: number; query: ProductQuery }
   | { kind: 'spending'; query: SpendingQuery }
   | { kind: 'receipts-stats'; query: ReceiptsStatsQuery }
+  /** «Динамика»: spending by month, one category over time, the family price index. */
+  | { kind: 'trends'; query: TrendsQuery }
   | { kind: 'health' }
   | { kind: 'receipts'; query: ReceiptsQuery }
   | { kind: 'upload' }
@@ -313,6 +326,23 @@ export function parseReceiptsStatsQuery(search: string | URLSearchParams): Parse
   }
 }
 
+/** Like the other statistics screens, a wrong value is dropped instead of refusing the address. */
+export function parseTrendsQuery(search: string | URLSearchParams): ParsedQuery<TrendsQuery> {
+  const reader = queryReader(search)
+  const months = reader.choice('months', trendsMonthChoices.map(String))
+  const category = reader.integer('category')
+  const raw = reader.read('month')
+  const month = parseMonthParam(raw)
+  if (raw !== undefined && month === undefined) reader.invalid('month')
+  return {
+    query: {
+      ...(months && months !== '12' && { months: Number(months) as Exclude<TrendsMonths, 12> }), ...(category && { category }),
+      ...(month && { month }),
+    },
+    invalidFields: reader.invalidFields,
+  }
+}
+
 /** A Django username: letters, digits and @.+-_, at most 150 characters. A wrong one is refused like any wrong filter. */
 const ownerPattern = /^[\p{L}\p{N}_@.+-]{1,150}$/u
 
@@ -411,6 +441,14 @@ export function receiptsStatsHref(query: ReceiptsStatsQuery = {}): string {
   return `/stats/receipts${buildReceiptsStatsQuery(query)}`
 }
 
+export function buildTrendsQuery(query: TrendsQuery): string {
+  return buildQuery(query, ['months', 'category', 'month'], parseTrendsQuery, false)
+}
+
+export function trendsHref(query: TrendsQuery = {}): string {
+  return `/stats/trends${buildTrendsQuery(query)}`
+}
+
 export function buildReceiptsQuery(query: ReceiptsQuery): string {
   return buildQuery(query, ['store', 'product', 'country', 'currency', 'operation', 'date_from', 'date_to', 'q', 'owner', 'page', 'page_size', 'ordering'], parseReceiptsQuery)
 }
@@ -450,6 +488,7 @@ export function buildRoute(route: NavigableRoute): string {
     case 'product': return `/catalog/products/${buildId(route.productId)}${buildProductQuery(route.query)}`
     case 'spending': return spendingHref(route.query)
     case 'receipts-stats': return receiptsStatsHref(route.query)
+    case 'trends': return trendsHref(route.query)
     case 'health': return '/health'
     case 'receipts': return `/receipts${buildReceiptsQuery(route.query)}`
     case 'upload': return '/receipts/upload'
@@ -495,6 +534,7 @@ export function parseRoute(input: string | URL): Route {
   // Statistics never answer with invalid-query: a wrong value is dropped and the screen opens without it.
   if (normalizedPath === '/stats') return { kind: 'spending', query: parseSpendingQuery(url.searchParams).query }
   if (normalizedPath === '/stats/receipts') return { kind: 'receipts-stats', query: parseReceiptsStatsQuery(url.searchParams).query }
+  if (normalizedPath === '/stats/trends') return { kind: 'trends', query: parseTrendsQuery(url.searchParams).query }
   if (normalizedPath === '/receipts' || normalizedPath === '/recognition/jobs') {
     const receipts = normalizedPath === '/receipts'
     const parsed = receipts ? parseReceiptsQuery(url.searchParams) : parseJobsQuery(url.searchParams)

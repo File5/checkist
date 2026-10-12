@@ -18,6 +18,7 @@ vi.mock('../session', async (importOriginal) => ({
 vi.mock('../features/stats', () => ({
   SpendingPage: ({ query }: { query: unknown }) => <pre data-screen="spending">{JSON.stringify(query)}</pre>,
   ReceiptsStatsPage: ({ query }: { query: unknown }) => <pre data-screen="receipts-stats">{JSON.stringify(query)}</pre>,
+  TrendsPage: ({ query }: { query: unknown }) => <pre data-screen="trends">{JSON.stringify(query)}</pre>,
 }))
 
 function render(route: NavigableRoute) {
@@ -31,6 +32,7 @@ describe('statistics section in the shell (SSR only, no browser interaction)', (
   it.each<[NavigableRoute, string, string, string]>([
     [{ kind: 'spending', query: {} }, 'Траты за период', 'Траты', '/stats'],
     [{ kind: 'receipts-stats', query: {} }, 'Средний чек', 'Средний чек', '/stats/receipts'],
+    [{ kind: 'trends', query: { months: 24 } }, 'Динамика', 'Динамика', '/stats/trends'],
   ])('mounts %j with the shell title, the active menu item and the active subsection', (route, title, section, href) => {
     const html = render(route)
     expect(html.match(/<h1\b/g)).toHaveLength(1)
@@ -40,13 +42,15 @@ describe('statistics section in the shell (SSR only, no browser interaction)', (
       `<a aria-current="page" href="${href}">${section}`,
     ])
     expect(html).toContain('aria-label="Раздел статистики"')
-    expect(html.match(/<pre data-screen="[^"]*"/g)).toEqual([`<pre data-screen="${route.kind === 'spending' ? 'spending' : 'receipts-stats'}"`])
+    expect(html.match(/<pre data-screen="[^"]*"/g)).toEqual([`<pre data-screen="${route.kind}"`])
     expect(html).not.toContain('aria-label="Раздел каталога"')
   })
   it('keeps both subsections reachable as ordinary links', () => {
     const html = render({ kind: 'spending', query: {} })
     expect(html).toContain('<a href="/stats/receipts">Средний чек</a>')
     expect(render({ kind: 'receipts-stats', query: {} })).toContain('<a href="/stats">Траты</a>')
+    expect(html).toContain('<a href="/stats/trends">Динамика</a>')
+    expect(render({ kind: 'trends', query: {} })).toContain('<a href="/stats/receipts">Средний чек</a>')
   })
   it('shows the menu item everywhere and the subsection only inside statistics', () => {
     for (const route of [{ kind: 'health' }, { kind: 'receipts', query: { page: 1 } }, { kind: 'merges', query: { page: 1 } }] as NavigableRoute[]) {
