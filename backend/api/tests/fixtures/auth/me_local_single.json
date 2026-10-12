@@ -5,6 +5,7 @@
     "username": "local",
     "is_staff": false
   },
+  "household": null,
   "permissions": {
     "moderate_catalog": true
   },

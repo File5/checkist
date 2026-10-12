@@ -6,8 +6,8 @@ import { BAR_SLOTS, menuItems } from './menu-items'
 const loading: Session = { kind: 'loading' }
 const failed: Session = { kind: 'error' }
 const guest: Session = { kind: 'guest', expired: false }
-const reader: Session = { kind: 'user', mode: 'accounts', user: { id: 1, username: 'synthetic-reader', is_staff: false }, permissions: { moderate_catalog: false } }
-const local: Session = { kind: 'user', mode: 'local_single', user: { id: 1, username: 'local', is_staff: false }, permissions: { moderate_catalog: true } }
+const reader: Session = { kind: 'user', mode: 'accounts', user: { id: 1, username: 'synthetic-reader', is_staff: false }, household: null, permissions: { moderate_catalog: false } }
+const local: Session = { kind: 'user', mode: 'local_single', user: { id: 1, username: 'local', is_staff: false }, household: null, permissions: { moderate_catalog: true } }
 
 const catalog: Route = { kind: 'catalog', query: { page: 1 } }
 const health: Route = { kind: 'health' }

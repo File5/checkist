@@ -18,6 +18,7 @@
 .receipt-note { color: var(--ck-text-muted); font-size: 0.9rem; font-weight: 400; }
 .receipt-warning { color: var(--ck-warning-text); font-size: 0.95rem; }
 .receipt-number { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.receipt-owner { white-space: nowrap; }
 .receipt-total { font-size: 1.2rem; font-weight: 700; white-space: nowrap; }
 .receipt-facts { margin: 0; }
 .receipt-facts dt { color: var(--ck-text-muted); font-size: 0.9rem; }

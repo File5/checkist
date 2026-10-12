@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import LoginFailure
+from .models import Household, LoginFailure, Membership
 
 
 @admin.register(LoginFailure)
@@ -19,3 +19,18 @@ class LoginFailureAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+
+class MembershipInline(admin.TabularInline):
+    model = Membership
+    extra = 1
+    autocomplete_fields = ("user",)
+
+
+@admin.register(Household)
+class HouseholdAdmin(admin.ModelAdmin):
+    """Семьи заводит администратор: название и члены; пользователь — не больше чем в одной."""
+
+    list_display = ("name", "created_at")
+    search_fields = ("name", "memberships__user__username")
+    inlines = (MembershipInline,)

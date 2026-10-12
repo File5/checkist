@@ -33,9 +33,9 @@ vi.mock('../features/stats', () => ({ SpendingPage: () => null, ReceiptsStatsPag
 const loading: Session = { kind: 'loading' }
 const failed: Session = { kind: 'error' }
 const guest: Session = { kind: 'guest', expired: false }
-const reader: Session = { kind: 'user', mode: 'accounts', user: { id: 1, username: 'synthetic-reader', is_staff: false }, permissions: { moderate_catalog: false } }
-const moderator: Session = { kind: 'user', mode: 'accounts', user: { id: 2, username: 'synthetic-moderator', is_staff: false }, permissions: { moderate_catalog: true } }
-const local: Session = { kind: 'user', mode: 'local_single', user: { id: 1, username: 'local', is_staff: false }, permissions: { moderate_catalog: true } }
+const reader: Session = { kind: 'user', mode: 'accounts', user: { id: 1, username: 'synthetic-reader', is_staff: false }, household: null, permissions: { moderate_catalog: false } }
+const moderator: Session = { kind: 'user', mode: 'accounts', user: { id: 2, username: 'synthetic-moderator', is_staff: false }, household: null, permissions: { moderate_catalog: true } }
+const local: Session = { kind: 'user', mode: 'local_single', user: { id: 1, username: 'local', is_staff: false }, household: null, permissions: { moderate_catalog: true } }
 const sessions = [loading, failed, guest, { kind: 'guest', expired: true } as Session, reader, moderator, local]
 
 const routes: [Route, string][] = [

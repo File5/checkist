@@ -273,7 +273,7 @@ describe('result block', () => {
     const denied: SpendingFailure = { kind: 'error', reason: 'permission_denied', status: 403 }
     const former = failureView(denied)
     const me = (mode: 'accounts' | 'local_single') =>
-      ({ mode, user: { id: 3, username: 'anna', is_staff: false }, permissions: { moderate_catalog: mode === 'local_single' }, csrf_token: 'token' })
+      ({ mode, user: { id: 3, username: 'anna', is_staff: false }, household: null, permissions: { moderate_catalog: mode === 'local_single' }, csrf_token: 'token' })
     try {
       applyMe(me('accounts'))
       expect(failureView(denied)).toEqual({ retry: false, message: 'Нет права модератора каталога.' })

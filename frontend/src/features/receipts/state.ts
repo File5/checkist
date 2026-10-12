@@ -4,8 +4,11 @@ import { buildReceiptsQuery, parseReceiptsQuery } from '../../navigation'
 import type { ReceiptsQuery } from '../../navigation'
 import { formatAmount, formatPrice } from '../../lib/format'
 import { getSession, permissionDeniedText } from '../../session'
+import type { Session } from '../../session'
 
 export const unknown = 'Не распознано'
+/** «Добавил: имя» — only for a member of a family: without one every receipt is the user's own. */
+export const ownerShown = (session: Session) => session.kind === 'user' && session.household !== null
 export const recognizedText = (value: string | null | undefined) => value?.trim() || unknown
 export const recognizedValue = (value: string) => value === '—' ? unknown : value
 export const money = (value: string | null, currency?: string) => recognizedValue(formatAmount(value, currency ?? '').trim())

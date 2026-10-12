@@ -11,7 +11,7 @@ const apiPath = (value: unknown) => typeof value === 'string' && /^\/api\/(?:rec
 
 export const isTaxRate = object<TaxRate>({ id: isId, country, kind: taxKind, rate: nullable(amount) })
 export const isReceipt = object<Receipt>({
-  id: isId, store, currency, operation: receiptOperation, purchased_on: isISODate, purchased_at: isISODateTime,
+  id: isId, owner: (value: unknown) => typeof value === 'string' && value.length > 0, store, currency, operation: receiptOperation, purchased_on: isISODate, purchased_at: isISODateTime,
   total: amount, discount_total: amount, prices_include_tax: bool, origin: choice('recognized', 'legacy/manual'), review_required: bool,
   lines_count: nonNegativeInteger, unmatched_products_count: nonNegativeInteger, receipt_images_count: nonNegativeInteger,
   preview_image_url: nullable(mediaPath), created_at: isISODateTime, updated_at: isISODateTime,

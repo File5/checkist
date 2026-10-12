@@ -5,6 +5,7 @@
     "username": "synthetic-reader",
     "is_staff": false
   },
+  "household": null,
   "permissions": {
     "moderate_catalog": false
   },

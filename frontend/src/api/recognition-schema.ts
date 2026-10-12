@@ -67,7 +67,7 @@ export const isRecognitionIssue: Guard<RecognitionIssue> = (value): value is Rec
   && (!['reason', 'severity', 'context'].some((key) => Object.hasOwn(value, key)) || issueDetails(value))
 export const isJobItem = object<JobItem>({ image_id: isId, position, status: choice(...imageStatuses), receipt_id: nullable(isId) })
 export const isJob = object<Job>({
-  id: isId, photo_id: isId, retry_of: nullable(isId), status: choice(...jobStatuses), stage: choice(...jobStages), version: isId,
+  id: isId, photo_id: isId, retry_of: nullable(isId), owner: (value: unknown) => typeof value === 'string' && value.length > 0, status: choice(...jobStatuses), stage: choice(...jobStages), version: isId,
   created_at: isISODateTime, started_at: nullable(isISODateTime), finished_at: nullable(isISODateTime),
   cancel_requested_at: nullable(isISODateTime), heartbeat_at: nullable(isISODateTime), stalled: bool, executor: isExecutor,
   progress: isJobProgress, review_required: bool, error: nullable(isRecognitionError), actions: isJobActions, items_count: count(10),

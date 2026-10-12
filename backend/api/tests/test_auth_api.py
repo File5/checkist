@@ -552,7 +552,7 @@ class MeTests(AuthMixin, TestCase):
     def test_same_form_after_sign_in_and_on_me(self):
         client = APIClient()
         signed, read = sign_in(client).json(), client.get(ME).json()
-        self.assertEqual(set(read), {"mode", "user", "permissions", "csrf_token"})
+        self.assertEqual(set(read), {"mode", "user", "household", "permissions", "csrf_token"})
         self.assertEqual({**signed, "csrf_token": ""}, {**read, "csrf_token": ""})
 
     def test_permissions_and_staff_flag(self):

@@ -11,10 +11,13 @@ import type { RequestOptions } from './types.ts'
 export type Me = {
   mode: 'accounts' | 'local_single'
   user: { id: number; username: string; is_staff: boolean }
+  /** The family of the user: its members see each other's receipts. `null` — no family, and always in `local_single`. */
+  household: Household | null
   permissions: { moderate_catalog: boolean }
   /** Token of the current session. Never render it. */
   csrf_token: string
 }
+export type Household = { id: number; name: string; members: string[] }
 export type AuthCsrf = { csrf_token: string }
 export type PasswordIssue = (typeof PASSWORD_ISSUES)[number]
 export type AuthFailureReason =

@@ -12,7 +12,7 @@ from rest_framework.exceptions import ParseError, UnsupportedMediaType
 from rest_framework.permissions import SAFE_METHODS, AllowAny, BasePermission
 from rest_framework.response import Response
 
-from accounts.access import LOCAL_SINGLE, LocalOrSignedIn, SignedIn, is_moderator, mode, request_user
+from accounts.access import LOCAL_SINGLE, LocalOrSignedIn, SignedIn, household, is_moderator, mode, request_user
 from config.exceptions import AuthApiError, InvalidParameter, InvalidRequest, ObjectNotFound, PasswordRejected
 from recognition.auth import enforce_csrf
 
@@ -31,12 +31,22 @@ PASSWORD_ISSUES = {
 PASSWORD_REJECTED = "Пароль не подходит."
 
 
+def household_object(request):
+    """Семья пользователя запроса: ``{"id", "name", "members": [логины по алфавиту]}`` либо ``None``."""
+    family = household(request)
+    if family is None:
+        return None
+    members = family.memberships.order_by("user__username").values_list("user__username", flat=True)
+    return {"id": family.pk, "name": family.name, "members": list(members)}
+
+
 def me_object(request):
-    """Объект «Я»: режим, пользователь запроса, его права и токен CSRF текущей сессии."""
+    """Объект «Я»: режим, пользователь запроса, его семья, права и токен CSRF текущей сессии."""
     user = request_user(request)
     return {
         "mode": mode(),
         "user": {"id": user.pk, "username": user.get_username(), "is_staff": user.is_staff},
+        "household": household_object(request),
         "permissions": {"moderate_catalog": is_moderator(request)},
         "csrf_token": get_token(request._request),
     }

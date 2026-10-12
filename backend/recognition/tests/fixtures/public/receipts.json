@@ -6,6 +6,7 @@
   "results": [
     {
       "id": 71,
+      "owner": "local",
       "store": {
         "id": 51,
         "name": "Тестовый магазин",
