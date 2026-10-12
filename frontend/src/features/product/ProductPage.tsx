@@ -20,6 +20,7 @@ import { MergedProductHint, ProductMergeNotice } from '../merges/MergeMarks'
 import { useProductMergeLookup } from '../merges/marks'
 import { ProductClassificationNotice } from '../classification/ClassificationMarks'
 import { markFor, useProductClassificationMarks } from '../classification/marks'
+import { ResponsiveFilters } from '../recognition/_tmp-foundation'
 import './Product.css'
 
 function FilterForm({ query, product, stores, selectedStore, failures, apply, reset, onStores }: {
@@ -60,6 +61,8 @@ function FilterForm({ query, product, stores, selectedStore, failures, apply, re
     <section className="product-panel" aria-labelledby="product-filters-heading">
       <h2 id="product-filters-heading">Фильтры истории и сводки</h2>
       {!product && <p className="product-note">Страны и валюты появятся после загрузки карточки товара. Выбранные в ссылке значения сохранены.</p>}
+      {/* A phone: the form opens from «Фильтры (N)» in a sheet; the period of «График цен» follows it as before. */}
+      <ResponsiveFilters count={[query.store, query.country, query.currency, query.date_from, query.date_to].filter((value) => value !== undefined && value !== '').length} title="Фильтры истории и сводки">
       <form ref={formRef} noValidate onSubmit={(event) => {
         event.preventDefault()
         const result = validateFilters(form.draft)
@@ -81,6 +84,7 @@ function FilterForm({ query, product, stores, selectedStore, failures, apply, re
           <button type="button" className="product-secondary" onClick={() => { setForm({ source: '', draft: filterDraft({ page: 1 }), errors: {} }); reset() }}>Сбросить фильтры</button>
         </div>
       </form>
+      </ResponsiveFilters>
     </section>
   )
 }

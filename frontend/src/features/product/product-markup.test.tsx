@@ -156,7 +156,8 @@ describe('price content and semantic markup (SSR in Node, not browser acceptance
     expect(html).not.toContain('UTC')
     expect(html).not.toContain('null')
     expect(rowLabels(html)).toEqual(['ID 7 · Учебный магазин · DE · адрес неизвестен'])
-    for (const price of ['1,1', '1,2', '1,3']) expect(html).toContain(`<td class="product-number">${price}`)
+    // A price is printed in the figures font of the money, in the table as in the cards.
+    for (const price of ['1,1', '1,2', '1,3']) expect(html).toContain(`<td class="product-number"><span class="ck-figures">${price}`)
   })
   it('renders my and foreign purchases side by side in the server order', () => {
     const html = renderToStaticMarkup(<PriceHistory state={{ kind: 'ok', data: { ...history, ...pageOf([foreignPoint, point], 200) } }} query={{ page: 1 }} stores={[]} retry={noop} reset={noop} buildPageHref={buildPageHref} />)

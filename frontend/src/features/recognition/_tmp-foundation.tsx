@@ -43,15 +43,19 @@ export function ChipScroller({ label, children }: { label: string; children: Rea
 }
 
 /** The filters of a screen: as they are on a wide screen; on a phone behind «Фильтры (N)» in a sheet from the bottom.
- * A submit inside the sheet closes it. */
+ * A submit inside the sheet closes it, unless the form marked a field invalid in answer to it. */
 export function ResponsiveFilters({ count, title = 'Фильтры', children }: { count: number; title?: string; children: ReactNode }) {
   const narrow = useNarrow()
   const [open, setOpen] = useState(false)
+  const body = useRef<HTMLDivElement>(null)
   if (!narrow) return <>{children}</>
   return <>
     <button type="button" className="ck-filters-toggle" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}>{filtersLabel(count)}</button>
     <Sheet open={open} onClose={() => setOpen(false)} title={title}>
-      <div className="ck-sheet-filters" onSubmit={() => setOpen(false)}>{children}</div>
+      <div ref={body} className="ck-sheet-filters" onSubmit={() => {
+        // After the form has drawn its answer: a refused field keeps the sheet open next to its message.
+        setTimeout(() => { if (!body.current?.querySelector('[aria-invalid="true"]')) setOpen(false) })
+      }}>{children}</div>
     </Sheet>
   </>
 }
