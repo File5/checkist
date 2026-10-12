@@ -7,7 +7,7 @@ import { sparkline } from '../../lib/charts/sparkline'
 import { Link } from '../../navigation'
 import type { TrendsQuery } from '../../navigation'
 import { Badge, Failure, Panel } from './trends-blocks'
-import { indexSummary, limitRows, loadingOf, monthRowHeadings, monthRows, moverCounts, spendSummary } from './trends-state'
+import { indexSummary, limitRows, loadingOf, monthName, monthRows, moverCounts, spendSummary } from './trends-state'
 import type { BlockState, MonthRow } from './trends-state'
 
 /** A small line of every month of the window; the last month is a dot. Decoration: the numbers are next to it. */
@@ -62,17 +62,35 @@ export function SummaryStrip({ monthly, prices }: { monthly: BlockState<TrendsMo
 
 // --- «Месяц к месяцу» ---
 
-const monthColumns = { name: 'Категория', trend: 'По месяцам', change: 'Изменение' }
+const monthColumns = { name: 'Категория', trend: 'По месяцам', change: 'Изменение', total: 'Итого за период', average: 'В среднем за месяц' }
 
-function MonthRowCards({ rows, label, headings }: { rows: readonly MonthRow[]; label: string; headings: { previous: string; last: string } }) {
+/** The sparkline from the first month with spending; when it starts later than the window, the month is written beside it. */
+function RowTrend({ row }: { row: MonthRow }) {
+  return <span className="trends-row-trend"><Sparkline values={row.values} />{row.sparkFrom && <span className="trends-spark-from">{row.sparkFrom}</span>}</span>
+}
+
+/** A phone card: the trend, then every month of the window newest first with its change, then the sum and the average. */
+export function MonthRowCards({ rows, label }: { rows: readonly MonthRow[]; label: string }) {
   return (
     <CardList label={label}>
       {rows.map((row) => (
         <Card key={row.key} title={<span className={row.depth > 0 ? 'trends-sub' : undefined}><Link to={row.href}>{row.name}</Link></span>} facts={[
-          { key: 'trend', label: monthColumns.trend, value: <Sparkline values={row.values} /> },
-          { key: 'previous', label: headings.previous, value: row.previous },
-          { key: 'last', label: headings.last, value: row.last },
-          { key: 'change', label: monthColumns.change, value: row.badge ? <Badge badge={row.badge} /> : '—' },
+          { key: 'trend', label: monthColumns.trend, value: <RowTrend row={row} /> },
+          {
+            key: 'months', label: 'Месяцы', value: (
+              <ol className="trends-month-strip" aria-label={`${row.name}: по месяцам, сначала последний`}>
+                {[...row.months].reverse().map((cell) => (
+                  <li key={cell.month} className="trends-month-strip-row">
+                    <time dateTime={`${cell.month}-01`}>{cell.title}</time>
+                    <span className="trends-value">{cell.amount}</span>
+                    <span className="trends-month-strip-change">{cell.badge ? <Badge badge={cell.badge} /> : '—'}</span>
+                  </li>
+                ))}
+              </ol>
+            ),
+          },
+          { key: 'total', label: monthColumns.total, value: row.total },
+          { key: 'average', label: monthColumns.average, value: row.average },
         ]} />
       ))}
     </CardList>
@@ -83,13 +101,13 @@ function MonthToMonthCurrency({ block, query, several }: { block: TrendsMonthlyC
   const id = useId()
   const narrow = useNarrow()
   const rows = useMemo(() => monthRows(block, query), [block, query])
-  const headings = monthRowHeadings(block)
+  const months = block.months.map((entry) => entry.month)
   const label = `Месяц к месяцу, ${block.currency}`
   return (
     <article className="stats-currency trends-currency" aria-labelledby={id}>
       <h4 id={id}>{several ? block.currency : 'По категориям'}</h4>
       {rows.length === 0 ? <p className="stats-note">Трат по категориям за это время нет.</p> : narrow
-        ? <MonthRowCards rows={rows} label={label} headings={headings} />
+        ? <MonthRowCards rows={rows} label={label} />
         : (
           <div className="trends-table-scroll" role="region" aria-label={label} tabIndex={0}>
             <table className="trends-table">
@@ -98,8 +116,9 @@ function MonthToMonthCurrency({ block, query, several }: { block: TrendsMonthlyC
                 <tr>
                   <th scope="col">{monthColumns.name}</th>
                   <th scope="col">{monthColumns.trend}</th>
-                  <th scope="col" className="trends-number">{headings.previous}</th>
-                  <th scope="col" className="trends-number">{headings.last}</th>
+                  {months.map((month) => <th key={month} scope="col" className="trends-number"><time dateTime={`${month}-01`}>{monthName(month, true)}</time></th>)}
+                  <th scope="col" className="trends-number">{monthColumns.total}</th>
+                  <th scope="col" className="trends-number">{monthColumns.average}</th>
                   <th scope="col" className="trends-number">{monthColumns.change}</th>
                 </tr>
               </thead>
@@ -107,9 +126,10 @@ function MonthToMonthCurrency({ block, query, several }: { block: TrendsMonthlyC
                 {rows.map((row) => (
                   <tr key={row.key} className={row.depth > 0 ? 'trends-sub-row' : undefined}>
                     <th scope="row"><Link to={row.href}>{row.name}</Link></th>
-                    <td><Sparkline values={row.values} /></td>
-                    <td className="trends-number">{row.previous}</td>
-                    <td className="trends-number">{row.last}</td>
+                    <td><RowTrend row={row} /></td>
+                    {row.months.map((cell) => <td key={cell.month} className="trends-number">{cell.amount}</td>)}
+                    <td className="trends-number">{row.total}</td>
+                    <td className="trends-number">{row.average}</td>
                     <td className="trends-number">{row.badge ? <Badge badge={row.badge} /> : '—'}</td>
                   </tr>
                 ))}
@@ -125,7 +145,7 @@ export function MonthToMonthBlock({ state, query, onRetry }: { state: BlockState
   const shown = loadingOf(state)
   return (
     <Panel title="Месяц к месяцу" state={state}
-      note="Категории и их подкатегории: линия — все месяцы периода, суммы — два последних месяца, изменение — последний месяц к предыдущему. Название открывает категорию во времени.">
+      note="Категории и их подкатегории: суммы за каждый месяц периода, итог и среднее; линия начинается с первого месяца с тратами, изменение — месяц к предыдущему. Название открывает категорию во времени.">
       {shown.kind === 'loading' ? <RequestState kind="loading" message="Загружаем категории…" />
         : shown.kind === 'ok' ? (shown.data.currencies.length === 0 ? <RequestState kind="empty" message="За это время трат нет." />
           : shown.data.currencies.map((block) => <MonthToMonthCurrency key={block.currency} block={block} query={query} several={shown.data.currencies.length > 1} />))

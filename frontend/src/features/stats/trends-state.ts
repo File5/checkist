@@ -11,8 +11,8 @@ import { categoryTone } from '../../lib/category-tone'
 import { formatPercent, formatPrice } from '../../lib/format'
 import { formatMoney } from '../../lib/money'
 import { glue } from '../../lib/text'
-import { spendingHref, trendsHref, trendsMonthChoices } from '../../navigation'
-import type { TrendsMonths, TrendsQuery } from '../../navigation'
+import { spendingHref, trendsHref } from '../../navigation'
+import type { TrendsQuery } from '../../navigation'
 import type { StatsRequestState } from './receipts-request'
 import { intervalName } from './receipts-series'
 
@@ -29,9 +29,12 @@ export const defaultTrendsMonths = 12
 export const uncategorizedKey = 'uncategorized'
 export const uncategorizedLabel = 'Без категории'
 
-export const windowMonths = (query: TrendsQuery): TrendsMonths => query.months ?? defaultTrendsMonths
-/** The window ends at the server's current month; the opened column and the category never change it. */
-export const windowParams = (query: TrendsQuery): TrendsParams => ({ months: windowMonths(query) })
+/**
+ * The window asked from the server: the period of the address (`from` … `to`), or the older `months` that the server ends at
+ * its own current month. The opened column and the category never change it.
+ */
+export const windowParams = (query: TrendsQuery): TrendsParams =>
+  (query.from && query.to ? { from: query.from, to: query.to } : { months: query.months ?? defaultTrendsMonths })
 export const categoryParams = (query: TrendsQuery): TrendsCategoryParams => ({ ...windowParams(query), ...(query.category && { category: query.category }) })
 
 /** `YYYY-MM` as the period start the charts work with. */
@@ -54,15 +57,6 @@ export const moneyAxis = (value: number, step?: number) => formatAxisTick(value,
 /** Index axis: as many decimals as the step has. */
 export const indexAxis = (value: number, step?: number) => formatAxisTick(value, step)
 
-export interface WindowChoice { months: TrendsMonths; label: string; href: string; active: boolean }
-/** 6, 12 and 24 months; switching keeps the category and closes the opened month (it may be outside the new window). */
-export function windowChoices(query: TrendsQuery): WindowChoice[] {
-  const current = windowMonths(query)
-  return trendsMonthChoices.map((months) => ({
-    months, label: glue(String(months), months === 24 ? 'месяца' : 'месяцев'),
-    href: trendsHref({ ...query, month: undefined, months: months === 12 ? undefined : months }), active: months === current,
-  }))
-}
 
 // --- «Траты по месяцам» ---
 
@@ -245,6 +239,13 @@ export function spendSummary(block: TrendsMonthlyCurrency): SpendSummaryCard {
 
 // --- «Месяц к месяцу» ---
 
+export interface MonthCell {
+  month: string
+  title: string
+  amount: string
+  /** This month against the previous one, from the server; `null` for the first month and after a month without spending. */
+  badge: ChangeBadge | null
+}
 export interface MonthRow {
   key: string
   id: number
@@ -253,19 +254,36 @@ export interface MonthRow {
   previous: string
   last: string
   badge: ChangeBadge | null
-  /** Drawing values of every month for the sparkline. */
+  /** Every month of the window, oldest first. */
+  months: MonthCell[]
+  /** Σ and the average per month of the window, from the server. */
+  total: string
+  average: string
+  /** Drawing values for the sparkline: from the first month with spending to the end of the window. */
   values: number[]
+  /** «с июня 2026» when the sparkline starts later than the window (the months before had no spending), otherwise `null`. */
+  sparkFrom: string | null
   href: string
 }
 /** Rows of one currency: top-level categories with their sub-categories; the link opens the category over time. */
 export function monthRows(block: TrendsMonthlyCurrency, query: TrendsQuery): MonthRow[] {
-  return block.rows.map((row) => ({
-    key: String(row.id), id: row.id, name: row.name, depth: row.depth,
-    previous: money(row.amounts.at(-2) ?? null, block.currency), last: money(row.amounts.at(-1) ?? null, block.currency),
-    badge: changeBadge(row.change_percent),
-    values: row.amounts.map((value) => decimalNumber(value) ?? 0),
-    href: trendsHref({ ...query, category: row.id }),
-  }))
+  const months = block.months.map((entry) => entry.month)
+  return block.rows.map((row) => {
+    const values = row.amounts.map((value) => decimalNumber(value) ?? 0)
+    const start = Math.max(0, values.findIndex((value) => value !== 0))
+    return {
+      key: String(row.id), id: row.id, name: row.name, depth: row.depth,
+      previous: money(row.amounts.at(-2) ?? null, block.currency), last: money(row.amounts.at(-1) ?? null, block.currency),
+      badge: changeBadge(row.change_percent),
+      months: row.amounts.map((amount, index) => ({
+        month: months[index], title: monthName(months[index]), amount: money(amount, block.currency),
+        badge: changeBadge(row.change_percents[index] ?? null),
+      })),
+      total: money(row.total, block.currency), average: money(row.average, block.currency),
+      values: values.slice(start), sparkFrom: start > 0 ? sinceMonth(months[start]) : null,
+      href: trendsHref({ ...query, category: row.id }),
+    }
+  })
 }
 /** Column headings of «Месяц к месяцу»: the two last months of the window. */
 export function monthRowHeadings(block: TrendsMonthlyCurrency): { previous: string; last: string } {

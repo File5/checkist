@@ -5,8 +5,13 @@ import type { CategoryRef, CurrencyCode, Decimal, NamedObject, Unit } from './ty
 export type MonthLabel = string
 /** The window of every trends answer: `months` calendar months, `month_from` … `month_to` inclusive. */
 export type TrendsWindow = { months: number; month_from: MonthLabel; month_to: MonthLabel }
-/** `months` — 1–36, the server default is 12; `month` — the last month of the window, the server's current one by default. */
-export type TrendsParams = { months?: number; month?: MonthLabel }
+/**
+ * The window: either `from` … `to` (both inclusive, at most 60 months; without `to` — the server's current month), or the
+ * older `months` (1–60, the server default is 12) ending at `month` (the server's current one by default). Never both.
+ */
+export type TrendsParams = { months?: number; month?: MonthLabel; from?: MonthLabel; to?: MonthLabel }
+/** `/api/stats/trends/range/`: the first and the last month with receipts (`null` without any), the server's month, the widest window. */
+export type TrendsRange = { first_month: MonthLabel | null; last_month: MonthLabel | null; current_month: MonthLabel; max_months: number }
 
 export type TrendsLegendCategory = NamedObject & { unassigned: boolean; total: Decimal }
 export type TrendsMonthPart = { id: number; amount: Decimal }
@@ -29,6 +34,10 @@ export type TrendsCategoryRow = NamedObject & {
   amounts: Decimal[]
   /** The last month of the window against the one before it; `null` when that one is zero or absent. */
   change_percent: Decimal | null
+  /** `total` over the months of the window. */
+  average: Decimal
+  /** Every month against the one before it (`change_percents[i]` — month `i`); the first and any after a zero month — `null`. */
+  change_percents: (Decimal | null)[]
 }
 /** The last month of the window against the previous one and against the average of the window. */
 export type TrendsSummary = {

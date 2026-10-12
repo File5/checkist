@@ -1,11 +1,14 @@
 import { useMemo } from 'react'
-import { getTrendsCategory, getTrendsLimits, getTrendsMonthly, getTrendsPrices } from '../../api/trends'
-import { Link } from '../../navigation'
+import { getTrendsCategory, getTrendsLimits, getTrendsMonthly, getTrendsPrices, getTrendsRange } from '../../api/trends'
 import type { TrendsPageProps } from '../../pages/types'
 import { useStatsRequest } from './receipts-request'
 import { CategoryBlock, MonthlyBlock, PricesBlock } from './trends-blocks'
 import { LimitsBlock, MonthToMonthBlock, SummaryStrip } from './trends-dashboard'
-import { categoryParams, windowChoices, windowParams } from './trends-state'
+import { monthOfDate } from './trends-period'
+import TrendsPeriodPicker from './trends-period-picker'
+import { categoryParams, windowParams } from './trends-state'
+
+const loadRange = (signal: AbortSignal) => getTrendsRange({ signal })
 import './ReceiptsStats.css'
 import './Trends.css'
 
@@ -34,6 +37,10 @@ export default function TrendsPage({ query }: TrendsPageProps) {
   const category = useStatsRequest(loadCategory)
   const prices = useStatsRequest(loadPrices)
   const limits = useStatsRequest(loadLimits)
+  // The first month with receipts and the server's month: only the ready periods use them, no block waits for them.
+  const range = useStatsRequest(loadRange)
+  const current = range.state.kind === 'ok' ? range.state.data.current_month : monthOfDate(new Date())
+  const first = range.state.kind === 'ok' ? range.state.data.first_month : undefined
 
   return (
     <section className="stats-receipts trends" aria-labelledby="trends-heading">
@@ -41,16 +48,7 @@ export default function TrendsPage({ query }: TrendsPageProps) {
       <p className="stats-intro">
         Траты семьи по месяцам, категории месяц к месяцу, лимиты, одна категория во времени и цены на одни и те же товары. Валюты не складываются: у каждой валюты свои графики.
       </p>
-      <nav className="stats-intervals" aria-label="Период">
-        <span className="stats-presets-title">Период:</span>
-        <ul>
-          {windowChoices(query).map((choice) => (
-            <li key={choice.months}>
-              <Link className="stats-chip" to={choice.href} aria-current={choice.active ? 'true' : undefined}>{choice.label}</Link>
-            </li>
-          ))}
-        </ul>
-      </nav>
+      <TrendsPeriodPicker query={query} current={current} first={first} />
       <SummaryStrip monthly={monthly.state} prices={prices.state} />
       <MonthlyBlock state={monthly.state} query={query} onRetry={monthly.retry} />
       <MonthToMonthBlock state={monthly.state} query={query} onRetry={monthly.retry} />

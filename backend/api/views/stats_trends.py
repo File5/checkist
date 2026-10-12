@@ -1,10 +1,17 @@
 """«Динамика»: траты по месяцам, одна категория во времени и индекс цен семьи.
 
 Доступ и чеки — как у прочих ``/api/stats/*``: чеки пользователя запроса и его семьи
-(``owner_q``). Окно — ``months`` месяцев (1–36, по умолчанию 12), последний — ``month``
-(``ГГГГ-ММ``, по умолчанию текущий месяц сервера). Число запросов к БД от объёма данных
-не зависит.
+(``owner_q``). Окно — либо ``from`` … ``to`` (``ГГГГ-ММ``, оба включительно, не больше
+``MAX_MONTHS`` месяцев; без ``to`` — текущий месяц сервера, без ``from`` — 12 месяцев до ``to``),
+либо по-старому ``months`` месяцев (1–``MAX_MONTHS``, по умолчанию 12), последний — ``month``
+(по умолчанию текущий месяц сервера); смешивать два способа нельзя. Число запросов к БД
+от объёма данных не зависит. ``range/`` — первый и последний месяц с чеками и текущий месяц
+сервера: из них клиент строит «Всё время» и прочие готовые периоды.
 """
+import re
+from datetime import date
+
+from django.db.models import Max, Min
 from django.utils import timezone
 from rest_framework.response import Response
 
@@ -18,13 +25,53 @@ from .budget import read_month, visible_limits
 from .recognition_base import LocalAPIView
 
 MONTHS_MESSAGE = f"Допустимо от 1 до {trends.MAX_MONTHS}."
+MONTH_MESSAGE = "Месяц в формате ГГГГ-ММ."
+MIXED_MESSAGE = "Укажите либо from и to, либо months и month."
+ORDER_MESSAGE = "Начало периода позже конца."
+SPAN_MESSAGE = f"Период — не больше {trends.MAX_MONTHS} месяцев."
+_MONTH = re.compile(r"([0-9]{4})-([0-9]{2})")
+
+
+def _month(params, name):
+    """Первое число месяца ``name`` (``ГГГГ-ММ``) либо ``None``; ошибка копится в ``params``."""
+    raw = params.raw(name)
+    if raw is None:
+        return None
+    match = _MONTH.fullmatch(raw)
+    if match is None or not (1901 <= int(match[1]) <= 9999 and 1 <= int(match[2]) <= 12):
+        params.error(name, MONTH_MESSAGE)
+        return None
+    return date(int(match[1]), int(match[2]), 1)
+
+
+def _period(params, today):
+    """Окно ``from`` … ``to``; ``None`` при ошибке (она уже в ``params``)."""
+    if params.raw("months") is not None or params.raw("month") is not None:
+        params.error("from", MIXED_MESSAGE)
+        return None
+    start, end = _month(params, "from"), _month(params, "to")
+    if (start is None and params.raw("from") is not None) or (end is None and params.raw("to") is not None):
+        return None
+    end = end or trends.month_start(today)
+    start = start or trends.shift(end, 1 - trends.DEFAULT_MONTHS)
+    if start > end:
+        params.error("to" if params.raw("to") is not None else "from", ORDER_MESSAGE)
+        return None
+    count = trends.months_between(start, end)
+    if count > trends.MAX_MONTHS:
+        params.error("from", SPAN_MESSAGE)
+        return None
+    return trends.window(end, count)
 
 
 def _window(params):
-    """``(месяцы окна, параметры)``; ошибки копятся в ``params``."""
-    end = read_month(params, timezone.localdate())
+    """Первые числа месяцев окна по возрастанию; при ошибке — ``None``, ошибки копятся в ``params``."""
+    today = timezone.localdate()
+    if params.raw("from") is not None or params.raw("to") is not None:
+        return _period(params, today)
+    end = read_month(params, today)
     count = params.integer("months", default=trends.DEFAULT_MONTHS, maximum=trends.MAX_MONTHS, message=MONTHS_MESSAGE)
-    return end, count
+    return None if end is None or count is None else trends.window(end.first, count)
 
 
 def _head(months):
@@ -48,6 +95,8 @@ def _row(row):
         "id": row.id, "name": row.name, "parent_id": row.parent_id, "depth": row.depth, "direct": row.direct,
         "total": stats_common.money(row.total), "amounts": _amounts(row.amounts),
         "change_percent": common.percent(row.change_percent),
+        "average": stats_common.money(row.average),
+        "change_percents": [common.percent(value) for value in row.change_percents],
     }
 
 
@@ -91,9 +140,8 @@ class TrendsMonthlyView(LocalAPIView):
 
     def get(self, request):
         params = Params(request.query_params)
-        end, count = _window(params)
+        months = _window(params)
         params.check()
-        months = trends.window(end.first, count)
         tree = common.CategoryTree.load()
         rows = trends.collect_spending(_receipts(request), months, stats_common.owner_product_id())
         return Response({
@@ -110,10 +158,9 @@ class TrendsCategoryView(LocalAPIView):
 
     def get(self, request):
         params = Params(request.query_params)
-        end, count = _window(params)
+        months = _window(params)
         category = params.integer("category")
         params.check()
-        months = trends.window(end.first, count)
         tree = common.CategoryTree.load()
         if category is not None and category not in tree:
             raise ObjectNotFound()
@@ -150,9 +197,8 @@ class TrendsLimitsView(LocalAPIView):
 
     def get(self, request):
         params = Params(request.query_params)
-        end, count = _window(params)
+        months = _window(params)
         params.check()
-        months = trends.window(end.first, count)
         tree = common.CategoryTree.load()
         limits = [
             (limit.pk, limit.category_id, limit.currency_id, limit.amount)
@@ -201,9 +247,8 @@ class TrendsPricesView(LocalAPIView):
 
     def get(self, request):
         params = Params(request.query_params)
-        end, count = _window(params)
+        months = _window(params)
         params.check()
-        months = trends.window(end.first, count)
         product_ref = stats_common.owner_product_id()
         purchases = trends.collect_purchases(_receipts(request), months, product_ref)
         names = dict(Product.objects.filter(pk__in=trends.product_ids(purchases)).values_list("pk", "name"))
@@ -225,4 +270,17 @@ class TrendsPricesView(LocalAPIView):
                 }
                 for block in blocks
             ],
+        })
+
+
+class TrendsRangeView(LocalAPIView):
+    """Первый и последний месяц чеков пользователя и семьи, текущий месяц сервера и наибольшее окно; один запрос."""
+
+    def get(self, request):
+        found = _receipts(request).aggregate(first=Min("purchased_on"), last=Max("purchased_on"))
+        return Response({
+            "first_month": None if found["first"] is None else trends.label(found["first"]),
+            "last_month": None if found["last"] is None else trends.label(found["last"]),
+            "current_month": trends.label(timezone.localdate()),
+            "max_months": trends.MAX_MONTHS,
         })
