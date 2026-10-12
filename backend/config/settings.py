@@ -340,6 +340,11 @@ SESSION_COOKIE_SECURE = CSRF_COOKIE_SECURE = env_flag("DJANGO_SECURE_COOKIES", "
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_SAMESITE = "Lax"
+# A family app on the home screen: sign in once. The session lives this long since the LAST request
+# (every request re-saves it), so only half a year without opening the app signs a person out.
+# local_single never reads the session, so only `accounts` pays the write per request.
+SESSION_COOKIE_AGE = env_integer("DJANGO_SESSION_DAYS", 180, 1, 400) * 86400
+SESSION_SAVE_EVERY_REQUEST = CHECKIST_AUTH_MODE == "accounts"
 # Start small and raise after acceptance: a browser remembers the value for the whole period.
 SECURE_HSTS_SECONDS = env_integer("DJANGO_HSTS_SECONDS", 0 if DEBUG else 3600, 0, 63072000)
 # The domain may have foreign subdomains.

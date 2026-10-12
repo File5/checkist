@@ -39,10 +39,14 @@ class Runner(DiscoverRunner):
     def setup_test_environment(self, **kwargs):
         super().setup_test_environment(**kwargs)
         self._auth_mode = settings.CHECKIST_AUTH_MODE
+        self._save_session = settings.SESSION_SAVE_EVERY_REQUEST
         settings.CHECKIST_AUTH_MODE = "local_single"
+        # Follows the mode as settings.py does: local_single never touches the session.
+        settings.SESSION_SAVE_EVERY_REQUEST = False
 
     def teardown_test_environment(self, **kwargs):
         settings.CHECKIST_AUTH_MODE = self._auth_mode
+        settings.SESSION_SAVE_EVERY_REQUEST = self._save_session
         super().teardown_test_environment(**kwargs)
 
     def setup_databases(self, **kwargs):
