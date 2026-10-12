@@ -10,6 +10,7 @@ from accounts.models import Household, Membership
 from api.tests.accounts_helpers import NOT_FOUND, TwoUsers, accounts_mode, local_single_mode, make_user
 from api.tests.factories import make_product, make_receipt
 from api.tests.test_stats_spending import absorb
+from budget.models import BudgetLimit
 from catalog.models import Category, GenericProduct
 from catalog.units import BaseUnit
 from receipts import basket, manual, trends
@@ -22,6 +23,7 @@ D = Decimal
 MONTHLY = "/api/stats/trends/monthly/"
 CATEGORY = "/api/stats/trends/category/"
 PRICES = "/api/stats/trends/prices/"
+LIMITS = "/api/stats/trends/limits/"
 WINDOW = "month=2026-09&months=4"
 MONTHS = ["2026-06", "2026-07", "2026-08", "2026-09"]
 
@@ -71,7 +73,8 @@ class ChainIndexTests(SimpleTestCase):
             mar: [purchase(1, "3.00", "2"), purchase(4, "5.00", "1", "pcs")],
             may: [purchase(1, "2.20", "2"), purchase(2, "1.50", "1"), purchase(5, "1.00", "1")],
         }
-        risers, fallers, total = trends.movers(by_month, self.months, {1: "Молоко", 2: "Хлеб"})
+        risers, fallers, total, risen, fallen = trends.movers(by_month, self.months, {1: "Молоко", 2: "Хлеб"})
+        self.assertEqual((risen, fallen), (1, 1))
         self.assertEqual(total, 2)  # товар 4 в разных единицах — разные товары, товар 5 куплен однажды
         self.assertEqual([(m.product_id, m.old_month, m.new_month, m.change_percent) for m in risers],
                          [(1, jan, may, D("10.00"))])
@@ -157,7 +160,10 @@ class TrendsAPITests(TrendsFixture, TestCase):
 
     def test_monthly_by_root_category_with_empty_months(self):
         food, housing = self.food.pk, self.housing.pk
-        self.assertEqual(self.get(MONTHLY), {
+        body = self.get(MONTHLY)
+        for block in body["currencies"]:
+            del block["summary"], block["rows"]
+        self.assertEqual(body, {
             "months": 4, "month_from": "2026-06", "month_to": "2026-09",
             "currencies": [
                 {
@@ -187,6 +193,30 @@ class TrendsAPITests(TrendsFixture, TestCase):
             ],
         })
 
+    def test_monthly_summary_and_month_to_month_rows(self):
+        eur, kzt = self.get(MONTHLY)["currencies"]
+        self.assertEqual(eur["summary"], {
+            "month": "2026-09", "spent": "4.00", "previous_month": "2026-08", "previous": "5.40",
+            "change_percent": "-25.93", "average_change_percent": "3.90",
+        })
+        self.assertEqual(kzt["summary"]["change_percent"], "11.41")
+        row = lambda pk, name, parent, depth, amounts, total, change: {  # noqa: E731
+            "id": pk, "name": name, "parent_id": parent, "depth": depth, "direct": False, "total": total,
+            "amounts": amounts, "change_percent": change,
+        }
+        housing, food = self.housing.pk, self.food.pk
+        self.assertEqual(kzt["rows"], [
+            row(housing, "Демо-жильё", None, 0, ["30000.00", "0.00", "32000.00", "35000.00"], "97000.00", "9.38"),
+            row(self.utilities.pk, "Демо-коммуналка", housing, 1, ["30000.00", "0.00", "32000.00", "35000.00"], "97000.00", "9.38"),
+            # Июль и август без трат: изменения к нулю нет.
+            row(food, "Демо-еда", None, 0, ["650.00", "0.00", "0.00", "650.00"], "1300.00", None),
+            row(self.dairy.pk, "Демо-молочное", food, 1, ["450.00", "0.00", "0.00", "500.00"], "950.00", None),
+        ])
+        one = self.get(MONTHLY, "month=2026-09&months=1")["currencies"][0]
+        self.assertEqual((one["summary"]["previous_month"], one["summary"]["previous"], one["summary"]["change_percent"]),
+                         (None, None, None))
+        self.assertEqual(one["summary"]["average_change_percent"], "0.00")
+
     def test_months_default_and_window_end(self):
         with mock.patch("api.views.stats_trends.timezone.localdate", return_value=date(2026, 9, 14)):
             body = self.get(MONTHLY, "")
@@ -213,9 +243,12 @@ class TrendsAPITests(TrendsFixture, TestCase):
                 {"month": "2026-08", "amount": "32000.00", "lines_count": 1},
                 {"month": "2026-09", "amount": "35000.00", "lines_count": 1},
             ],
+            "parts": [],
         }])
         # Категория с потомками; пустая категория — без блоков; варианты — категории с тратами и их предки.
-        self.assertEqual(self.get(CATEGORY, f"{WINDOW}&category={self.housing.pk}")["currencies"], body["currencies"])
+        (housing,) = self.get(CATEGORY, f"{WINDOW}&category={self.housing.pk}")["currencies"]
+        self.assertEqual(housing["months"], body["currencies"][0]["months"])
+        self.assertEqual([(part["id"], part["direct"], part["depth"]) for part in housing["parts"]], [(self.utilities.pk, False, 1)])
         self.assertEqual(self.get(CATEGORY, f"{WINDOW}&category={self.empty.pk}")["currencies"], [])
         self.assertEqual(body["options"], [
             {"id": self.food.pk, "name": "Демо-еда", "path": ["Демо-еда"], "depth": 0},
@@ -229,6 +262,9 @@ class TrendsAPITests(TrendsFixture, TestCase):
         self.assertEqual((eur["currency"], [entry["amount"] for entry in eur["months"]], eur["total"], eur["average"]),
                          ("EUR", ["5.00", "0.00", "5.40", "4.00"], "14.40", "3.60"))
         self.assertEqual([entry["lines_count"] for entry in eur["months"]], [2, 0, 2, 3])
+        # Подкатегория и строки прямо в категории (хлеб) — отдельные части.
+        self.assertEqual([(part["id"], part["direct"], part["amounts"]) for part in eur["parts"]], [
+            (self.dairy.pk, False, ["2.00", "0.00", "2.40", "4.00"]), (self.food.pk, True, ["3.00", "0.00", "3.00", "0.00"])])
         self.assertEqual((kzt["currency"], [entry["amount"] for entry in kzt["months"]]),
                          ("KZT", ["650.00", "0.00", "0.00", "650.00"]))
 
@@ -258,7 +294,7 @@ class TrendsAPITests(TrendsFixture, TestCase):
                 {"month": "2026-09", "index": "99.00", "base_month": "2026-08", "link_percent": "-8.33",
                  "matched_products": 1},
             ],
-            "products_total": 2,
+            "products_total": 2, "risen_total": 1, "fallen_total": 0, "index_month": "2026-09", "change_percent": "-1.00",
             "risers": [{"product": milk, "unit": "l", "old": {"month": "2026-06", "price": "1.0000"},
                         "new": {"month": "2026-09", "price": "1.1000"}, "change_percent": "10.00"}],
             "fallers": [],
@@ -269,6 +305,32 @@ class TrendsAPITests(TrendsFixture, TestCase):
                          [(self.kz_milk.pk, "11.11")])
         self.assertEqual([(entry["product"]["id"], entry["change_percent"]) for entry in kzt["fallers"]],
                          [(self.kz_bread.pk, "-25.00")])
+        self.assertEqual((kzt["risen_total"], kzt["fallen_total"], kzt["change_percent"]), (1, 1, "0.00"))
+        first_only = self.get(PRICES, "month=2026-06&months=1")["currencies"][0]
+        self.assertEqual((first_only["index_month"], first_only["change_percent"]), (None, None))
+
+    def test_limit_history(self):
+        owner = local_user()
+        housing = BudgetLimit.objects.create(user=owner, category=self.housing, currency_id="KZT", amount=D("32000"))
+        food = BudgetLimit.objects.create(user=owner, category=self.food, currency_id="EUR", amount=D("5"))
+        # Лимит подкатегории (другая ветка разрешает их): траты подкатегории с её потомками.
+        dairy = BudgetLimit.objects.create(user=owner, category=self.dairy, currency_id="EUR", amount=D("2"))
+        body = self.get(LIMITS)
+        self.assertEqual((body["months"], body["month_from"]), (4, "2026-06"))
+        self.assertEqual([(entry["id"], entry["currency"], entry["amount"]) for entry in body["limits"]],
+                         [(food.pk, "EUR", "5.00"), (dairy.pk, "EUR", "2.00"), (housing.pk, "KZT", "32000.00")])
+        self.assertEqual(body["limits"][0]["category"]["id"], self.food.pk)
+        self.assertEqual(body["limits"][0]["months"], [
+            {"month": "2026-06", "spent": "5.00", "percent": "100.00"},
+            {"month": "2026-07", "spent": "0.00", "percent": "0.00"},
+            {"month": "2026-08", "spent": "5.40", "percent": "108.00"},
+            {"month": "2026-09", "spent": "4.00", "percent": "80.00"},
+        ])
+        self.assertEqual([entry["percent"] for entry in body["limits"][1]["months"]], ["100.00", "0.00", "120.00", "200.00"])
+        self.assertEqual([entry["percent"] for entry in body["limits"][2]["months"]], ["93.75", "0.00", "100.00", "109.38"])
+        BudgetLimit.objects.all().delete()
+        with self.assertNumQueries(3):  # категории, пользователь local, лимиты — чеки не читаются
+            self.assertEqual(self.get(LIMITS)["limits"], [])
 
     def test_manual_spends_do_not_make_a_price_block(self):
         Receipt.objects.filter(source=Receipt.Source.PHOTO, currency_id="KZT").delete()
@@ -301,7 +363,8 @@ class TrendsAPITests(TrendsFixture, TestCase):
 
     def test_query_count_does_not_grow_with_data(self):
         # Категории, строки, итоги чеков, товары; у цен — покупки и имена.
-        cases = ((MONTHLY, 4), (CATEGORY, 4), (PRICES, 2))
+        BudgetLimit.objects.create(user=local_user(), category=self.food, currency_id="EUR", amount=D("5"))
+        cases = ((MONTHLY, 4), (CATEGORY, 4), (PRICES, 2), (LIMITS, 6))
 
         def measure():
             for url, expected in cases:
@@ -323,7 +386,7 @@ class TrendsAPITests(TrendsFixture, TestCase):
     def test_methods_and_access(self):
         self.assertEqual(APIClient().post(MONTHLY, {}, format="json").status_code, 405)
         with self.settings(ALLOW_LOCAL_RECOGNITION_API=False):
-            for url in (MONTHLY, CATEGORY, PRICES):
+            for url in (MONTHLY, CATEGORY, PRICES, LIMITS):
                 self.assertEqual(APIClient().get(url).status_code, 403)
         self.assertEqual(APIClient().get("/api/stats/trends/").status_code, 404)
 
@@ -366,6 +429,72 @@ class TrendsFamilyTests(TrendsFixture, TwoUsers, TestCase):
         self.assertEqual([option["id"] for option in category["options"]], [self.housing.pk, self.utilities.pk])
         self.assertNotIn("70.00", str(self.get(self.first, MONTHLY)))
 
+    def test_family_limit_history_counts_family_spends(self):
+        family = Household.objects.get(name="Демо-семья")
+        BudgetLimit.objects.create(household=family, category=self.housing, currency_id="KZT", amount=D("40000"))
+        BudgetLimit.objects.create(user=self.second, category=self.housing, currency_id="KZT", amount=D("100"))
+        spend(self.second, self.utilities, "70", date(2026, 8, 11))
+        (limit,) = self.get(self.first, LIMITS)["limits"]
+        self.assertEqual([entry["percent"] for entry in limit["months"]], ["75.00", "0.00", "80.00", "87.50"])
+        (own,) = self.get(self.second, LIMITS)["limits"]
+        self.assertEqual([entry["percent"] for entry in own["months"]], ["0.00", "0.00", "70.00", "0.00"])
+
     def test_guest_is_not_authenticated(self):
         for url in (MONTHLY, CATEGORY, PRICES):
             self.assertEqual(APIClient().get(url).status_code, 401)
+
+
+@tag("integration")
+@local_single_mode()
+class UtilitiesShapeTests(TestCase):
+    """Как на сервере: полгода коммуналки и аренды ручными тратами по подкатегориям (май — октябрь 2026)."""
+
+    maxDiff = None
+
+    @classmethod
+    def setUpTestData(cls):
+        owner = local_user()
+        cls.housing = Category.objects.create(name="Демо-жильё")
+        cls.utilities = Category.objects.create(name="Демо-коммунальные услуги", parent=cls.housing)
+        cls.rent = Category.objects.create(name="Демо-аренда", parent=cls.housing)
+        cls.children = {
+            name: Category.objects.create(name=name, parent=cls.utilities)
+            for name in ("Демо-электричество", "Демо-вода", "Демо-отопление и газ", "Демо-вывоз мусора", "Демо-ОСИ")
+        }
+        bills = {"Демо-электричество": 9000, "Демо-вода": 3000, "Демо-отопление и газ": 12000, "Демо-вывоз мусора": 800, "Демо-ОСИ": 4000}
+        for number, month_number in enumerate(range(5, 11)):
+            on = date(2026, month_number, 5)
+            for name, amount in bills.items():
+                # Отопление — только в холодные месяцы; остальное растёт понемногу.
+                if name == "Демо-отопление и газ" and month_number in (6, 7, 8):
+                    continue
+                spend(owner, cls.children[name], str(amount + number * 100), on)
+            spend(owner, cls.rent, "150000", on)
+        spend(owner, cls.utilities, "500", date(2026, 10, 20))  # без подкатегории
+
+    def get(self, url, query):
+        response = APIClient().get(f"{url}?{query}")
+        self.assertEqual(response.status_code, 200, response.content)
+        return response.json()
+
+    def test_utilities_over_time_with_children(self):
+        body = self.get(CATEGORY, f"month=2026-10&months=6&category={self.utilities.pk}")
+        (kzt,) = body["currencies"]
+        self.assertEqual([entry["amount"] for entry in kzt["months"]],
+                         ["28800.00", "17200.00", "17600.00", "18000.00", "30800.00", "31800.00"])
+        parts = [(part["name"], part["direct"], part["amounts"][-1]) for part in kzt["parts"]]
+        self.assertEqual(parts, [
+            # По убыванию суммы за окно (отопления летом нет); строки самой категории — последними.
+            ("Демо-электричество", False, "9500.00"), ("Демо-отопление и газ", False, "12500.00"), ("Демо-ОСИ", False, "4500.00"),
+            ("Демо-вода", False, "3500.00"), ("Демо-вывоз мусора", False, "1300.00"), ("Демо-коммунальные услуги", True, "500.00"),
+        ])
+        self.assertEqual(kzt["parts"][1]["amounts"][1:4], ["0.00", "0.00", "0.00"])
+        for index, entry in enumerate(kzt["months"]):
+            self.assertEqual(sum(D(part["amounts"][index]) for part in kzt["parts"]), D(entry["amount"]))
+        self.assertEqual([option["depth"] for option in body["options"]], [0, 1, 1, 2, 2, 2, 2, 2])
+
+    def test_month_to_month_rows_show_rent_and_utilities(self):
+        (kzt,) = self.get(MONTHLY, "month=2026-10&months=6")["currencies"]
+        self.assertEqual([(row["name"], row["depth"], row["change_percent"]) for row in kzt["rows"]], [
+            ("Демо-жильё", 0, "0.55"), ("Демо-аренда", 1, "0.00"), ("Демо-коммунальные услуги", 1, "3.25"),
+        ])

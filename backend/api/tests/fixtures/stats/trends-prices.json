@@ -93,6 +93,10 @@
         }
       ],
       "products_total": 28,
+      "risen_total": 23,
+      "fallen_total": 4,
+      "index_month": "2026-09",
+      "change_percent": "0.89",
       "risers": [
         {
           "product": {
@@ -332,6 +336,10 @@
         }
       ],
       "products_total": 11,
+      "risen_total": 11,
+      "fallen_total": 0,
+      "index_month": "2026-09",
+      "change_percent": "11.69",
       "risers": [
         {
           "product": {

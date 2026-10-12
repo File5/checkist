@@ -14,7 +14,7 @@ from receipts import trends
 
 from .. import common, stats_common
 from ..params import Params
-from .budget import read_month
+from .budget import read_month, visible_limits
 from .recognition_base import LocalAPIView
 
 MONTHS_MESSAGE = f"Допустимо от 1 до {trends.MAX_MONTHS}."
@@ -33,6 +33,31 @@ def _head(months):
 
 def _receipts(request):
     return stats_common.receipts(request, stats_common.Scope())
+
+
+def _label(first):
+    return None if first is None else trends.label(first)
+
+
+def _amounts(values):
+    return [stats_common.money(value) for value in values]
+
+
+def _row(row):
+    return {
+        "id": row.id, "name": row.name, "parent_id": row.parent_id, "depth": row.depth, "direct": row.direct,
+        "total": stats_common.money(row.total), "amounts": _amounts(row.amounts),
+        "change_percent": common.percent(row.change_percent),
+    }
+
+
+def _summary(summary):
+    return {
+        "month": trends.label(summary.month), "spent": stats_common.money(summary.spent),
+        "previous_month": _label(summary.previous_month), "previous": stats_common.money(summary.previous),
+        "change_percent": common.percent(summary.change_percent),
+        "average_change_percent": common.percent(summary.average_change_percent),
+    }
 
 
 def _monthly_block(block):
@@ -56,6 +81,8 @@ def _monthly_block(block):
             }
             for spend in block.months
         ],
+        "summary": _summary(block.summary),
+        "rows": [_row(row) for row in block.rows],
     }
 
 
@@ -111,8 +138,41 @@ class TrendsCategoryView(LocalAPIView):
                          "lines_count": spend.lines_count}
                         for spend in block.months
                     ],
+                    "parts": [_row(row) for row in block.parts],
                 }
                 for block in blocks
+            ],
+        })
+
+
+class TrendsLimitsView(LocalAPIView):
+    """Лимиты пользователя и семьи и их исполнение в каждом месяце окна (текущая сумма лимита)."""
+
+    def get(self, request):
+        params = Params(request.query_params)
+        end, count = _window(params)
+        params.check()
+        months = trends.window(end.first, count)
+        tree = common.CategoryTree.load()
+        limits = [
+            (limit.pk, limit.category_id, limit.currency_id, limit.amount)
+            for limit in visible_limits(request).order_by("pk")
+        ]
+        rows = trends.collect_spending(_receipts(request), months, stats_common.owner_product_id()) if limits else None
+        history = trends.limit_history(rows, months, tree, limits) if limits else []
+        return Response({
+            **_head(months),
+            "limits": [
+                {
+                    "id": row.id,
+                    "category": tree.category(row.category_id) if row.category_id in tree else None,
+                    "currency": row.currency, "amount": stats_common.money(row.amount),
+                    "months": [
+                        {"month": trends.label(first), "spent": stats_common.money(spent), "percent": common.percent(percent)}
+                        for first, spent, percent in zip(months, row.spent, row.percents)
+                    ],
+                }
+                for row in history
             ],
         })
 
@@ -156,6 +216,10 @@ class TrendsPricesView(LocalAPIView):
                     "first_month": None if block.first_month is None else trends.label(block.first_month),
                     "points": [_point(point) for point in block.points],
                     "products_total": block.products_total,
+                    "risen_total": block.risen_total,
+                    "fallen_total": block.fallen_total,
+                    "index_month": None if block.last_point is None else trends.label(block.last_point.month),
+                    "change_percent": common.percent(block.change_percent),
                     "risers": [_mover(mover, names) for mover in block.risers],
                     "fallers": [_mover(mover, names) for mover in block.fallers],
                 }

@@ -150,6 +150,44 @@ class LegendEntry:
     total: Decimal
 
 
+def change_percent(previous, current):
+    """Изменение ``current`` к ``previous`` в %, 2 знака; ``None`` при неположительном или неизвестном ``previous``."""
+    if previous is None or current is None or previous <= 0:
+        return None
+    with price_context():
+        return round_decimal((current - previous) * 100 / previous, 2)
+
+
+@dataclass
+class NodeRow:
+    """Категория с суммами на каждый месяц окна."""
+
+    id: int
+    name: str
+    parent_id: int | None
+    depth: int
+    amounts: list  # Decimal на каждый месяц окна
+    total: Decimal
+    direct: bool = False  # строки, лежащие прямо в выбранной категории, а не в подкатегории
+
+    @property
+    def change_percent(self):
+        """Последний месяц окна к предыдущему."""
+        return change_percent(self.amounts[-2], self.amounts[-1]) if len(self.amounts) > 1 else None
+
+
+@dataclass
+class Summary:
+    """Последний месяц окна против предыдущего и против среднего за окно."""
+
+    month: date
+    spent: Decimal
+    previous_month: date | None
+    previous: Decimal | None
+    change_percent: Decimal | None
+    average_change_percent: Decimal | None
+
+
 @dataclass
 class MonthlyBlock:
     currency: str
@@ -157,6 +195,19 @@ class MonthlyBlock:
     average: Decimal
     categories: list  # LegendEntry по убыванию суммы за окно
     months: list  # MonthSpend на каждый месяц окна
+    rows: list = field(default_factory=list)  # NodeRow: корень, затем его прямые подкатегории
+    summary: Summary | None = None
+
+
+def _node_rows(tree, months, sums, ids, parent_id, depth):
+    """Строки категорий ``ids`` по убыванию суммы за окно, затем по имени и id."""
+    found = []
+    for pk in ids:
+        amounts = [sums[pk].get(first, _ZERO) for first in months]
+        with price_context():
+            total = sum(amounts, _ZERO)
+        found.append(NodeRow(pk, tree.name(pk), parent_id, depth, amounts, total))
+    return sorted(found, key=lambda row: (-row.total, row.name, row.id))
 
 
 def monthly(rows, months, tree):
@@ -169,14 +220,18 @@ def monthly(rows, months, tree):
 
     for (currency, month), total in rows.totals.items():
         bucket(currency, month).total = total
+    nodes = {}  # {currency: {category_id: {month: amount}}} — корни и их прямые подкатегории
     for currency, month, kind, line_category, product_id, paid, _count in rows.lines:
         category = _line_category(rows, kind, line_category, product_id)
         if category is None or category not in tree:
             continue
-        root = tree.path_ids(category)[0]
+        path = tree.path_ids(category)
         target = bucket(currency, month).categories
         with price_context():
-            target[root] = target.get(root, _ZERO) + paid
+            target[path[0]] = target.get(path[0], _ZERO) + paid
+            for node in path[:2]:
+                by_month = nodes.setdefault(currency, {}).setdefault(node, {})
+                by_month[month] = by_month.get(month, _ZERO) + paid
 
     result = []
     for currency in sorted(blocks):
@@ -192,7 +247,20 @@ def monthly(rows, months, tree):
              for root, amount in sums.items()),
             key=lambda entry: (-entry.total, entry.name, entry.id),
         )
-        result.append(MonthlyBlock(currency, total, _average(total, len(months)), legend, spends))
+        average = _average(total, len(months))
+        sums = nodes.get(currency, {})
+        node_rows = []
+        for root in legend:
+            node_rows.extend(_node_rows(tree, months, sums, [root.id], None, 0))
+            children = [pk for pk in sums if pk != root.id and tree.path_ids(pk)[0] == root.id]
+            node_rows.extend(_node_rows(tree, months, sums, children, root.id, 1))
+        last = spends[-1]
+        previous = spends[-2] if len(spends) > 1 else None
+        summary = Summary(
+            last.month, last.total, previous and previous.month, previous and previous.total,
+            change_percent(previous and previous.total, last.total), change_percent(average, last.total),
+        )
+        result.append(MonthlyBlock(currency, total, average, legend, spends, node_rows, summary))
     return result
 
 
@@ -211,6 +279,8 @@ class CategoryBlock:
     total: Decimal
     average: Decimal
     months: list  # CategoryMonth на каждый месяц окна
+    # NodeRow прямых подкатегорий с тратами (и ``direct`` — строки самой категории); пусто, если подкатегорий с тратами нет
+    parts: list = field(default_factory=list)
 
 
 def spent_categories(rows, tree):
@@ -238,22 +308,71 @@ def suggested_category(rows, tree):
 def category_series(rows, months, tree, category):
     """Траты категории ``category`` с потомками на каждый месяц окна; блок у валюты с такими строками."""
     inside = set(tree.descendant_ids(category))
-    blocks = {}
+    blocks, parts = {}, {}
     for currency, month, kind, line_category, product_id, paid, count in rows.lines:
-        if _line_category(rows, kind, line_category, product_id) not in inside:
+        line = _line_category(rows, kind, line_category, product_id)
+        if line not in inside:
             continue
         spends = blocks.setdefault(currency, {first: CategoryMonth(first) for first in months})
         target = spends[month]
+        path = tree.path_ids(line)
+        child = path[path.index(category) + 1] if line != category else category
+        by_month = parts.setdefault(currency, {}).setdefault(child, {})
         with price_context():
             target.amount += paid
+            by_month[month] = by_month.get(month, _ZERO) + paid
         target.lines_count += count
     result = []
     for currency in sorted(blocks):
         spends = [blocks[currency][first] for first in months]
         with price_context():
             total = sum((spend.amount for spend in spends), _ZERO)
-        result.append(CategoryBlock(currency, total, _average(total, len(months)), spends))
+        sums = parts[currency]
+        children = _node_rows(tree, months, sums, [pk for pk in sums if pk != category], category, tree.depth(category) + 1)
+        if children:
+            if category in sums:
+                direct = _node_rows(tree, months, sums, [category], category, tree.depth(category))[0]
+                direct.direct = True
+                children.append(direct)
+        result.append(CategoryBlock(currency, total, _average(total, len(months)), spends, children))
     return result
+
+
+# --- лимиты по месяцам ---
+
+@dataclass
+class LimitRow:
+    """Лимит и его исполнение в каждом месяце окна: траты категории с потомками в валюте лимита."""
+
+    id: int
+    category_id: int
+    currency: str
+    amount: Decimal
+    spent: list  # Decimal на каждый месяц окна
+
+    @property
+    def percents(self):
+        """Доля лимита на каждый месяц, %; лимит всегда положителен (ограничение БД)."""
+        with price_context():
+            return [round_decimal(value * 100 / self.amount, 2) for value in self.spent]
+
+
+def limit_history(rows, months, tree, limits):
+    """``limits`` — ``(id, category_id, currency, amount)``; текущая сумма лимита применяется ко всем месяцам окна.
+
+    Порядок — по валюте, затем по порядку дерева категорий.
+    """
+    order = {pk: index for index, pk in enumerate(tree.ordered_ids())}
+    result = []
+    for pk, category_id, currency, amount in limits:
+        inside = set(tree.descendant_ids(category_id)) if category_id in tree else {category_id}
+        by_month = {}
+        for line_currency, month, kind, line_category, product_id, paid, _count in rows.lines:
+            if line_currency == currency and _line_category(rows, kind, line_category, product_id) in inside:
+                with price_context():
+                    by_month[month] = by_month.get(month, _ZERO) + paid
+        result.append(LimitRow(pk, category_id, currency, amount, [by_month.get(first, _ZERO) for first in months]))
+    return sorted(result, key=lambda row: (row.currency, order.get(row.category_id, len(order)), row.id))
 
 
 # --- индекс цен ---
@@ -317,6 +436,20 @@ class PriceBlock:
     risers: list  # Mover, сильнее всего подорожавшие
     fallers: list  # Mover, сильнее всего подешевевшие
     products_total: int  # товаров (с единицей), купленных хотя бы в двух месяцах окна
+    risen_total: int = 0  # из них подорожали (цена последнего месяца выше первого)
+    fallen_total: int = 0  # подешевели
+
+    @property
+    def last_point(self):
+        """Последний месяц с индексом, если он не первый: с чем сравнивать 100."""
+        found = next((point for point in reversed(self.points) if point.index is not None), None)
+        return None if found is None or found.month == self.first_month else found
+
+    @property
+    def change_percent(self):
+        """Индекс последнего месяца − 100: на сколько процентов изменились цены с первого месяца."""
+        point = self.last_point
+        return None if point is None else point.index - _HUNDRED
 
 
 def _usable(rows):
@@ -357,8 +490,9 @@ def chain_index(by_month, months):
 def movers(by_month, months, names, limit=MOVERS_LIMIT):
     """Товары, купленные хотя бы в двух месяцах окна: цена первого и последнего месяца.
 
-    Возвращает ``(подорожавшие, подешевевшие, всего)``; порядок — по модулю изменения,
-    затем по имени, id и единице. Товар без изменения цены ни в один список не входит.
+    Возвращает ``(подорожавшие, подешевевшие, всего, всего подорожало, всего подешевело)``;
+    порядок — по модулю изменения, затем по имени, id и единице. Товар без изменения цены
+    ни в один список не входит.
     """
     seen = {}
     for first in months:
@@ -372,9 +506,9 @@ def movers(by_month, months, names, limit=MOVERS_LIMIT):
     def order(mover):
         return (-abs(mover.change_percent), names.get(mover.product_id, ""), mover.product_id, mover.unit)
 
-    risers = sorted((mover for mover in found if mover.change_percent > 0), key=order)[:limit]
-    fallers = sorted((mover for mover in found if mover.change_percent < 0), key=order)[:limit]
-    return risers, fallers, len(found)
+    risers = sorted((mover for mover in found if mover.change_percent > 0), key=order)
+    fallers = sorted((mover for mover in found if mover.change_percent < 0), key=order)
+    return risers[:limit], fallers[:limit], len(found), len(risers), len(fallers)
 
 
 def price_trend(purchases, months, names, limit=MOVERS_LIMIT):
@@ -386,6 +520,6 @@ def price_trend(purchases, months, names, limit=MOVERS_LIMIT):
             continue
         points = chain_index(by_month, months)
         first = next((point.month for point in points if point.index is not None), None)
-        risers, fallers, total = movers(by_month, months, names, limit)
-        blocks.append(PriceBlock(currency, first, points, risers, fallers, total))
+        risers, fallers, total, risen, fallen = movers(by_month, months, names, limit)
+        blocks.append(PriceBlock(currency, first, points, risers, fallers, total, risen, fallen))
     return blocks
