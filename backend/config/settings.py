@@ -111,6 +111,7 @@ INSTALLED_APPS = [
     "classification.apps.ClassificationConfig",
     "api.apps.ApiConfig",
     "accounts.apps.AccountsConfig",
+    "budget.apps.BudgetConfig",
 ]
 MIDDLEWARE = [
     "config.robots.NoIndexMiddleware",
