@@ -1,6 +1,8 @@
 /* «Главная» и «Лимиты»: карточки на фоне страницы, крупные числа, цвета категорий.
    Цвета — только токены (--ck-*), в обеих темах; цвет категории — класс dash-cat-N (N = ((category_id − 1) mod 6) + 1, как в «Тратах» — src/lib/category-tone.ts; 0 — без категории),
-   который задаёт два своих свойства: --dash-cat (цвет) и --dash-cat-tint (подложка). */
+   который задаёт два своих свойства: --dash-cat (цвет) и --dash-cat-tint (подложка).
+   Мобильный дизайн (docs/plans/2026-10-12-mobile-design.md): суммы — шрифтом цифр (.ck-figures), итог месяца — одна
+   цифра-герой (.ck-hero-figure), последние траты — лента чека (.ck-tape); размеры текста — только токены шкалы. */
 .dash-cat-0 { --dash-cat: var(--ck-text-muted); --dash-cat-tint: var(--ck-neutral-bg); }
 .dash-cat-1 { --dash-cat: var(--ck-cat-1); --dash-cat-tint: var(--ck-cat-1-tint); }
 .dash-cat-2 { --dash-cat: var(--ck-cat-2); --dash-cat-tint: var(--ck-cat-2-tint); }
@@ -11,7 +13,7 @@
 
 .dash, .limits { display: grid; gap: 16px; min-width: 0; max-width: 760px; }
 .dash-card { display: grid; gap: 12px; min-width: 0; padding: 20px; border: 1px solid var(--ck-border); border-radius: 20px; background: var(--ck-surface); box-shadow: 0 1px 2px var(--ck-panel-shadow); }
-.dash-card h2 { margin: 0; font-size: 1.15rem; }
+.dash-card h2 { margin: 0; font-size: var(--ck-text-lg); }
 .dash-card-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
 .dash-note { margin: 0; color: var(--ck-text-muted); }
 .dash-link { display: inline-flex; align-items: center; min-height: 44px; color: var(--ck-link); font-weight: 600; white-space: nowrap; }
@@ -20,21 +22,28 @@
 .dash-strong { font-weight: 700; color: var(--ck-text); }
 .dash-currency { color: var(--ck-text-muted); font-weight: 600; white-space: nowrap; }
 
-/* Месяц и семья */
+/* Месяц и семья: крупные стрелки без свайпа; новый месяц въезжает со своей стороны (только без reduced-motion). */
 .dash-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
 .dash-month { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.dash-month-title { margin: 0; font-size: 1.35rem; white-space: nowrap; }
-.dash-month-step { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 44px; height: 44px; border: 1px solid var(--ck-border); border-radius: 50%; background: var(--ck-surface); color: var(--ck-text); font-size: 1.5rem; line-height: 1; text-decoration: none; }
+.dash-month-title { margin: 0; font-size: var(--ck-text-xl); white-space: nowrap; }
+.dash-month-step { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 48px; height: 48px; border: 1px solid var(--ck-border); border-radius: 50%; background: var(--ck-surface); color: var(--ck-text); font-size: var(--ck-text-xl); line-height: 1; text-decoration: none; }
 .dash-month-step-off { color: var(--ck-disabled-text); background: var(--ck-disabled-bg); border-color: var(--ck-disabled-border); }
 .dash-family { display: flex; margin: 0; padding: 0; list-style: none; }
 /* A letter on a category tint is main text (4.5:1 needs --ck-text: an orange letter on its tint is 3.5:1 in the light
    theme); the category colour is the ring, a non-text mark that needs 3:1. Same for the badges of recent spends. */
 .dash-avatar { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border: 2px solid var(--ck-bg); border-radius: 50%; background: var(--dash-cat-tint); color: var(--ck-text); box-shadow: inset 0 0 0 2px var(--dash-cat); font-weight: 800; white-space: nowrap; }
 .dash-avatar + .dash-avatar { margin-left: -8px; }
+@media (prefers-reduced-motion: no-preference) {
+  .dash-slide-forward { animation: dash-slide-forward 200ms ease-out; }
+  .dash-slide-back { animation: dash-slide-back 200ms ease-out; }
+  @keyframes dash-slide-forward { from { transform: translateX(24px); opacity: 0.4; } }
+  @keyframes dash-slide-back { from { transform: translateX(-24px); opacity: 0.4; } }
+}
 
-/* Потрачено за месяц */
+/* Потрачено за месяц: первая валюта — цифра-герой, вторая — просто шрифт цифр. */
 .dash-label { margin: 0; color: var(--ck-text-muted); font-weight: 600; }
-.dash-total { margin: 0; font-size: clamp(1.5rem, 8vw, 2.5rem); font-weight: 800; line-height: 1.1; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.dash-total { margin: 0; line-height: 1.1; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.dash-total-plain { font-size: var(--ck-text-xl); }
 .dash-compare { margin: 0; color: var(--ck-text-muted); }
 .dash-compare-less { color: var(--ck-success-text); }
 .dash-compare-more { color: var(--ck-over-text); }
@@ -48,9 +57,9 @@
 .dash-limit .dash-bar-fill { background: var(--dash-cat); }
 .dash-bar-over .dash-bar-fill, .dash-limit .dash-bar-over .dash-bar-fill { background: var(--ck-over-bar); }
 
-/* Два больших действия */
-.dash-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.dash-action { display: flex; align-items: center; justify-content: center; min-height: 64px; padding: 0 16px; border: 1px solid var(--ck-border-field); border-radius: 16px; background: var(--ck-surface); color: var(--ck-text); font-size: 1.1rem; font-weight: 700; text-decoration: none; white-space: nowrap; }
+/* Три быстрых действия одним рядом: на телефоне — внизу, под большим пальцем, над нижним меню (ck-action-bar). */
+.dash-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.dash-action { display: flex; align-items: center; justify-content: center; min-height: 52px; padding: 0 8px; border: 1px solid var(--ck-border-field); border-radius: 16px; background: var(--ck-surface); color: var(--ck-text); font-size: var(--ck-text-sm); font-weight: 700; text-decoration: none; white-space: nowrap; }
 .dash-action-shot { border-color: var(--ck-accent); background: var(--ck-accent); color: var(--ck-on-accent); }
 .dash-action-shot:hover:not(:disabled) { border-color: var(--ck-accent); background: var(--ck-accent); color: var(--ck-on-accent); text-decoration: underline; }
 .dash-action-spend:hover { background: var(--ck-surface-raised); }
@@ -67,34 +76,38 @@
 .dash-limit-value { margin-left: auto; }
 .dash-dot { flex: 0 0 auto; width: 12px; height: 12px; border-radius: 50%; background: var(--dash-cat); }
 .dash-limit-name, .limits-name { flex: 1 1 auto; min-width: 0; font-weight: 600; }
-.dash-limit-value, .limits-current { flex: 0 0 auto; color: var(--ck-text-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.dash-limit-value, .limits-current { flex: 0 0 auto; color: var(--ck-text-muted); font-size: var(--ck-text-sm); white-space: nowrap; font-variant-numeric: tabular-nums; }
 
-/* Подкатегории с лимитами под строкой корня: отступ до имени корня (точка 12 px + зазор 10 px), тоньше полоса,
-   мельче текст; цвет полосы — цвет корня (--dash-cat наследуется от .dash-limit). Глубже — ещё по 12 px. */
+/* Подкатегории с лимитами под строкой корня: отступ до имени корня (точка 12 px + зазор 10 px), тоньше полоса;
+   цвет полосы — цвет корня (--dash-cat наследуется от .dash-limit). Глубже — ещё по 12 px. Текст не мельче 13 px. */
 .dash-sublimit-list { display: grid; gap: 10px; margin: 2px 0 0; padding: 0 0 0 22px; list-style: none; }
 .dash-sublimit .dash-sublimit-list { padding-left: 12px; }
 .dash-sublimit { display: grid; gap: 6px; min-width: 0; }
-.dash-sublimit-name { flex: 1 1 auto; min-width: 0; overflow-wrap: normal; font-size: 0.875rem; font-weight: 600; }
-.dash-sublimit-value { font-size: 0.875rem; white-space: nowrap; }
-.dash-sublimit-over { font-size: 0.875rem; }
+.dash-sublimit-name { flex: 1 1 auto; min-width: 0; overflow-wrap: normal; font-size: var(--ck-text-sm); font-weight: 600; }
+.dash-sublimit-value { font-size: var(--ck-text-xs); white-space: nowrap; }
+.dash-sublimit-over { font-size: var(--ck-text-sm); }
 .dash-bar-small { height: 6px; border-radius: 3px; }
 .dash-bar-small .dash-bar-fill { border-radius: 3px; }
 
-/* Последние траты */
-.dash-recent-item { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 56px; padding: 8px 0; border-top: 1px solid var(--ck-divider); color: var(--ck-text); text-decoration: none; }
-.dash-recent-list li:first-child .dash-recent-item { border-top: 0; }
+/* Последние траты: каждая — кусочек ленты чека; ссылка внутри ленты выше зубцов, кольцо фокуса не срезается. */
+.dash-recent-list { gap: 10px; }
+.dash-recent-tape { padding-bottom: 8px; background: var(--ck-surface-raised); }
+.dash-recent-item { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 56px; padding: 8px 12px; color: var(--ck-text); text-decoration: none; }
+.dash-recent-item:focus-visible { outline-offset: -3px; }
 .dash-recent-item:hover .dash-recent-title { text-decoration: underline; }
 .dash-badge { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 14px; background: var(--dash-cat-tint); color: var(--ck-text); box-shadow: inset 0 0 0 2px var(--dash-cat); font-weight: 800; white-space: nowrap; }
 .dash-recent-main { display: grid; gap: 2px; min-width: 0; }
 .dash-recent-title { overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.dash-recent-meta { color: var(--ck-text-muted); font-size: 0.875rem; }
-.dash-recent-amount { font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.dash-recent-meta { color: var(--ck-text-muted); font-size: var(--ck-text-xs); }
+.dash-recent-amount { font-size: var(--ck-text-base); white-space: nowrap; font-variant-numeric: tabular-nums; }
 
-/* Пустой месяц */
-.dash-empty-title { margin: 0; font-size: 1.15rem; font-weight: 700; }
+/* Пустой месяц: с действием */
+.dash-empty-title { margin: 0; font-size: var(--ck-text-lg); font-weight: 700; }
+.dash-empty-action { display: flex; align-items: center; justify-content: center; min-height: 52px; padding: 0 20px; border: 1px solid var(--ck-brand); border-radius: var(--ck-radius-button); background: var(--ck-brand); color: var(--ck-on-brand); font-weight: 700; text-decoration: none; white-space: nowrap; }
+.dash-empty-action:hover { background: var(--ck-brand-hover); border-color: var(--ck-brand-hover); color: var(--ck-on-brand); }
 
-/* Экран лимитов */
-.limits-small-heading { font-size: 1rem; }
+/* Экран лимитов: категории — строки одного списка во всю ширину; сохраняет панель внизу. */
+.limits-small-heading { font-size: var(--ck-text-base); }
 .dash-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .dash-chip { min-height: 44px; padding: 8px 16px; border: 1px solid var(--ck-border-field); border-radius: 22px; background: var(--ck-surface); color: var(--ck-text); font-weight: 600; white-space: nowrap; }
 .dash-chip:hover:not(:disabled) { border-color: var(--ck-border-field); background: var(--ck-surface-raised); color: var(--ck-text); }
@@ -102,27 +115,36 @@
 .limits-add-currency { display: grid; gap: 6px; min-width: 0; }
 .limits-add-currency label { font-weight: 600; }
 .limits-add-row { display: flex; gap: 8px; align-items: stretch; }
-.limits-add-row input { flex: 0 1 7rem; min-width: 0; padding: 8px 12px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-surface); color: var(--ck-text); text-transform: uppercase; }
-.limits-list { gap: 12px; }
+.limits-add-row input { flex: 0 1 7rem; min-width: 0; padding: 8px 12px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-surface); color: var(--ck-text); font-size: var(--ck-text-base); text-transform: uppercase; }
+.limits-list { border: 1px solid var(--ck-border); border-radius: 20px; background: var(--ck-surface); overflow: hidden; }
+.limits-row { display: grid; gap: 8px; min-width: 0; padding: 14px 16px; }
+.limits-list > .limits-row + .limits-row { border-top: 1px solid var(--ck-divider); }
+.limits-row-changed { background: var(--ck-accent-bg); }
 .limits-form { display: grid; gap: 10px; min-width: 0; }
-.limits-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; }
+.limits-controls { display: flex; gap: 8px; align-items: stretch; }
 .limits-input { display: flex; flex: 1 1 10rem; align-items: center; min-width: 0; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-surface); }
-.limits-input input { flex: 1 1 auto; min-width: 0; padding: 8px 12px; border: 0; background: transparent; color: var(--ck-text); font-size: 1.1rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+/* 18 px: the field is never smaller than 16 px, iOS does not zoom the page in. */
+.limits-input input { flex: 1 1 auto; min-width: 0; min-height: 44px; padding: 8px 12px; border: 0; background: transparent; color: var(--ck-text); font-family: var(--ck-font-figures); font-size: var(--ck-text-lg); font-weight: 600; font-variant-numeric: tabular-nums; }
 .limits-input:has(input[aria-invalid="true"]) { border-color: var(--ck-error-border); }
 .limits-input-currency { padding: 0 12px; color: var(--ck-text-muted); white-space: nowrap; }
-.limits-save { flex: 0 0 auto; border-color: var(--ck-accent); background: var(--ck-accent); color: var(--ck-on-accent); }
+.limits-savebar { display: flex; }
+.limits-save { flex: 1 1 auto; min-height: 52px; border-color: var(--ck-accent); background: var(--ck-accent); color: var(--ck-on-accent); font-weight: 700; white-space: nowrap; }
 .limits-save:hover:not(:disabled) { border-color: var(--ck-accent); background: var(--ck-accent); color: var(--ck-on-accent); text-decoration: underline; }
-.limits-delete { flex: 0 0 auto; }
+.limits-delete { flex: 0 0 auto; min-height: 44px; }
 .limits-done { margin: 0; color: var(--ck-success-text); }
 .limits-row .receipt-field-error { margin: 0; }
-/* Подкатегория: отступ по глубине (до четырёх уровней), карточка плотнее, цвет — цвет её корня. */
-.limits-row-sub { margin-left: calc(var(--limits-depth, 1) * 16px); padding: 12px 16px; border-radius: 16px; }
+/* Подкатегория: отступ по глубине (до четырёх уровней) внутри строки, цвет — цвет её корня. */
+.limits-row-sub { padding-left: calc(16px + var(--limits-depth, 1) * 16px); }
 .limits-row-sub .limits-name { font-weight: 500; }
 .limits-toggle { justify-self: start; min-height: 44px; padding: 8px 12px; border: 1px solid var(--ck-border-field); border-radius: 22px; background: var(--ck-surface); color: var(--ck-link); font-weight: 600; white-space: nowrap; }
 .limits-toggle:hover:not(:disabled) { border-color: var(--ck-border-field); background: var(--ck-surface-raised); color: var(--ck-link); }
 
 @media (max-width: 540px) {
   .dash-card { padding: 16px; }
-  .limits-row-sub { margin-left: calc(var(--limits-depth, 1) * 10px); padding: 12px; }
-  .limits-save { flex: 1 1 auto; }
+  /* The quick actions sit in the thumb zone: last on the screen, pinned above the navigation by ck-action-bar. */
+  .dash-actions { order: 1; }
+  .dash-sublimit-list { padding-left: 14px; }
+  .dash-sublimit .dash-sublimit-list { padding-left: 8px; }
+  .limits-row { padding: 12px; }
+  .limits-row-sub { padding-left: calc(12px + var(--limits-depth, 1) * 10px); }
 }

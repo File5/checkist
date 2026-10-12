@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { getDashboard } from '../../api/budget'
 import type { Dashboard, DashboardCategory, DashboardCurrency, DashboardRecent, DashboardSubCategory } from '../../api/budget'
 import RequestState from '../../components/RequestState'
@@ -7,9 +7,10 @@ import { QuickShot } from '../recognition'
 import {
   badgeLetter, capitalize, categoryIds, categoryTone, cents, compareMonths, daysLeftText, dashboardErrorMessage, dashboardPeople, deviceMonth, formatMoney,
   formatNumber, initials,
-  inMonth, monthIsEmpty, monthTitle, progress, recentMeta, shiftMonth, subCategories,
+  inMonth, monthIsEmpty, monthSlide, monthTitle, progress, recentMeta, shiftMonth, subCategories,
 } from './dashboard-state'
-import type { Progress } from './dashboard-state'
+import type { MonthSlide, Progress } from './dashboard-state'
+import '../receipts/_tmp-foundation.css' /* mobile-foundation: temporary, integrator removes */
 import './Dashboard.css'
 
 const monthHref = (month: string) => `/?month=${month}`
@@ -22,12 +23,14 @@ function Bar({ value, label, small = false }: { value: Progress; label: string; 
   </div>
 }
 
-function SpentCard({ block, data, family, current }: { block: DashboardCurrency; data: Dashboard; family: boolean; current: boolean }) {
+/** `hero` — the first block: its total is the hero figure of the screen. Another currency gets the figures font only,
+ * so the screen never has two hero figures. */
+function SpentCard({ block, data, family, current, hero }: { block: DashboardCurrency; data: Dashboard; family: boolean; current: boolean; hero: boolean }) {
   const comparison = compareMonths(block.spent, block.previous_spent, data.previous_month)
   const total = progress(block.spent, block.limit_total)
   return <section className="dash-card dash-spent" aria-label={`Потрачено, ${block.currency}`}>
     <p className="dash-label">{family ? 'Потрачено семьёй' : 'Потрачено'}</p>
-    <p className="dash-total">{formatMoney(block.spent, block.currency)}</p>
+    <p className={`dash-total ${hero ? 'ck-hero-figure' : 'ck-figures dash-total-plain'}`}>{formatMoney(block.spent, block.currency)}</p>
     {comparison && <p className={`dash-compare dash-compare-${comparison.tone}`}>{comparison.text}</p>}
     {total && block.limit_total && <>
       <Bar value={total} label={`Потрачено ${total.percent}% общего лимита`} />
@@ -49,7 +52,7 @@ function SubLimitRow({ row, currency }: { row: DashboardSubCategory; currency: s
   return <li className="dash-sublimit">
     <div className="dash-limit-head">
       <span className="dash-sublimit-name">{row.name}</span>
-      <span className="dash-limit-value dash-sublimit-value">
+      <span className="dash-limit-value dash-sublimit-value ck-figures">
         {row.limit === null ? formatMoney(row.spent, currency)
           : <>{formatNumber(row.spent)} / {formatMoney(row.limit, currency)}</>}
       </span>
@@ -73,7 +76,7 @@ function LimitRow({ category, currency }: { category: DashboardCategory; currenc
     <div className="dash-limit-head">
       <span className="dash-dot" aria-hidden="true" />
       <span className="dash-limit-name">{category.name}</span>
-      <span className="dash-limit-value">
+      <span className="dash-limit-value ck-figures">
         {category.limit === null ? formatMoney(category.spent, currency)
           : <>{formatNumber(category.spent)} / {formatMoney(category.limit, currency)}</>}
       </span>
@@ -99,14 +102,15 @@ function LimitsCard({ block, several }: { block: DashboardCurrency; several: boo
 }
 
 function RecentItem({ item, tone }: { item: DashboardRecent; tone: number }) {
-  return <li>
+  // The tape is the row's card; the link stays inside it, above the teeth, so its focus ring is never cut away.
+  return <li className="dash-recent-tape ck-tape">
     <Link className="dash-recent-item" to={`/receipts/${item.id}`}>
       <span className={`dash-badge dash-cat-${tone}`} aria-hidden="true">{badgeLetter(item.category_name, item.title)}</span>
       <span className="dash-recent-main">
         <span className="dash-recent-title">{item.title || (item.source === 'manual' ? 'Трата' : 'Чек')}</span>
         <span className="dash-recent-meta">{recentMeta(item)}</span>
       </span>
-      <span className="dash-recent-amount">{formatMoney(item.total, item.currency)}</span>
+      <span className="dash-recent-amount ck-figures">{formatMoney(item.total, item.currency)}</span>
     </Link>
   </li>
 }
@@ -117,16 +121,19 @@ export type DashboardViewProps = {
   today?: string
   /** «Пользователь с семьёй» says «семьёй»; one person without a family — just «Потрачено». */
   family?: boolean
+  /** The month came after another one: it slides in from that side (not under reduced motion). */
+  slide?: MonthSlide
 }
 
 /** The dashboard itself, without loading: the markup tests render it directly. */
-export function DashboardView({ data, today = deviceMonth(), family = data.members.length > 1 }: DashboardViewProps) {
+export function DashboardView({ data, today = deviceMonth(), family = data.members.length > 1, slide }: DashboardViewProps) {
   const current = data.month === today
   const empty = monthIsEmpty(data)
   const ids = categoryIds(data)
   const several = data.currencies.length > 1
   const people = dashboardPeople(data)
-  return <div className="dash">
+  const spent = data.currencies.filter((block) => cents(block.spent) !== 0n || block.limit_total !== null)
+  return <div className={`dash${slide ? ` dash-slide-${slide}` : ''}`}>
     <div className="dash-head">
       <nav className="dash-month" aria-label="Месяц">
         <Link className="dash-month-step" to={monthHref(shiftMonth(data.month, -1))} aria-label="Предыдущий месяц">‹</Link>
@@ -146,11 +153,12 @@ export function DashboardView({ data, today = deviceMonth(), family = data.membe
       ? <section className="dash-card dash-empty">
         <p className="dash-empty-title">{capitalize(inMonth(data.month))} трат {current ? 'пока нет' : 'не было'}</p>
         {current && <p className="dash-note">Снимите чек или добавьте трату — сумма появится здесь.</p>}
+        <Link className="dash-empty-action" to="/receipts/new">Добавить трату</Link>
       </section>
-      : data.currencies.filter((block) => cents(block.spent) !== 0n || block.limit_total !== null)
-        .map((block) => <SpentCard key={block.currency} block={block} data={data} family={family} current={current} />)}
+      : spent.map((block, index) => <SpentCard key={block.currency} block={block} data={data} family={family} current={current} hero={index === 0} />)}
 
-    <div className="dash-actions">
+    {/* Right after the total for reading and the keyboard; on a phone pinned in the thumb zone above the navigation. */}
+    <div className="dash-actions ck-action-bar">
       <QuickShot className="dash-action dash-action-shot" label="Снять чек" />
       <QuickShot className="dash-action dash-action-spend" source="gallery" label="Из галереи" />
       <Link className="dash-action dash-action-spend" to="/receipts/new">Трата</Link>
@@ -176,7 +184,7 @@ export function DashboardView({ data, today = deviceMonth(), family = data.membe
   </div>
 }
 
-type Load = { key: string } & ({ kind: 'error'; message: string } | { kind: 'ok'; data: Dashboard })
+type Load = { key: string } & ({ kind: 'error'; message: string } | { kind: 'ok'; data: Dashboard; slide?: MonthSlide })
 
 /** «Главная»: the month of the family budget. The month lives in the address (`/?month=YYYY-MM`).
  * An answer belongs to its month and attempt: another month shows «loading» until its own answer comes. */
@@ -184,15 +192,20 @@ export default function DashboardPage({ month }: { month?: string }) {
   const [load, setLoad] = useState<Load | undefined>()
   const [attempt, setAttempt] = useState(0)
   const key = `${month ?? ''}:${attempt}`
+  // The month shown last: the next one slides in from its side.
+  const shown = useRef<string | undefined>(undefined)
   useEffect(() => {
     const controller = new AbortController()
     void getDashboard(month, { signal: controller.signal }).then((result) => {
       if (controller.signal.aborted || result.kind === 'aborted') return
-      setLoad(result.kind === 'ok' ? { key, kind: 'ok', data: result.data } : { key, kind: 'error', message: dashboardErrorMessage(result) })
+      if (result.kind !== 'ok') { setLoad({ key, kind: 'error', message: dashboardErrorMessage(result) }); return }
+      const slide = monthSlide(shown.current, result.data.month)
+      shown.current = result.data.month
+      setLoad({ key, kind: 'ok', data: result.data, slide })
     })
     return () => controller.abort()
   }, [month, key])
   if (!load || load.key !== key) return <RequestState kind="loading" message="Загружаем траты месяца…" />
   if (load.kind === 'error') return <RequestState kind="error" message={load.message} onRetry={() => setAttempt((value) => value + 1)} />
-  return <DashboardView data={load.data} />
+  return <DashboardView data={load.data} slide={load.slide} />
 }

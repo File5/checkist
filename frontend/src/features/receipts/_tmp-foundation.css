@@ -1,0 +1,55 @@
+/* mobile-foundation: temporary, integrator removes.
+   Копия общих частей «Основы» (docs/plans/2026-10-12-mobile-design.md) для экранов денег до слияния: шрифты цифр и
+   шкала размеров (в tokens.css после слияния), .ck-figures, .ck-hero-figure, .ck-tape, .ck-leader, лист снизу,
+   ряд чипов с прокруткой и кнопка «Фильтры». Цвета — только токены. Шрифты JetBrains Mono и Unbounded здесь не
+   подключаются (это делает «Основа» в index.html): до слияния цифры идут системным моноширинным. */
+:root {
+  --ck-font-figures: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --ck-font-display-figures: "Unbounded", var(--ck-font-display);
+  --ck-text-xs: 13px;
+  --ck-text-sm: 15px;
+  --ck-text-base: 16px;
+  --ck-text-lg: 18px;
+  --ck-text-xl: 22px;
+  --ck-text-hero: 40px;
+}
+
+.ck-figures { font-family: var(--ck-font-figures); font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+.ck-hero-figure { margin: 0; font-family: var(--ck-font-display-figures); font-size: clamp(var(--ck-text-xl), 9vw, var(--ck-text-hero)); font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* Лента чека: рваный нижний край, зубцы высотой --ck-tape-tooth. Нижний отступ содержимого задаёт сам экран. */
+.ck-tape {
+  --ck-tape-tooth: 8px;
+  -webkit-mask: linear-gradient(black, black) top / 100% calc(100% - var(--ck-tape-tooth)) no-repeat,
+    conic-gradient(from -45deg at 50% 100%, black 90deg, transparent 0) bottom / calc(2 * var(--ck-tape-tooth)) var(--ck-tape-tooth) repeat-x;
+  mask: linear-gradient(black, black) top / 100% calc(100% - var(--ck-tape-tooth)) no-repeat,
+    conic-gradient(from -45deg at 50% 100%, black 90deg, transparent 0) bottom / calc(2 * var(--ck-tape-tooth)) var(--ck-tape-tooth) repeat-x;
+}
+
+/* Выноска «Молоко ……… 450 ₸»: первый ребёнок — название, последний — значение, точки между ними. */
+.ck-leader { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.ck-leader > :first-child { flex: 0 1 auto; min-width: 0; }
+.ck-leader > :last-child { flex: none; order: 3; white-space: nowrap; }
+.ck-leader::after { content: ""; flex: 1 1 12px; order: 2; min-width: 12px; border-bottom: 2px dotted var(--ck-border-field); }
+
+/* Лист снизу */
+.ck-sheet-layer { position: fixed; inset: 0; z-index: var(--ck-z-menu-sheet); display: flex; align-items: flex-end; justify-content: center; }
+.ck-sheet-backdrop { position: absolute; inset: 0; background: var(--ck-popover-shadow); }
+.ck-sheet { position: relative; display: grid; gap: 12px; width: min(100%, 560px); max-height: 85vh; max-height: 85dvh; overflow: auto; overscroll-behavior: contain; padding: 16px 16px calc(16px + var(--ck-safe-bottom)); border: 1px solid var(--ck-popover-border); border-bottom: 0; border-radius: var(--ck-radius) var(--ck-radius) 0 0; background: var(--ck-surface); color: var(--ck-text); box-shadow: 0 4px 16px var(--ck-popover-shadow); }
+.ck-sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.ck-sheet-head h2 { margin: 0; font-size: var(--ck-text-lg); }
+.ck-sheet-close { flex: none; width: 44px; min-height: 44px; padding: 0; border-color: var(--ck-border-field); background: var(--ck-surface); color: var(--ck-text); font-size: var(--ck-text-xl); }
+.ck-sheet-body { display: grid; gap: 12px; min-width: 0; }
+/* Форма в листе: её панель действий прижата к низу листа, а не к нижнему меню страницы. */
+.ck-sheet .ck-action-bar { bottom: 0; }
+@media (prefers-reduced-motion: no-preference) {
+  .ck-sheet { animation: ck-sheet-in 180ms ease-out; }
+  @keyframes ck-sheet-in { from { transform: translateY(24px); opacity: 0; } }
+}
+
+/* Ряд чипов в одну строку с прокруткой вбок и затуханием по краям */
+.ck-chip-scroller, .ck-chip-scroller > ul { display: flex; flex-wrap: nowrap; gap: 8px; min-width: 0; margin: 0; padding: 0; list-style: none; }
+.ck-chip-scroller { overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; padding-block: 2px; -webkit-mask: linear-gradient(to right, transparent, black 12px, black calc(100% - 12px), transparent); mask: linear-gradient(to right, transparent, black 12px, black calc(100% - 12px), transparent); padding-inline: 12px; margin-inline: -12px; }
+.ck-chip-scroller > *, .ck-chip-scroller > ul > li { flex: none; }
+
+.ck-filters-button { justify-self: start; min-height: 44px; padding: 8px 18px; border-color: var(--ck-border-field); border-radius: var(--ck-radius-pill); background: var(--ck-surface); color: var(--ck-link); font-weight: 600; white-space: nowrap; }
