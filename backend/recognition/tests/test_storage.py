@@ -64,6 +64,68 @@ class StorageTests(TransactionTestCase):
         self.assertEqual(len(self.files()), 1)
         self.assertFalse(list(self.root.glob(".*-recognition-staging-*")))
 
+    def test_mpo_stored_as_jpeg_with_unchanged_bytes(self):
+        with io.BytesIO() as stream, Image.new("RGB", (100, 200), "white") as image, Image.new("RGB", (50, 100)) as gain:
+            image.save(stream, format="MPO", save_all=True, append_images=[gain])
+            data = stream.getvalue()
+        photo, created = accept_upload(SimpleUploadedFile("IMG_0001.jpg", data, content_type="image/jpeg"), owner=self.owner)
+        self.assertTrue(created)
+        self.assertEqual((photo.content_type, photo.width, photo.height), ("image/jpeg", 100, 200))
+        self.assertTrue(photo.original_file.name.endswith("/source.jpg"))
+        self.assertEqual(media_path(photo.original_file.name).read_bytes(), data)
+        self.assertEqual(photo.sha256, hashlib.sha256(data).hexdigest())
+        create_job(photo)
+        photo, _ = prepare_photo(*fence(claim_job()))
+        with Image.open(media_path(photo.upright_file.name)) as image:
+            self.assertEqual((image.format, image.size), ("PNG", (100, 200)))
+
+    def test_heic_converted_to_jpeg_and_replayed_by_jpeg_bytes(self):
+        exif = Image.Exif()
+        exif[274] = 6
+        exif[0x8825] = {1: "N", 2: (55.0, 45.0, 0.0)}
+        with io.BytesIO() as stream, Image.new("RGB", (100, 200), "white") as image:
+            image.save(stream, format="HEIF", exif=exif.tobytes())
+            data = stream.getvalue()
+        upload = lambda: SimpleUploadedFile("IMG_0002.HEIC", data, content_type="image/heic")
+        photo, created = accept_upload(upload(), owner=self.owner)
+        self.assertTrue(created)
+        stored = media_path(photo.original_file.name).read_bytes()
+        self.assertTrue(photo.original_file.name.endswith("/source.jpg"))
+        self.assertTrue(stored.startswith(b"\xff\xd8"))
+        self.assertNotEqual(stored, data)
+        self.assertEqual((photo.content_type, photo.bytes, photo.exif_orientation), ("image/jpeg", len(stored), 1))
+        self.assertEqual((photo.raw_width, photo.raw_height), (200, 100))
+        self.assertEqual(photo.sha256, hashlib.sha256(stored).hexdigest())
+        with Image.open(media_path(photo.original_file.name)) as image:
+            self.assertEqual((image.format, len(image.getexif())), ("JPEG", 0))
+        duplicate, created = accept_upload(upload(), owner=self.owner)
+        self.assertEqual((duplicate.pk, created), (photo.pk, False))
+        self.assertEqual(len(self.files()), 1)
+        self.assertFalse(list(self.root.glob(".*-recognition-staging-*")))
+
+    def test_heic_converted_jpeg_rechecked_against_byte_limit(self):
+        with io.BytesIO() as stream, Image.new("RGB", (40, 40), "white") as image:
+            image.save(stream, format="HEIF")
+            data = stream.getvalue()
+        # The raw HEIC passes; its JPEG copy does not.
+        with override_settings(RECEIPT_IMAGE_MAX_BYTES=len(data)), \
+                patch("recognition.storage.convert_heif", side_effect=self.oversized_jpeg(len(data) + 1)):
+            with self.assertRaises(ImageError) as caught:
+                accept_upload(io.BytesIO(data), owner=self.owner)
+        self.assertEqual(caught.exception.code, "file_too_large")
+        self.assertEqual(self.files(), [])
+        self.assertFalse(list(self.root.glob(".*-recognition-staging-*")))
+
+    @staticmethod
+    def oversized_jpeg(size):
+        def convert(source, destination):
+            with Image.new("RGB", (8, 8), "white") as image:
+                image.save(destination, format="JPEG")
+            with Path(destination).open("ab") as stream:
+                stream.write(b"\x00" * max(0, size - Path(destination).stat().st_size))
+            return True
+        return convert
+
     def test_actual_chunk_byte_limit_ignores_declared_size(self):
         class LyingUpload:
             size = 1

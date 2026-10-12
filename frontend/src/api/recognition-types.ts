@@ -2,6 +2,8 @@ import type { Decimal, ISODate, ISODateTime, PageParams, Unit } from './types.ts
 import type { LineKind, ReceiptOperation, TaxKind } from './receipts-types.ts'
 
 export type ImageFormat = 'image/jpeg' | 'image/png' | 'image/webp'
+/** What an upload may be: the server stores HEIF/HEIC as a JPEG, so a Photo is never one. */
+export type UploadFormat = ImageFormat | 'image/heic' | 'image/heif'
 export const jobStatuses = ['queued', 'running', 'cancel_requested', 'cancelled', 'succeeded', 'partial_succeeded', 'failed'] as const
 export type JobStatus = typeof jobStatuses[number]
 export type JobStage = 'waiting' | 'prepare' | 'detect' | 'crop' | 'recognize' | 'validate' | 'import' | 'finished'
@@ -17,7 +19,7 @@ export const executorStates = ['idle', 'busy', 'absent'] as const
 export type ExecutorState = typeof executorStates[number] | 'unknown'
 /** Absent does not prohibit upload/retry. last_seen_at is the heartbeat of a running job, null for an idle worker. */
 export type Executor = { available: boolean; state: ExecutorState; last_seen_at: ISODateTime | null }
-export type RecognitionLimits = { formats: ImageFormat[]; max_bytes: number; max_pixels: number; max_receipts: number }
+export type RecognitionLimits = { formats: UploadFormat[]; max_bytes: number; max_pixels: number; max_receipts: number }
 export type RecognitionCsrf = { csrf_token: string; limits: RecognitionLimits; executor: Executor }
 export type Photo = {
   id: number; created_at: ISODateTime; content_type: ImageFormat; bytes: number

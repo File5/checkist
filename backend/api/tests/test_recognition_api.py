@@ -353,8 +353,22 @@ class RecognitionAPITests(TestCase):
         self.assertEqual(repaired.status_code, 200)
         self.assertEqual(repaired.json()["job"]["status"], "queued")
 
+    def test_heic_and_mpo_uploads_become_jpeg_photos(self):
+        for format, name, content_type in (("HEIF", "IMG.HEIC", "image/heic"), ("MPO", "IMG.JPG", "image/jpeg")):
+            with self.subTest(format=format):
+                stream = BytesIO()
+                with Image.new("RGB", (10, 20), "white") as image, Image.new("RGB", (5, 10)) as gain:
+                    extra = {"save_all": True, "append_images": [gain]} if format == "MPO" else {}
+                    image.save(stream, format=format, **extra)
+                response = self.client.post("/api/recognition/photos/", {"file": upload(stream.getvalue(), name, content_type)}, format="multipart")
+                self.assertEqual(response.status_code, 202, response.content)
+                photo = response.json()["photo"]
+                self.assertEqual((photo["content_type"], photo["width"], photo["height"]), ("image/jpeg", 10, 20))
+                self.assertTrue(photo["original_url"].endswith("/source.jpg"))
+
     def test_file_validation_and_no_records(self):
-        cases = [(b"\x00\x00\x00\x18ftypheic" + b"\0" * 20, "unsupported_format"),
+        cases = [(b"\x00\x00\x00\x18ftypheic" + b"\0" * 20, "invalid_image"),
+                 (b"\x00\x00\x00\x18ftypavif" + b"\0" * 20, "unsupported_format"),
                  (b"\x89PNG\r\n\x1a\ninvalid", "invalid_image"),
                  (b"", "invalid_image"), (image_bytes("GIF"), "unsupported_format")]
         for data, code in cases:

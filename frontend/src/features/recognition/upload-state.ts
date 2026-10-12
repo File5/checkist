@@ -5,18 +5,25 @@ import { reductionPlan } from './image-reduce'
 import type { ImageSize, Reduced } from './image-reduce'
 import { errorText, uploadLabels } from './labels'
 
-const extensions: Record<string, string> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' }
+const extensions: Record<string, string> = {
+  jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', heic: 'image/heic', heif: 'image/heif',
+}
 const types = new Set(Object.values(extensions))
+/** The «Выбрать файл» picker: every format of `extensions`, by type and by extension. */
+export const pickAccept = [...types, ...Object.keys(extensions).map((extension) => `.${extension}`)].join(',')
+export const unsupportedFormat = 'Формат не поддерживается. Выберите фото в JPEG, PNG, WebP или HEIC.'
 type Picked = Pick<File, 'name'> & { type?: string }
 /** The extension names the format; a file without a known one is judged by the type the browser reports. */
 export function fileFormat(file: Picked) {
   const type = file.type?.toLowerCase() ?? ''
   return extensions[file.name.split('.').pop()?.toLowerCase() ?? ''] ?? (types.has(type) ? type : null)
 }
+/** HEIF/HEIC: the server converts it to JPEG; many browsers cannot even show it. */
+export function isHeif(file: Picked) { const format = fileFormat(file); return format === 'image/heic' || format === 'image/heif' }
 /** Format and emptiness: what no reduction can repair. */
 export function validateFormat(file: Picked & Pick<File, 'size'>, limits?: RecognitionLimits): string | undefined {
   const format = fileFormat(file)
-  if (!format || (limits && !limits.formats.includes(format as RecognitionLimits['formats'][number]))) return 'Формат не поддерживается. HEIC и другие форматы сохраните в JPEG или PNG.'
+  if (!format || (limits && !limits.formats.includes(format as RecognitionLimits['formats'][number]))) return unsupportedFormat
   if (file.size === 0) return 'Файл пуст. Выберите другое фото.'
 }
 /** The file exactly as it would be sent. */
@@ -24,6 +31,18 @@ export function validateFile(file: Picked & Pick<File, 'size'>, limits?: Recogni
   const invalid = validateFormat(file, limits)
   if (invalid) return invalid
   if (limits && file.size > limits.max_bytes) return 'Файл слишком большой. Уменьшите его размер до лимита сервера.'
+}
+/** The photo taken with «Снять чек» goes by itself, once. `pending` is that photo until its turn has come.
+ * `wait` — not yet sendable (conditions, preview size, a refresh or another sending); `drop` — its turn has come but
+ * the format is refused, so the person sees the error and nothing goes; `send` — the same submit as the button.
+ */
+export function autoSendStep(
+  { file, pending, limits, invalid, measuring, refreshing, idle }:
+  { file?: File; pending?: File; limits?: RecognitionLimits; invalid?: string; measuring: boolean; refreshing: boolean; idle: boolean },
+): 'none' | 'wait' | 'drop' | 'send' {
+  if (!file || pending !== file) return 'none'
+  if (!limits || measuring || refreshing || !idle) return 'wait'
+  return invalid ? 'drop' : 'send'
 }
 export function formatBytes(bytes: number) { return `${glue((bytes / 1048576).toLocaleString('ru-RU', { maximumFractionDigits: 2 }), 'МиБ')} (${glue(bytes.toLocaleString('ru-RU'), 'байт')})` }
 const mib = (bytes: number) => (bytes / 1048576).toLocaleString('ru-RU', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
@@ -99,12 +118,13 @@ export function createUpload(
         try { made = await reduce(file, limits, current.signal) }
         catch { made = undefined }
         if (stale()) return
-        if (!made) { controller = undefined; publish({ kind: 'error', message: uploadLabels.reduceFailed }); return }
-        reduced = { ...made, source: file }
+        // A browser that cannot decode HEIC cannot reduce it either: the original goes and the server answers.
+        if (made) reduced = { ...made, source: file }
+        else if (!isHeif(file)) { controller = undefined; publish({ kind: 'error', message: uploadLabels.reduceFailed }); return }
       }
       const outgoing = reduced?.file ?? file
-      // The limits may have changed since the copy was made.
-      const invalid = validateFile(outgoing, limits)
+      // The limits may have changed since the copy was made. An unreduced HEIC over the bytes is the server's to refuse.
+      const invalid = mustReduce && !reduced ? validateFormat(outgoing, limits) : validateFile(outgoing, limits)
       if (invalid) { controller = undefined; publish({ kind: 'error', message: reduced ? uploadLabels.reduceFailed : invalid }); return }
       publish({ kind: 'sending', stage: 'uploading' })
       const progress = (sent: number, total: number) => {

@@ -8,7 +8,7 @@ import { Link, navigate } from '../../navigation'
 import { reduceImage, reductionPlan } from './image-reduce'
 import type { ImageSize } from './image-reduce'
 import { errorText, isExecutorAbsent, sizeText, uploadExecutorNote, uploadLabels } from './labels'
-import { createUpload, fileFormat, formatBytes, progressValue, setJobNotice, uploadMessage, validateFormat } from './upload-state'
+import { autoSendStep, createUpload, fileFormat, formatBytes, pickAccept, progressValue, setJobNotice, uploadMessage, validateFormat } from './upload-state'
 import { useRequest } from './useRequest'
 import { createPreview } from './preview'
 import './Upload.css'
@@ -48,6 +48,8 @@ export default function UploadPage() {
   const [measured, setMeasured] = useState<Measured>()
   const fileInput = useRef<HTMLInputElement>(null)
   const cameraInput = useRef<HTMLInputElement>(null)
+  // The photo just taken with «Снять чек»: it is sent by itself once, as soon as it can be.
+  const autoSend = useRef<File>(undefined)
   const upload = useMemo(() => createUpload(
     (selected, signal, onProgress) => uploadPhoto(selected, { signal, onProgress }),
     (signal) => getRecognitionCsrf({ signal }),
@@ -85,12 +87,20 @@ export default function UploadPage() {
   // Like job actions, the upload pauses background reads before touching the server.
   useEffect(() => { if (!sending) return; request.pause(); return () => request.resume(false) }, [sending, request])
   // A closed picker or camera returns no file: the photo already chosen stays.
-  const pick = (event: ChangeEvent<HTMLInputElement>) => {
+  const pick = (event: ChangeEvent<HTMLInputElement>, camera: boolean) => {
     const next = event.target.files?.[0]
     event.target.value = ''
     if (!next) return
+    autoSend.current = camera ? next : undefined
     upload.reset(); setMeasured(undefined); setFile(next)
   }
+  // The same path as the button: reduction, progress, cancel and the job page. A failure leaves the retry button.
+  useEffect(() => {
+    const step = autoSendStep({ file, pending: autoSend.current, limits, invalid, measuring, refreshing, idle: state.kind === 'idle' })
+    if (step !== 'send' && step !== 'drop') return
+    autoSend.current = undefined
+    if (step === 'send' && file && limits) void upload.submit(file, limits, measured ?? undefined)
+  }, [file, limits, invalid, measuring, measured, refreshing, state.kind, upload])
   // Without the conditions nothing can be checked or sent.
   const pickDisabled = !limits || sending
   const described = `recognition-cloud-warning${invalid ? ' recognition-file-error' : ''}${limits ? '' : ' recognition-pick-wait'}`
@@ -105,8 +115,8 @@ export default function UploadPage() {
       <div className="ck-rec-actions ck-upload-pick" role="group" aria-label="Выбор фото">
         <button type="button" className="ck-upload-camera" disabled={pickDisabled} aria-describedby={described} onClick={() => cameraInput.current?.click()}>{uploadLabels.camera}</button>
         <button type="button" className="ck-upload-secondary" disabled={pickDisabled} aria-describedby={described} onClick={() => fileInput.current?.click()}>{uploadLabels.pick}</button>
-        <input ref={cameraInput} id="recognition-camera" className="ck-upload-input" type="file" accept="image/*" capture="environment" tabIndex={-1} aria-hidden="true" disabled={pickDisabled} onChange={pick} />
-        <input ref={fileInput} id="recognition-file" className="ck-upload-input" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" tabIndex={-1} aria-hidden="true" disabled={pickDisabled} onChange={pick} />
+        <input ref={cameraInput} id="recognition-camera" className="ck-upload-input" type="file" accept="image/*" capture="environment" tabIndex={-1} aria-hidden="true" disabled={pickDisabled} onChange={(event) => pick(event, true)} />
+        <input ref={fileInput} id="recognition-file" className="ck-upload-input" type="file" accept={pickAccept} tabIndex={-1} aria-hidden="true" disabled={pickDisabled} onChange={(event) => pick(event, false)} />
       </div>
       {!limits && <p id="recognition-pick-wait" className="ck-rec-note">{config.kind === 'error' ? uploadLabels.conditionsFailed : uploadLabels.conditionsLoading}</p>}
       {file && <><p className="ck-upload-file">{file.name} · {fileFormat(file)?.replace('image/', '').toUpperCase() ?? 'Неподдерживаемый формат'} · {formatBytes(file.size)}{measured && <> · <Value>{sizeText(measured)}</Value></>}</p>{!invalid && <FilePreview key={`${file.name}:${file.lastModified}:${file.size}`} file={file} onMeasure={setMeasured} />}</>}

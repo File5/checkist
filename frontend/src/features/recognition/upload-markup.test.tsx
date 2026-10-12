@@ -25,7 +25,7 @@ describe('upload screen markup (SSR)', () => {
     expect(fields).toHaveLength(2)
     const [camera, file] = fields
     expect(camera).toContain('id="recognition-camera"'); expect(camera).toContain('accept="image/*"'); expect(camera).toContain('capture="environment"')
-    expect(file).toContain('id="recognition-file"'); expect(file).toContain('accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"')
+    expect(file).toContain('id="recognition-file"'); expect(file).toContain('accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.jpg,.jpeg,.png,.webp,.heic,.heif"')
     expect(file).not.toContain('capture')
     for (const field of fields) {
       expect(field).toContain('type="file"'); expect(field).not.toContain('multiple')
