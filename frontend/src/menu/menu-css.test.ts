@@ -55,10 +55,10 @@ describe('bottom bar of the main menu on a phone (text of the rules, not renderi
   it('orders the layers: the list over the bar, the skip link over everything', () => {
     expect(list).toContain('z-index: var(--ck-z-menu-sheet);')
     expect(rule('.skip-link', rest)).toContain('z-index: var(--ck-z-skip-link);')
-    // Both sheets of the bar, «Ещё» and «＋», lie on the same layer.
-    expect(rule('.brand-bar .main-add[data-open] .main-add-list', bar)).toContain('z-index: var(--ck-z-menu-sheet);')
+    // «＋» opens the sheet of components/Sheet.css on its own layer above the menu; the top bar of a phone lies under the bar.
+    expect(rules(app).filter((item) => item.selector.includes('main-add-list')).map((item) => item.body).join(' ')).not.toContain('z-index')
     expect([...app.matchAll(/z-index: ([^;]+);/g)].map((match) => match[1]).sort()).toEqual(
-      ['var(--ck-z-bottom-nav)', 'var(--ck-z-menu-sheet)', 'var(--ck-z-menu-sheet)', 'var(--ck-z-skip-link)'])
+      ['var(--ck-z-bottom-nav)', 'var(--ck-z-menu-sheet)', 'var(--ck-z-skip-link)', 'var(--ck-z-top-bar)'])
   })
 
   it('reads only tokens that the theme defines and writes no colour', () => {
@@ -120,8 +120,8 @@ describe('bottom bar of the main menu on a phone (text of the rules, not renderi
     expect(side).toBeLessThanOrEqual(56)
     expect(toggle).not.toMatch(/margin(-top)?: -/)
     expect(rule('.brand-bar .main-add', bar)).toContain('align-items: center;')
-    expect(rule('.brand-bar .main-add-list', bar)).toBe('display: none;')
-    expect(rule('.brand-bar .main-add-list .main-add-action', bar)).toContain('min-height: 48px;')
+    // The actions of its sheet are big targets under the thumb.
+    expect(rule('.main-add-action', rest)).toContain('min-height: 52px;')
   })
 
   it('makes no text smaller and leaves the menu of a section inside the page alone', () => {

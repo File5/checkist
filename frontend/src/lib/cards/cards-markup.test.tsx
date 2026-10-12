@@ -46,6 +46,15 @@ describe('card markup', () => {
     )
   })
 
+  it('draws a fact marked as a figure by the figures font, and no other', () => {
+    const html = renderToStaticMarkup(<Card title="Молоко" facts={[
+      { key: 'sum', label: 'Сумма', value: '450,00 ₸', figure: true },
+      { key: 'store', label: 'Магазин', value: 'Магнум' },
+    ]} />)
+    expect(html).toContain('<dt>Сумма</dt><dd class="ck-figures">450,00 ₸</dd>')
+    expect(html).toContain('<dt>Магазин</dt><dd>Магнум</dd>')
+  })
+
   it('takes the focus from a script only when it is a link target', () => {
     const target = renderToStaticMarkup(<Card id="receipt-line-3" title="Строка 3" facts={[]} />)
     expect(target).toContain('<li class="ck-card" id="receipt-line-3" tabindex="-1">')

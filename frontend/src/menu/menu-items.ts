@@ -30,7 +30,7 @@ export const ADD_AFTER = 2
 const homeKinds: Route['kind'][] = ['dashboard', 'limits']
 const catalogKinds: Route['kind'][] = ['catalog', 'category', 'product', 'merges', 'merge', 'classification']
 const receiptKinds: Route['kind'][] = ['receipts', 'upload', 'expense-new', 'expense-edit', 'receipt']
-const statsKinds: Route['kind'][] = ['spending', 'receipts-stats']
+const statsKinds: Route['kind'][] = ['spending', 'receipts-stats', 'trends']
 const jobKinds: Route['kind'][] = ['jobs', 'job']
 
 /** Every item of the main menu, in the order of the header. */

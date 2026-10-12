@@ -75,8 +75,8 @@ const mainNav = (html: string) => {
   return [...nav.matchAll(/<a\b[^>]*>([^<]*)<\/a>/g)].map((match) => match[1])
 }
 const navLink = (html: string, text: string) => html.match(new RegExp(`<a\\b[^>]*>${text}</a>`))?.[0] ?? ''
-/** The links of the header row; «Добавить трату» is the link of the «＋» sheet, drawn on a phone only. */
-const fullMenu = ['Главная', 'Траты', 'Добавить трату', 'Статистика', 'Каталог', 'Обработка', 'Состояние сервисов']
+/** The links of the header row; «Добавить трату» lives in the «＋» sheet, which a server render draws closed. */
+const fullMenu = ['Главная', 'Траты', 'Статистика', 'Каталог', 'Обработка', 'Состояние сервисов']
 
 const fetchMock = vi.fn<typeof fetch>()
 beforeEach(() => { fetchMock.mockReset(); vi.stubGlobal('fetch', fetchMock) })
@@ -189,7 +189,9 @@ describe('signed-in shell (SSR only, no browser interaction)', () => {
     for (const [route, href] of [[{ kind: 'catalog', query: { page: 1 } }, '/catalog'], [{ kind: 'upload' }, '/receipts/upload'], [{ kind: 'expense-new' }, '/receipts/new']] as const) {
       const html = render(reader, route, href)
       expect(html.match(/<div class="main-add">/g), route.kind).toHaveLength(1)
-      expect(html).toContain('<button type="button" class="main-add-action">Снять чек</button>')
+      // «Снять чек», «Из галереи» and «Добавить трату» are in the sheet (components/Sheet), closed until «＋» is pressed.
+      expect(html).toContain('<button type="button" class="main-add-toggle" aria-haspopup="dialog" aria-expanded="false"')
+      expect(html).not.toContain('role="dialog"')
       expect(html).toContain('class="ck-quick-shot-input"')
       // The floating stack of the former design is gone: its function lives in «＋».
       expect(html).not.toMatch(/ck-quick-(actions|expense)|class="ck-quick-shot"/)
@@ -272,5 +274,37 @@ describe('local_single keeps the previous interface (SSR only, no browser intera
     expect(html).toContain('Такой страницы нет.')
     expect(html).not.toContain('data-auth-logout')
     expect(html.toLowerCase()).not.toContain('autocomplete="new-password"')
+  })
+})
+
+describe('top bar of a phone: the heading row with «назад» (SSR only; the pinning is CSS, checked by a person)', () => {
+  const back = /<a class="ck-back" aria-label="([^"]*)" href="([^"]*)"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false">/
+  const intro = (html: string) => html.slice(html.indexOf('<div class="intro">'), html.indexOf('</h1>') + 5)
+
+  it('leads a nested page back to its list, before the heading in the same row', () => {
+    const html = render(reader, { kind: 'receipt', receiptId: 7 }, '/receipts/7')
+    expect(intro(html)).toMatch(/^<div class="intro"><a class="ck-back" aria-label="Назад к тратам" href="\/receipts"><svg[^>]*>.*<\/svg><\/a><h1 id="page-heading" tabindex="-1">Чек<\/h1>$/)
+  })
+
+  it('returns to the very list the person came from', () => {
+    state.session = reader
+    state.snapshot = { route: { kind: 'product', productId: 5, query: { page: 1 } }, href: '/catalog/products/5', returnTo: '/catalog/categories/4?page=3' }
+    const html = renderToStaticMarkup(<App />)
+    expect(back.exec(html)?.slice(1)).toEqual(['Назад к категории', '/catalog/categories/4?page=3'])
+  })
+
+  it('has no «назад» on a page of a section, nor in place of a page the person may not see', () => {
+    for (const [route, href] of [[{ kind: 'dashboard' }, '/'], [{ kind: 'receipts', query: { page: 1 } }, '/receipts'], [{ kind: 'catalog', query: { page: 1 } }, '/catalog']] as const) {
+      expect(render(reader, route, href)).not.toContain('ck-back')
+    }
+    // A merge group is a moderator's page: a reader sees the refusal of the shell and no way back into it.
+    expect(render(reader, { kind: 'merge', groupId: 2 }, '/catalog/merges/2')).not.toContain('ck-back')
+    expect(back.exec(render(moderator, { kind: 'merge', groupId: 2 }, '/catalog/merges/2'))?.slice(1)).toEqual(['Назад к дублям', '/catalog/merges'])
+  })
+
+  it('keeps the note of the health page out of the pinned row', () => {
+    const html = render(reader, { kind: 'health' }, '/health')
+    expect(intro(html)).not.toContain('intro-note')
+    expect(html).toContain('</h1></div><p class="intro-note intro-note-after">Сводка о состоянии служб.</p>')
   })
 })

@@ -1,0 +1,10 @@
+/* The filters of a screen on a phone (ResponsiveFilters.tsx): the button «Фильтры (N)» and, beside it, the chips
+   of what is filtered. No width media query here: the view is chosen by useNarrow(). Colours are tokens only. */
+.ck-filters { min-width: 0; margin-bottom: 16px; }
+.ck-filters-bar { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.ck-filters-toggle { flex: none; min-height: 48px; border-color: var(--ck-link); background: var(--ck-surface); color: var(--ck-link); white-space: nowrap; }
+.ck-filters-toggle:hover:not(:disabled) { border-color: var(--ck-link-hover); background: var(--ck-surface-raised); color: var(--ck-link-hover); }
+.ck-filters-toggle:active:not(:disabled) { border-color: var(--ck-link-hover); background: var(--ck-accent-bg); color: var(--ck-link-hover); }
+.ck-filters-summary { flex: 1 1 auto; min-width: 0; }
+.ck-filters-sheet { display: grid; gap: 16px; padding-bottom: 4px; }
+.ck-filters-done { width: 100%; }

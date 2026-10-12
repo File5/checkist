@@ -85,8 +85,7 @@ describe('App feature connections (Node server markup, not browser behavior)', (
     expect(header).toMatch(/<img class="brand-mark" src="[^"]*emblem-96[^"]*" srcSet="[^"]*emblem-96[^"]* 1x, [^"]*emblem-192[^"]* 2x" width="44" height="44" alt=""\/>/)
     expect(header.match(/<a\b[^>]*href="[^"]*"/g)).toEqual([
       '<a class="brand" aria-label="Чекист — главная" href="/"', '<a href="/"', '<a href="/receipts"',
-      // «Добавить трату» of the «＋» sheet: drawn only in the bottom bar of a phone.
-      '<a class="main-add-action" href="/receipts/new"',
+      // «Добавить трату» lives in the «＋» sheet (components/Sheet), which is closed until «＋» is pressed.
       '<a href="/stats"', '<a aria-current="page" href="/catalog"', '<a href="/recognition/jobs"', '<a href="/health"',
     ])
     expect(html).not.toContain('href="/login"')
