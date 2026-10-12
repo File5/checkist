@@ -1,0 +1,21 @@
+/* One row of chips with a sideways scroll (ChipScroller.tsx). The fades are a mask, not a colour: they work on
+   a card and on the page, in both themes. Each edge fades only while chips hide behind it. */
+.ck-chip-scroller { --ck-chip-fade-start: 0px; --ck-chip-fade-end: 0px; min-width: 0; max-width: 100%; }
+.ck-chip-scroller[data-fade-start] { --ck-chip-fade-start: var(--ck-fade-size); }
+.ck-chip-scroller[data-fade-end] { --ck-chip-fade-end: var(--ck-fade-size); }
+/* The padding leaves room for the focus ring of a chip inside the scroller. */
+.ck-chip-scroller-track {
+  display: flex; flex-wrap: nowrap; gap: 8px; padding: 6px 4px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to right, transparent, black var(--ck-chip-fade-start), black calc(100% - var(--ck-chip-fade-end)), transparent);
+  mask-image: linear-gradient(to right, transparent, black var(--ck-chip-fade-start), black calc(100% - var(--ck-chip-fade-end)), transparent);
+}
+.ck-chip-scroller-track::-webkit-scrollbar { display: none; }
+/* The ring of the row is drawn inside it: the edge of the window does not cut it. */
+.ck-chip-scroller-track:focus-visible { outline-offset: -3px; }
+.ck-chip-scroller-track > * { flex: none; }
+
+/* The chip of the project, for a row that has none of its own: a pill of 44 px, the selected one inverted.
+   The selected state is `aria-pressed="true"` for a button and `aria-current` for a link. */
+.ck-chip { display: inline-flex; align-items: center; min-height: 44px; padding: 8px 16px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-pill); background: var(--ck-surface); color: var(--ck-text); font-weight: 600; text-decoration: none; white-space: nowrap; }
+.ck-chip:hover:not(:disabled) { border-color: var(--ck-text-muted); background: var(--ck-surface-raised); color: var(--ck-text); }
+.ck-chip[aria-pressed="true"], .ck-chip[aria-current]:not([aria-current="false"]), .ck-chip[aria-pressed="true"]:hover:not(:disabled) { border-color: var(--ck-chip-selected-bg); background: var(--ck-chip-selected-bg); color: var(--ck-chip-selected-text); }
