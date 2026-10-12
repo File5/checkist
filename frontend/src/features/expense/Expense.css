@@ -1,10 +1,24 @@
 /* «Добавить трату»: one column, phone first. Colors only from tokens; fields reuse .receipt-field from Receipts.css. */
 .expense-form { display: grid; gap: 20px; min-width: 0; padding: 24px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius); background: var(--ck-surface); }
 .expense-amount-row { display: flex; gap: 12px; align-items: stretch; min-width: 0; }
-.expense-amount-input { flex: 1 1 auto; min-width: 0; font-size: 2rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+/* The amount comes first, in the hero figure (never under 22 px, so iOS does not zoom in). */
+.expense-amount-input { flex: 1 1 auto; min-width: 0; font-variant-numeric: tabular-nums; }
+/* «Сегодня · Вчера · календарь»: the calendar field is the third chip. */
+.expense-dates { display: grid; gap: 10px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.expense-dates legend { padding: 0; margin-bottom: 10px; font-weight: 600; }
+.expense-date-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; }
+.expense-date-chip { display: flex; flex: 1 1 9rem; min-width: 0; }
+.expense-date-chip input { width: 100%; min-height: 44px; padding: 8px 14px; border: 1px solid var(--ck-border-field); border-radius: 22px; background: var(--ck-surface); color: var(--ck-text); font-size: var(--ck-text-base); }
+.expense-date-chip-chosen input { border-color: var(--ck-brand); box-shadow: inset 0 0 0 1px var(--ck-brand); }
+/* «Все категории» in a sheet: search and the tree, every row a whole-width button. */
+.expense-tree { display: grid; margin: 0; padding: 0; list-style: none; }
+.expense-tree li + li { border-top: 1px solid var(--ck-divider); }
+.expense-tree-item { width: 100%; min-height: 48px; padding: 8px 12px 8px calc(12px + var(--expense-depth, 0) * 16px); border: 0; border-radius: 0; background: transparent; color: var(--ck-text); text-align: left; }
+.expense-tree-item[aria-pressed="true"] { background: var(--ck-accent-bg); color: var(--ck-accent-text); font-weight: 700; }
+.ck-sheet .receipt-field input { font-size: var(--ck-text-base); }
 .expense-amount-input[readonly] { color: var(--ck-text-muted); }
 .expense-currency { flex: 0 0 5.5rem; display: flex; }
-.expense-currency input { width: 100%; padding: 8px 12px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-surface); color: inherit; text-align: center; text-transform: uppercase; }
+.expense-currency input { width: 100%; padding: 8px 12px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-pill); font-size: var(--ck-text-base); font-weight: 600; background: var(--ck-surface); color: inherit; text-align: center; text-transform: uppercase; }
 .expense-form .receipt-field textarea { width: 100%; padding: 8px 12px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-surface); color: inherit; font: inherit; resize: vertical; }
 .expense-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .expense-categories { display: grid; gap: 10px; min-width: 0; margin: 0; padding: 0; border: 0; }
@@ -21,8 +35,7 @@
 .expense-line-remove, .expense-add-line { min-height: 44px; }
 .expense-add-line { justify-self: start; }
 .expense-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
-.expense-save { min-height: 48px; padding: 0 28px; background: var(--ck-brand); border-color: var(--ck-brand); color: var(--ck-on-brand); }
-.expense-sum { margin-left: auto; font-weight: 700; }
+.expense-save { min-height: 52px; padding: 0 28px; font-weight: 700; white-space: nowrap; background: var(--ck-brand); border-color: var(--ck-brand); color: var(--ck-on-brand); }
 .expense-failure { margin: 0; padding: 12px; border: 1px solid var(--ck-error-border); border-radius: var(--ck-radius-sm); background: var(--ck-error-bg); color: var(--ck-error-text); }
 .expense-notice { margin: 0; padding: 12px; border: 1px solid var(--ck-success-border); border-radius: var(--ck-radius-sm); background: var(--ck-success-bg); color: var(--ck-success-text); }
 .expense-confirm { display: grid; gap: 12px; padding: 12px; border: 1px solid var(--ck-warning-border); border-radius: var(--ck-radius-sm); background: var(--ck-warning-bg); }
@@ -31,7 +44,7 @@
 .expense-hint { display: grid; gap: 10px; min-width: 0; padding: 16px 24px; border: 1px solid var(--ck-accent); border-radius: var(--ck-radius); background: var(--ck-accent-bg); }
 .expense-hint-label { font-weight: 600; color: var(--ck-accent-text); }
 .expense-hint-row { display: flex; gap: 12px; align-items: stretch; min-width: 0; }
-.expense-hint-row input { flex: 1 1 auto; min-width: 0; min-height: 44px; padding: 8px 12px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-surface); color: var(--ck-text); font: inherit; }
+.expense-hint-row input { flex: 1 1 auto; min-width: 0; min-height: 44px; padding: 8px 12px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-surface); color: var(--ck-text); font: inherit; font-size: var(--ck-text-base); }
 /* The mic: a square next to the field; while listening it is filled like the main action. */
 .expense-hint-mic { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; width: 44px; min-height: 44px; padding: 0; background: var(--ck-surface); border-color: var(--ck-border-field); color: var(--ck-accent-text); }
 .expense-hint-mic[aria-pressed="true"] { background: var(--ck-brand); border-color: var(--ck-brand); color: var(--ck-on-brand); }

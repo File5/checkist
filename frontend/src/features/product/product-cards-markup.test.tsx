@@ -126,11 +126,12 @@ describe('price history cards against the table on the same data (SSR in Node, n
         expect(text(fact.value).trim()).not.toBe('')
       }
     }
-    expect(cards[0].facts[1].value).toBe('0,00\u00a0EUR/шт')
+    // Prices are in the figures font of the money; words and dates are not.
+    expect(cards[0].facts[1].value).toBe('<span class="ck-figures">0,00\u00a0EUR/шт</span>')
     expect(cards[0].facts[3].value).toBe('<span class="product-cell-text">Нет данных для пересчёта</span>'
       + '<span class="product-subtext product-cell-text">Не сопоставимо с базовой единицей товара</span>')
     // Two decimals of a unit price, the actual normalized unit.
-    expect(cards[2].facts.map((fact) => fact.value).slice(2, 4)).toEqual(['130,59\u00a0EUR/шт', '12,35\u00a0EUR/м'])
+    expect(cards[2].facts.map((fact) => fact.value).slice(2, 4)).toEqual(['<span class="ck-figures">130,59\u00a0EUR/шт</span>', '<span class="ck-figures">12,35\u00a0EUR/м</span>'])
   })
 
   it('tells identical chain points apart by the store in the heading', () => {

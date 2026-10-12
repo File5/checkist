@@ -32,24 +32,36 @@ const text = (html: string) => html.replace(/<[^>]+>/g, '')
 const headings = (html: string) => [...html.matchAll(/<th scope="col">([^<]*)<\/th>/g)].map((match) => match[1])
 const rows = (html: string) => [...html.matchAll(/<tr id="(receipt-line-\d+)" tabindex="-1"><th scope="row">([\s\S]*?)<\/th>([\s\S]*?)<\/tr>/g)]
   .map((match) => ({ id: match[1], heading: match[2], cells: [...match[3].matchAll(/<td class="receipt-number">([^<]*)<\/td>/g)].map((cell) => cell[1]) }))
-const items = (html: string) => [...html.matchAll(/<li class="ck-card" id="(receipt-line-\d+)" tabindex="-1"><div class="ck-card-title">([\s\S]*?)<\/div>(?:<dl class="ck-card-facts">([\s\S]*?)<\/dl>)?<\/li>/g)]
+const columnOrder = ['Количество', 'Цена', 'Сумма', 'Скидка', 'Оплачено']
+/** A leader row: its heading, the facts under the name and the amount at the right, read back in the order of the table columns. */
+const items = (html: string) => [...html.matchAll(/<li id="(receipt-line-\d+)" tabindex="-1" class="receipt-leader ck-leader"><div class="receipt-leader-main">([\s\S]*?)<dl class="receipt-leader-facts">([\s\S]*?)<\/dl><\/div><span class="receipt-leader-amount ck-figures"><span class="receipt-visually-hidden">Сумма: <\/span>([^<]*)<\/span><\/li>/g)]
   .map((match) => ({ id: match[1], heading: match[2],
-    facts: [...(match[3] ?? '').matchAll(/<div class="ck-card-fact" data-kind="value"><dt>([^<]*)<\/dt><dd>([^<]*)<\/dd><\/div>/g)].map((fact) => [fact[1], fact[2]]) }))
+    facts: [...[...match[3].matchAll(/<div><dt>([^<]*)<\/dt><dd class="receipt-number">([^<]*)<\/dd><\/div>/g)].map((fact) => [fact[1], fact[2]]), ['Сумма', match[4]]]
+      .sort((a, b) => columnOrder.indexOf(a[0]) - columnOrder.indexOf(b[0])) }))
 const one = (line: Partial<Line>) => items(cards([{ ...milk, ...line }]))[0].facts
 const labels = (facts: string[][]) => facts.map(([label]) => label)
 
-describe('receipt line cards (Vitest/SSR of the phone view, not browser visual acceptance)', () => {
-  it('draws the table on a wide screen and only the cards on a phone', () => {
+describe('receipt line leader rows (Vitest/SSR of the phone view, not browser visual acceptance)', () => {
+  it('draws the table on a wide screen and only the leader rows on a phone', () => {
     const wide = table(lines)
     expect(wide).toContain('<table class="receipt-lines-table">')
-    expect(wide).not.toContain('ck-card')
+    expect(wide).not.toContain('ck-leader')
     const narrow = cards(lines)
     expect(narrow).not.toContain('<table')
     expect(narrow).not.toContain('role="region"')
     expect(narrow).not.toContain('receipt-table-scroll')
-    expect(narrow).toContain('<div class="ck-cards"><p class="ck-cards-caption">Строки в порядке печати на чеке</p><ul class="ck-cards-list" aria-label="Строки чека">')
-    expect(narrow.match(/<li class="ck-card"/g)).toHaveLength(lines.length)
+    expect(narrow).toContain('<div class="receipt-leaders"><p class="receipt-note">Строки в порядке печати на чеке</p><ol class="receipt-leader-list" aria-label="Строки чека">')
+    expect(narrow.match(/class="receipt-leader ck-leader"/g)).toHaveLength(lines.length)
     expect(items(narrow)).toHaveLength(lines.length)
+  })
+
+  it('puts the printed name first, the category as a chip under it, the amount at the right in the figures font', () => {
+    const grocery: Line = { ...bread, category: { id: 3, name: 'Продукты' } } as Line
+    const [row] = items(cards([grocery]))
+    expect(row.heading.startsWith('<span class="receipt-printed-name">ХЛЕБ</span><span class="receipt-line-chip" data-tone="3"><span class="receipt-visually-hidden">Категория: </span>Продукты</span><span class="receipt-note">Строка\u00a02 · Товар</span>')).toBe(true)
+    expect(row.heading).not.toContain('Категория: Продукты</span>')
+    // The table keeps its former words for the category.
+    expect(table([grocery])).toContain('<span class="receipt-note receipt-line-category">Категория: Продукты</span>')
   })
 
   it('names the facts by the headings of the table columns, in the order of the columns, on the same data', () => {
@@ -75,11 +87,13 @@ describe('receipt line cards (Vitest/SSR of the phone view, not browser visual a
     }
   })
 
-  it('moves the content of the row heading into the title: number, kind, printed name, catalog link, relations', () => {
+  it('moves the content of the row heading under the name: number, kind, printed name, catalog link, relations', () => {
     const wide = rows(table(lines))
     const narrow = items(cards(lines))
-    expect(narrow.map((card) => card.heading)).toEqual(wide.map((row) => row.heading))
-    expect(narrow[0].heading).toContain('<span class="receipt-note">Строка 1 · Товар</span><span class="receipt-printed-name">MILCH 1 L</span>')
+    // The same pieces, the printed name first.
+    const pieces = (html: string) => [...html.matchAll(/<(?:span|a)[^>]*>[^<]*/g)].map((match) => match[0]).sort()
+    expect(narrow.map((card) => pieces(card.heading))).toEqual(wide.map((row) => pieces(row.heading)))
+    expect(narrow[0].heading).toContain('<span class="receipt-printed-name">MILCH 1 L</span><span class="receipt-note">Строка\u00a01 · Товар</span>')
     expect(narrow[0].heading).toContain('<a class="receipt-product-link" href="/catalog/products/61">Товар каталога: Молоко 1 л</a>')
     expect(narrow[0].heading).toContain('<span class="receipt-line-relation">Залог: <a href="#receipt-line-103">Строка 3: PFAND</a></span>')
     expect(narrow[1].heading).toContain('<span class="receipt-warning">Товар не сопоставлен</span>')
@@ -89,7 +103,7 @@ describe('receipt line cards (Vitest/SSR of the phone view, not browser visual a
     expect(cards(lines).match(/Товар не сопоставлен/g)).toHaveLength(4)
   })
 
-  it('makes the card the target of a line link: id and tabindex of the former row, once per line', () => {
+  it('makes the leader row the target of a line link: id and tabindex of the former row, once per line', () => {
     const wide = rows(table(lines))
     const narrow = cards(lines)
     expect(items(narrow).map((card) => card.id)).toEqual(wide.map((row) => row.id))
@@ -97,7 +111,7 @@ describe('receipt line cards (Vitest/SSR of the phone view, not browser visual a
     expect(narrow.match(/tabindex="-1"/g)).toHaveLength(lines.length)
     expect(narrow).not.toContain('tabindex="0"')
     // Every link of the list points at a card of the same list.
-    for (const [, target] of narrow.matchAll(/href="#(receipt-line-\d+)"/g)) expect(narrow).toContain(`<li class="ck-card" id="${target}" tabindex="-1">`)
+    for (const [, target] of narrow.matchAll(/href="#(receipt-line-\d+)"/g)) expect(narrow).toContain(`<li id="${target}" tabindex="-1" class="receipt-leader ck-leader">`)
   })
 
   it('keeps the identity of a parent line that is on another page', () => {
@@ -143,7 +157,7 @@ describe('receipt line cards (Vitest/SSR of the phone view, not browser visual a
     screen.narrow = true
     const html = renderToStaticMarkup(<ReceiptLines lines={[milk]} />)
     expect(html).toContain('Валюта: Не распознано')
-    expect(html.indexOf('«Оплачено» учитывает скидку строки')).toBeLessThan(html.indexOf('class="ck-cards"'))
+    expect(html.indexOf('«Оплачено» учитывает скидку строки')).toBeLessThan(html.indexOf('class="receipt-leaders"'))
     expect(items(html)[0].facts).toEqual([['Количество', '2 шт'], ['Цена', '1,29'], ['Сумма', '3'], ['Скидка', '1'], ['Оплачено', '3']])
   })
 
@@ -169,11 +183,11 @@ describe('receipt screen on a phone (Vitest/SSR)', () => {
     try { return renderToStaticMarkup(<ReceiptView {...props} />) } finally { screen.narrow = false }
   }
 
-  it('leads the link of a discount to the card of its line', () => {
+  it('leads the link of a discount to the leader row of its line', () => {
     const html = narrow(view)
     expect(html).toContain('Скидка к <a href="#receipt-line-101">')
     expect(html.match(/ id="receipt-line-101"/g)).toHaveLength(1)
-    expect(html).toContain('<li class="ck-card" id="receipt-line-101" tabindex="-1">')
+    expect(html).toContain('<li id="receipt-line-101" tabindex="-1" class="receipt-leader ck-leader">')
     expect(html).not.toContain('<table')
   })
 
@@ -184,7 +198,7 @@ describe('receipt screen on a phone (Vitest/SSR)', () => {
   ])('does not choose a view while the lines block shows %s', (_name, lines, mark) => {
     const phone = narrow({ ...view, lines: lines as BlockRequest<Page<Line>> })
     expect(phone).toContain(mark)
-    expect(phone).not.toContain('ck-card')
+    expect(phone).not.toContain('ck-leader')
     expect(phone).toBe(renderToStaticMarkup(<ReceiptView {...view} lines={lines as BlockRequest<Page<Line>>} />))
   })
 })

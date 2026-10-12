@@ -59,6 +59,13 @@ export function hasFilters(query: ReceiptsQuery): boolean {
   return Boolean(query.q || query.date_from || query.date_to || query.operation || query.store || query.product || query.country || query.currency || query.owner)
 }
 
+/** «Фильтры (N)» on a phone: the conditions of the filters form and of the link; the family chips are seen anyway. */
+export function activeFilterCount(query: ReceiptsQuery): number {
+  const set = [query.q, query.date_from, query.date_to, query.operation, query.store, query.product, query.country, query.currency]
+    .filter((value) => value !== undefined && value !== null && value !== '').length
+  return set + (query.ordering && query.ordering !== '-purchased_at' ? 1 : 0)
+}
+
 /** With accounts a refused access is a missing right, not a switched off local mode. */
 const accountsSession = () => { const session = getSession(); return session.kind === 'user' && session.mode === 'accounts' }
 export function errorMessage(failure: Failure): string {

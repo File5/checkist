@@ -230,6 +230,8 @@ def annotate_jobs(jobs):
         has_active_sibling=Exists(ProcessingJob.objects.filter(photo_id=OuterRef("photo_id"),
                                   status__in=["queued", "running", "cancel_requested"])),
         owner_username=F("photo__owner__username"),
+        # The same join as the owner: the compressed copies of the source photo cost no query of their own.
+        photo_original_name=F("photo__original_file"),
     )
 
 
@@ -263,6 +265,9 @@ def job_object(job, executor, *, items=None):
                     "can_retry": job.status in {"cancelled", "partial_succeeded", "failed"}
                     and not job.has_active_sibling},
         "items_count": job.items_count,
+        # Copies of the source photo, as `display_url`/`thumb_url` of Photo: the miniature of a row of the jobs list.
+        "display_url": variant_url(job.photo_original_name, "display"),
+        "thumb_url": variant_url(job.photo_original_name, "thumb"),
     }
     if items is not None:
         result["items"] = [{"image_id": image.pk, "position": image.position, "status": image.status,

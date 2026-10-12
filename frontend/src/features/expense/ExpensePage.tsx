@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import type { FormEvent } from 'react'
+import type { CSSProperties, FormEvent, RefObject } from 'react'
 import { getCategories } from '../../api/catalog'
 import { createManualSpend, getManualDefaults, getReceipt, getReceiptLines, updateManualSpend } from '../../api/receipts'
 import type { Line, ManualDefaults, Receipt } from '../../api/receipts'
 import type { Category, LocalApiResult } from '../../api/types'
 import RequestState from '../../components/RequestState'
-import { formatMoney } from '../../lib/money'
 import { Link, navigate } from '../../navigation'
 import { isNetworkFailure } from '../../offline/pending'
 import { clearHandoff, discardPending, draftFromPending, enqueueSpend, peekHandoff } from '../../offline/pending-store'
@@ -16,9 +15,11 @@ import { saveMessage } from './labels'
 import { draftFromParse } from './parse-text'
 import TextHint from './TextHint'
 import {
-  categoryChips, chipLabel, sentIndexes, draftBody, draftFromReceipt, emptyDraft, linesTotal, filledLines, LINES_MAX, newLine,
-  savedNotice, serverErrors, setExpenseNotice, updatedNotice, visibleChips,
+  categoryChips, categoryTree, chipLabel, dateChoice, dayBefore, sentIndexes, draftBody, draftFromReceipt, emptyDraft, fieldScrollDelta, linesTotal,
+  filledLines, LINES_MAX, newLine, saveLabel, savedNotice, serverErrors, setExpenseNotice, todayISO, updatedNotice, visibleChips,
 } from './expense-form'
+import ChipScroller from '../../components/ChipScroller'
+import Sheet from '../../components/Sheet'
 import type { ExpenseDraft, ExpenseErrors, LineDraft } from './expense-form'
 import './Expense.css'
 
@@ -35,26 +36,62 @@ export type ExpenseFormProps = {
   /** `undefined` — a new spend; otherwise the page of the spend is where «Отмена» leads. */
   receiptId?: number
   onChange: (draft: ExpenseDraft) => void; onSubmit: () => void
+  /** The calendar date of the device, for «Сегодня» and «Вчера». */
+  today?: string
+  /** Tests: «Все категории» already open. */
+  initialSheet?: boolean
+}
+
+/** A focused field of the form stays above the save bar and the keyboard of a phone: after the focus and whenever the
+ * visible part of the window shrinks (the keyboard opens), the page scrolls just enough. */
+function useKeyboardSafeFields(form: RefObject<HTMLFormElement | null>) {
+  useEffect(() => {
+    const element = form.current
+    if (!element || typeof window === 'undefined') return
+    const fit = () => {
+      const field = document.activeElement
+      if (!(field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) || !element.contains(field)) return
+      const viewport = window.visualViewport
+      const visible = viewport ? viewport.offsetTop + viewport.height : window.innerHeight
+      const bar = element.querySelector('.expense-actions')?.getBoundingClientRect().height ?? 0
+      const delta = fieldScrollDelta(field.getBoundingClientRect().bottom, visible, bar)
+      if (delta > 0) window.scrollBy({ top: delta })
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined
+    // The keyboard of iOS comes up a moment after the focus.
+    const later = () => { clearTimeout(timer); timer = setTimeout(fit, 300) }
+    element.addEventListener('focusin', later)
+    window.visualViewport?.addEventListener('resize', fit)
+    return () => {
+      clearTimeout(timer)
+      element.removeEventListener('focusin', later)
+      window.visualViewport?.removeEventListener('resize', fit)
+    }
+  }, [form])
 }
 
 /** The form itself, without loading and saving: the markup tests render it directly. */
-export function ExpenseForm({ draft, chips, errors, saving, failure, receiptId, onChange, onSubmit }: ExpenseFormProps) {
-  const [expanded, setExpanded] = useState(false)
+export function ExpenseForm({ draft, chips, errors, saving, failure, receiptId, onChange, onSubmit, today = todayISO(), initialSheet = false }: ExpenseFormProps) {
+  const [sheet, setSheet] = useState(initialSheet)
+  const [search, setSearch] = useState('')
+  const formRef = useRef<HTMLFormElement>(null)
   const itemized = filledLines(draft.lines).length > 0
   const sum = linesTotal(draft.lines)
   // Errors name a position by its place among the sent ones: an untouched empty row is not sent.
   const sent = sentIndexes(draft.lines)
-  const shown = visibleChips(chips, draft.category, expanded)
+  const shown = visibleChips(chips, draft.category, false)
+  const choice = dateChoice(draft.date, today)
   const set = (patch: Partial<ExpenseDraft>) => onChange({ ...draft, ...patch })
   const setLine = (key: number, patch: Partial<LineDraft>) => set({ lines: draft.lines.map((line) => line.key === key ? { ...line, ...patch } : line) })
   const submit = (event: FormEvent) => { event.preventDefault(); onSubmit() }
-  return <form className="expense-form" onSubmit={submit} noValidate aria-busy={saving}>
+  useKeyboardSafeFields(formRef)
+  return <form ref={formRef} className="expense-form" onSubmit={submit} noValidate aria-busy={saving}>
     {failure && <p className="expense-failure" role="alert">{failure}</p>}
     {errors.form && <p className="expense-failure" role="alert">{errors.form}</p>}
     <div className="expense-amount receipt-field">
       <label htmlFor="expense-amount">{itemized ? 'Сумма позиций' : 'Сумма'}</label>
       <div className="expense-amount-row">
-        <input id="expense-amount" className="expense-amount-input" inputMode="decimal" autoComplete="off" enterKeyHint="done"
+        <input id="expense-amount" className="expense-amount-input ck-hero-figure" inputMode="decimal" autoComplete="off" enterKeyHint="done"
           placeholder="0" value={itemized ? (sum ?? '') : draft.amount} readOnly={itemized} aria-invalid={Boolean(errors.amount)}
           aria-describedby={describedBy(errors, 'amount')} onChange={(event) => set({ amount: event.target.value })} />
         <label className="expense-currency">
@@ -71,24 +108,45 @@ export function ExpenseForm({ draft, chips, errors, saving, failure, receiptId, 
 
     <fieldset className="expense-categories" aria-describedby={describedBy(errors, 'category')}>
       <legend>Категория{itemized && ' позиций без своей'}</legend>
-      <div className="expense-chips">
+      <ChipScroller label="Частые категории">
         {shown.map((category) => <button type="button" key={category.id} className="expense-chip"
           aria-pressed={draft.category === category.id} title={category.path.map((step) => step.name).join(' › ') || category.name}
           onClick={() => set({ category: draft.category === category.id && itemized ? null : category.id })}>{chipLabel(category)}</button>)}
-        {chips.length > shown.length && <button type="button" className="expense-chip expense-more" aria-expanded={false}
-          onClick={() => setExpanded(true)}>Все категории</button>}
-      </div>
+        {chips.length > 0 && <button type="button" className="expense-chip expense-more" aria-haspopup="dialog" aria-expanded={sheet}
+          onClick={() => setSheet(true)}>Все категории</button>}
+      </ChipScroller>
       {!chips.length && <p className="receipt-note">Категорий пока нет: их заводят в каталоге.</p>}
       {fieldError(errors, 'category')}
     </fieldset>
-
-    <div className="expense-grid">
+    <Sheet open={sheet} onClose={() => setSheet(false)} title="Все категории">
       <div className="receipt-field">
-        <label htmlFor="expense-date">Дата</label>
-        <input id="expense-date" type="date" value={draft.date} aria-invalid={Boolean(errors.date)} aria-describedby={describedBy(errors, dateField)}
-          onChange={(event) => set({ date: event.target.value })} />
-        {fieldError(errors, dateField)}
+        <label htmlFor="expense-category-search">Найти категорию</label>
+        <input id="expense-category-search" type="search" autoComplete="off" value={search} onChange={(event) => setSearch(event.target.value)} />
       </div>
+      {(() => {
+        const rows = categoryTree(chips, search)
+        return rows.length ? <ul className="expense-tree" aria-label="Категории">{rows.map(({ category, depth, label }) => <li key={category.id}
+          style={{ '--expense-depth': depth } as CSSProperties}>
+          <button type="button" className="expense-tree-item" aria-pressed={draft.category === category.id}
+            onClick={() => { set({ category: category.id }); setSheet(false) }}>{label}</button>
+        </li>)}</ul> : <p className="receipt-note" role="status">Ничего не нашлось.</p>
+      })()}
+    </Sheet>
+
+    <fieldset className="expense-dates" aria-describedby={describedBy(errors, dateField)}>
+      <legend>Дата</legend>
+      <div className="expense-date-row">
+        <button type="button" className="expense-chip" aria-pressed={choice === 'today'} onClick={() => set({ date: today })}>Сегодня</button>
+        <button type="button" className="expense-chip" aria-pressed={choice === 'yesterday'} onClick={() => set({ date: dayBefore(today) })}>Вчера</button>
+        <label className={`expense-date-chip${choice === 'other' ? ' expense-date-chip-chosen' : ''}`}>
+          <span className="expense-visually-hidden">Дата покупки</span>
+          <input id="expense-date" type="date" value={draft.date} aria-invalid={Boolean(errors.date)} aria-describedby={describedBy(errors, dateField)}
+            onChange={(event) => set({ date: event.target.value })} />
+        </label>
+      </div>
+      {fieldError(errors, dateField)}
+    </fieldset>
+    <div className="expense-grid">
       <div className="receipt-field">
         <label htmlFor="expense-place">Место <span className="receipt-note">необязательно</span></label>
         <input id="expense-place" autoComplete="off" value={draft.place} placeholder="Без места" aria-invalid={Boolean(errors.place)}
@@ -128,9 +186,8 @@ export function ExpenseForm({ draft, chips, errors, saving, failure, receiptId, 
     </section>
 
     <div className="expense-actions ck-action-bar">
-      <button type="submit" className="expense-save" disabled={saving}>{saving ? 'Сохраняем…' : 'Сохранить'}</button>
+      <button type="submit" className="expense-save" disabled={saving}>{saving ? 'Сохраняем…' : saveLabel(draft)}</button>
       <Link className="action-link" to={receiptId === undefined ? '/receipts' : `/receipts/${receiptId}`}>Отмена</Link>
-      {itemized && sum && <span className="expense-sum receipt-number">{formatMoney(sum, draft.currency)}</span>}
     </div>
   </form>
 }

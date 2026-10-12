@@ -9,6 +9,9 @@ import { storeLabel } from './state'
 /** Headings of the history columns: the table and the cards show the same texts, in this order. */
 export type HistoryColumns = Record<'store' | 'date' | 'list' | 'paid' | 'normalized' | 'purchase', string>
 
+/** A price in the figures font of the money (`.ck-figures`): the same markup in a cell of the table and a fact of a card. */
+export const Figure = ({ children }: { children: string }) => <span className="ck-figures">{children}</span>
+
 /** The phone view of the price history: one card per purchase, the store is its heading.
     A foreign purchase has no receipt or position: the card is identified by its place on the page. */
 export default function PriceHistoryCards({ points, stores, columns, caption, label }: {
@@ -20,9 +23,9 @@ export default function PriceHistoryCards({ points, stores, columns, caption, la
         const store = stores.get(point.store.id)
         const facts: CardFact[] = [
           { key: 'date', label: columns.date, value: <><time dateTime={point.purchased_on}>{formatPurchasedOn(point.purchased_on)}</time>{point.own && <span className="product-subtext"><time dateTime={point.observed_at}>{formatObservedAt(point.observed_at, store?.timezone)}</time></span>}</> },
-          { key: 'list', label: columns.list, value: formatPrice(point.list_unit_price, point.currency, point.unit) },
-          { key: 'paid', label: columns.paid, value: formatPrice(point.paid_unit_price, point.currency, point.unit) },
-          { key: 'normalized', label: columns.normalized, value: <>{point.normalized_price === null ? <span className="product-cell-text">Нет данных для пересчёта</span> : formatPrice(point.normalized_price, point.currency, point.normalized_unit)}
+          { key: 'list', label: columns.list, value: <Figure>{formatPrice(point.list_unit_price, point.currency, point.unit)}</Figure> },
+          { key: 'paid', label: columns.paid, value: <Figure>{formatPrice(point.paid_unit_price, point.currency, point.unit)}</Figure> },
+          { key: 'normalized', label: columns.normalized, value: <>{point.normalized_price === null ? <span className="product-cell-text">Нет данных для пересчёта</span> : <Figure>{formatPrice(point.normalized_price, point.currency, point.normalized_unit)}</Figure>}
             {!point.comparable && <span className="product-subtext product-cell-text">Не сопоставимо с базовой единицей товара</span>}</> },
           { key: 'purchase', label: columns.purchase, value: point.own ? <>Моя · <Link to={{ kind: 'receipt', receiptId: point.receipt_id }}>{numbered('Чек', point.receipt_id)}</Link></> : 'Чужая' },
         ]

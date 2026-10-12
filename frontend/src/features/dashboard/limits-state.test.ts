@@ -3,7 +3,7 @@ import { limitFixture } from '../../api/budget-test-support'
 import type { Category } from '../../api/types'
 import {
   amountInput, isDuplicateCreate, limitCurrencies, limitFailureMessage, limitFor, limitMessages, limitTree, openByDefault, parseCurrency, parseLimitAmount,
-  rowAction, subCategoriesText, visibleRows, withLimit, withoutLimit,
+  rowAction, subCategoriesText, visibleRows, withLimit, withoutLimit, changedRows, saveBarLabel,
 } from './limits-state'
 
 const category = (id: number, name: string, parent: Category | null = null): Category => {
@@ -98,5 +98,23 @@ describe('limits screen state', () => {
     expect(isDuplicateCreate({ reason: 'invalid_parameter', fields: ['amount'] }, true)).toBe(false)
     expect(limitFailureMessage({ reason: 'not_found' })).toContain('Обновите страницу')
     expect(limitFailureMessage({ reason: 'invalid_response' })).toBe('Не удалось сохранить лимит. Повторите попытку.')
+  })
+})
+
+describe('the save bar of «Лимиты»', () => {
+  const limit = limitFixture({ id: 5, category_id: 10, currency: 'KZT', amount: '1000.00' })
+  it('saves the changed and the refused rows of this currency, nothing else', () => {
+    const drafts = { '10:KZT': '1500', '17:KZT': '200', '21:KZT': 'abc', '22:KZT': '', '8:USD': '50', '23:KZT': '' }
+    expect(changedRows([home, rent, utilities, power, water, cafe], [limit], 'KZT', drafts).map((row) => row.id)).toEqual([10, 17, 21])
+    // The same amount as saved is no change; an emptied limit is a refusal said at its field.
+    expect(changedRows([home], [limit], 'KZT', { '10:KZT': '1000' })).toEqual([])
+    expect(changedRows([home], [limit], 'KZT', { '10:KZT': '' }).map((row) => row.id)).toEqual([10])
+    expect(changedRows([cafe], [], 'USD', { '8:USD': '50' }).map((row) => row.id)).toEqual([8])
+  })
+  it('names the number of changes on the button', () => {
+    expect(saveBarLabel(0)).toBe('Сохранить')
+    expect(saveBarLabel(1)).toBe('Сохранить · 1 изменение')
+    expect(saveBarLabel(3)).toBe('Сохранить · 3 изменения')
+    expect(saveBarLabel(11)).toBe('Сохранить · 11 изменений')
   })
 })

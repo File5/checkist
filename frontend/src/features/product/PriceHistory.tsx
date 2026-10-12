@@ -7,7 +7,7 @@ import Pagination from '../../components/Pagination'
 import { formatObservedAt, formatPrice, formatPurchasedOn } from '../../lib/format'
 import { numbered } from '../../lib/text'
 import { useNarrow } from '../../lib/cards'
-import PriceHistoryCards from './PriceHistoryCards'
+import PriceHistoryCards, { Figure } from './PriceHistoryCards'
 import type { HistoryColumns } from './PriceHistoryCards'
 import ProductRequestState from './ProductRequestState'
 import { hasFilters, storeLabel } from './state'
@@ -57,9 +57,9 @@ export default function PriceHistory({ state, query, stores, retry, reset, build
                 return <tr key={index}>
                   <th scope="row">{storeLabel(store ?? point.store)}</th>
                   <td><time dateTime={point.purchased_on}>{formatPurchasedOn(point.purchased_on)}</time>{point.own && <span className="product-subtext"><time dateTime={point.observed_at}>{formatObservedAt(point.observed_at, store?.timezone)}</time></span>}</td>
-                  <td className="product-number">{formatPrice(point.list_unit_price, point.currency, point.unit)}</td>
-                  <td className="product-number">{formatPrice(point.paid_unit_price, point.currency, point.unit)}</td>
-                  <td className="product-number">{point.normalized_price === null ? <span className="product-cell-text">Нет данных для пересчёта</span> : formatPrice(point.normalized_price, point.currency, point.normalized_unit)}
+                  <td className="product-number"><Figure>{formatPrice(point.list_unit_price, point.currency, point.unit)}</Figure></td>
+                  <td className="product-number"><Figure>{formatPrice(point.paid_unit_price, point.currency, point.unit)}</Figure></td>
+                  <td className="product-number">{point.normalized_price === null ? <span className="product-cell-text">Нет данных для пересчёта</span> : <Figure>{formatPrice(point.normalized_price, point.currency, point.normalized_unit)}</Figure>}
                     {!point.comparable && <span className="product-subtext product-cell-text">Не сопоставимо с базовой единицей товара</span>}
                   </td>
                   <td>{point.own ? <>Моя · <Link to={{ kind: 'receipt', receiptId: point.receipt_id }}>{numbered('Чек', point.receipt_id)}</Link></> : 'Чужая'}</td>

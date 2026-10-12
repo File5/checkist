@@ -4,6 +4,7 @@ import type { Category } from '../../api/types'
 import {
   CHIPS_SHOWN, amountText, categoryChips, chipLabel, clearExpenseNotice, draftBody, draftFromReceipt, emptyDraft,
   getExpenseNotice, linesTotal, sentIndexes, messages, newLine, normalizeAmount, serverErrors, setExpenseNotice, todayISO, visibleChips,
+  categoryTree, dateChoice, dayBefore, fieldScrollDelta, saveLabel,
 } from './expense-form'
 import type { ExpenseDraft, LineDraft } from './expense-form'
 
@@ -123,5 +124,37 @@ describe('the notice after a save', () => {
     expect(getExpenseNotice(7)).toBe('Трата сохранена.')
     clearExpenseNotice()
     expect(getExpenseNotice(7)).toBeUndefined()
+  })
+})
+
+describe('the mobile spend form', () => {
+  it('names the rounded amount on the save button, the positions sum when there are any', () => {
+    expect(saveLabel(emptyDraft('KZT'))).toBe('Сохранить')
+    expect(saveLabel({ ...emptyDraft('KZT'), amount: '12 500,01' })).toBe('Сохранить · 12\u00a0501\u00a0KZT')
+    expect(saveLabel({ ...emptyDraft('KZT'), amount: '0' })).toBe('Сохранить')
+    expect(saveLabel({ ...emptyDraft('kz'), amount: '10' })).toBe('Сохранить · 10')
+    const lines = [{ ...newLine(), name: 'Хлеб', amount: '250' }, { ...newLine(), name: 'Сок', amount: '100,5' }]
+    expect(saveLabel({ ...emptyDraft('KZT'), amount: '9', lines })).toBe('Сохранить · 351\u00a0KZT')
+  })
+  it('chooses «Сегодня», «Вчера» or the calendar, across a month and a year', () => {
+    expect(dateChoice('2026-10-12', '2026-10-12')).toBe('today')
+    expect(dateChoice('2026-09-30', '2026-10-01')).toBe('yesterday')
+    expect(dateChoice('2025-12-31', '2026-01-01')).toBe('yesterday')
+    expect(dateChoice('2026-10-10', '2026-10-12')).toBe('other')
+    expect(dayBefore('2024-03-01')).toBe('2024-02-29')
+  })
+  it('lists all categories as a tree and finds them by any word of the path, ё as е', () => {
+    const cat = (id: number, path: string[]) => ({ id, name: path[path.length - 1], path: path.map((name, index) => ({ id: id * 10 + index, name })),
+      parent_id: null, depth: path.length - 1, children_count: 0, generic_products_count: 0, products_count: 0, products_total: 0 })
+    const all = [cat(3, ['Жильё', 'Коммунальные услуги', 'Интернет']), cat(1, ['Жильё']), cat(4, ['Ёлки']), cat(2, ['Жильё', 'Коммунальные услуги'])]
+    expect(categoryTree(all).map((row) => [row.label, row.depth])).toEqual([['Ёлки', 0], ['Жильё', 0], ['Коммунальные услуги', 1], ['Интернет', 2]])
+    expect(categoryTree(all, 'жилье интер').map((row) => row.label)).toEqual(['Жильё › Коммунальные услуги › Интернет'])
+    expect(categoryTree(all, 'елки').map((row) => row.label)).toEqual(['Ёлки'])
+    expect(categoryTree(all, 'нет такой')).toEqual([])
+  })
+  it('scrolls a focused field just above the save bar and the keyboard', () => {
+    expect(fieldScrollDelta(300, 600, 80)).toBe(0)
+    expect(fieldScrollDelta(560, 600, 80)).toBe(52)
+    expect(fieldScrollDelta(508, 600, 80)).toBe(0)
   })
 })

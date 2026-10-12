@@ -26,8 +26,8 @@ export const BAR_SLOTS = 4
 /** How many links stand before «＋» in the bar: «Главная · Траты · ＋ · Статистика · Ещё». */
 export const ADD_AFTER = 2
 
-/** The month dashboard at '/' and its limits at '/budget/limits'. */
-const homeKinds: Route['kind'][] = ['dashboard', 'limits']
+/** The month dashboard at '/', its limits at '/budget/limits' and the spends of one of its categories. */
+const homeKinds: Route['kind'][] = ['dashboard', 'limits', 'category-spends']
 const catalogKinds: Route['kind'][] = ['catalog', 'category', 'product', 'merges', 'merge', 'classification']
 const receiptKinds: Route['kind'][] = ['receipts', 'upload', 'expense-new', 'expense-edit', 'receipt']
 const statsKinds: Route['kind'][] = ['spending', 'receipts-stats', 'trends']
@@ -46,6 +46,7 @@ function allItems(session: Session, route: Route): MenuItem[] {
     { key: 'stats', to: '/stats', label: 'Статистика', current: statsKinds.includes(route.kind) },
     { key: 'catalog', to: '/catalog', label: 'Каталог', current: catalogKinds.includes(route.kind) },
     { key: 'jobs', to: '/recognition/jobs', label: 'Обработка', current: jobKinds.includes(route.kind) },
+    { key: 'export', to: '/export', label: 'Выгрузка', current: route.kind === 'export' },
     health,
   ]
   if (session.mode === 'accounts') {

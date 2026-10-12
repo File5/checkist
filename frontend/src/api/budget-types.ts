@@ -21,6 +21,8 @@ export type DashboardCategory = {
 /** One currency of the month. Currencies are never summed together. */
 export type DashboardCurrency = {
   currency: CurrencyCode; spent: Decimal; previous_spent: Decimal; limit_total: Decimal | null
+  /** Spent in the categories counted in `limit_total` (each with its sub-categories); optional for older servers. */
+  limited_spent?: Decimal | null
   /** Sorted by `spent` descending; a category with a limit is present even with nothing spent. */
   categories: DashboardCategory[]
 }
@@ -36,6 +38,26 @@ export type DashboardRecent = {
 export type Dashboard = {
   month: MonthCode; previous_month: MonthCode; days_left: number; members: string[]; people?: Person[]
   currencies: DashboardCurrency[]; recent: DashboardRecent[]
+}
+
+/** A line of a receipt or spend that belongs to the category (or a descendant): its name, paid amount and category. */
+export type CategorySpendLine = { id: number; name: string; amount: Decimal; category_id: number; category_name: string }
+/** A receipt or spend with lines in the category: `category_amount` — their sum, `receipt_total` — the whole receipt. */
+export type CategorySpendItem = {
+  receipt_id: number; source: ReceiptSource; purchased_on: ISODate; store: { id: number; name: string } | null; note: string
+  owner: string; owner_name: string; receipt_total: Decimal; category_amount: Decimal; lines: CategorySpendLine[]
+}
+/** A direct sub-category with its descendants, or the category itself (`direct`). */
+export type CategorySpendPart = { id: number; name: string; direct: boolean; children_count: number; amount: Decimal; lines_count: number }
+export type CategorySpendCurrency = {
+  currency: CurrencyCode; total: Decimal; receipts_count: number; parts: CategorySpendPart[]; items: CategorySpendItem[]
+}
+/** `GET /api/stats/category-spends/?category=ID&month=YYYY-MM`: what the money of a category went on in a month. */
+export type CategorySpends = {
+  month: MonthCode; previous_month: MonthCode
+  category: { id: number; name: string; path: { id: number; name: string }[] }
+  children: { id: number; name: string }[]
+  currencies: CategorySpendCurrency[]
 }
 
 /** A monthly limit of a category (any level) in one currency, shared by the family (or one's own without a family). */

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { changePassword, logout } from '../../api/session'
+import { Link } from '../../navigation'
 import { applyMe } from '../../session'
 import { checkPassword, useAuthForm } from './auth-state'
 import type { FormState, PasswordInput } from './auth-state'
@@ -41,6 +42,11 @@ export function AccountView({ username, password, values, onChange, onPassword, 
             onClick={leaving ? undefined : onSignOut}>{leaving ? 'Выходим…' : 'Выйти'}</button>
           <FormMessage state={signOut} id="logout-message" />
         </div>
+      </section>
+      <section className="ck-auth-panel" aria-labelledby="account-export-heading">
+        <h2 id="account-export-heading">Выгрузка данных</h2>
+        <p>Все чеки и траты семьи файлом JSON, с фильтрами по периоду, категориям и людям.</p>
+        <Link className="action-link" to="/export" data-auth-export>Выгрузить в JSON</Link>
       </section>
       <section aria-labelledby="account-password-heading">
         <form className="ck-auth-panel" method="post" noValidate onSubmit={submit}>

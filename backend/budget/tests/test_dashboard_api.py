@@ -109,6 +109,7 @@ class DashboardNumbersTests(FixtureMixin, TestCase):
         eur, kzt = body["currencies"]  # по коду валюты
         self.assertEqual(eur, {
             "currency": "EUR", "spent": "12.50", "previous_spent": "0.00", "limit_total": "100.00",
+            "limited_spent": "12.50",
             "categories": [{"category_id": self.food.pk, "name": "Демо-продукты", "spent": "12.50",
                             "limit": "100.00", "limit_id": self.limits["euro"].pk, "children": []}],
         })
@@ -121,8 +122,12 @@ class DashboardNumbersTests(FixtureMixin, TestCase):
             ("Не разобрано", "100.00", None, None),
             ("Демо-транспорт", "0.00", "30000.00", self.limits["transport"].pk),
         ])
+        # Общий лимит сравнивается только с категориями под лимитом: 550 + 0, а не все 1 450.
+        self.assertEqual(kzt["limited_spent"], "550.00")
         self.assertEqual(kzt["categories"][0]["category_id"], self.food.pk)
-        self.assertEqual([row["children"] for row in kzt["categories"]], [[], [], [], []])
+        # Every sub-category with spends of the month has its row, with or without a limit (2026-10-12).
+        self.assertEqual([[(child["name"], child["spent"], child["limit"]) for child in row["children"]] for row in kzt["categories"]],
+                         [[("Демо-молочное", "550.00", None)], [("Демо-кофейни", "450.00", None)], [], []])
 
     def test_previous_month_and_empty_month(self):
         september = self.get("?month=2026-09")
@@ -240,6 +245,7 @@ class DashboardFamilyTests(FixtureMixin, TwoUsers, TestCase):
         self.assertEqual(body["members"], ["synthetic-user-two"])
         self.assertEqual(body["currencies"], [{
             "currency": "KZT", "spent": "70.00", "previous_spent": "0.00", "limit_total": "500.00",
+            "limited_spent": "70.00",
             "categories": [{"category_id": self.cafe.pk, "name": "Демо-кафе", "spent": "70.00", "limit": "500.00",
                             "limit_id": BudgetLimit.objects.get(user=self.second).pk, "children": []}],
         }])
@@ -279,13 +285,18 @@ class DashboardSubLimitsTests(FixtureMixin, TestCase):
         # Вложенный лимит — часть лимита предка: «Демо-сыр» под лимитом «Демо-продукты» в сумму не входит,
         # «Демо-кофейни» без лимита у предка — входит.
         self.assertEqual(kzt["limit_total"], "150400.00")
+        # Траты тех же категорий: «Демо-продукты» 650 (сыр внутри) + «Демо-кофейни» 450.
+        self.assertEqual(kzt["limited_spent"], "1100.00")
         food, cafe, unassigned, transport = kzt["categories"]
         self.assertEqual((food["name"], food["spent"], food["limit"]), ("Демо-продукты", "650.00", "120000.00"))
-        # «Демо-выпечка» без лимита и без лимитов внутри в карточку не попадает; «Демо-молочное» — предок лимита.
+        # «Демо-выпечка» без лимита тоже в карточке — у неё траты месяца; «Демо-молочное» — предок лимита.
         self.assertEqual(food["children"], [{
             "category_id": self.dairy.pk, "name": "Демо-молочное", "spent": "620.00", "limit": None, "limit_id": None,
             "children": [{"category_id": self.cheese.pk, "name": "Демо-сыр", "spent": "70.00", "limit": "50.00",
                           "limit_id": self.limits["cheese"].pk, "children": []}],
+        }, {
+            "category_id": self.bakery.pk, "name": "Демо-выпечка", "spent": "30.00", "limit": None, "limit_id": None,
+            "children": [],
         }])
         self.assertEqual((cafe["name"], cafe["spent"], cafe["limit"]), ("Демо-кафе", "450.00", None))
         self.assertEqual(cafe["children"], [{
@@ -294,6 +305,7 @@ class DashboardSubLimitsTests(FixtureMixin, TestCase):
         self.assertEqual((unassigned["children"], transport["children"]), ([], []))
         # Корень без трат в валюте появляется ради лимита подкатегории — с нулём.
         self.assertEqual(eur["limit_total"], "105.00")
+        self.assertEqual(eur["limited_spent"], "12.50")
         self.assertEqual([(row["name"], row["spent"], row["limit"]) for row in eur["categories"]],
                          [("Демо-продукты", "12.50", "100.00"), ("Демо-кафе", "0.00", None)])
         self.assertEqual(eur["categories"][1]["children"], [{

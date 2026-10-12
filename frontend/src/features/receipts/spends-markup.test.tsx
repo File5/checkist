@@ -10,7 +10,8 @@ import { ownerChips } from './spends'
 
 const NBSP = ' '
 const noop = () => {}
-const base = (publicFixture('receipts.json') as Page<ReceiptListItem>).results[0]
+// The rows of these tests name their categories themselves: the public example's own list is dropped.
+const base: ReceiptListItem = { ...(publicFixture('receipts.json') as Page<ReceiptListItem>).results[0], categories: undefined }
 const rows: ReceiptListItem[] = [
   { ...base, id: 1, purchased_on: '2026-10-12', currency: 'KZT', total: '18940.00', owner: 'liza', owner_name: 'Лиза', lines_count: 23,
     store: { ...base.store!, name: 'Magnum' }, category: { id: 3, name: 'Продукты' } },
@@ -28,11 +29,13 @@ describe('«Траты» on a phone (Vitest/SSR, not browser visual acceptance)'
     const html = renderToStaticMarkup(<SpendDays receipts={rows} today="2026-10-12" showOwner />)
     expect(html.match(/<h3>[^]*?<\/h3>/g)).toEqual([
       '<h3><time dateTime="2026-10-12">Сегодня</time></h3>', `<h3><time dateTime="2026-10-11">Вчера, 11${NBSP}окт</time></h3>`])
-    expect(html).toContain(`<span class="spends-day-sum">20${NBSP}000${NBSP}KZT</span>`)
-    expect(html).toContain(`<span class="spends-day-sum">3${NBSP}EUR</span>`)
+    expect(html).toContain(`<span class="spends-day-sum ck-figures">20${NBSP}000${NBSP}KZT</span>`)
+    expect(html).toContain(`<span class="spends-day-sum ck-figures">3${NBSP}EUR</span>`)
     expect(html.match(/<a class="spends-row" href="\/receipts\/\d+">/g)).toHaveLength(3)
-    expect(html).toContain(`<span class="spends-row-title">Magnum</span><span class="spends-row-meta">Продукты · Лиза · 23${NBSP}позиции</span>`)
-    expect(html).toContain(`<span class="spends-row-amount">18${NBSP}940${NBSP}KZT</span>`)
+    // One strip of receipt tape per day.
+    expect(html.match(/<ul class="spends-rows ck-tape">/g)).toHaveLength(2)
+    expect(html).toContain(`<span class="spends-row-title">Magnum</span><span class="spends-row-meta">Продукты · Лиза · по чеку · 23${NBSP}позиции</span>`)
+    expect(html).toContain(`<span class="spends-row-amount ck-figures">18${NBSP}940${NBSP}KZT</span>`)
     // A spend without a place is titled by its first line and says it has no receipt only to a screen reader.
     expect(html).toContain('<span class="spends-row-title">Такси<span class="spends-hidden"> (трата без чека)</span></span>')
   })
@@ -72,7 +75,7 @@ describe('«Траты» on a phone (Vitest/SSR, not browser visual acceptance)'
 describe('family chips and the review banner', () => {
   it('links every chip to the list of its member, keeps the filters and marks the current one', () => {
     const html = renderToStaticMarkup(<OwnerChips chips={family} query={{ page: 2, q: 'MILCH', owner: 'liza' }} />)
-    expect(html).toContain('<nav class="spends-chips" aria-label="Кто добавил">')
+    expect(html).toContain('<div class="spends-chips"><div class="ck-chip-scroller"><div class="ck-chip-scroller-track" role="region" aria-label="Кто добавил" tabindex="0"><ul>')
     expect(html.match(/<a [^>]*>[^<]*<\/a>/g)).toEqual([
       '<a class="spends-chip" href="/receipts?q=MILCH">Вся семья</a>',
       '<a class="spends-chip" href="/receipts?q=MILCH&amp;owner=andrey">Андрей</a>',
@@ -94,11 +97,28 @@ describe('family chips and the review banner', () => {
     expect(html.indexOf('spends-review')).toBeLessThan(html.indexOf('receipt-actions'))
     expect(html).toContain('По выбранным фильтрам чеков нет.')
   })
+
+  it('hides the filters behind «Фильтры (N)» on a phone and keeps the form on a wide screen', () => {
+    const query = { page: 1, q: 'MILCH', date_from: '2026-10-01', owner: 'liza' }
+    const phone = renderToStaticMarkup(<ReceiptsView narrow query={query} state={{ kind: 'ok', data: page([]) }} retry={noop} chips={family} />)
+    expect(phone).toContain('<button type="button" class="ck-filters-toggle" aria-haspopup="dialog" aria-expanded="false">Фильтры (2)</button>')
+    expect(phone).not.toContain('Применить фильтры')
+    const wide = renderToStaticMarkup(<ReceiptsView query={query} state={{ kind: 'ok', data: page([]) }} retry={noop} chips={family} />)
+    expect(wide).not.toContain('ck-filters-toggle')
+    expect(wide).toContain('Применить фильтры')
+  })
 })
 
 describe('styles of «Траты» (text of the rules, not rendering)', () => {
   const css = readFileSync(new URL('./Receipts.css', import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
   const rule = (selector: string) => [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].find((match) => match[1].trim() === selector)?.[2].trim() ?? ''
+
+  it('keeps the heading of a day at the top over the tape and the teeth below the last row', () => {
+    expect(rule('.spends-day-head')).toContain('position: sticky; top: 0; z-index: 1;')
+    expect(rule('.spends-day-head')).toContain('background: var(--ck-bg);')
+    expect(rule('.spends-rows')).toContain('padding: 0 0 8px;')
+    expect(rule('.ck-sheet .receipt-panel')).toBe('padding: 0; border: 0;')
+  })
 
   it('never wraps an amount, a day total or a chip, and keeps touch targets at least 44px', () => {
     for (const selector of ['.spends-row-amount', '.spends-day-sum', '.spends-chip']) expect(rule(selector), selector).toContain('white-space: nowrap')

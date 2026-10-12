@@ -12,6 +12,9 @@ import { autoSendStep, createUpload, fileFormat, formatBytes, formatName, isPdf,
 import { useRequest } from './useRequest'
 import { createPreview } from './preview'
 import { clearQuickShot, onQuickShot, peekQuickShot } from './quick-shot'
+import { useQuickShot } from './QuickShot'
+import { useNarrow } from '../../lib/cards'
+import { useStickyOpen } from './mobile-state'
 import './Upload.css'
 
 /** `null` — the browser could not show the photo, so its pixel size stays unknown. */
@@ -20,7 +23,7 @@ function FilePreview({ file, onMeasure }: { file: File; onMeasure: (size: Measur
   const preview = useMemo(() => createPreview(file), [file])
   const url = useSyncExternalStore(preview.subscribe, preview.getSnapshot, preview.getServerSnapshot)
   useEffect(() => { preview.start(); return preview.dispose }, [preview])
-  return <div className="ck-rec-image">{url ? <PreviewImage key={url} url={url} name={file.name} onMeasure={onMeasure} /> : <p>Готовим предпросмотр…</p>}</div>
+  return <div className="ck-rec-image ck-upload-preview">{url ? <PreviewImage key={url} url={url} name={file.name} onMeasure={onMeasure} /> : <p>Готовим предпросмотр…</p>}</div>
 }
 function PreviewImage({ url, name, onMeasure }: { url: string; name: string; onMeasure: (size: Measured) => void }) {
   const [failed, setFailed] = useState(false)
@@ -65,6 +68,9 @@ export default function UploadPage() {
   const [measured, setMeasured] = useState<Measured>()
   const fileInput = useRef<HTMLInputElement>(null)
   const cameraInput = useRef<HTMLInputElement>(null)
+  // «Из галереи» is the one mechanism of the «＋» menu: its file comes back through onQuickShot below and is sent by itself.
+  const gallery = useQuickShot('gallery')
+  const narrow = useNarrow()
   // The photo just taken with «Снять чек»: it is sent by itself once, as soon as it can be.
   const autoSend = useRef<File | undefined>(file)
   useEffect(clearQuickShot, [])
@@ -112,11 +118,12 @@ export default function UploadPage() {
   // Like job actions, the upload pauses background reads before touching the server.
   useEffect(() => { if (!sending) return; request.pause(); return () => request.resume(false) }, [sending, request])
   // A closed picker or camera returns no file: the photo already chosen stays.
-  const pick = (event: ChangeEvent<HTMLInputElement>, camera: boolean) => {
+  // A shot of the camera is sent by itself, as from the «＋» menu; «Выбрать файл» waits for the button.
+  const pick = (event: ChangeEvent<HTMLInputElement>, sendNow: boolean) => {
     const next = event.target.files?.[0]
     event.target.value = ''
     if (!next) return
-    autoSend.current = camera ? next : undefined
+    autoSend.current = sendNow ? next : undefined
     upload.reset(); setMeasured(undefined); setFile(next)
   }
   // The same path as the button: reduction, progress, cancel and the job page. A failure leaves the retry button.
@@ -129,6 +136,18 @@ export default function UploadPage() {
   // Without the conditions nothing can be checked or sent.
   const pickDisabled = !limits || sending
   const described = `recognition-cloud-warning${invalid ? ' recognition-file-error' : ''}${limits ? '' : ' recognition-pick-wait'}`
+  const conditions = useStickyOpen(config.kind === 'error' || (config.kind === 'ok' && config.refreshError !== undefined) || Boolean(executorNote?.warning))
+  const conditionsTitle = <h2 id="recognition-limits-title" tabIndex={-1} data-request-focus-target>Условия загрузки</h2>
+  const conditionsBody = <>
+    {config.kind === 'loading' && <RequestState kind="loading" message="Получаем лимиты и токен безопасности…" />}
+    {config.kind === 'error' && <RequestState kind="error" message={errorText(config.error)} onRetry={request.refresh} />}
+    {config.kind === 'ok' && <>
+      <p>Форматы: {config.data.limits.formats.map(formatName).join(', ')}. Максимальный размер: {formatBytes(config.data.limits.max_bytes)}. До {glue(config.data.limits.max_pixels.toLocaleString('ru-RU'), 'пикселей')} и {glue(config.data.limits.max_receipts.toLocaleString('ru-RU'), 'чеков')} на фото.{config.data.limits.max_pdf_pages !== undefined && <> PDF — до {glue(config.data.limits.max_pdf_pages.toLocaleString('ru-RU'), 'страниц')}: счёт или электронный чек, страницы станут одним изображением.</>}</p>
+      {executorNote && <p className={executorNote.warning ? 'ck-rec-warning' : undefined}>{executorNote.text}</p>}
+      <button type="button" disabled={sending || refreshing} onClick={refreshConfig}>Обновить условия загрузки</button>
+      {config.refreshError && <p role="status" className="ck-rec-error">Не удалось обновить условия. {errorText(config.refreshError)}</p>}
+    </>}
+  </>
   const submit = (event: FormEvent) => {
     event.preventDefault()
     if (file && limits && !measuring) void upload.submit(file, limits, measured ?? undefined)
@@ -137,12 +156,6 @@ export default function UploadPage() {
     <div className="ck-rec-actions"><Link to="/recognition/jobs" className="action-link">К обработке</Link><Link to="/receipts" className="action-link">К чекам</Link></div>
     <form ref={formBlock} onSubmit={submit} className="ck-rec-panel" aria-labelledby="recognition-file-title" aria-busy={sending}>
       <h2 id="recognition-file-title" tabIndex={-1} data-request-focus-target>Одно фото с одним или несколькими чеками</h2>
-      <div className="ck-rec-actions ck-upload-pick" role="group" aria-label="Выбор фото">
-        <button type="button" className="ck-upload-camera" disabled={pickDisabled} aria-describedby={described} onClick={() => cameraInput.current?.click()}>{uploadLabels.camera}</button>
-        <button type="button" className="ck-upload-secondary" disabled={pickDisabled} aria-describedby={described} onClick={() => fileInput.current?.click()}>{uploadLabels.pick}</button>
-        <input ref={cameraInput} id="recognition-camera" className="ck-upload-input" type="file" accept="image/*" capture="environment" tabIndex={-1} aria-hidden="true" disabled={pickDisabled} onChange={(event) => pick(event, true)} />
-        <input ref={fileInput} id="recognition-file" className="ck-upload-input" type="file" accept={pickAccept} tabIndex={-1} aria-hidden="true" disabled={pickDisabled} onChange={(event) => pick(event, false)} />
-      </div>
       {!limits && <p id="recognition-pick-wait" className="ck-rec-note">{config.kind === 'error' ? uploadLabels.conditionsFailed : uploadLabels.conditionsLoading}</p>}
       {file && <><p className="ck-upload-file">{file.name} · {formatName(fileFormat(file) ?? '') || 'Неподдерживаемый формат'} · {formatBytes(file.size)}{measured && <> · <Value>{sizeText(measured)}</Value></>}</p>{!invalid && (pdf
         ? <PdfPreview key={`${file.name}:${file.lastModified}:${file.size}`} file={file} maxPages={limits?.max_pdf_pages} />
@@ -151,26 +164,33 @@ export default function UploadPage() {
       {state.reduced
         ? <p className="ck-upload-reduced">Фото больше лимита сервера, перед отправкой уменьшено до <Value>{sizeText(state.reduced)}</Value>. Отправляется уменьшенная копия: {formatBytes(state.reduced.file.size)}.</p>
         : plan?.kind === 'reduce' && <p className="ck-upload-reduced">Фото больше лимита сервера: перед отправкой оно будет уменьшено{plan.width && plan.height ? <> до <Value>{sizeText({ width: plan.width, height: plan.height })}</Value></> : null}.</p>}
-      <p id="recognition-cloud-warning" className="ck-rec-warning">Фото передаётся облачной модели распознавания. Отправляйте только фото, которое вы готовы передать сервису.</p>
+      {/* The stage stands right above its bar. Only the change of a stage is announced: the bytes of the progress are outside the live region. */}
+      <div role="status" aria-live="polite" className="ck-upload-stage">{sending && <p>{state.stage === 'reducing' ? uploadLabels.stageReducing : state.stage === 'waiting' ? uploadLabels.stageWaiting : uploadLabels.stageUploading}</p>}{state.kind === 'cancelled' && <p>{state.message}</p>}{state.kind === 'error' && <p className="ck-rec-error">{state.message}</p>}{state.kind === 'success' && <p>{state.message}</p>}</div>
       {sending && !reducing && outgoing && <UploadProgress sent={state.sent ?? 0} total={state.total ?? outgoing.size} />}
+      {(state.kind === 'error' || (state.kind === 'cancelled' && state.message === uploadLabels.cancelled)) && <Link to="/recognition/jobs">Проверить список обработки</Link>}
+      {/* The picking buttons stand low, right above the main action: in reach of the thumb on a phone. */}
+      <div className="ck-rec-actions ck-upload-pick" role="group" aria-label="Выбор фото">
+        <button type="button" className="ck-upload-camera" disabled={pickDisabled} aria-describedby={described} onClick={() => cameraInput.current?.click()}>{uploadLabels.camera}</button>
+        <button type="button" className="ck-upload-gallery ck-upload-secondary" disabled={pickDisabled} aria-describedby={described} onClick={gallery.open}>{uploadLabels.gallery}</button>
+        <button type="button" className="ck-upload-secondary" disabled={pickDisabled} aria-describedby={described} onClick={() => fileInput.current?.click()}>{uploadLabels.pick}</button>
+        <input ref={cameraInput} id="recognition-camera" className="ck-upload-input" type="file" accept="image/*" capture="environment" tabIndex={-1} aria-hidden="true" disabled={pickDisabled} onChange={(event) => pick(event, true)} />
+        {gallery.field}
+        <input ref={fileInput} id="recognition-file" className="ck-upload-input" type="file" accept={pickAccept} tabIndex={-1} aria-hidden="true" disabled={pickDisabled} onChange={(event) => pick(event, false)} />
+      </div>
+      <p id="recognition-cloud-warning" className="ck-rec-warning">Фото передаётся облачной модели распознавания. Отправляйте только фото, которое вы готовы передать сервису.</p>
       <div className="ck-rec-actions ck-action-bar">
         <button type="submit" data-request-retry={repeat ? '' : undefined} disabled={!file || !limits || Boolean(invalid) || measuring || sending || refreshing}>{reducing ? uploadLabels.reducing : sending ? uploadLabels.sending : repeat ? uploadLabels.retry : uploadLabels.submit}</button>
         {sending && <button type="button" className="ck-upload-secondary" onClick={upload.cancel}>{uploadLabels.cancel}</button>}
       </div>
-      {/* Only the change of a stage is announced: the bytes of the progress above are outside the live region. */}
-      <div role="status" aria-live="polite">{sending && <p>{state.stage === 'reducing' ? uploadLabels.stageReducing : state.stage === 'waiting' ? uploadLabels.stageWaiting : uploadLabels.stageUploading}</p>}{state.kind === 'cancelled' && <p>{state.message}</p>}{state.kind === 'error' && <p className="ck-rec-error">{state.message}</p>}{state.kind === 'success' && <p>{state.message}</p>}</div>
-      {(state.kind === 'error' || (state.kind === 'cancelled' && state.message === uploadLabels.cancelled)) && <Link to="/recognition/jobs">Проверить список обработки</Link>}
     </form>
     <section ref={configBlock} className="ck-rec-panel" aria-labelledby="recognition-limits-title" aria-busy={config.kind === 'loading'}>
-      <h2 id="recognition-limits-title" tabIndex={-1} data-request-focus-target>Условия загрузки</h2>
-      {config.kind === 'loading' && <RequestState kind="loading" message="Получаем лимиты и токен безопасности…" />}
-      {config.kind === 'error' && <RequestState kind="error" message={errorText(config.error)} onRetry={request.refresh} />}
-      {config.kind === 'ok' && <>
-        <p>Форматы: {config.data.limits.formats.map(formatName).join(', ')}. Максимальный размер: {formatBytes(config.data.limits.max_bytes)}. До {glue(config.data.limits.max_pixels.toLocaleString('ru-RU'), 'пикселей')} и {glue(config.data.limits.max_receipts.toLocaleString('ru-RU'), 'чеков')} на фото.{config.data.limits.max_pdf_pages !== undefined && <> PDF — до {glue(config.data.limits.max_pdf_pages.toLocaleString('ru-RU'), 'страниц')}: счёт или электронный чек, страницы станут одним изображением.</>}</p>
-        {executorNote && <p className={executorNote.warning ? 'ck-rec-warning' : undefined}>{executorNote.text}</p>}
-        <button type="button" disabled={sending || refreshing} onClick={refreshConfig}>Обновить условия загрузки</button>
-        {config.refreshError && <p role="status" className="ck-rec-error">Не удалось обновить условия. {errorText(config.refreshError)}</p>}
-      </>}
+      {/* On a phone the conditions fold into «Условия загрузки»; a failure or a missing worker opens them. */}
+      {narrow
+        ? <details className="ck-upload-conditions" open={conditions.open} onToggle={(event) => conditions.toggle(event.currentTarget.open)}>
+          <summary>{conditionsTitle}</summary>
+          <div className="ck-upload-conditions-body">{conditionsBody}</div>
+        </details>
+        : <>{conditionsTitle}{conditionsBody}</>}
     </section>
   </div>
 }

@@ -145,3 +145,20 @@ export function limitFailureMessage(failure: Pick<LocalApiFailure, 'reason' | 'f
     default: return 'Не удалось сохранить лимит. Повторите попытку.'
   }
 }
+
+/** The rows of this currency that «Сохранить» of the bar sends: a changed or a refused draft. A draft emptied again
+ * on a row without a limit is no change. */
+export function changedRows(categories: Category[], limits: BudgetLimit[], currency: string, drafts: Record<string, string>): Category[] {
+  return categories.filter((category) => {
+    const draft = drafts[`${category.id}:${currency}`]
+    const limit = limitFor(limits, category.id, currency)
+    if (draft !== undefined && !draft.trim() && !limit) return false
+    return rowAction(draft, limit).kind !== 'none'
+  })
+}
+
+/** «Сохранить · 2 изменения» on the bar; «Сохранить» while nothing changed. */
+export function saveBarLabel(count: number): string {
+  if (count <= 0) return 'Сохранить'
+  return `Сохранить · ${glue(count.toLocaleString('ru-RU'), plural(count, 'изменение', 'изменения', 'изменений'))}`
+}

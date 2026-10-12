@@ -447,7 +447,7 @@ SKIPPED_ROUTES = {
     "budget-limit": "лимит семьи или пользователя; id чеков в нём нет",
     **dict.fromkeys(
         ("api-not-found", "recognition-not-found", "receipts-not-found", "product-merges-not-found",
-         "product-classifications-not-found", "stats-not-found", "budget-not-found"),
+         "product-classifications-not-found", "stats-not-found", "budget-not-found", "export-not-found"),
         "ответ 404 без данных",
     ),
     **dict.fromkeys(
@@ -519,9 +519,13 @@ class NoForeignReceiptIdTests(ProjectionMixin, TestCase):
             "/api/stats/trends/range/", "/api/stats/trends/monthly/?from=2026-01&to=2026-09",
             "/api/product-merges/", "/api/product-classifications/", "/api/product-classifications/status/",
             "/api/product-classifications/runs/", "/api/budget/limits/", "/api/dashboard/",
-            "/api/dashboard/?month=2026-06",
+            "/api/dashboard/?month=2026-06", "/api/export/",
+            "/api/export/?include=receipts,lines,media,stores,summary",
         ]
         paths += [f"/api/categories/{pk}/" for pk in Category.objects.values_list("pk", flat=True)]
+        months = sorted({day.strftime("%Y-%m") for day in Receipt.objects.values_list("purchased_on", flat=True)})
+        paths += [f"/api/stats/category-spends/?category={pk}&month={month}"
+                  for pk in Category.objects.values_list("pk", flat=True) for month in months or ["2026-06"]]
         for pk in GenericProduct.objects.values_list("pk", flat=True):
             paths += [f"/api/generic-products/{pk}/", f"/api/generic-products/{pk}/comparison/"]
         for pk in visible(Product.objects.order_by("pk")).values_list("pk", flat=True):

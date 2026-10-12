@@ -8,7 +8,8 @@ import { productsParams } from './catalog-state'
 import { useCatalogRequest } from './use-catalog-request'
 import CatalogError from './CatalogError'
 import CatalogSearch from './CatalogSearch'
-import { CategoryBreadcrumbs, CategoryLinks } from './CategoryLinks'
+import { CategoryBreadcrumbs, CategoryChips, CategoryLinks } from './CategoryLinks'
+import { useNarrow } from '../../lib/cards'
 import ProductsSection from './ProductsSection'
 import './Catalog.css'
 
@@ -21,6 +22,7 @@ export function CategoryPage({ categoryId, query }: CategoryPageProps) {
   const products = useCatalogRequest(loadProducts)
   const categoryBlock = useLocalRequestFocus(category.state)
   const node = category.state.kind === 'ok' ? category.state.data : undefined
+  const narrow = useNarrow()
   return <div className="ck-catalog">
     {node && <CategoryBreadcrumbs path={node.path} />}
     <section ref={categoryBlock} className="ck-catalog-category" aria-labelledby="ck-catalog-category-heading" aria-busy={category.state.kind === 'loading'}>
@@ -32,7 +34,8 @@ export function CategoryPage({ categoryId, query }: CategoryPageProps) {
     {node && <>
       {node.children.length > 0 && <section aria-labelledby="ck-catalog-subcategories-heading">
         <h2 id="ck-catalog-subcategories-heading">Подкатегории</h2>
-        <div className="ck-catalog-panel"><CategoryLinks categories={node.children} /></div>
+        {narrow ? <CategoryChips categories={node.children} label="Подкатегории" />
+          : <div className="ck-catalog-panel"><CategoryLinks categories={node.children} /></div>}
       </section>}
       <CatalogSearch route={route} generics={node.generic_products} error={products.state.kind === 'error' ? products.state : undefined} />
       <ProductsSection state={products.state} route={route} onRetry={products.retry} childrenCount={node.children.length} />

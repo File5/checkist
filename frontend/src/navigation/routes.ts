@@ -5,6 +5,8 @@ import { mergeStatuses } from '../api/product-merges-types'
 import type { MergeStatus } from '../api/product-merges-types'
 import { classificationStatuses } from '../api/product-classifications-types'
 import type { ClassificationStatus } from '../api/product-classifications-types'
+import { exportHref, parseExportQuery } from '../features/export/export-query'
+import type { ExportQuery } from '../features/export/export-query'
 
 export interface CatalogQuery {
   q?: string
@@ -139,6 +141,8 @@ export type NavigableRoute = CatalogRoute
   | { kind: 'dashboard'; month?: string }
   /** Monthly limits of top-level categories. */
   | { kind: 'limits' }
+  /** What the money of a category went on in a month (from a row of «Главная»); no `month` — the server's current one. */
+  | { kind: 'category-spends'; categoryId: number; month?: string }
   | { kind: 'product'; productId: number; query: ProductQuery }
   | { kind: 'spending'; query: SpendingQuery }
   | { kind: 'receipts-stats'; query: ReceiptsStatsQuery }
@@ -159,6 +163,8 @@ export type NavigableRoute = CatalogRoute
   | { kind: 'login' }
   /** «Аккаунт»: password change and sign-out. The shell answers «not found» for it in local_single. */
   | { kind: 'account' }
+  /** «Выгрузка»: the family's data as one JSON document; the filters live in the address. */
+  | { kind: 'export'; query: ExportQuery }
 
 export type Route = NavigableRoute
   | { kind: 'not-found'; path: string }
@@ -518,6 +524,10 @@ export function buildRoute(route: NavigableRoute): string {
       return month ? `/?month=${month}` : '/'
     }
     case 'limits': return '/budget/limits'
+    case 'category-spends': {
+      const month = parseMonthParam(route.month)
+      return `/spends/category/${buildId(route.categoryId)}${month ? `?month=${month}` : ''}`
+    }
     case 'catalog': return `/catalog${buildCatalogQuery(route.query)}`
     case 'category': return `/catalog/categories/${buildId(route.categoryId)}${buildCatalogQuery(route.query)}`
     case 'product': return `/catalog/products/${buildId(route.productId)}${buildProductQuery(route.query)}`
@@ -537,6 +547,7 @@ export function buildRoute(route: NavigableRoute): string {
     case 'classification': return `/catalog/classification${buildClassificationQuery(route.query)}`
     case 'login': return '/login'
     case 'account': return '/account'
+    case 'export': return exportHref(route.query)
   }
 }
 
@@ -556,6 +567,15 @@ export function parseRoute(input: string | URL): Route {
     return month ? { kind: 'dashboard', month } : { kind: 'dashboard' }
   }
   if (normalizedPath === '/budget/limits') return { kind: 'limits' }
+  const spends = /^\/spends\/category\/([^/]+)$/.exec(normalizedPath)
+  if (spends) {
+    let id: number | undefined
+    try { id = positiveInteger(decodeURIComponent(spends[1])) } catch { /* Invalid path encoding. */ }
+    if (id === undefined) return { kind: 'not-found', path }
+    // Like the dashboard: a wrong month is dropped and the current one opens.
+    const month = parseMonthParam(url.searchParams.getAll('month').at(-1))
+    return month ? { kind: 'category-spends', categoryId: id, month } : { kind: 'category-spends', categoryId: id }
+  }
   if (normalizedPath === '/login') return { kind: 'login' }
   if (normalizedPath === '/receipts/upload') return { kind: 'upload' }
   if (normalizedPath === '/receipts/new') return { kind: 'expense-new' }
@@ -566,6 +586,8 @@ export function parseRoute(input: string | URL): Route {
     return id === undefined ? { kind: 'not-found', path } : { kind: 'expense-edit', receiptId: id }
   }
   if (normalizedPath === '/account') return { kind: 'account' }
+  // Like statistics, the export never answers with invalid-query: a wrong value is dropped.
+  if (normalizedPath === '/export') return { kind: 'export', query: parseExportQuery(url.searchParams) }
   // Statistics never answer with invalid-query: a wrong value is dropped and the screen opens without it.
   if (normalizedPath === '/stats') return { kind: 'spending', query: parseSpendingQuery(url.searchParams).query }
   if (normalizedPath === '/stats/receipts') return { kind: 'receipts-stats', query: parseReceiptsStatsQuery(url.searchParams).query }

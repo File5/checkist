@@ -76,3 +76,35 @@
 .ck-review-refusal:empty { display: block; padding: 0; border: 0; margin-top: -16px; }
 .ck-rec button[aria-disabled="true"], .ck-rec button[aria-disabled="true"]:hover { background: var(--ck-disabled-bg); border-color: var(--ck-disabled-border); color: var(--ck-disabled-text); cursor: default; }
 .ck-review [tabindex="-1"]:focus-visible, .ck-rec-result:focus-visible { outline: 3px solid var(--ck-focus); outline-offset: 4px; }
+
+/* ---- Phone view (docs/frontend.md, «Мобильный дизайн: распознавание и каталог»). The markup below is drawn only on a
+   phone (useNarrow), so these rules need no width condition of their own. ---- */
+/* A row of the jobs list: the miniature of the photo, the job and its photo, the status pill and the date. */
+.ck-rec-job-head { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.ck-rec-job-title { display: grid; gap: 2px; min-width: 0; }
+.ck-rec-job-title p { margin: 0; color: var(--ck-text-muted); }
+.ck-rec-thumb { flex: none; width: 64px; height: 64px; overflow: hidden; border-radius: var(--ck-radius-sm); background: var(--ck-neutral-bg); }
+.ck-rec-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.ck-rec-summary-compact { gap: 8px; }
+.ck-rec-summary-compact p { margin: 0; }
+.ck-rec-pill { justify-self: start; padding: 6px 14px; border-radius: var(--ck-radius-pill); }
+.ck-rec-more summary { min-height: 44px; padding-block: 10px; cursor: pointer; font-weight: 600; color: var(--ck-link); }
+.ck-rec-more > * + * { margin-top: 12px; }
+
+/* The crop being checked, pinned at the top of its card while the form scrolls under it. Pinch-zoom is the browser's. */
+.ck-rec-crop-pin { position: sticky; top: 0; z-index: var(--ck-z-action-bar); display: grid; gap: 8px; min-width: 0; padding-block: 8px; border-bottom: 1px solid var(--ck-divider); background: var(--ck-surface); }
+.ck-rec .ck-rec-crop-toggle { justify-self: end; }
+.ck-rec-crop-image[hidden] { display: none; }
+.ck-rec-crop-image .ck-rec-image { min-height: 0; }
+.ck-rec-crop-image .ck-rec-image img { height: auto; max-height: 38vh; touch-action: pan-x pan-y pinch-zoom; }
+
+/* The correction form as line cards: «name ……… amount», the main fields, «Подробнее» with the rest. */
+.ck-review-line { min-width: 0; }
+.ck-review-line-sum { font-weight: 600; }
+.ck-review-line-more summary { min-height: 44px; padding-block: 10px; cursor: pointer; font-weight: 600; color: var(--ck-link); }
+.ck-review-line-more > .ck-review-grid { padding-top: 8px; }
+.ck-review-field input[inputmode="decimal"] { font-family: var(--ck-font-figures); font-variant-numeric: tabular-nums; }
+/* The lines with problems, linked to their cards, at the top of the form. */
+.ck-review-jumps { display: grid; gap: 8px; min-width: 0; padding: 14px; border: 1px solid var(--ck-error-border); border-radius: var(--ck-radius-sm); background: var(--ck-error-bg); color: var(--ck-error-text); }
+.ck-rec .ck-review-jumps ul { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.ck-review-jumps a { display: inline-block; min-height: 44px; padding-block: 10px; color: var(--ck-error-text); font-weight: 600; text-underline-offset: 3px; }

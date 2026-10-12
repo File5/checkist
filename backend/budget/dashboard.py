@@ -7,11 +7,12 @@
 строки без товара — своя ``ReceiptLine.category``, потомки сворачиваются в корень.
 Строки без категории, услуги и залоги в категории не попадают, но входят в «потрачено».
 
-Лимит можно задать категории любого уровня. Под корнем в ``children`` идут только
-подкатегории с лимитом и их предки (чтобы карточка оставалась короткой); их «потрачено» —
-свои строки и строки всех потомков, тем же расчётом ``receipts.spending`` с фильтром
-категории. В ``limit_total`` входят лимиты, у которых нет лимита у предка в той же валюте:
-вложенный лимит — часть лимита родителя, а не добавка к нему.
+Лимит можно задать категории любого уровня. Под корнем в ``children`` идут подкатегории
+с тратами месяца, подкатегории с лимитом и их предки (2026-10-12: прежде — только с
+лимитом; клиент открывает по строке траты категории); их «потрачено» — свои строки и
+строки всех потомков, тем же расчётом ``receipts.spending`` с фильтром категории. В ``limit_total`` входят лимиты, у которых нет лимита у предка в той же валюте:
+вложенный лимит — часть лимита родителя, а не добавка к нему. ``limited_spent`` — траты
+этих же категорий (с потомками): общий лимит сравнивается с ним, а не со всеми тратами.
 """
 import calendar
 from dataclasses import dataclass, field
@@ -78,6 +79,9 @@ class CurrencyBlock:
     spent: Decimal = _ZERO
     previous_spent: Decimal = _ZERO
     limit_total: Decimal | None = None
+    # Потрачено в категориях, которые входят в ``limit_total`` (каждая — с потомками): общий
+    # лимит сравнивается с этим, а не со всеми тратами месяца.
+    limited_spent: Decimal | None = None
     categories: list = field(default_factory=list)
 
 
@@ -148,6 +152,12 @@ def currency_blocks(receipts, limits, month, tree, product_ref=None):
         by_category[key] = row
         return row
 
+    # Every sub-category with spends of the month gets its row under its root, so the card answers «на что»:
+    # a tap on the row opens the spends of that category (the client).
+    for currency, category_id in sorted(spending.spent_categories(data)):
+        if category_id in tree and tree.depth(category_id) > 0:
+            row_of(currency, tree.path_ids(category_id))
+
     for limit in limits:
         target = blocks.setdefault(limit.currency_id, CurrencyBlock(limit.currency_id))
         if limit.category_id in tree:
@@ -162,6 +172,7 @@ def currency_blocks(receipts, limits, month, tree, product_ref=None):
                 target.categories.append(row)
         if not any((limit.currency_id, ancestor) in limited for ancestor in path[:-1]):
             target.limit_total = (target.limit_total or _ZERO) + limit.amount
+            target.limited_spent = (target.limited_spent or _ZERO) + row.spent
         row.limit, row.limit_id = limit.amount, limit.pk
     result = []
     for currency in sorted(blocks):
