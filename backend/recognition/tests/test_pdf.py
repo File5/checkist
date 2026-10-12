@@ -12,7 +12,7 @@ from django.test import SimpleTestCase, TransactionTestCase, override_settings, 
 from PIL import Image
 
 from receipts.ownership import local_user
-from recognition import queue
+from recognition import pdf, queue
 from recognition.images import ImageError
 from recognition.models import ReceiptImage, SourcePhoto
 from recognition.pdf import PDF_MAX_PAGES, is_pdf, render_pdf
@@ -108,6 +108,8 @@ class RenderPdfTests(SimpleTestCase):
         command, options = run.call_args.args[0], run.call_args.kwargs
         self.assertEqual(command[1], "-I")
         self.assertEqual(options["timeout"], 30)
+        # Memory and CPU ceilings are set in the child before PDFium starts.
+        self.assertIs(options["preexec_fn"], pdf._limit_child)
 
     def test_is_pdf_reads_the_bytes(self):
         cases = {b"%PDF-1.7\n": True, b"\n\n%PDF-1.4": True, b"\x89PNG\r\n\x1a\n%PDF-": False,

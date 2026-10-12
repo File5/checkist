@@ -20,10 +20,24 @@ PDF_MAX_PAGES = 3
 # RECEIPT_IMAGE_MAX_PIXELS together.
 PDF_RENDER_DPI = 200
 PDF_RENDER_TIMEOUT_SECONDS = 30
+# A hostile PDF may unpack huge embedded images inside PDFium whatever the output size: the child
+# gets its own memory and CPU ceiling, so it dies instead of the web container. 1 GiB holds a
+# 3-page bill at 200 DPI with room to spare.
+PDF_RENDER_MEMORY_BYTES = 1024 * 1024 * 1024
 PDF_CONTENT_TYPE = "application/pdf"
 RENDER_SCRIPT = Path(__file__).with_name("pdf_render.py")
 _IMAGE_MAGIC = (b"\xff\xd8", b"\x89PNG\r\n\x1a\n", b"RIFF")
 _CODES = {"pdf_encrypted", "pdf_too_many_pages", "invalid_pdf", "image_too_large"}
+
+
+def _limit_child():
+    """preexec_fn of the renderer: memory and CPU limits where the OS supports them (Linux in the image)."""
+    try:
+        import resource
+        resource.setrlimit(resource.RLIMIT_AS, (PDF_RENDER_MEMORY_BYTES, PDF_RENDER_MEMORY_BYTES))
+        resource.setrlimit(resource.RLIMIT_CPU, (PDF_RENDER_TIMEOUT_SECONDS, PDF_RENDER_TIMEOUT_SECONDS))
+    except (ImportError, OSError, ValueError):
+        pass  # ponytail: macOS refuses RLIMIT_AS; the timeout still holds there
 
 
 @dataclass(frozen=True)
@@ -56,7 +70,8 @@ def render_pdf(source, directory):
         str(PDF_MAX_PAGES), str(PDF_RENDER_DPI),
     ]
     try:
-        completed = subprocess.run(command, capture_output=True, timeout=PDF_RENDER_TIMEOUT_SECONDS, check=False, stdin=subprocess.DEVNULL)
+        completed = subprocess.run(command, capture_output=True, timeout=PDF_RENDER_TIMEOUT_SECONDS, check=False, stdin=subprocess.DEVNULL,
+            preexec_fn=_limit_child)
     except subprocess.TimeoutExpired:
         raise ImageError("invalid_pdf") from None
     try:
