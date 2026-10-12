@@ -36,7 +36,7 @@ describe('«Главная» and «Лимиты» styles (text of the rules, not
     }
     expect(body('.dash-cat-0')).toContain('--dash-cat: var(--ck-text-muted)')
   })
-  it.each(['.dash-total', '.dash-value', '.dash-limit-value', '.dash-recent-amount', '.limits-current', '.dash-month-title', '.dash-action', '.dash-chip', '.limits-input-currency'])(
+  it.each(['.dash-total', '.dash-value', '.dash-limit-value', '.dash-recent-amount', '.limits-current', '.dash-month-title', '.dash-action', '.dash-chip', '.limits-input-currency', '.dash-sub-count', '.dash-sub-hint'])(
     'keeps the value %s on one line', (selector) => {
       expect(body(selector)).toContain('white-space: nowrap')
     })
@@ -44,6 +44,7 @@ describe('«Главная» and «Лимиты» styles (text of the rules, not
     expect(body('.dash-month-step')).toContain('width: 48px; height: 48px;')
     expect(body('.dash-link')).toContain('min-height: 44px')
     expect(body('.dash-chip')).toContain('min-height: 44px')
+    expect(body('.dash-sub-toggle')).toContain('min-height: 44px')
     expect(body('.dash-action')).toContain('min-height: 52px')
     expect(body('.dash-empty-action')).toContain('min-height: 52px')
     expect(body('.limits-save')).toContain('min-height: 52px')

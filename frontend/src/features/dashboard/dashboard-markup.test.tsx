@@ -85,15 +85,45 @@ describe('«Главная» markup (Vitest/SSR, not browser visual acceptance)'
     const html = view({ ...data, currencies: [{ ...data.currencies[0], categories: [home, ...data.currencies[0].categories] }] })
     const row = between(html, 'dash-cat-4', 'dash-cat-3')
     // The top-level row without its own limit: what was spent, no bar.
-    expect(row).toContain(`<span class="dash-limit-name">Жильё</span><span class="dash-limit-value ck-figures">${nb('250 000 KZT')}</span></a><ul class="dash-sublimit-list" aria-label="Жильё: подкатегории">`)
+    expect(row).toContain(`<span class="dash-limit-name">Жильё</span><span class="dash-limit-value ck-figures">${nb('250 000 KZT')}</span></a><button type="button" class="dash-sub-toggle" aria-expanded="true" aria-controls="dash-sub-KZT-10">`)
+    // Open by itself: «Электричество» two levels down is over its limit; the list is not hidden.
+    expect(row).toContain('<ul class="dash-sublimit-list" id="dash-sub-KZT-10" aria-label="Жильё: подкатегории"><li')
     expect(row).not.toContain('aria-label="Жильё: потрачено')
     expect(row).toContain(`<li class="dash-sublimit"><a class="dash-limit-head dash-limit-link" href="/spends/category/17?month=2026-10"><span class="dash-sublimit-name">Аренда</span><span class="dash-limit-value dash-sublimit-value ck-figures">${nb('200 000')} / ${nb('200 000 KZT')}</span></a><div class="dash-bar dash-bar-small" role="progressbar" aria-label="Аренда: потрачено 100% лимита"`)
     // An ancestor of a limited one: its spends, no bar, its own nested list.
-    expect(row).toContain(`<span class="dash-sublimit-name">Коммунальные услуги</span><span class="dash-limit-value dash-sublimit-value ck-figures">${nb('50 000 KZT')}</span></a><ul class="dash-sublimit-list" aria-label="Коммунальные услуги: подкатегории">`)
+    expect(row).toContain(`<span class="dash-sublimit-name">Коммунальные услуги</span><span class="dash-limit-value dash-sublimit-value ck-figures">${nb('50 000 KZT')}</span></a><button type="button" class="dash-sub-toggle" aria-expanded="true" aria-controls="dash-sub-KZT-21">`)
     expect(row).toContain('<div class="dash-bar dash-bar-small dash-bar-over" role="progressbar" aria-label="Электричество: потрачено 100% лимита"')
     expect(row).toContain(`<p class="dash-over dash-sublimit-over">Сверх лимита на <span class="dash-value">${nb('3 000 KZT')}</span></p>`)
     // An older server sends no `children`: the row is as before.
     expect(between(view(), 'dash-cat-3', '</li>')).not.toContain('dash-sublimit')
+  })
+  it('folds the sub-categories by default: top-level rows only, a button with the count beside the row link', () => {
+    const data = dashboardFixture()
+    const rent = { category_id: 17, name: 'Аренда', spent: '220000.00', limit: '220000.00', limit_id: 31, children: [] }
+    const plain = (category_id: number, name: string) => ({ category_id, name, spent: '1000.00', limit: null, limit_id: null, children: [] })
+    const home = { category_id: 10, name: 'Жильё', spent: '251692.00', limit: '260000.00', limit_id: 30, children: [
+      rent, plain(18, 'Коммунальные услуги'), plain(19, 'Электричество'), plain(20, 'Интернет'), plain(23, 'Вода'), plain(24, 'Вывоз мусора'),
+    ] }
+    const render = (expanded?: Record<string, boolean>, row = home) => between(
+      renderToStaticMarkup(<DashboardView data={{ ...data, currencies: [{ ...data.currencies[0], categories: [row, ...data.currencies[0].categories] }] }} today="2026-10" expanded={expanded} />),
+      'dash-cat-4', 'dash-cat-3')
+    const row = render()
+    // The row link still opens «Траты категории»; the button is a sibling after it, never inside it.
+    expect(row).toContain('<a class="dash-limit-head dash-limit-link" href="/spends/category/10?month=2026-10">')
+    expect(row).toContain(`</div><button type="button" class="dash-sub-toggle" aria-expanded="false" aria-controls="dash-sub-KZT-10"><span class="dash-sub-chevron" aria-hidden="true">▸</span><span class="dash-sub-text"><span class="dash-visually-hidden">Жильё: </span><span class="dash-sub-count">${nb('6 подкатегорий')}</span><span class="dash-sub-hint ck-figures">Аренда ${nb('220 000')} / ${nb('220 000')}</span></span></button>`)
+    expect(row).toContain('<ul class="dash-sublimit-list" id="dash-sub-KZT-10" aria-label="Жильё: подкатегории" hidden="">')
+    expect(row.match(/<a /g)).toHaveLength(7)
+    // Opened by the person (or from this browser): the same list, shown, no hint.
+    const open = render({ 10: true })
+    expect(open).toContain('aria-expanded="true" aria-controls="dash-sub-KZT-10"')
+    expect(open).toContain('<ul class="dash-sublimit-list" id="dash-sub-KZT-10" aria-label="Жильё: подкатегории"><li')
+    expect(open).not.toContain('dash-sub-hint')
+    // Two limits do not fit one line: only the count.
+    const two = render(undefined, { ...home, children: [rent, { ...plain(23, 'Вода'), limit: '5000.00', limit_id: 33 }] })
+    expect(two).toContain(`<span class="dash-sub-count">${nb('2 подкатегории')}</span></span></button>`)
+    expect(two).not.toContain('dash-sub-hint')
+    // A row without sub-categories has no button.
+    expect(between(view(), 'dash-cat-3', '</li>')).not.toContain('dash-sub-toggle')
   })
   it('shows the names of the family and of who added a spend, the usernames without them', () => {
     const data = { ...dashboardFixture(), people: [{ username: 'andrey', display_name: 'Андрей' }, { username: 'liza', display_name: 'Лиза' }] }
