@@ -8,7 +8,8 @@ import { productsParams } from './catalog-state'
 import { useCatalogRequest } from './use-catalog-request'
 import CatalogError from './CatalogError'
 import CatalogSearch from './CatalogSearch'
-import { CategoryLinks } from './CategoryLinks'
+import { CategoryChips, CategoryLinks } from './CategoryLinks'
+import { useNarrow } from '../../lib/cards'
 import ProductsSection from './ProductsSection'
 import './Catalog.css'
 
@@ -20,6 +21,7 @@ export function CatalogPage({ query }: CatalogPageProps) {
   const categories = useCatalogRequest(loadCategories)
   const products = useCatalogRequest(loadProducts)
   const categoriesBlock = useLocalRequestFocus(categories.state)
+  const narrow = useNarrow()
   return <div className="ck-catalog">
     <CatalogSearch route={route} error={products.state.kind === 'error' ? products.state : undefined} />
     <section ref={categoriesBlock} aria-labelledby="ck-catalog-categories-heading" aria-busy={categories.state.kind === 'loading'}>
@@ -28,7 +30,8 @@ export function CatalogPage({ query }: CatalogPageProps) {
       {categories.state.kind === 'error' && <CatalogError error={categories.state} route={route} onRetry={categories.retry} />}
       {categories.state.kind === 'ok' && (categories.state.data.results.length === 0
         ? <RequestState kind="empty" message="Категорий пока нет." />
-        : <div className="ck-catalog-panel"><CategoryLinks categories={categories.state.data.results} /></div>)}
+        : narrow ? <CategoryChips categories={categories.state.data.results} label="Категории" />
+          : <div className="ck-catalog-panel"><CategoryLinks categories={categories.state.data.results} /></div>)}
     </section>
     <ProductsSection state={products.state} route={route} onRetry={products.retry} />
   </div>
