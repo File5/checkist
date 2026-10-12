@@ -268,6 +268,15 @@ describe('theme contract in the files', () => {
     expect(html.indexOf('<script>')).toBeLessThan(html.indexOf('<script type="module"'))
   })
 
+  it('paints the installed app and the tab icon in the red/gold palette', () => {
+    // The splash and the bar of an installed app take the dark page colour; the icon background is the red brand.
+    const manifest = JSON.parse(read('../../public/manifest.json')) as { theme_color: string; background_color: string }
+    expect(manifest.theme_color.toLowerCase()).toBe(themeColors.dark)
+    expect(manifest.background_color.toLowerCase()).toBe(themeColors.dark)
+    expect(read('../../public/favicon.svg')).toContain('fill="#B01212"')
+    expect(read('../../brand/app-icon.svg')).toContain('<rect width="512" height="512" fill="#B01212"/>')
+  })
+
   it('loads Manrope from Google Fonts with display=swap and no font file of its own', () => {
     // No Content-Security-Policy of the project forbids Google Fonts (deploy/Caddyfile, deploy/docker/Caddyfile).
     expect(html).toContain('<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />')
@@ -296,7 +305,7 @@ describe('theme contract in the files', () => {
     expect(order.every((value, index) => index === 0 || value > order[index - 1])).toBe(true)
   })
 
-  it('defines the shared tokens of the family budget in both themes, the dark accent with dark text on it', () => {
+  it('defines the shared tokens of the family budget in both themes, the gold accent with dark text on it', () => {
     const contract = [
       ...Array.from({ length: 6 }, (_, index) => [`--ck-cat-${index + 1}`, `--ck-cat-${index + 1}-tint`]).flat(),
       '--ck-over-text', '--ck-over-bar', '--ck-track', '--ck-on-accent',
@@ -306,11 +315,16 @@ describe('theme contract in the files', () => {
       expect(names(light), name).toContain(name)
     }
     expect(tokens.match(/\/\* family-budget tokens \*\//g)).toHaveLength(2)
-    expect(dark).toContain('--ck-accent: #3db8a8;')
-    expect(dark).toContain('--ck-on-accent: #06201d;')
-    expect(dark).toContain('--ck-on-brand: #06201d;')
-    expect(light).toContain('--ck-accent: #0e6b63;')
-    expect(light).toContain('--ck-on-accent: #ffffff;')
+    // Red/gold palette (back 2026-10-12): the red brand under white text, the gold accent under dark text, in both themes.
+    for (const theme of [dark, light]) {
+      expect(theme).toContain('--ck-brand: #b01212;')
+      expect(theme).toContain('--ck-on-brand: #ffffff;')
+      expect(theme).toContain('--ck-accent: #f0c24b;')
+      expect(theme).toContain('--ck-on-accent: #2a1b16;')
+      // The header bar is dark in both themes, with the red line under it.
+      expect(theme).toContain('--ck-header-bg: #1a0c0a;')
+      expect(theme).toContain('--ck-header-border: #b01212;')
+    }
     // No card shadow in the dark theme: the colour of the shadow is transparent there.
     expect(dark).toContain('--ck-panel-shadow: #00000000;')
   })
