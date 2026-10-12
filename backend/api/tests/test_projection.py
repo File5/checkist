@@ -521,6 +521,9 @@ class NoForeignReceiptIdTests(ProjectionMixin, TestCase):
             "/api/dashboard/?month=2026-06",
         ]
         paths += [f"/api/categories/{pk}/" for pk in Category.objects.values_list("pk", flat=True)]
+        months = sorted({day.strftime("%Y-%m") for day in Receipt.objects.values_list("purchased_on", flat=True)})
+        paths += [f"/api/stats/category-spends/?category={pk}&month={month}"
+                  for pk in Category.objects.values_list("pk", flat=True) for month in months or ["2026-06"]]
         for pk in GenericProduct.objects.values_list("pk", flat=True):
             paths += [f"/api/generic-products/{pk}/", f"/api/generic-products/{pk}/comparison/"]
         for pk in visible(Product.objects.order_by("pk")).values_list("pk", flat=True):
