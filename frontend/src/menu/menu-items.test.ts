@@ -33,12 +33,12 @@ describe('items of the main menu and their split for the bottom bar of a phone',
     expect(menu.add).toBe(false)
   })
 
-  it('local_single: «Главная · Траты · ＋ · Статистика» in the bar, the catalog, «Обработка» and the health page behind «Ещё»', () => {
+  it('local_single: «Главная · Траты · ＋ · Статистика» in the bar, the catalog, «Обработка», «Выгрузка» and the health page behind «Ещё»', () => {
     const menu = menuItems(local, catalog)
     expect(menu.primary.map((item) => [item.label, item.to])).toEqual([['Главная', '/'], ['Траты', '/receipts'], ['Статистика', '/stats']])
     expect(menu.add).toBe(true)
     expect(ADD_AFTER).toBe(2)
-    expect(menu.more.map((item) => [item.label, item.to])).toEqual([['Каталог', '/catalog'], ['Обработка', '/recognition/jobs'], ['Состояние сервисов', '/health']])
+    expect(menu.more.map((item) => [item.label, item.to])).toEqual([['Каталог', '/catalog'], ['Обработка', '/recognition/jobs'], ['Выгрузка', '/export'], ['Состояние сервисов', '/health']])
     expect([...menu.primary, ...menu.more].some((item) => item.account)).toBe(false)
   })
 
@@ -46,8 +46,8 @@ describe('items of the main menu and their split for the bottom bar of a phone',
     const menu = menuItems(reader, catalog)
     expect(labels(menu.primary)).toEqual(['Главная', 'Траты', 'Статистика'])
     expect(menu.add).toBe(true)
-    expect(labels(menu.more)).toEqual(['Каталог', 'Обработка', 'Состояние сервисов', 'synthetic-reader'])
-    expect(menu.more[3]).toEqual({ key: 'account', to: '/account', label: 'synthetic-reader', current: false, account: true })
+    expect(labels(menu.more)).toEqual(['Каталог', 'Обработка', 'Выгрузка', 'Состояние сервисов', 'synthetic-reader'])
+    expect(menu.more[4]).toEqual({ key: 'account', to: '/account', label: 'synthetic-reader', current: false, account: true })
   })
 
   it('never puts more into the bar than it holds, and keeps «Ещё» for at least two links', () => {
@@ -66,7 +66,7 @@ describe('items of the main menu and their split for the bottom bar of a phone',
     [{ kind: 'receipts', query: { page: 1 } }, 'receipts'], [{ kind: 'upload' }, 'receipts'], [{ kind: 'receipt', receiptId: 7 }, 'receipts'],
     [{ kind: 'spending', query: {} }, 'stats'], [{ kind: 'receipts-stats', query: {} }, 'stats'], [{ kind: 'trends', query: {} }, 'stats'],
     [{ kind: 'jobs', query: { page: 1 } }, 'jobs'], [{ kind: 'job', jobId: 9 }, 'jobs'],
-    [health, 'health'], [{ kind: 'account' }, 'account'],
+    [health, 'health'], [{ kind: 'account' }, 'account'], [{ kind: 'export', query: {} }, 'export'],
   ])('marks one current item at %j', (route, key) => {
     expect(current(reader, route)).toEqual([key])
   })

@@ -447,7 +447,7 @@ SKIPPED_ROUTES = {
     "budget-limit": "лимит семьи или пользователя; id чеков в нём нет",
     **dict.fromkeys(
         ("api-not-found", "recognition-not-found", "receipts-not-found", "product-merges-not-found",
-         "product-classifications-not-found", "stats-not-found", "budget-not-found"),
+         "product-classifications-not-found", "stats-not-found", "budget-not-found", "export-not-found"),
         "ответ 404 без данных",
     ),
     **dict.fromkeys(
@@ -518,7 +518,8 @@ class NoForeignReceiptIdTests(ProjectionMixin, TestCase):
             "/api/stats/trends/monthly/", "/api/stats/trends/category/", "/api/stats/trends/prices/", "/api/stats/trends/limits/",
             "/api/product-merges/", "/api/product-classifications/", "/api/product-classifications/status/",
             "/api/product-classifications/runs/", "/api/budget/limits/", "/api/dashboard/",
-            "/api/dashboard/?month=2026-06",
+            "/api/dashboard/?month=2026-06", "/api/export/",
+            "/api/export/?include=receipts,lines,media,stores,summary",
         ]
         paths += [f"/api/categories/{pk}/" for pk in Category.objects.values_list("pk", flat=True)]
         for pk in GenericProduct.objects.values_list("pk", flat=True):

@@ -1794,6 +1794,62 @@ Line несёт ещё `category` (`{"id","name"}` либо `null`, после `
 - `recent` — последние 10 чеков и трат по `purchased_at` (затем `-id`) за всё время, не только за месяц. `title` — вывеска магазина; без магазина — комментарий траты, иначе `category_name`, иначе `Без места`. `category_name` — корень с наибольшей суммой строк чека либо `null`. `owner` — логин того, кто добавил, `owner_name` — его имя для показа; `lines_count` — все строки чека.
 - Число запросов не зависит от объёма данных. Слитые товары относятся к оставляемому, как в статистике.
 
+## Реализовано: выгрузка в JSON (2026-10-12)
+
+### `GET /api/export/`
+
+Все данные семьи одним документом JSON (`Content-Type: application/json`, с отступом в 2 пробела, `Cache-Control: no-store`). С `?download=1` — вложение `Content-Disposition: attachment; filename="checkist-export-<from>-<to>.json"` (без `from` — `all`, без `to` — дата выгрузки в поясе сервера). Доступ и CSRF — как у `/api/receipts/` (`LocalOrSignedIn`; без входа в `accounts` — `401 not_authenticated`); запись — `405`. Видимость — `owner_q`: чеки пользователя и его семьи; посторонний не видит ничего из чужой семьи, а лимиты — по `budget.access.limits_q`. Код — `backend/api/export.py`, вью — `backend/api/views/export.py`, тесты — `backend/api/tests/test_export.py`, пример документа — `backend/api/tests/fixtures/export/example.json` (форму сверяет `ExportFixtureTests`).
+
+**Фильтры** (все необязательны и складываются по И; списки — повтором параметра `?x=1&x=2` либо через запятую, не больше 50 значений, повторы убираются):
+
+| Параметр | Значение |
+| --- | --- |
+| `from`, `to` | локальная дата чека `purchased_on`, обе включительно; `from > to` — ошибка `from` |
+| `category` | id категорий; с потомками. Чек попадает, если хоть одна его строка в такой категории (категория строки — категория обобщённого продукта товара, поглощённый слиянием товар заменён оставляемым; у строки без товара — `ReceiptLine.category`). Неизвестный id — ошибка |
+| `source` | `photo` (чек с фото), `manual` (ручная трата, не выписка), `statement` (выписка — см. ниже) |
+| `owner` | логины людей семьи (`people`); чужой либо неизвестный логин — ошибка `Такого человека нет в семье.` |
+| `store` | id магазинов; неизвестный — ошибка |
+| `currency` | код валюты чека, регистр не важен |
+| `q` | 2–100 символов: вывеска или название магазина, комментарий, название строки на чеке или товара (как у списка «Траты») |
+| `min_total`, `max_total` | границы `Receipt.total` включительно: число, до двух знаков после точки или запятой, может быть отрицательным; `min_total > max_total` — ошибка `min_total` |
+| `include` | разделы через запятую: `receipts`, `lines`, `categories`, `stores`, `limits`, `summary`, `media`; по умолчанию все, кроме `media`. `lines` и `media` стоят внутри чеков — без `receipts` ошибка |
+| `download` | `1` — вложение, `0` — без заголовка |
+
+Неверные значения — один `400 invalid_parameter` со всеми полями в `fields`. **Выписки — эвристика:** отдельного признака у траты нет; выписка — ручная трата (`source = manual`), у которой последняя часть комментария после «·» начинается словом «Выписка» (`·\s*Выписка[^·]*$`, PostgreSQL regex, регистр важен): «Кофе · Выписка Kaspi 10.2026» — выписка, «Выписка · обед» и «Такси · Выписка Halyk · 12:30» — нет. Так подписывает траты импорт выписок; если подпись изменится, меняется `STATEMENT_NOTE_REGEX` в `api/export.py`.
+
+Чеков по фильтрам (с разделом `receipts`) больше 20 000 — `400 export_too_large`: `{"error": {"code": "export_too_large", "message": "Больше 20000 чеков: сузьте период или добавьте фильтры."}, "max_receipts": 20000}`. Раздел `summary` без `receipts` не ограничен — им клиент считает предпросмотр.
+
+**Документ** (полный пример — эталон выше):
+
+```json
+{"format": "checkist-export", "version": 1, "exported_at": "2026-10-12T09:15:00Z",
+ "filters": {"from": "2026-10-01", "to": "2026-10-31", "category": [], "source": [], "owner": [], "store": [],
+   "currency": null, "q": null, "min_total": null, "max_total": null,
+   "include": ["receipts", "lines", "categories", "stores", "limits", "summary"]},
+ "people": [{"username": "andrey", "display_name": "Андрей"}, {"username": "liza", "display_name": "Лиза"}],
+ "categories": [{"id": 3, "name": "Молочное", "parent_id": 1, "path": "Продукты / Молочное"}],
+ "stores": [{"id": 12, "name": "Magnum", "address": "г. Алматы, пр. Абая, 10", "city": "Алматы", "country": "KZ"}],
+ "receipts": [{"id": 501, "source": "photo", "operation": "sale", "purchased_on": "2026-10-03", "purchased_at": "2026-10-03T12:41:00Z",
+   "store_id": 12, "store_name": "Magnum", "currency": "KZT", "total": "1290.00", "discount_total": "0.00", "note": "",
+   "owner": "andrey", "owner_name": "Андрей", "created_at": "2026-10-03T13:02:11Z", "categories": ["Продукты / Молочное"],
+   "lines": [{"position": 1, "kind": "product", "name": "МОЛОКО 3,2% 1Л", "quantity": "2.000", "unit": "pcs", "unit_price": "645.0000",
+     "amount": "1290.00", "discount_amount": "0.00", "paid_amount": "1290.00", "category_id": 3, "category_path": "Продукты / Молочное",
+     "product_id": 44, "product_name": "Молоко 3,2% 1 л"}],
+   "media": {"display_url": "https://…/media/crops/…/preview-1600-v1.webp", "download_url": "https://…/media/originals/…/source.jpg?download=1"}}],
+ "limits": [{"category_id": 1, "category_path": "Продукты", "currency": "KZT", "amount": "150000.00"}],
+ "summary": {"receipts_count": 1, "lines_count": 1, "max_receipts": 20000, "currencies": [{"currency": "KZT", "receipts_count": 1,
+   "lines_count": 1, "total": "1290.00", "category_total": null,
+   "by_category": [{"category_id": 1, "name": "Продукты", "amount": "1290.00", "lines_count": 1}],
+   "by_month": [{"month": "2026-10", "receipts_count": 1, "total": "1290.00"}]}]}}
+```
+
+- `format` + `version` — версия формы документа; несовместимое изменение поднимет `version`. `filters` — нормализованные фильтры (`category`, `store` — как присланы, без потомков; деньги — двумя знаками). `people` — всегда, как в «Я».
+- Деньги — строки, точно как хранятся (2 знака), цена за единицу — 4, количество — 3; ничего не округляется сверх хранимого, валюты нигде не складываются.
+- `categories` — всё дерево каталога в порядке обхода (братья по имени), `path` — имена от корня через « / ». `stores` — только магазины выгруженных чеков, по id. `receipts` — по `purchased_at`, затем id. `source` — `photo` | `manual` | `statement` (эвристика выше). `store_id` / `store_name` — `null` у траты «Без места». `categories` чека — пути категорий его строк без повторов по алфавиту. `lines` — по позиции; `paid_amount = amount − discount_amount`; `product_id` / `product_name` — оставляемый товар после слияния либо `null`. `media` (только с `include=media`) — последняя вырезка чека: `display_url` — уменьшенная копия, `download_url` — то, что человек загрузил (PDF либо исходное фото), абсолютные адреса; у чека без фото — `null`.
+- `limits` — лимиты семьи (без семьи — свои); с `currency` — только этой валюты, с `category` — только лимиты выбранных категорий и их потомков.
+- `summary` — по валютам: `receipts_count`, `lines_count`, `total = Σ Receipt.total`; `by_category` — корни категорий строк, значение строки `amount − discount_amount` (расчёт `receipts.spending.collect`, как у статистики), строки без категории — `{"category_id": null, "name": "Без категории"}` последними; `category_total` — сумма строк выбранных категорий (с потомками), только с фильтром `category`, иначе `null`; `by_month` — месяцы `purchased_on` с числом чеков и суммой `total`. С фильтром `category` чеки выгружаются целиком (все строки), а `total` — их полные итоги.
+- Число запросов к БД не зависит от числа чеков, строк и фото (страж — `ExportQueryCountTests`).
+
 ## Планируется
 
 Вход через внешних провайдеров, регистрация и сброс пароля по почте, API ручного редактирования/сопоставления, клиент статистики (серверная часть — [выше](#реализовано-статистика-трат-походы-и-ряды-цен-серверная-часть)) и дашборд на главной, хранение курсов и production hosting не реализованы. Сквозное выполнение HTTP/worker/import с fake проверено С6; исторический реальный smoke С6 сохранил needs_review без автоимпорта. В И4 реальный Codex на single/double создал 2 Receipt, 6 строк и 5 товаров без дублей ([результаты](verification.md#фактические-результаты-и4)). Реальные фото и новый UI требуют [ручной приёмки](verification.md#ручная-приёмка-ocr-человеком); формы HTTP-слоя С5 не изменены.
