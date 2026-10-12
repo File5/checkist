@@ -152,3 +152,5 @@
 .receipt-line-chip[data-tone="6"] { background: var(--ck-cat-6-tint); }
 /* A form in a sheet of a phone needs no frame of its own: the sheet is its card. */
 .ck-sheet .receipt-panel { padding: 0; border: 0; }
+/* Its action bar rests at the bottom of the sheet, not above the navigation of the page. */
+.ck-sheet .ck-action-bar { bottom: 0; }

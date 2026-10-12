@@ -3,7 +3,7 @@ import { deleteManualSpend } from '../../api/receipts'
 import { Link, navigate } from '../../navigation'
 import { setReceiptsNotice } from '../receipts/delete-receipt'
 import { saveMessage } from './labels'
-import { Sheet } from '../receipts/_tmp-foundation' /* mobile-foundation: temporary, integrator removes */
+import Sheet from '../../components/Sheet'
 import './Expense.css'
 
 export type DeleteStep = { kind: 'idle' } | { kind: 'confirm' } | { kind: 'deleting' } | { kind: 'failed'; message: string }

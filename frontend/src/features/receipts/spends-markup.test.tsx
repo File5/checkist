@@ -74,7 +74,7 @@ describe('«Траты» on a phone (Vitest/SSR, not browser visual acceptance)'
 describe('family chips and the review banner', () => {
   it('links every chip to the list of its member, keeps the filters and marks the current one', () => {
     const html = renderToStaticMarkup(<OwnerChips chips={family} query={{ page: 2, q: 'MILCH', owner: 'liza' }} />)
-    expect(html).toContain('<div class="spends-chips"><div class="ck-chip-scroller" role="group" aria-label="Кто добавил"><ul>')
+    expect(html).toContain('<div class="spends-chips"><div class="ck-chip-scroller"><div class="ck-chip-scroller-track" role="region" aria-label="Кто добавил" tabindex="0"><ul>')
     expect(html.match(/<a [^>]*>[^<]*<\/a>/g)).toEqual([
       '<a class="spends-chip" href="/receipts?q=MILCH">Вся семья</a>',
       '<a class="spends-chip" href="/receipts?q=MILCH&amp;owner=andrey">Андрей</a>',
@@ -100,10 +100,10 @@ describe('family chips and the review banner', () => {
   it('hides the filters behind «Фильтры (N)» on a phone and keeps the form on a wide screen', () => {
     const query = { page: 1, q: 'MILCH', date_from: '2026-10-01', owner: 'liza' }
     const phone = renderToStaticMarkup(<ReceiptsView narrow query={query} state={{ kind: 'ok', data: page([]) }} retry={noop} chips={family} />)
-    expect(phone).toContain('<button type="button" class="ck-filters-button" aria-haspopup="dialog" aria-expanded="false">Фильтры (2)</button>')
+    expect(phone).toContain('<button type="button" class="ck-filters-toggle" aria-haspopup="dialog" aria-expanded="false">Фильтры (2)</button>')
     expect(phone).not.toContain('Применить фильтры')
     const wide = renderToStaticMarkup(<ReceiptsView query={query} state={{ kind: 'ok', data: page([]) }} retry={noop} chips={family} />)
-    expect(wide).not.toContain('ck-filters-button')
+    expect(wide).not.toContain('ck-filters-toggle')
     expect(wide).toContain('Применить фильтры')
   })
 })

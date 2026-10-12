@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { getReceipts } from '../../api/receipts'
 import type { Receipt, ReceiptListItem } from '../../api/receipts'
@@ -24,7 +24,7 @@ import { OwnerChips, SpendDays } from './SpendDays'
 import { localToday, ownerChips, reviewJobsQuery, reviewText } from './spends'
 import type { OwnerChip } from './spends'
 import { activeFilterCount, hasFilters, money, ownerShown, receiptParams, receiptPlace, recognizedText, recognizedValue } from './state'
-import { ResponsiveFilters } from './_tmp-foundation' /* mobile-foundation: temporary, integrator removes */
+import { ResponsiveFiltersView } from '../../components/ResponsiveFilters'
 import { ManualMark } from './ManualMark'
 import { useReceiptRequest } from './useReceiptRequest'
 import '../expense/Expense.css'
@@ -73,6 +73,8 @@ export function ReceiptsView({ query, state, retry, showOwner = false, narrow = 
   /** Shown once after a receipt or a spend was deleted. */
   notice?: string
 }) {
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const sheetId = useId()
   const recovery = state.kind === 'error' && state.reason === 'page_out_of_range'
     ? <Link className="action-link" to={{ kind: 'receipts', query: { ...query, page: 1 } }}>На первую страницу</Link>
     : state.kind === 'error' && ['invalid_parameter', 'invalid_request'].includes(state.reason)
@@ -87,11 +89,11 @@ export function ReceiptsView({ query, state, retry, showOwner = false, narrow = 
       <Link className="action-link receipt-primary" to="/receipts/new">Добавить трату</Link>
       <Link className="action-link" to="/recognition/jobs">Обработка</Link>
     </div>
-    {/* On a phone behind «Фильтры (N)» in a sheet; a new address closes the sheet (the key). A wide screen keeps the
-        form mounted, so the focus stays on its button after «Применить». */}
-    <ResponsiveFilters key={narrow ? buildReceiptsQuery(query) : 'wide'} count={activeFilterCount(query)} narrow={narrow}>
+    {/* On a phone behind «Фильтры (N)» in a sheet, which closes once the form is applied. */}
+    <ResponsiveFiltersView narrow={narrow} count={activeFilterCount(query)} open={filtersOpen} onOpen={() => setFiltersOpen(true)}
+      onClose={() => setFiltersOpen(false)} sheetId={sheetId}>
       <ReceiptFilters query={query} failure={state.kind === 'error' ? state : undefined} />
-    </ResponsiveFilters>
+    </ResponsiveFiltersView>
     <ReceiptBlock title="Список чеков" state={state} retry={retry} recovery={recovery}>
       {state.kind === 'ok' && (state.data.results.length ? <>
         <p className="receipt-note" role="status">Чеков: {state.data.count.toLocaleString('ru-RU')} · Страница {state.data.page.toLocaleString('ru-RU')} из {state.data.pages.toLocaleString('ru-RU')}</p>

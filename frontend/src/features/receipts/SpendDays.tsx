@@ -4,7 +4,7 @@ import type { ReceiptsQuery } from '../../navigation'
 import { categoryTone, groupByDay, rowMeta, rowTitle, withOwner } from './spends'
 import type { OwnerChip } from './spends'
 import { money } from './state'
-import { ChipScroller } from './_tmp-foundation' /* mobile-foundation: temporary, integrator removes */
+import ChipScroller from '../../components/ChipScroller'
 
 /** A photo receipt: a slip with a torn edge. */
 const receiptIcon = 'M5 2h10v16l-2-1.3-1.7 1.3L10 16.7 8.7 18 7 16.7 5 18Zm2.5 4v1.5h5V6Zm0 3.5V11h5V9.5Zm0 3.5v1.5h3V13Z'

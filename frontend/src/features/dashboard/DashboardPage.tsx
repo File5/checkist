@@ -10,7 +10,6 @@ import {
   inMonth, monthIsEmpty, monthSlide, monthTitle, progress, recentMeta, shiftMonth, subCategories,
 } from './dashboard-state'
 import type { MonthSlide, Progress } from './dashboard-state'
-import '../receipts/_tmp-foundation.css' /* mobile-foundation: temporary, integrator removes */
 import './Dashboard.css'
 
 const monthHref = (month: string) => `/?month=${month}`

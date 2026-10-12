@@ -8,17 +8,15 @@ const block = (selector: string) => {
   const start = tokens.indexOf(`\n${selector} {`)
   return tokens.slice(start, tokens.indexOf('\n}', start))
 }
-/* mobile-foundation: temporary, integrator removes — the type scale and the figures fonts of «Основа» until the merge. */
-const foundation = read('../receipts/_tmp-foundation.css')
 const names = (text: string) => new Set([...text.matchAll(/^\s*(--ck-[a-z0-9-]+):/gm)].map((match) => match[1]))
 const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].flatMap((match) => match[1].split(',').map((selector) => ({ selector: selector.trim(), body: match[2] })))
 const body = (selector: string) => rules.filter((rule) => rule.selector === selector).map((rule) => rule.body).join(' ')
 
 describe('«Главная» and «Лимиты» styles (text of the rules, not rendering)', () => {
   it('reads only theme tokens, each defined for the dark theme and, for colours, again for the light one', () => {
-    const scale = names(foundation)
-    const dark = new Set([...names(block(':root')), ...scale])
-    const light = new Set([...names(block(':root[data-theme="light"]')), ...scale])
+    const dark = new Set(names(block(':root')))
+    // Sizes, fonts and the tooth of the tape are the same in both themes: only colours come again for the light one.
+    const light = new Set([...names(block(':root[data-theme="light"]')), ...[...dark].filter((name) => /^--ck-(text-(xs|sm|base|lg|xl|hero)|font-|tape-)/.test(name))])
     const used = [...new Set([...css.matchAll(/var\((--ck-[a-z0-9-]+)/g)].map((match) => match[1]))]
     expect(used.filter((name) => !dark.has(name))).toEqual([])
     expect(used.filter((name) => !light.has(name) && !name.startsWith('--ck-radius'))).toEqual([])

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { safeMediaUrl } from '../../lib/media'
 import { DownloadOriginal } from '../recognition/MediaImage'
 import ReceiptMedia from './ReceiptMedia'
-import { Sheet } from './_tmp-foundation' /* mobile-foundation: temporary, integrator removes */
+import Sheet from '../../components/Sheet'
 
 /**
  * The photo of a receipt in its header card on a phone: a thumbnail; a tap opens the full preview in a sheet with

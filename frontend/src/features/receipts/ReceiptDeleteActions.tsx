@@ -6,7 +6,7 @@ import {
   withPhotoLabel,
 } from './delete-receipt'
 import type { ReceiptDeleteStep } from './delete-receipt'
-import { Sheet } from './_tmp-foundation' /* mobile-foundation: temporary, integrator removes */
+import Sheet from '../../components/Sheet'
 import '../expense/Expense.css'
 
 /**

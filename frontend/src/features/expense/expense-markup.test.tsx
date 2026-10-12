@@ -76,7 +76,7 @@ describe('«Добавить трату» form (Vitest/SSR, not browser visual a
   })
   it('puts the chips in one scrolling line and opens all categories with a search in a sheet', () => {
     const html = form(emptyDraft('KZT', '2026-10-12'))
-    expect(html).toContain('<div class="ck-chip-scroller" role="group" aria-label="Частые категории">')
+    expect(html).toContain('<div class="ck-chip-scroller-track" role="region" aria-label="Частые категории" tabindex="0">')
     expect(html).toContain('<button type="button" class="expense-chip expense-more" aria-haspopup="dialog" aria-expanded="false">Все категории</button>')
     expect(html).not.toContain('ck-sheet')
     const open = form({ ...emptyDraft('KZT', '2026-10-12'), category: 2 }, { initialSheet: true })

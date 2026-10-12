@@ -13,7 +13,7 @@ import {
   amountInput, changedRows, isDuplicateCreate, limitCurrencies, limitFailureMessage, limitFor, limitTree, openByDefault, parseCurrency, rowAction,
   saveBarLabel, subCategoriesText, visibleRows, withLimit, withoutLimit,
 } from './limits-state'
-import { ChipScroller } from '../receipts/_tmp-foundation' /* mobile-foundation: temporary, integrator removes */
+import ChipScroller from '../../components/ChipScroller'
 import './Dashboard.css'
 
 export type RowStatus = { kind: 'idle' } | { kind: 'busy' } | { kind: 'done'; text: string } | { kind: 'error'; text: string }

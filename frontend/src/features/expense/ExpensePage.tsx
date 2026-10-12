@@ -18,7 +18,8 @@ import {
   categoryChips, categoryTree, chipLabel, dateChoice, dayBefore, sentIndexes, draftBody, draftFromReceipt, emptyDraft, fieldScrollDelta, linesTotal,
   filledLines, LINES_MAX, newLine, saveLabel, savedNotice, serverErrors, setExpenseNotice, todayISO, updatedNotice, visibleChips,
 } from './expense-form'
-import { ChipScroller, Sheet } from '../receipts/_tmp-foundation' /* mobile-foundation: temporary, integrator removes */
+import ChipScroller from '../../components/ChipScroller'
+import Sheet from '../../components/Sheet'
 import type { ExpenseDraft, ExpenseErrors, LineDraft } from './expense-form'
 import './Expense.css'
 
