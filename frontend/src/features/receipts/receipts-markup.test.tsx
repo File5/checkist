@@ -10,6 +10,8 @@ import ReceiptFilters from './ReceiptFilters'
 import ReceiptMedia, { ReceiptImageFallback } from './ReceiptMedia'
 import { ReceiptPagination } from './ReceiptBlock'
 import { ReceiptView } from './ReceiptPage'
+import { ReceiptDeleteActions } from './ReceiptDeleteActions'
+import { ReceiptPhoto } from './ReceiptPhoto'
 import type { BlockRequest, ReceiptViewProps } from './ReceiptPage'
 import { ReceiptList, ReceiptsView } from './ReceiptsPage'
 import { ownerShown } from './state'
@@ -257,7 +259,42 @@ describe('receipt screens (Vitest/SSR, not browser visual acceptance)', () => {
     expect(row.match(/<td\b/g)).toHaveLength(5)
     expect(row.match(/<td class="receipt-number">/g)).toHaveLength(5)
     expect(row.match(/<th scope="row">/g)).toHaveLength(1)
-    expect(html).toContain('<dd class="receipt-number receipt-total">')
+    // The total of the header is the one hero figure of the page (its class keeps the value whole).
+    expect(html).toContain('<p class="receipt-head-total"><span class="receipt-head-label">Итог</span><span class="ck-hero-figure">')
+    expect(html.match(/ck-hero-figure/g)).toHaveLength(1)
+  })
+  it('heads the receipt with a piece of tape: place, date, who added it, the total, then the other facts', () => {
+    const html = renderToStaticMarkup(<ReceiptHeader receipt={receipt} showOwner />)
+    expect(html.startsWith('<div class="receipt-head ck-tape"><div class="receipt-head-top"><div class="receipt-head-main"><h3 class="receipt-store-name">')).toBe(true)
+    expect(html).toContain('<dl class="receipt-head-meta"><div><dt>Дата и время покупки</dt><dd><time dateTime=')
+    expect(html).toContain('<div><dt>Добавил</dt><dd class="receipt-owner">')
+    expect(html.indexOf('receipt-head-total')).toBeLessThan(html.indexOf('<dl class="receipt-facts">'))
+    expect(html).not.toContain('<dt>Итог</dt>')
+  })
+  it('puts the actions of a phone in the bottom bar, the photo as a thumbnail and the deletion in a sheet', () => {
+    const withPhoto = { ...receipt, preview_image_url: '/media/receipts/71.jpg', preview_thumb_url: '/media/receipts/71-thumb.jpg' }
+    const phone = renderToStaticMarkup(<ReceiptView {...view} header={{ state: { kind: 'ok', data: withPhoto }, retry: noop }} narrow />)
+    // Last on the page, pinned above the navigation.
+    expect(phone.endsWith('<div class="receipt-actions receipt-delete-bar ck-action-bar"><button type="button" class="receipt-secondary">Удалить чек</button></div></div>')).toBe(true)
+    expect(phone).toContain('<button type="button" class="receipt-photo-thumb" aria-haspopup="dialog" aria-expanded="false"><img src="/media/receipts/71-thumb.jpg" alt=""')
+    const wide = renderToStaticMarkup(<ReceiptView {...view} header={{ state: { kind: 'ok', data: withPhoto }, retry: noop }} />)
+    expect(wide).not.toContain('receipt-photo-thumb')
+    expect(wide.indexOf('receipt-delete-bar')).toBeLessThan(wide.indexOf('Изображения чека'))
+    const asking = renderToStaticMarkup(<ReceiptDeleteActions receiptId={71} narrow initial={{ kind: 'confirm', withPhoto: true }} />)
+    expect(asking).toContain('<div class="ck-sheet" role="dialog" aria-modal="true"')
+    expect(asking).toContain('Удалить чек?</h2>')
+    expect(asking).toContain('<div class="expense-confirm" role="group" aria-labelledby="receipt-delete-71">')
+    expect(asking.indexOf('receipt-delete-bar')).toBeLessThan(asking.indexOf('ck-sheet'))
+    const inline = renderToStaticMarkup(<ReceiptDeleteActions receiptId={71} initial={{ kind: 'confirm', withPhoto: true }} />)
+    expect(inline).not.toContain('ck-sheet')
+    expect(inline.startsWith('<div class="expense-confirm"')).toBe(true)
+  })
+  it('opens the full photo with «Скачать оригинал» in a sheet', () => {
+    const html = renderToStaticMarkup(<ReceiptPhoto receiptId={71} thumb="/media/a-thumb.jpg" image="/media/a.jpg" download="/media/a.jpg?download=1" initialOpen />)
+    expect(html).toContain('Фото чека</h2>')
+    expect(html).toContain('<img src="/media/a.jpg" alt="Фото чека №71"')
+    expect(html).toContain('Скачать оригинал')
+    expect(renderToStaticMarkup(<ReceiptPhoto receiptId={71} thumb={null} image={null} />)).toBe('')
   })
   it('keeps filtered return URL and recovers list page errors without clearing filters', () => {
     const detail = renderToStaticMarkup(<ReceiptView {...view} returnTo="/receipts?q=MILCH&page=2" />)

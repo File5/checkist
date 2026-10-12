@@ -6,13 +6,14 @@ import {
   withPhotoLabel,
 } from './delete-receipt'
 import type { ReceiptDeleteStep } from './delete-receipt'
+import { Sheet } from './_tmp-foundation' /* mobile-foundation: temporary, integrator removes */
 import '../expense/Expense.css'
 
 /**
  * «Удалить чек» of a photo receipt on its page. Asks inline, never with a browser dialog; «Удалить и фото» is on by
  * default. After the deletion — «Чеки» with a notice.
  */
-export function ReceiptDeleteActions({ receiptId, initial = { kind: 'idle' } }: { receiptId: number; initial?: ReceiptDeleteStep }) {
+export function ReceiptDeleteActions({ receiptId, initial = { kind: 'idle' }, narrow = false }: { receiptId: number; initial?: ReceiptDeleteStep; narrow?: boolean }) {
   const [step, setStep] = useState<ReceiptDeleteStep>(initial)
   const controller = useRef<AbortController | undefined>(undefined)
   const confirmButton = useRef<HTMLButtonElement>(null)
@@ -20,9 +21,10 @@ export function ReceiptDeleteActions({ receiptId, initial = { kind: 'idle' } }: 
   const asking = step.kind === 'confirm'
   useEffect(() => { if (asking) confirmButton.current?.focus() }, [asking])
 
-  if (step.kind === 'idle') return <div className="receipt-actions">
+  const bar = <div className="receipt-actions receipt-delete-bar ck-action-bar">
     <button type="button" className="receipt-secondary" onClick={() => setStep(askDelete())}>Удалить чек</button>
   </div>
+  if (step.kind === 'idle') return bar
 
   const { withPhoto } = step
   const deleting = step.kind === 'deleting'
@@ -40,7 +42,7 @@ export function ReceiptDeleteActions({ receiptId, initial = { kind: 'idle' } }: 
     setStep({ kind: 'failed', withPhoto, message: deleteFailureMessage(result) })
   }
   const labelId = `receipt-delete-${receiptId}`
-  return <div className="expense-confirm" role="group" aria-labelledby={labelId}>
+  const confirm = <div className="expense-confirm" role="group" aria-labelledby={labelId}>
     <p id={labelId}>{deleteQuestion}</p>
     <label className="receipt-delete-photo">
       <input type="checkbox" checked={withPhoto} disabled={deleting} aria-describedby={`${labelId}-hint`}
@@ -55,4 +57,10 @@ export function ReceiptDeleteActions({ receiptId, initial = { kind: 'idle' } }: 
       <button type="button" className="receipt-secondary" disabled={deleting} onClick={() => setStep({ kind: 'idle' })}>Отмена</button>
     </div>
   </div>
+  // A wide screen asks in place of the button; a phone keeps the bottom bar and asks in a sheet over it.
+  if (!narrow) return confirm
+  return <>
+    {bar}
+    <Sheet open title="Удалить чек?" onClose={() => { if (!deleting) setStep({ kind: 'idle' }) }}>{confirm}</Sheet>
+  </>
 }
