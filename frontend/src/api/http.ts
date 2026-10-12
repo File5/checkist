@@ -1,4 +1,5 @@
 import { reportAuthSignal } from './auth-signal.ts'
+import { OFFLINE_HEADER, reportApiAnswer } from '../offline/status.ts'
 import { isRecognitionIssue } from './recognition-schema.ts'
 import type { ApiFailure, ApiResult, LocalApiFailure, LocalApiResult, RequestOptions } from './types.ts'
 
@@ -166,6 +167,8 @@ export async function sendJson<T, F extends { kind: 'error' } | { kind: 'aborted
       })
       const afterFetch = interrupted()
       if (afterFetch) return afterFetch
+      // The service worker marks an answer it took from the phone (src/offline, public/sw.js).
+      reportApiAnswer(response.headers?.get?.(OFFLINE_HEADER) === '1')
       let body: unknown = null
       try {
         if (!emptyStatuses.includes(response.status)) body = await response.json()

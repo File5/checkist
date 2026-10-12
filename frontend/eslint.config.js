@@ -17,4 +17,5 @@ export default tseslint.config(
     extends: [reactHooks.configs.flat.recommended, reactRefresh.configs.vite],
   },
   { files: ['vite.config.ts'], languageOptions: { globals: globals.node } },
+  { files: ['public/sw.js'], languageOptions: { sourceType: 'script', globals: globals.serviceworker } },
 )

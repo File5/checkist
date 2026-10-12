@@ -1,4 +1,5 @@
 import { useCallback } from 'react'
+import type { ReactNode } from 'react'
 import { getReceipts } from '../../api/receipts'
 import type { Receipt } from '../../api/receipts'
 import type { Page } from '../../api/types'
@@ -8,6 +9,7 @@ import { formatPurchasedOn } from '../../lib/format'
 import { numbered } from '../../lib/text'
 import { buildReceiptsQuery, Link } from '../../navigation'
 import { useSession } from '../../session'
+import PendingSpends from '../../offline/PendingSpends'
 import type { ReceiptsQuery } from '../../navigation'
 import type { ReceiptsPageProps } from '../../pages/types'
 import { ReceiptBlock } from './ReceiptBlock'
@@ -40,14 +42,17 @@ export function ReceiptList({ receipts, showOwner = false }: { receipts: Receipt
   </li>)}</ul>
 }
 
-export function ReceiptsView({ query, state, retry, showOwner = false }: {
+export function ReceiptsView({ query, state, retry, showOwner = false, pending }: {
   query: ReceiptsQuery; state: ReceiptRequestState<Page<Receipt>>; retry: () => void; showOwner?: boolean
+  /** Spends waiting on the phone (offline mode), above everything else. */
+  pending?: ReactNode
 }) {
   const recovery = state.kind === 'error' && state.reason === 'page_out_of_range'
     ? <Link className="action-link" to={{ kind: 'receipts', query: { ...query, page: 1 } }}>На первую страницу</Link>
     : state.kind === 'error' && ['invalid_parameter', 'invalid_request'].includes(state.reason)
       ? <Link className="action-link" to="/receipts">Сбросить фильтры</Link> : undefined
   return <div className="receipts-page">
+    {pending}
     <div className="receipt-actions">
       <Link className="action-link receipt-primary" to="/receipts/upload">Загрузить фото</Link>
       <Link className="action-link receipt-primary" to="/receipts/new">Добавить трату</Link>
@@ -74,5 +79,5 @@ export default function ReceiptsPage({ query }: ReceiptsPageProps) {
   }), { signal }), [page, store, product, country, currency, operation, date_from, date_to, q, page_size, ordering])
   const request = useReceiptRequest(load)
   const showOwner = ownerShown(useSession())
-  return <ReceiptsView query={query} state={request.state} retry={request.retry} showOwner={showOwner} />
+  return <ReceiptsView query={query} state={request.state} retry={request.retry} showOwner={showOwner} pending={<PendingSpends />} />
 }

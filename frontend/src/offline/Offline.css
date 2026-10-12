@@ -1,0 +1,60 @@
+/* Offline mode: the banner and the spends waiting on the phone. Colours are tokens only (theme/tokens.css);
+   no font-size of its own: the sizes stay those of the page. */
+.offline-banner {
+  margin: 0;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--ck-warning-border);
+  background: var(--ck-warning-bg);
+  color: var(--ck-warning-text);
+  line-height: 1.35;
+  text-align: center;
+}
+
+.pending-spends {
+  margin: 0 0 16px;
+  padding: 12px 16px;
+  border: 1px solid var(--ck-warning-border);
+  border-radius: var(--ck-radius);
+  background: var(--ck-warning-bg);
+  color: var(--ck-warning-text);
+}
+
+.pending-spends h2 {
+  margin: 0 0 4px;
+}
+
+.pending-spends p {
+  margin: 0 0 8px;
+}
+
+.pending-spend-list {
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.pending-spend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: baseline;
+  padding: 6px 0;
+  border-top: 1px solid var(--ck-divider);
+}
+
+.pending-spend-amount {
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.pending-spend-error {
+  flex-basis: 100%;
+  font-weight: 600;
+}
+
+.pending-spend-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}

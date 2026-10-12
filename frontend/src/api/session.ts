@@ -2,6 +2,7 @@ import { reportAuthSignal } from './auth-signal.ts'
 import { apiUrl, readError, readErrorCode, sendJson } from './http.ts'
 import type { JsonRequest } from './http.ts'
 import { clearRecognitionCsrf } from './local.ts'
+import { forgetCachedAnswers } from '../offline/service-worker.ts'
 import type { Guard } from './schema.ts'
 import { isAuthCsrf, isMe, isPasswordIssues, isRetryAfter } from './session-schema.ts'
 import type { PASSWORD_ISSUES } from './session-schema.ts'
@@ -83,6 +84,7 @@ function sessionChanged(options: RequestOptions, token?: string): void {
   if (token) tokens.set(key, token)
   else tokens.delete(key)
   clearRecognitionCsrf({ baseUrl: options.baseUrl })
+  forgetCachedAnswers()
 }
 
 /** One CSRF-protected POST. The token before a sign-in comes from the anonymous `auth/csrf/`. Never replayed. */
