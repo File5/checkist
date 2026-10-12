@@ -1,9 +1,10 @@
 import { invalidIds } from './http.ts'
+import { mutate } from './local.ts'
 import { getLocalJson } from './recognition.ts'
-import { isDiscount, isLine, isReceipt, isTax } from './receipts-schema.ts'
+import { isDiscount, isLine, isManualDefaults, isReceipt, isTax } from './receipts-schema.ts'
 import { page } from './schema.ts'
 import type { LocalApiResult, Page, PageParams, RequestOptions } from './types.ts'
-import type { Discount, Line, Receipt, ReceiptLineParams, ReceiptParams, Tax } from './receipts-types.ts'
+import type { Discount, Line, ManualDefaults, ManualSpendInput, Receipt, ReceiptLineParams, ReceiptParams, Tax } from './receipts-types.ts'
 
 export type * from './receipts-types.ts'
 
@@ -22,4 +23,21 @@ export async function getReceiptDiscounts(id: number, params: PageParams = {}, o
 }
 export async function getReceiptTaxes(id: number, params: PageParams = {}, options: RequestOptions = {}): Promise<LocalApiResult<Page<Tax>>> {
   return invalidIds({ id }, options.signal) ?? getLocalJson(`receipts/${id}/taxes/`, params, page(isTax), options)
+}
+
+/** Defaults of the «Добавить трату» form. */
+export function getManualDefaults(options: RequestOptions = {}): Promise<LocalApiResult<ManualDefaults>> {
+  return getLocalJson('receipts/manual/', {}, isManualDefaults, options)
+}
+/** A new spend without a receipt; `201` with the receipt. Never replayed implicitly. */
+export function createManualSpend(input: ManualSpendInput, options: RequestOptions = {}): Promise<LocalApiResult<Receipt>> {
+  return mutate('receipts/manual/', JSON.stringify(input), isReceipt, options)
+}
+/** Only a manual spend: a photo receipt answers `409 receipt_read_only`. */
+export async function updateManualSpend(id: number, input: ManualSpendInput, options: RequestOptions = {}): Promise<LocalApiResult<Receipt>> {
+  return invalidIds({ id }, options.signal) ?? mutate(`receipts/${id}/`, JSON.stringify(input), isReceipt, options, false, undefined, { method: 'PATCH' })
+}
+export async function deleteManualSpend(id: number, options: RequestOptions = {}): Promise<LocalApiResult<null>> {
+  return invalidIds({ id }, options.signal)
+    ?? mutate(`receipts/${id}/`, '', (value): value is null => value === null, options, false, undefined, { method: 'DELETE' })
 }

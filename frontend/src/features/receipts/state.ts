@@ -1,5 +1,5 @@
 import type { LocalApiResult } from '../../api/types'
-import type { ReceiptParams } from '../../api/receipts'
+import type { Receipt, ReceiptParams } from '../../api/receipts'
 import { buildReceiptsQuery, parseReceiptsQuery } from '../../navigation'
 import type { ReceiptsQuery } from '../../navigation'
 import { formatAmount, formatPrice } from '../../lib/format'
@@ -8,6 +8,9 @@ import { getSession, permissionDeniedText } from '../../session'
 export const unknown = 'Не распознано'
 export const recognizedText = (value: string | null | undefined) => value?.trim() || unknown
 export const recognizedValue = (value: string) => value === '—' ? unknown : value
+/** Without a store only a manual spend comes: «Без места». */
+export const noPlace = 'Без места'
+export const receiptPlace = (receipt: Receipt) => receipt.store ? recognizedText(receipt.store.name) : noPlace
 export const money = (value: string | null, currency?: string) => recognizedValue(formatAmount(value, currency ?? '').trim())
 export const price = (value: string | null, currency?: string) => recognizedValue(formatPrice(value, currency ?? '').trim())
 

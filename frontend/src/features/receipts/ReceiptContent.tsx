@@ -3,13 +3,14 @@ import type { ReceiptImage } from '../../api/recognition'
 import RecognitionIssues from '../../components/RecognitionIssues'
 import { useNarrow } from '../../lib/cards'
 import { imageLabels } from '../../lib/recognition-labels'
-import { formatObservedAt, formatPercent, formatQuantity } from '../../lib/format'
+import { formatObservedAt, formatPercent, formatPurchasedOn, formatQuantity } from '../../lib/format'
 import { glue, numbered } from '../../lib/text'
 import { Link } from '../../navigation'
 import ReceiptLineCards from './ReceiptLineCards'
 import type { LineColumns } from './ReceiptLineCards'
 import ReceiptMedia from './ReceiptMedia'
-import { money, price, recognizedText, recognizedValue, unknown } from './state'
+import { ManualMark } from './ManualMark'
+import { money, price, receiptPlace, recognizedText, recognizedValue, unknown } from './state'
 
 const lineKinds: Record<Line['kind'], string> = {
   product: 'Товар', service: 'Услуга', deposit: 'Залог', deposit_return: 'Возврат залога',
@@ -18,17 +19,23 @@ const lineKinds: Record<Line['kind'], string> = {
 const lineColumns: LineColumns = ['Строка и товар каталога', 'Количество', 'Цена', 'Сумма', 'Скидка', 'Оплачено']
 const linesCaption = 'Строки в порядке печати на чеке'
 export function ReceiptHeader({ receipt }: { receipt: Receipt }) {
+  const { store } = receipt
+  const manual = receipt.source === 'manual'
   return <>
-    <h3 className="receipt-store-name">{recognizedText(receipt.store.name)}</h3>
+    <h3 className="receipt-store-name">{receiptPlace(receipt)}{manual && <> <ManualMark /></>}</h3>
     <dl className="receipt-facts">
-      <div><dt>Адрес</dt><dd>{recognizedText(receipt.store.address)}</dd></div>
-      <div><dt>Город и страна</dt><dd>{recognizedText(receipt.store.city)} · {receipt.store.country}</dd></div>
-      <div><dt>Дата и время покупки</dt><dd><time dateTime={receipt.purchased_at}>{recognizedValue(formatObservedAt(receipt.purchased_at, receipt.store.timezone))}</time></dd></div>
-      <div><dt>Операция</dt><dd>{receipt.operation === 'refund' ? 'Возврат' : 'Продажа'}</dd></div>
+      {store && <div><dt>Адрес</dt><dd>{recognizedText(store.address)}</dd></div>}
+      {store && <div><dt>Город и страна</dt><dd>{recognizedText(store.city)} · {store.country}</dd></div>}
+      {/* The time of a manual spend is the moment of entry, not of the purchase: only the date is shown. */}
+      {manual ? <div><dt>Дата покупки</dt><dd><time dateTime={receipt.purchased_on}>{recognizedValue(formatPurchasedOn(receipt.purchased_on))}</time></dd></div>
+        : <div><dt>Дата и время покупки</dt><dd><time dateTime={receipt.purchased_at}>{recognizedValue(formatObservedAt(receipt.purchased_at, store?.timezone))}</time></dd></div>}
+      {receipt.note && <div><dt>Комментарий</dt><dd>{receipt.note}</dd></div>}
+      {/* A manual spend is always a sale without discounts and taxes: those rows say nothing about it. */}
+      {!manual && <div><dt>Операция</dt><dd>{receipt.operation === 'refund' ? 'Возврат' : 'Продажа'}</dd></div>}
       <div><dt>Итог</dt><dd className="receipt-number receipt-total">{money(receipt.total, receipt.currency)}</dd></div>
-      <div><dt>Сумма скидок</dt><dd className="receipt-number">{money(receipt.discount_total, receipt.currency)}</dd></div>
+      {!manual && <div><dt>Сумма скидок</dt><dd className="receipt-number">{money(receipt.discount_total, receipt.currency)}</dd></div>}
       <div><dt>Валюта</dt><dd>{receipt.currency}</dd></div>
-      <div><dt>Налог в ценах</dt><dd>{receipt.prices_include_tax ? 'Включён' : 'Не включён'}</dd></div>
+      {!manual && <div><dt>Налог в ценах</dt><dd>{receipt.prices_include_tax ? 'Включён' : 'Не включён'}</dd></div>}
     </dl>
     {receipt.unmatched_products_count > 0 && <p className="receipt-warning">Товары не сопоставлены: {receipt.unmatched_products_count.toLocaleString('ru-RU')}</p>}
     {receipt.review_required && <p className="receipt-warning">Данные требуют проверки. Проверьте несопоставленные товары и замечания к изображениям.</p>}
@@ -62,7 +69,8 @@ function LineHeading({ line, lines }: { line: Line; lines: Line[] }) {
     <span className="receipt-note">{glue('Строка', line.position)} · {lineKinds[line.kind]}</span>
     <span className="receipt-printed-name">{recognizedText(line.name)}</span>
     {line.product ? <Link className="receipt-product-link" to={`/catalog/products/${line.product.id}`}>Товар каталога: {recognizedText(line.product.name)}</Link>
-      : <span className="receipt-warning">Товар не сопоставлен</span>}
+      : line.category ? <span className="receipt-note receipt-line-category">Категория: {line.category.name}</span>
+        : <span className="receipt-warning">Товар не сопоставлен</span>}
     {line.parent_id !== null && <span className="receipt-line-relation">{line.kind === 'deposit' || line.kind === 'deposit_return' ? 'Залог к ' : 'Связь с '}<LineReference lineId={line.parent_id} lines={lines} /></span>}
     {lines.filter((child) => child.parent_id === line.id).map((child) => <span className="receipt-line-relation" key={child.id}>
       {lineKinds[child.kind]}: <LineReference lineId={child.id} lines={lines} />

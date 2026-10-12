@@ -122,7 +122,8 @@
 | Поле | Тип | Примечание |
 | --- | --- | --- |
 | `owner` | FK `settings.AUTH_USER_MODEL`, `PROTECT`, `related_name="receipts"` | Обязательное, значения по умолчанию нет; см. [владельца](#владелец-и-пользователи) |
-| `store` | FK `stores.Store`, `PROTECT` | |
+| `store` | FK `stores.Store`, null, `PROTECT` | `NULL` — «Без места»: только у `source=manual` (админка требует магазин у чека с фото) |
+| `source` | `CharField(8)`: `photo` / `manual`, default `photo` | `manual` — [трата без чека](#трата-без-чека); прежние и распознанные чеки — `photo` |
 | `currency` | FK `stores.Currency`, `PROTECT` | |
 | `operation` | `CharField(8)`: `sale` / `refund` | «ПРОДАЖА», «ПРИХОД» → `sale` |
 | `purchased_at` | `DateTimeField` | Момент покупки, хранится в UTC |
@@ -137,9 +138,10 @@
 | `prices_include_tax` | `BooleanField`, default `True` | |
 | `raw_text` | `TextField`, blank | Исходный текст чека |
 | `extra` | JSON | Поле «прочее», см. [JSON-поля](#json-поля) |
+| `note` | `TextField`, blank, default `''` | Комментарий человека к трате без чека |
 | `created_at`, `updated_at` | `DateTimeField` | `auto_now_add` / `auto_now` |
 
-- Три unique-ограничения в пределах владельца — см. [дедупликацию](#дедупликация).
+- Три unique-ограничения в пределах владельца и только у `source='photo'` — см. [дедупликацию](#дедупликация).
 - Индексы `(store, purchased_at)` — `receipts_rcpt_store_at_idx` (история цен) и `(owner, purchased_on)` — `receipts_rcpt_owner_on_idx` (список чеков и статистика пользователя).
 - Если время на чеке двойное (в шапке и в фискальном блоке), в `purchased_at` берётся время фискального блока. Это правило ввода, код его не применяет.
 - `purchased_on`, `fiscal_key` и `discount_total` модель сама не вычисляет: их задаёт вызывающий код.
@@ -166,6 +168,7 @@
 | `tax_amount` | `Decimal(14,2)`, null | Налог по строке, если напечатан |
 | `is_excise`, `is_marked` | `BooleanField`, default `False` | Подакцизный товар; маркировка |
 | `product` | FK `catalog.Product`, null, `SET_NULL` | Пусто, пока товар не сопоставлен |
+| `category` | FK `catalog.Category`, null, `PROTECT`, `related_name="receipt_lines"` | Категория строки без товара (трата без чека); у строки с товаром категория — товара. `PROTECT`: используемую категорию очистка `classification` оставляет (`_delete` ловит `ProtectedError`) |
 | `extra` | JSON | Прочие коды и пометки строки |
 
 - Unique `(receipt, position)` — `receipts_receiptline_receipt_position_uniq`.
@@ -496,9 +499,20 @@ MEDIA: original сохраняется без изменений; upright previe
 
 В JSON и текстовых полях могут оказаться персональные данные (ФИО кассира, ФИО и ИНН предпринимателя). В репозитории — в коде, тестах и документации — используются только вымышленные.
 
+## Трата без чека
+
+Трата без чека (наличные, перевод, счёт) — `Receipt(source='manual')` без новой таблицы: списки, страница чека и статистика читают её той же выборкой. Пишет только `receipts/manual.py` (API — [api-contract](api-contract.md#реализовано-трата-без-чека)).
+
+- Без позиций — одна строка «<название категории>» на всю сумму с `category`; с позициями — строки с названиями человека. Строка: `kind=product`, `unit=pcs`, `unit_price = amount / quantity`, `product=NULL`, `category` — своя, иначе общая. Товаром каталога строки не сопоставляются: `find_alias` ищет по продавцу, которого у траты может не быть, а новый товар попал бы в «Не разобрано» и спрятал бы категорию человека.
+- `store` — найденный по вывеске или названию без учёта регистра магазин либо новый `Merchant` + `Store` (страна по валюте, адрес пустой); без места — `NULL`. `operation` — `sale`; `purchased_at` — момент сохранения, если дата сегодняшняя, иначе полдень даты в поясе места (без места — сервера).
+- Дедупликации нет (условие `source='photo'`); наблюдением цены трата не бывает (`receipts.prices.observation_q` требует `source='photo'`). Статистика берёт категорию товара, а у строки без товара — `ReceiptLine.category` (`receipts/spending.py`, особые элементы `no_product` и `no_store`).
+- В админке `source` показан отключённым полем: чек, заведённый там, — `photo`, с прежними правилами дубликатов; у такого чека магазин обязателен.
+
+**Откат** `receipts.0006_manual_expense` — `manage.py migrate receipts 0005_receipt_owner_required`: при хотя бы одной трате `source=manual` первым шагом отказывает (`RuntimeError`, схема не меняется) — сначала удалите траты (`DELETE /api/receipts/{id}/` или админка). Без ручных трат откат снимает `source`, `note`, `category`, возвращает `store NOT NULL` и прежние условия ограничений; данные чеков с фото не теряются.
+
 ## Дедупликация
 
-Три уровня, каждый — частичное unique-ограничение на `receipts_receipt` **в пределах владельца**. Один и тот же кассовый чек у двух пользователей — две личные покупки: ограничения их не сталкивают, `find_duplicates(receipt_data, *, owner)` ищет только среди чеков этого владельца, импорт и подтверждение вырезки берут владельца из фото (`recognition/importer.py`, `recognition/review.py`).
+Три уровня, каждый — частичное unique-ограничение на `receipts_receipt` **в пределах владельца** и только у чеков с фото (`source='photo'` в условии каждого; у трат без чека правил нет — две одинаковые траты за день остаются двумя тратами, `find_duplicates` их не ищет). Один и тот же кассовый чек у двух пользователей — две личные покупки: ограничения их не сталкивают, `find_duplicates(receipt_data, *, owner)` ищет только среди чеков этого владельца, импорт и подтверждение вырезки берут владельца из фото (`recognition/importer.py`, `recognition/review.py`).
 
 | Уровень | Ограничение | Условие |
 | --- | --- | --- |
@@ -727,8 +741,9 @@ Inline внутри чека, все без пустых заготовок (`ex
 | 8 | `receipts.0004_assign_local_owner` | `RunPython`: создаёт пользователя `local` (существующего не меняет) и отдаёт ему чеки без владельца; обратный ход — noop. Зависит от `auth.0012` |
 | 9 | `receipts.0005_receipt_owner_required` | `owner` NOT NULL; три ограничения с владельцем добавляются **до** удаления трёх прежних |
 | 10 | `catalog.0002_alter_product_options` | Только состояние: право `moderate_catalog` у `Product` |
+| 11 | `receipts.0006_manual_expense` | [Трата без чека](#трата-без-чека): `Receipt.source` (default `photo`), `Receipt.note`, `Receipt.store` nullable, `ReceiptLine.category`; три ограничения дедупликации пересозданы с `source='photo'` в условии. Откат при ручных тратах отказывает |
 
-Таблица перечисляет миграции трёх предметных приложений. Остальные собственные: `recognition.0001_initial`, `0002_sourcephoto_owner`, `0003_assign_local_owner`, `0004_sourcephoto_owner_required` (то же для фото: колонка и индекс, передача `local`, NOT NULL с `rec_photo_owner_sha256_uniq` до снятия `unique` с `sha256`); `merges.0001_initial`, `0002_actor_fields`; `classification.0001_initial`, `0002_actor_fields`; `accounts.0001_initial`. **Всего собственных миграций 19** (`catalog` 2, `stores` 3, `receipts` 5, `recognition` 4, `merges` 2, `classification` 2, `accounts` 1); вместе с 18 стандартными, о которых говорит прежний замер, должно получиться 37 — число посчитано по файлам, `migrate` на пустой базе после этих миграций не запускался.
+Таблица перечисляет миграции трёх предметных приложений. Остальные собственные: `recognition.0001_initial`, `0002_sourcephoto_owner`, `0003_assign_local_owner`, `0004_sourcephoto_owner_required` (то же для фото: колонка и индекс, передача `local`, NOT NULL с `rec_photo_owner_sha256_uniq` до снятия `unique` с `sha256`); `merges.0001_initial`, `0002_actor_fields`; `classification.0001_initial`, `0002_actor_fields`; `accounts.0001_initial`. **Всего собственных миграций 20** (`catalog` 2, `stores` 3, `receipts` 6, `recognition` 4, `merges` 2, `classification` 2, `accounts` 1); вместе с 18 стандартными, о которых говорит прежний замер, — 38; `receipts.0006` добавлена после прогона QA разделения пользователей (37).
 
 Миграции владельца снимают `statement_timeout` на время своей транзакции (`SET LOCAL statement_timeout = 0`): `UPDATE` всех чеков и построение unique-индексов в 2000 мс могут не уложиться. Время на копии dev-базы не замерялось.
 

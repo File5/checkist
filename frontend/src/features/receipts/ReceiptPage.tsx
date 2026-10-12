@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { getReceipt, getReceiptDiscounts, getReceiptLines, getReceiptTaxes } from '../../api/receipts'
 import type { Discount, Line, Receipt, Tax } from '../../api/receipts'
@@ -7,6 +7,8 @@ import type { ReceiptImage } from '../../api/recognition'
 import type { Page } from '../../api/types'
 import RequestState from '../../components/RequestState'
 import { numbered } from '../../lib/text'
+import { ManualSpendActions } from '../expense/ManualSpendActions'
+import { clearExpenseNotice, getExpenseNotice } from '../expense/expense-form'
 import { Link } from '../../navigation'
 import type { ReceiptPageProps } from '../../pages/types'
 import { ReceiptBlock, ReceiptPagination } from './ReceiptBlock'
@@ -21,6 +23,8 @@ export type ReceiptViewProps = ReceiptPageProps & {
   header: BlockRequest<Receipt>; images: BlockRequest<Page<ReceiptImage>>; lines: BlockRequest<Page<Line>>
   discounts: BlockRequest<Page<Discount>>; taxes: BlockRequest<Page<Tax>>
   pages: DetailPages; onPage: (block: keyof DetailPages, page: number) => void
+  /** Shown once after a manual spend was saved on its form. */
+  notice?: string
 }
 
 function PagedBlock<T>({ title, request, empty, page, onPage, children, id }: {
@@ -38,34 +42,38 @@ function PagedBlock<T>({ title, request, empty, page, onPage, children, id }: {
   </ReceiptBlock>
 }
 
-export function ReceiptView({ receiptId, returnTo, header, images, lines, discounts, taxes, pages, onPage }: ReceiptViewProps) {
+export function ReceiptView({ receiptId, returnTo, header, images, lines, discounts, taxes, pages, onPage, notice }: ReceiptViewProps) {
   const receipt = header.state.kind === 'ok' ? header.state.data : undefined
   const visibleLines = lines.state.kind === 'ok' ? lines.state.data.results : []
+  // A spend entered by hand has no photo, discounts or taxes: only its lines are shown.
+  const manual = receipt?.source === 'manual'
   return <div className="receipts-page">
+    {notice && <p className="expense-notice" role="status">{notice}</p>}
     <div className="receipt-actions">
       <Link className="action-link" to={returnTo ?? '/receipts'}>{returnTo?.startsWith('/recognition/jobs/') ? 'К заданию' : 'К чекам'}</Link>
       <Link className="action-link" to="/receipts/upload">Загрузить фото</Link>
       <Link className="action-link" to="/recognition/jobs">Обработка</Link>
     </div>
-    <ReceiptBlock title={numbered('Страница чека', receiptId)} state={header.state} retry={header.retry}>
+    <ReceiptBlock title={numbered(manual ? 'Трата' : 'Страница чека', receiptId)} state={header.state} retry={header.retry}>
       {receipt && <ReceiptHeader receipt={receipt} />}
+      {manual && <ManualSpendActions receiptId={receiptId} />}
     </ReceiptBlock>
-    <PagedBlock title="Изображения чека" id="receipt-images" request={images} empty="У этого чека нет изображений."
+    {!manual && <PagedBlock title="Изображения чека" id="receipt-images" request={images} empty="У этого чека нет изображений."
       page={pages.images} onPage={(page) => onPage('images', page)}>
       {images.state.kind === 'ok' && <ReceiptImages images={images.state.data.results} receiptId={receiptId} />}
-    </PagedBlock>
-    <PagedBlock title="Строки чека" id="receipt-lines" request={lines} empty="В этом чеке нет строк."
+    </PagedBlock>}
+    <PagedBlock title={manual ? 'Позиции траты' : 'Строки чека'} id="receipt-lines" request={lines} empty="В этом чеке нет строк."
       page={pages.lines} onPage={(page) => onPage('lines', page)}>
       {lines.state.kind === 'ok' && <ReceiptLines lines={lines.state.data.results} currency={receipt?.currency} />}
     </PagedBlock>
-    <PagedBlock title="Скидки" id="receipt-discounts" request={discounts} empty="Отдельные скидки в чеке не указаны."
+    {!manual && <PagedBlock title="Скидки" id="receipt-discounts" request={discounts} empty="Отдельные скидки в чеке не указаны."
       page={pages.discounts} onPage={(page) => onPage('discounts', page)}>
       {discounts.state.kind === 'ok' && <ReceiptDiscounts discounts={discounts.state.data.results} lines={visibleLines} currency={receipt?.currency} />}
-    </PagedBlock>
-    <PagedBlock title="Налоги" id="receipt-taxes" request={taxes} empty="Налоги в чеке не указаны."
+    </PagedBlock>}
+    {!manual && <PagedBlock title="Налоги" id="receipt-taxes" request={taxes} empty="Налоги в чеке не указаны."
       page={pages.taxes} onPage={(page) => onPage('taxes', page)}>
       {taxes.state.kind === 'ok' && <ReceiptTaxes taxes={taxes.state.data.results} currency={receipt?.currency} />}
-    </PagedBlock>
+    </PagedBlock>}
   </div>
 }
 
@@ -81,7 +89,10 @@ function ReceiptScreen({ receiptId, returnTo }: ReceiptPageProps) {
   const lines = useReceiptRequest(loadLines)
   const discounts = useReceiptRequest(loadDiscounts)
   const taxes = useReceiptRequest(loadTaxes)
-  return <ReceiptView receiptId={receiptId} returnTo={returnTo} header={header} images={images} lines={lines} discounts={discounts} taxes={taxes}
+  // Read once into the state; the module copy is cleared so that a later visit shows no stale notice.
+  const [notice] = useState(() => getExpenseNotice(receiptId))
+  useEffect(clearExpenseNotice, [])
+  return <ReceiptView notice={notice} receiptId={receiptId} returnTo={returnTo} header={header} images={images} lines={lines} discounts={discounts} taxes={taxes}
     pages={pages} onPage={(block, page) => setPages((previous) => ({ ...previous, [block]: page }))} />
 }
 

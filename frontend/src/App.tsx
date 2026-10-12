@@ -9,6 +9,7 @@ import ProductPage from './features/product/ProductPage'
 import RequestState from './components/RequestState'
 import { UploadPage, JobsPage, JobPage, QuickShot } from './features/recognition'
 import { ReceiptsPage, ReceiptPage } from './features/receipts'
+import { ExpensePage, QuickExpense } from './features/expense'
 import { MergesPage, MergePage } from './features/merges'
 import { ClassificationPage } from './features/classification'
 import { SpendingPage, ReceiptsStatsPage } from './features/stats'
@@ -33,6 +34,8 @@ function pageTitle(route: Route) {
     case 'health': return 'Состояние сервисов'
     case 'receipts': return 'Чеки'
     case 'upload': return 'Загрузка фото чеков'
+    case 'expense-new': return 'Добавить трату'
+    case 'expense-edit': return 'Изменить трату'
     case 'receipt': return 'Чек'
     case 'jobs': return 'Обработка'
     case 'job': return 'Задание обработки'
@@ -58,6 +61,9 @@ function shellTitle(view: ShellView, route: Route) {
   }
 }
 
+/** Screens whose own bar sits where the floating actions would be. */
+const floatingHidden: Route['kind'][] = ['upload', 'expense-new', 'expense-edit']
+
 const notFound = <RequestState kind="empty" message="Такой страницы нет. Перейдите в каталог продуктов." action={<><p className="request-state-note">Наружное наблюдение результатов не дало.</p><Link className="action-link" to="/catalog">В каталог</Link></>} />
 
 function pageContent({ route, returnTo }: NavigationSnapshot, username: string) {
@@ -70,6 +76,8 @@ function pageContent({ route, returnTo }: NavigationSnapshot, username: string) 
     case 'health': return <HealthPage />
     case 'receipts': return <ReceiptsPage query={route.query} />
     case 'upload': return <UploadPage />
+    case 'expense-new': return <ExpensePage key="new" />
+    case 'expense-edit': return <ExpensePage key={route.receiptId} receiptId={route.receiptId} />
     case 'receipt': return <ReceiptPage receiptId={route.receiptId} returnTo={returnTo} />
     case 'jobs': return <JobsPage query={route.query} />
     case 'job': return <JobPage jobId={route.jobId} returnTo={returnTo} />
@@ -202,7 +210,11 @@ export default function App() {
         </main>
         <footer>Чекист · Продуктовая разведка · Совершенно несекретно</footer>
       </div>
-      {signedIn && view === 'page' && route.kind !== 'upload' && <QuickShot />}
+      {/* The floating actions of a phone; the forms they open have their own save bar at the same place. */}
+      {signedIn && view === 'page' && !floatingHidden.includes(route.kind) && <div className="ck-quick-actions">
+        <QuickExpense />
+        <QuickShot />
+      </div>}
     </>
   )
 }

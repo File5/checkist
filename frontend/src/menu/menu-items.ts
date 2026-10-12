@@ -22,7 +22,7 @@ export type Menu = {
 export const BAR_SLOTS = 4
 
 const catalogKinds: Route['kind'][] = ['catalog', 'category', 'product', 'merges', 'merge', 'classification']
-const receiptKinds: Route['kind'][] = ['receipts', 'upload', 'receipt']
+const receiptKinds: Route['kind'][] = ['receipts', 'upload', 'expense-new', 'expense-edit', 'receipt']
 const statsKinds: Route['kind'][] = ['spending', 'receipts-stats']
 const jobKinds: Route['kind'][] = ['jobs', 'job']
 

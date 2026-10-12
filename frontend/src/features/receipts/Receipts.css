@@ -76,3 +76,6 @@
   .receipt-thumbnail img { height: 160px; }
   .receipt-actions > * { flex: 1 1 160px; }
 }
+/* A spend entered by hand: a small mark next to the place. */
+.receipt-source-mark { display: inline-block; padding: 2px 8px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); color: var(--ck-text-muted); font-size: 0.8rem; font-weight: 400; white-space: nowrap; vertical-align: middle; }
+.receipt-line-category { display: block; margin-top: 8px; }
