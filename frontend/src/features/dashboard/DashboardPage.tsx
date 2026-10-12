@@ -270,7 +270,8 @@ export function DashboardView({ data, today = deviceMonth(), family = data.membe
   }
   const spent = data.currencies.filter((block) => cents(block.spent) !== 0n || block.limit_total !== null)
   const [hero, ...others] = spent
-  const limits = data.currencies.filter((block) => block.categories.length || block.limit_total !== null)
+  // The main currency always gets its limits card; another one only when it has limits (its spends are in «Другие валюты»).
+  const limits = data.currencies.filter((block, index) => block.limit_total !== null || (index === 0 && block.categories.length))
   // Two columns on a wide screen: the month and the spends, the limits beside them. A phone reads them as one column:
   // the money, the actions, the limits, the latest spends (the order of Dashboard.css).
   return <div className={`dash${slide ? ` dash-slide-${slide}` : ''}`}>

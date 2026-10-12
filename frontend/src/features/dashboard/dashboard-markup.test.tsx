@@ -204,8 +204,10 @@ describe('«Главная» markup (Vitest/SSR, not browser visual acceptance)'
     const others = between(html, 'dash-others', '</section>')
     expect(others).toContain('<h2 id="dash-others-heading">Другие валюты</h2>')
     expect(others).toContain(`<li class="ck-row dash-other" aria-label="Потрачено, EUR"><span class="ck-row-badge dash-currency-badge" aria-hidden="true">€</span><span class="ck-row-main"><span class="ck-row-title">Евро</span><span class="ck-row-meta">в\u00a0сентябре трат не было</span></span><span class="ck-row-amount ck-figures dash-other-amount">${nb('120 €')}</span></li>`)
-    expect(html).toContain('Лимиты<span class="dash-currency"> · €</span>')
-    expect(html).toContain('Лимиты не заданы.')
+    // Another currency without limits gets no limits card of its own: its spends are already in «Другие валюты».
+    expect(html).not.toContain('Лимиты<span class="dash-currency"> · €</span>')
+    const limited = view({ ...data, currencies: [data.currencies[0], { ...euro, limit_total: '200.00' }] })
+    expect(limited).toContain('Лимиты<span class="dash-currency"> · €</span>')
     expect(html).not.toContain('<table')
   })
 })
