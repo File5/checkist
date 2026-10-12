@@ -99,6 +99,14 @@
      --ck-radius-pill      999px: чип, текущий пункт меню, страница пагинации
      --ck-font-body        Manrope (Google Fonts, display=swap), затем system-ui
      --ck-font-display     заголовки и вывеска: тот же Manrope
+     --ck-font-figures     цифры денег, количеств и цен: JetBrains Mono 500–600
+                           (Google Fonts, кириллица); только через .ck-figures
+     --ck-font-display-figures  сумма-герой (одна на экран): Unbounded 600;
+                           только через .ck-hero-figure
+   Шкала размеров текста (мобильный дизайн 2026-10-12; font-size меняется
+   только этими токенами): --ck-text-xs 13px · -sm 15px · -base 16px (и не
+   меньше у полей ввода: iOS не приближает страницу) · -lg 18px · -xl 22px
+   (заголовок верхней полосы телефона) · -hero 40px (сумма-герой)
    Графики (в Charts.css имена --ck-chart-* остаются и ссылаются сюда)
      --ck-series-1 … -8    серии в фиксированном порядке: синий, оранжевый,
                            бирюзовый, жёлтый, розовый, зелёный, фиолетовый,
@@ -126,7 +134,9 @@
      --ck-z-action-bar     10: панель действий (закреплённые ячейки таблиц и
                            плашка результата остаются на 1)
      --ck-z-bottom-nav     20: нижняя навигация
-     --ck-z-menu-sheet     30: раскрытое меню («Ещё», «＋») поверх навигации
+     --ck-z-top-bar        15: верхняя полоса телефона (заголовок, «назад»)
+     --ck-z-menu-sheet     30: раскрытое меню («Ещё») поверх навигации
+     --ck-z-sheet          35: лист снизу (components/Sheet) и его подложка
      --ck-z-skip-link      40: ссылка «к содержимому» поверх всего
 
    КОНТРАСТ (формула WCAG 2.x: (L1 + 0,05) / (L2 + 0,05), посчитано скриптом)
@@ -162,6 +172,26 @@
      сведения 5,96, нейтральное 4,78; полоса сверх лимита 5,63, на дорожке 4,43
      цвета категорий на карточке: 6,92 · 6,48 · 5,96 · 5,84 · 6,05 · 7,48;
      текст на подложках категорий 10,51–12,43
+   Мобильный дизайн (2026-10-12): новых цветов нет; новые пары текста и фона
+   из прежних токенов (светлая / тёмная):
+     цифры .ck-figures --ck-text на карточке 16,43 / 14,29, на фоне 15,04 / 15,86
+     заголовок верхней полосы --ck-text на --ck-bg 15,04 / 15,86
+     «назад» --ck-link на --ck-bg 5,82 / 9,28
+     «Фильтры (N)», «Из галереи» --ck-link на карточке 6,36 / 8,36; наведение
+     --ck-link-hover на приподнятой 8,78 / 9,84, нажатие на --ck-accent-bg
+     8,33 / 9,29
+     заголовок листа --ck-text на карточке 16,43 / 14,29; крестик «Закрыть»
+     --ck-text-muted на карточке 5,84 / 6,79, при наведении --ck-text на
+     приподнятой 15,30 / 12,71; ручка листа --ck-border-field 3,61 / 3,46
+     тихая опасная кнопка --ck-error-text на карточке 7,49 / 7,09, рамка
+     --ck-error-border 4,67 / 4,43; наведение — текст на --ck-error-bg
+     6,51 / 6,58
+     чип .ck-chip --ck-text на карточке 16,43 / 14,29, наведение на приподнятой
+     15,30 / 12,71, выбранный --ck-chip-selected-text на -bg 16,43 / 15,86;
+     рамка чипа --ck-border-field 3,61 / 3,46
+     выноски .ck-leader — декор --ck-text-muted (5,84 / 6,79 на карточке);
+     зубцы .ck-tape и затухание чипов — маски, своего цвета у них нет;
+     подложка листа — цвет тени --ck-popover-shadow, не текст
    Кольцо фокуса той же бирюзы, что и заливка бренда: держать его с отступом
      (outline-offset), тогда оно лежит на карточке или фоне страницы.
    Шапка — в цвет карточки: значения те же, что у карточки выше; текущий пункт
@@ -259,14 +289,26 @@
   --ck-radius-pill: 999px;
   --ck-font-body: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
   --ck-font-display: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --ck-font-figures: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --ck-font-display-figures: "Unbounded", "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --ck-text-xs: 0.8125rem;
+  --ck-text-sm: 0.9375rem;
+  --ck-text-base: 1rem;
+  --ck-text-lg: 1.125rem;
+  --ck-text-xl: 1.375rem;
+  --ck-text-hero: 2.5rem;
+  --ck-tape-tooth: 8px;
+  --ck-fade-size: 24px;
 
   --ck-bottom-nav-height: 0px;
   --ck-safe-bottom: env(safe-area-inset-bottom, 0px);
   --ck-bottom-occupied: calc(var(--ck-bottom-nav-height) + var(--ck-safe-bottom));
   --ck-action-bar-room: 128px;
   --ck-z-action-bar: 10;
+  --ck-z-top-bar: 15;
   --ck-z-bottom-nav: 20;
   --ck-z-menu-sheet: 30;
+  --ck-z-sheet: 35;
   --ck-z-skip-link: 40;
 
   --ck-series-1: #3987e5;
@@ -373,4 +415,34 @@
   --ck-series-special: #c2cad2;
   --ck-plot-grid: #eef1f4;
   --ck-plot-axis: #d5dbe1;
+}
+
+/* ==========================================================================
+   Утилиты мобильного дизайна (2026-10-12; контракт параллельных работ, имена
+   не менять). Здесь, после токенов: в сборке этот файл идёт позже CSS экранов,
+   поэтому утилита того же веса побеждает класс экрана.
+   ========================================================================== */
+
+/* Цифры денег, количеств и цен: голос кассовой ленты. Только для значений, не для текста. */
+.ck-figures { font-family: var(--ck-font-figures); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* Сумма-герой: не больше одной на экран. На узком окне уменьшается вместе с ним (10vw), но не выше шкалы. */
+.ck-hero-figure { font-family: var(--ck-font-display-figures); font-size: min(var(--ck-text-hero), 10vw); font-weight: 600; line-height: 1.1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* Точечная выноска «Молоко ……… 450 ₸» в строке flex: точки встают перед последним ребёнком (суммой).
+   Точки — декор цветом вторичного текста; имя переносится, сумма — никогда. */
+.ck-leader { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.ck-leader > * { min-width: 0; }
+.ck-leader > :last-child { order: 2; flex: none; white-space: nowrap; }
+.ck-leader::before { content: ""; order: 1; flex: 1 1 16px; min-width: 16px; height: 0.25em; background: radial-gradient(circle, var(--ck-text-muted) 0 1px, transparent 1.5px) left center / 6px 100% repeat-x; }
+
+/* «Лента чека»: рваный нижний край карточки, зубцы маской (не цветом) — работает на любом фоне в обеих темах.
+   Карточку рисует сам экран; утилита только срезает низ и добавляет место под зубцы. Без поддержки маски —
+   обычная карточка. */
+@supports (mask-repeat: repeat-x) or (-webkit-mask-repeat: repeat-x) {
+  .ck-tape {
+    padding-bottom: calc(var(--ck-tape-tooth) / 2 + 16px);
+    -webkit-mask: conic-gradient(from -45deg at bottom, transparent, black 1deg 89deg, transparent 90deg) bottom / var(--ck-tape-tooth) 100% repeat-x;
+    mask: conic-gradient(from -45deg at bottom, transparent, black 1deg 89deg, transparent 90deg) bottom / var(--ck-tape-tooth) 100% repeat-x;
+  }
 }

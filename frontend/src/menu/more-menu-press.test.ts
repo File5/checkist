@@ -81,12 +81,13 @@ describe('list behind «Ещё» and a press inside of .main-more (the reducer o
 
 describe('wiring of the press in MainMenu (the text of the file: there is no DOM in the tests)', () => {
   const source = readFileSync(new URL('./MainMenu.tsx', import.meta.url), 'utf8')
-  const wrappers = source.match(/<div className="main-(more|add)"[^>]*>/g) ?? []
+  const wrappers = source.match(/<div className="main-more"[^>]*>/g) ?? []
 
   it('hears the press on the wrapper of the button and the list, before the blur', () => {
-    // «Ещё» and «＋» share one hook: both wrappers take its handlers.
-    expect(wrappers).toHaveLength(2)
+    // «Ещё» keeps the hook; «＋» opens a modal sheet (components/Sheet) that closes by Esc, backdrop and button only.
+    expect(wrappers).toHaveLength(1)
     for (const wrapper of wrappers) expect(wrapper).toContain('{...wrapperProps}')
+    expect(source).toContain('<div className="main-add">')
     expect(source).toContain('onPointerDown: onPress,')
     expect(source).toContain('onMouseDown: onPress,')
     expect(source).toContain("onPointerCancel: () => dispatch('release'),")

@@ -21,6 +21,7 @@ import { moderatorOnlyText } from './features/auth/labels'
 import { canModerate, loadSession, useSession } from './session'
 import { menuKey, useCurrentItemInView } from './menu-view'
 import MainMenu from './menu/MainMenu'
+import { backTarget } from './menu/back-target'
 import { ThemeToggle } from './theme'
 import OfflineBanner from './offline/OfflineBanner'
 import { usePendingSync } from './offline/pending-store'
@@ -161,6 +162,8 @@ export default function App() {
   }, [title])
 
   const mainNavigation = useCurrentItemInView(menuKey(view, session, route))
+  // «Назад» of the phone's top bar on a nested page: to the list the person came from, or to the parent list.
+  const back = view === 'page' ? backTarget(navigation) : undefined
 
   const mergesActive = route.kind === 'merges' || route.kind === 'merge'
   const classificationActive = route.kind === 'classification'
@@ -199,10 +202,14 @@ export default function App() {
 
       <div className="page">
         <main id="main" ref={content}>
+          {/* On a phone this row is the compact top bar pinned to the top of the window. */}
           <div className="intro">
+            {back && <Link className="ck-back" to={back.to} aria-label={back.label}>
+              <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false"><path d="M15.4 5 8.4 12l7 7 1.4-1.4L11.2 12l5.6-5.6z" /></svg>
+            </Link>}
             <h1 id="page-heading" ref={heading} tabIndex={-1}>{title}</h1>
-            {route.kind === 'health' && <p className="intro-note">Сводка о состоянии служб.</p>}
           </div>
+          {route.kind === 'health' && <p className="intro-note intro-note-after">Сводка о состоянии служб.</p>}
           {catalogActive && view === 'page' && canModerate(session) && <nav className="main-navigation section-navigation" aria-label="Раздел каталога">
             <Link to="/catalog" aria-current={mergesActive || classificationActive ? undefined : 'page'}>Товары</Link>
             <Link to="/catalog/merges" aria-current={mergesActive ? 'page' : undefined}>Дубли</Link>

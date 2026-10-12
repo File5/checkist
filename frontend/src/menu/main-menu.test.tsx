@@ -1,4 +1,5 @@
 import { renderToStaticMarkup } from 'react-dom/server'
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import type { Route } from '../navigation'
 import type { Session } from '../session'
@@ -34,14 +35,15 @@ describe('markup of the main menu (SSR only: the bar, touches and keys are check
     const html = render(session, { kind: 'not-found', path: '/missing' })
     // The same nav: «Главная · Траты · ＋ · Статистика · Ещё»; the sections are its direct children, with no new attributes.
     expect(html).toMatch(/^<nav class="main-navigation" aria-label="Основная навигация"><a href="\/">Главная<\/a><a href="\/receipts">Траты<\/a><div class="main-add">.*<\/div><a href="\/stats">Статистика<\/a><div class="main-more">/)
-    expect(links(html)).toEqual(['Главная', 'Траты', 'Добавить трату', 'Статистика', ...more])
-    // Closed buttons that name the lists they open; no list is a dialog.
+    expect(links(html)).toEqual(['Главная', 'Траты', 'Статистика', ...more])
+    // Closed buttons that name what they open: «Ещё» a list, «＋» a sheet (a dialog, components/Sheet) not drawn while closed.
     expect(html).toContain('<button type="button" class="main-more-toggle" aria-expanded="false" aria-controls="main-more-list">Ещё</button>')
-    expect(html).toContain('<button type="button" class="main-add-toggle" aria-expanded="false" aria-controls="main-add-list" aria-label="Добавить: снять чек, выбрать из галереи или добавить трату">')
+    expect(html).toContain('<button type="button" class="main-add-toggle" aria-haspopup="dialog" aria-expanded="false" aria-label="Добавить: снять чек, выбрать из галереи или добавить трату">')
     const list = html.split('<div class="main-more-list" id="main-more-list">')[1].split('</div>')[0]
     expect(links(list)).toEqual(more)
     expect(html.match(/id="main-more-list"/g)).toHaveLength(1)
-    expect(html).not.toMatch(/role="(dialog|menu)"|aria-modal|aria-haspopup/)
+    expect(html).not.toMatch(/role="(dialog|menu)"|aria-modal/)
+    expect(html.match(/aria-haspopup/g)).toHaveLength(1)
     expect(html).not.toMatch(/<img/)
     // The only picture is the «＋» of the round button, hidden from the screen reader.
     expect(html.match(/<svg[^>]*>/g)).toEqual(['<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false">'])
@@ -50,13 +52,17 @@ describe('markup of the main menu (SSR only: the bar, touches and keys are check
   it('offers three actions: «Снять чек» and «Из галереи» with their fields outside of the sheet, and «Добавить трату»', () => {
     const html = render(reader, catalog)
     const add = html.slice(html.indexOf('<div class="main-add">'), html.indexOf('<a href="/stats">'))
-    expect(add).toContain('<div class="main-add-list" id="main-add-list"><button type="button" class="main-add-action">Снять чек</button>'
-      + '<button type="button" class="main-add-action main-add-gallery">Из галереи</button><a class="main-add-action" href="/receipts/new">Добавить трату</a></div>')
-    const sheet = add.split('<div class="main-add-list" id="main-add-list">')[1].split('</div>')[0]
-    expect(sheet.match(/class="main-add-action[^"]*"/g)).toHaveLength(3)
+    // Closed: the button and the two fields only. The open sheet is drawn by Sheet (components/sheet-markup.test.tsx).
+    expect(add).not.toContain('main-add-list')
+    const source = readFileSync(new URL('./MainMenu.tsx', import.meta.url), 'utf8')
+    expect(source).toContain('<Sheet open={open} onClose={close} title="Добавить" id={ADD_SHEET_ID}>')
+    expect(source).toContain('<button type="button" className="main-add-action" onClick={choose(shot.open)}>Снять чек</button>')
+    expect(source).toContain('<button type="button" className="main-add-action ck-button-secondary" onClick={choose(gallery.open)}>Из галереи</button>')
+    expect(source).toContain('<Link className="main-add-action" to="/receipts/new" onClick={close}>Добавить трату</Link>')
     // The fields stay mounted when the sheet closes: iOS opens the camera or the picker only from the press itself.
     // The gallery has no capture, so iOS offers the photo library and Files; a PDF bill is accepted too.
-    expect(add).toMatch(/<\/div><input class="ck-quick-shot-input" type="file" accept="image\/\*" capture="environment" tabindex="-1" aria-hidden="true"\/>/)
+    expect(source.indexOf('</Sheet>')).toBeLessThan(source.indexOf('{shot.field}'))
+    expect(add).toMatch(/<\/button><input class="ck-quick-shot-input" type="file" accept="image\/\*" capture="environment" tabindex="-1" aria-hidden="true"\/>/)
     expect(add).toMatch(/<input class="ck-quick-shot-input" type="file" accept="image\/\*,\.heic,\.heif,application\/pdf" tabindex="-1" aria-hidden="true"\/><\/div>$/)
   })
 
