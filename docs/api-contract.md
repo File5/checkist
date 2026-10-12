@@ -971,7 +971,8 @@ Line несёт ещё `category` (`{"id","name"}` либо `null`, после `
 | 406 | not_acceptable | неподходящий Accept |
 | 409 | job_active / job_terminal / retry_not_allowed | конфликт состояния |
 | 409 | review_unavailable / review_resolved / review_busy / review_invalid | [подтверждение вырезки](#подтверждение-вырезки-needs_review-человеком); у `review_invalid` рядом с `error` есть `issues` |
-| 409 | receipt_read_only | `PATCH` / `DELETE /api/receipts/{id}/` чека с фото ([трата без чека](#реализовано-трата-без-чека)) |
+| 409 | receipt_read_only | `PATCH /api/receipts/{id}/` чека с фото ([трата без чека](#реализовано-трата-без-чека)) |
+| 409 | job_active / photo_shared | `DELETE /api/receipts/{id}/`: задание фото ещё в очереди или идёт; при `with_photo=1` из фото есть и другой чек ([удаление чека](#удаление-чека)) |
 | 413 | upload_too_large | файл >20 MiB или multipart >21 MiB |
 | 415 | unsupported_media_type | неверный Content-Type тела |
 | 503 | storage_unavailable / database_unavailable | известный отказ хранения; OperationalError/InterfaceError БД только в новых views |
@@ -1634,7 +1635,17 @@ Line несёт ещё `category` (`{"id","name"}` либо `null`, после `
 | `GET /api/receipts/manual/` | `200 {"currency", "frequent_categories"}`: валюта последнего чека пользователя (по `purchased_at`, `-id`), без чеков — `KZT`; до 8 id категорий его ручных трат по числу строк |
 | `POST /api/receipts/manual/` | `201` — Receipt в форме `GET /api/receipts/{id}/` |
 | `PATCH /api/receipts/{id}/` | `200` — Receipt; только `source=manual`, иначе `409 receipt_read_only` |
-| `DELETE /api/receipts/{id}/` | `204` без тела; только `source=manual`, иначе `409 receipt_read_only`; строки удаляются вместе с тратой |
+| `DELETE /api/receipts/{id}/` | `204` без тела; любой видимый чек — трата и чек с фото ([удаление чека](#удаление-чека)); строки удаляются вместе с ним |
+
+### Удаление чека
+
+`DELETE /api/receipts/{id}/[?with_photo=1]` (2026-10-12) удаляет любой чек, видимый по `owner_q`: свой либо члена семьи; чужой — `404 not_found` тем же телом, что несуществующий, повтор — тоже `404`. Доступ и CSRF — как у `PATCH`. Сервис — `backend/receipts/deletion.py`.
+
+- Удаляются чек, его строки, скидки и налоги. Вырезки (`ReceiptImage`) чека с фото **остаются** и теряют связь (`receipt_id: null`, `receipt_deleted: true` у вырезки): страница задания по-прежнему показывает вырезку.
+- `with_photo=1` (значения `1` / `0`, иначе `400 invalid_parameter` с `fields.with_photo`) удаляет и исходное фото со всеми его заданиями, вырезками и попытками, а после фиксации транзакции (`transaction.on_commit`) — его папки MEDIA `originals/<storage_uuid>/`, `prepared/<storage_uuid>/`, `crops/<storage_uuid>/`. Ошибка удаления файла пишется в журнал (`receipts.deletion`) и не меняет ответ: строки уже удалены, оставшаяся папка — сирота. У траты без чека флаг ничего не меняет.
+- Отказы, ничего не удаляя: `409 job_active` — задание фото этого чека ещё в очереди или идёт (`queued` / `running` / `cancel_requested`), с флагом и без; `409 photo_shared` — при `with_photo=1` из того же фото есть другой чек (удалить этот чек без фото можно).
+- Магазины, товары, написания и категории, созданные при импорте этого чека, остаются: каталог общий. Записи журнала слияний о строках чека удаляются вместе со строками (`CASCADE`), как и у траты.
+- Скрытия чека (флажок «не учитывать в бюджете») нет: только удаление.
 
 Тело (`POST`; у `PATCH` — любые из этих ключей, остальные не меняются):
 

@@ -69,7 +69,8 @@ export function clearRecognitionCsrf(options: Pick<RequestOptions, 'baseUrl'> = 
 }
 
 /** PATCH and DELETE of a manual spend use the same token; DELETE sends no body and is answered by 204. */
-export type MutationMethod = { method?: 'POST' | 'PATCH' | 'DELETE' }
+/** `query` — parameters of the address, like `?with_photo=1` of a deletion. */
+export type MutationMethod = { method?: 'POST' | 'PATCH' | 'DELETE'; query?: Query }
 
 /** One CSRF-protected POST of the local API, shared by recognition and product merges.
  * `onProgress` moves a multipart body to XMLHttpRequest where it exists: same refusals and session signal, the deadline
@@ -91,7 +92,7 @@ export async function mutate<T>(
     ? await sendUpload(apiUrl(options.baseUrl ?? (import.meta.env.VITE_API_BASE_URL || '/api'), path), body, validate,
       { signal: options.signal, headers: { 'X-CSRFToken': token }, successStatuses: [200, 202], onProgress },
       (status, answer) => refuse(status, answer, true))
-    : await requestJson(path, {}, validate, options, {
+    : await requestJson(path, write.query ?? {}, validate, options, {
       local: true, method: write.method ?? 'POST', body: write.method === 'DELETE' ? undefined : body,
       credentials: 'same-origin', timeoutMs: multipart ? 60_000 : 15_000,
       successStatuses: [200, 201, 202], emptyStatuses: write.method === 'DELETE' ? [204] : [], headers: { 'X-CSRFToken': token, ...(!multipart && { 'Content-Type': 'application/json' }) },

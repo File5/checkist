@@ -13,6 +13,7 @@ import { Link } from '../../navigation'
 import { useSession } from '../../session'
 import type { ReceiptPageProps } from '../../pages/types'
 import { ReceiptBlock, ReceiptPagination } from './ReceiptBlock'
+import { ReceiptDeleteActions } from './ReceiptDeleteActions'
 import { ReceiptDiscounts, ReceiptHeader, ReceiptImages, ReceiptLines, ReceiptTaxes } from './ReceiptContent'
 import type { ReceiptRequestState } from './request'
 import { ownerShown } from './state'
@@ -61,6 +62,7 @@ export function ReceiptView({ receiptId, returnTo, header, images, lines, discou
     <ReceiptBlock title={numbered(manual ? 'Трата' : 'Страница чека', receiptId)} state={header.state} retry={header.retry}>
       {receipt && <ReceiptHeader receipt={receipt} showOwner={showOwner} />}
       {manual && <ManualSpendActions receiptId={receiptId} />}
+      {receipt && !manual && <ReceiptDeleteActions receiptId={receiptId} />}
     </ReceiptBlock>
     {!manual && <PagedBlock title="Изображения чека" id="receipt-images" request={images} empty="У этого чека нет изображений."
       page={pages.images} onPage={(page) => onPage('images', page)}>

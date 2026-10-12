@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { getReceipts } from '../../api/receipts'
 import type { Receipt, ReceiptListItem } from '../../api/receipts'
@@ -15,6 +15,7 @@ import PendingSpends from '../../offline/PendingSpends'
 import type { ReceiptsQuery } from '../../navigation'
 import type { ReceiptsPageProps } from '../../pages/types'
 import { ReceiptBlock } from './ReceiptBlock'
+import { clearReceiptsNotice, getReceiptsNotice } from './delete-receipt'
 import ReceiptFilters from './ReceiptFilters'
 import ReceiptMedia from './ReceiptMedia'
 import type { ReceiptRequestState } from './request'
@@ -24,6 +25,7 @@ import type { OwnerChip } from './spends'
 import { hasFilters, money, ownerShown, receiptParams, receiptPlace, recognizedText, recognizedValue } from './state'
 import { ManualMark } from './ManualMark'
 import { useReceiptRequest } from './useReceiptRequest'
+import '../expense/Expense.css'
 import './Receipts.css'
 
 export function ReceiptList({ receipts, showOwner = false }: { receipts: Receipt[]; showOwner?: boolean }) {
@@ -56,7 +58,7 @@ export function ReviewBanner({ count }: { count: number | undefined }) {
   </p>
 }
 
-export function ReceiptsView({ query, state, retry, showOwner = false, narrow = false, chips = [], review, today = localToday(), pending }: {
+export function ReceiptsView({ query, state, retry, showOwner = false, narrow = false, chips = [], review, today = localToday(), pending, notice }: {
   query: ReceiptsQuery; state: ReceiptRequestState<Page<ReceiptListItem>>; retry: () => void; showOwner?: boolean
   /** A phone: days and rows instead of the cards of the wide screen. */
   narrow?: boolean
@@ -66,12 +68,15 @@ export function ReceiptsView({ query, state, retry, showOwner = false, narrow = 
   today?: string
   /** Spends waiting on the phone (offline mode), above everything else. */
   pending?: ReactNode
+  /** Shown once after a receipt or a spend was deleted. */
+  notice?: string
 }) {
   const recovery = state.kind === 'error' && state.reason === 'page_out_of_range'
     ? <Link className="action-link" to={{ kind: 'receipts', query: { ...query, page: 1 } }}>На первую страницу</Link>
     : state.kind === 'error' && ['invalid_parameter', 'invalid_request'].includes(state.reason)
       ? <Link className="action-link" to="/receipts">Сбросить фильтры</Link> : undefined
   return <div className="receipts-page">
+    {notice && <p className="expense-notice" role="status">{notice}</p>}
     {pending}
     <OwnerChips chips={chips} query={query} />
     <ReviewBanner count={review} />
@@ -106,6 +111,9 @@ export default function ReceiptsPage({ query }: ReceiptsPageProps) {
   const session = useSession()
   const chips = useMemo(() => ownerChips(session, owner), [session, owner])
   const narrow = useNarrow()
-  return <ReceiptsView query={query} state={request.state} retry={request.retry} showOwner={ownerShown(session)} narrow={narrow}
+  // Read once into the state; the module copy is cleared so that a later visit shows no stale notice.
+  const [notice] = useState(getReceiptsNotice)
+  useEffect(clearReceiptsNotice, [])
+  return <ReceiptsView notice={notice} query={query} state={request.state} retry={request.retry} showOwner={ownerShown(session)} narrow={narrow}
     chips={chips} review={review.state.kind === 'ok' ? review.state.data.count : undefined} pending={<PendingSpends />} />
 }
