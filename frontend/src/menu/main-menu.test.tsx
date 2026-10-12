@@ -28,20 +28,31 @@ describe('markup of the main menu (SSR only: the bar, touches and keys are check
   })
 
   it.each<[string, Session, string[]]>([
-    ['five items in local_single', local, ['Обработка', 'Состояние сервисов']],
-    ['six items in accounts', reader, ['Обработка', 'Состояние сервисов', 'synthetic-reader']],
+    ['six items in local_single', local, ['Каталог', 'Обработка', 'Состояние сервисов']],
+    ['seven items in accounts', reader, ['Каталог', 'Обработка', 'Состояние сервисов', 'synthetic-reader']],
   ])('keeps the links after the third one behind «Ещё» with %s', (_name, session, more) => {
-    const html = render(session, catalog)
-    // The same nav: the three sections are its direct children, as before, with no new attributes.
-    expect(html).toMatch(/^<nav class="main-navigation" aria-label="Основная навигация"><a aria-current="page" href="\/catalog">Каталог<\/a><a href="\/receipts">Чеки<\/a><a href="\/stats">Статистика<\/a><div class="main-more">/)
-    expect(links(html)).toEqual(['Каталог', 'Чеки', 'Статистика', ...more])
-    // A closed button that names the list it opens; the list is not a dialog.
-    expect(button(html)).toEqual(['<button type="button" class="main-more-toggle" aria-expanded="false" aria-controls="main-more-list">Ещё</button>'])
+    const html = render(session, { kind: 'not-found', path: '/missing' })
+    // The same nav: «Главная · Траты · ＋ · Статистика · Ещё»; the sections are its direct children, with no new attributes.
+    expect(html).toMatch(/^<nav class="main-navigation" aria-label="Основная навигация"><a href="\/">Главная<\/a><a href="\/receipts">Траты<\/a><div class="main-add">.*<\/div><a href="\/stats">Статистика<\/a><div class="main-more">/)
+    expect(links(html)).toEqual(['Главная', 'Траты', 'Добавить трату', 'Статистика', ...more])
+    // Closed buttons that name the lists they open; no list is a dialog.
+    expect(html).toContain('<button type="button" class="main-more-toggle" aria-expanded="false" aria-controls="main-more-list">Ещё</button>')
+    expect(html).toContain('<button type="button" class="main-add-toggle" aria-expanded="false" aria-controls="main-add-list" aria-label="Добавить: снять чек или добавить трату">')
     const list = html.split('<div class="main-more-list" id="main-more-list">')[1].split('</div>')[0]
     expect(links(list)).toEqual(more)
     expect(html.match(/id="main-more-list"/g)).toHaveLength(1)
     expect(html).not.toMatch(/role="(dialog|menu)"|aria-modal|aria-haspopup/)
-    expect(html).not.toMatch(/<svg|<img/)
+    expect(html).not.toMatch(/<img/)
+    // The only picture is the «＋» of the round button, hidden from the screen reader.
+    expect(html.match(/<svg[^>]*>/g)).toEqual(['<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false">'])
+  })
+
+  it('offers «Снять чек» with the camera field outside of the sheet, and «Добавить трату»', () => {
+    const html = render(reader, catalog)
+    const add = html.slice(html.indexOf('<div class="main-add">'), html.indexOf('<a href="/stats">'))
+    expect(add).toContain('<div class="main-add-list" id="main-add-list"><button type="button" class="main-add-action">Снять чек</button><a class="main-add-action" href="/receipts/new">Добавить трату</a></div>')
+    // The field stays mounted when the sheet closes: iOS opens the camera only from the press itself.
+    expect(add).toMatch(/<\/div><input class="ck-quick-shot-input" type="file" accept="image\/\*" capture="environment" tabindex="-1" aria-hidden="true"\/><\/div>$/)
   })
 
   it('keeps the account link as it was in the header', () => {
@@ -50,22 +61,23 @@ describe('markup of the main menu (SSR only: the bar, touches and keys are check
   })
 
   it.each<[string, Route, string]>([
+    ['the catalog', catalog, 'Каталог'],
     ['«Обработка»', { kind: 'jobs', query: { page: 1 } }, 'Обработка'],
     ['the health page', health, 'Состояние сервисов'],
     ['the account', { kind: 'account' }, 'synthetic-reader'],
   ])('marks «Ещё» as current, and not by colour alone, while %s is open', (_name, route, label) => {
     const html = render(reader, route)
-    expect(button(html)).toEqual([`<button type="button" class="main-more-toggle" aria-expanded="false" aria-controls="main-more-list" aria-label="Ещё, текущий раздел: ${label}" data-current="">Ещё</button>`])
+    expect(button(html).filter((item) => item.includes('main-more-toggle'))).toEqual([`<button type="button" class="main-more-toggle" aria-expanded="false" aria-controls="main-more-list" aria-label="Ещё, текущий раздел: ${label}" data-current="">Ещё</button>`])
     // The link keeps aria-current; the button does not take it: the effect of the header row looks for the link.
     expect(html.match(/aria-current="page"/g)).toHaveLength(1)
     expect(html).toMatch(new RegExp(`<a [^>]*aria-current="page"[^>]*>${label}</a>`))
   })
 
   it('leaves «Ещё» unmarked while the current section is in the bar or nowhere in the menu', () => {
-    for (const route of [catalog, { kind: 'upload' }, { kind: 'spending', query: {} }, { kind: 'not-found', path: '/missing' }] as Route[]) {
+    for (const route of [{ kind: 'receipts', query: { page: 1 } }, { kind: 'upload' }, { kind: 'spending', query: {} }, { kind: 'not-found', path: '/missing' }] as Route[]) {
       const html = render(reader, route)
       expect(html, route.kind).not.toContain('data-current')
-      expect(button(html)[0], route.kind).not.toContain('aria-label')
+      expect(button(html).find((item) => item.includes('main-more-toggle')), route.kind).not.toContain('aria-label')
     }
   })
 })

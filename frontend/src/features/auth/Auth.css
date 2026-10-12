@@ -55,8 +55,8 @@
 .ck-login-logo { position: relative; z-index: 1; display: block; width: 100%; height: auto; mix-blend-mode: lighten; }
 
 .ck-login-panel { display: grid; gap: 12px; width: 100%; max-width: 420px; min-width: 0; }
-.ck-login-panel h1 { font-size: clamp(2.4rem, 9vw, 4rem); font-weight: 700; line-height: 1.05; letter-spacing: 0.08em; text-transform: uppercase; }
-.ck-login-subtitle { font-family: var(--ck-font-display); font-size: 1.05rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ck-accent-text); }
+.ck-login-panel h1 { font-size: clamp(2.4rem, 9vw, 4rem); font-weight: 800; line-height: 1.05; letter-spacing: -0.01em; }
+.ck-login-subtitle { font-family: var(--ck-font-display); font-size: 1.05rem; font-weight: 600; color: var(--ck-accent-text); }
 .ck-login-rule { display: flex; align-items: center; gap: 12px; }
 .ck-login-rule::before, .ck-login-rule::after { content: ""; flex: 1 1 0; height: 2px; background: var(--ck-accent); }
 .ck-login-star { flex: 0 0 24px; fill: var(--ck-brand); stroke: var(--ck-accent); stroke-width: 1.2; stroke-linejoin: round; }
@@ -66,7 +66,7 @@
 .ck-login .ck-auth-panel { gap: 16px; padding: 0; background: none; border: 0; border-radius: 0; }
 .ck-login .ck-auth-field input { min-height: 48px; }
 .ck-login .ck-auth-actions { justify-items: stretch; }
-.ck-login .ck-auth-actions button { width: 100%; min-height: 48px; font-family: var(--ck-font-display); font-size: 1.1rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+.ck-login .ck-auth-actions button { width: 100%; min-height: 48px; font-family: var(--ck-font-display); font-size: 1.1rem; font-weight: 700; }
 .ck-login-note { color: var(--ck-text-muted); font-size: 0.95rem; }
 .ck-login-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 12px 16px; padding-top: 12px; border-top: 1px solid var(--ck-divider); }
 

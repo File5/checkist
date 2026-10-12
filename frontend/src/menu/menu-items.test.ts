@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Route } from '../navigation'
 import type { Session } from '../session'
-import { BAR_SLOTS, menuItems } from './menu-items'
+import { ADD_AFTER, BAR_SLOTS, menuItems } from './menu-items'
 
 const loading: Session = { kind: 'loading' }
 const failed: Session = { kind: 'error' }
@@ -22,6 +22,7 @@ describe('items of the main menu and their split for the bottom bar of a phone',
     const menu = menuItems(session, health)
     expect(labels(menu.primary)).toEqual(['Состояние сервисов'])
     expect(menu.more).toEqual([])
+    expect(menu.add).toBe(false)
     expect(menu.primary[0]).toEqual({ key: 'health', to: '/health', label: 'Состояние сервисов', current: true })
   })
 
@@ -29,20 +30,24 @@ describe('items of the main menu and their split for the bottom bar of a phone',
     const menu = menuItems({ kind: 'guest', expired }, health)
     expect(menu.primary.map((item) => [item.label, item.to, item.current])).toEqual([['Состояние сервисов', '/health', true], ['Войти', '/login', false]])
     expect(menu.more).toEqual([])
+    expect(menu.add).toBe(false)
   })
 
-  it('local_single: three sections in the bar, «Обработка» and the health page behind «Ещё»', () => {
+  it('local_single: «Главная · Траты · ＋ · Статистика» in the bar, the catalog, «Обработка» and the health page behind «Ещё»', () => {
     const menu = menuItems(local, catalog)
-    expect(menu.primary.map((item) => [item.label, item.to])).toEqual([['Каталог', '/catalog'], ['Чеки', '/receipts'], ['Статистика', '/stats']])
-    expect(menu.more.map((item) => [item.label, item.to])).toEqual([['Обработка', '/recognition/jobs'], ['Состояние сервисов', '/health']])
+    expect(menu.primary.map((item) => [item.label, item.to])).toEqual([['Главная', '/'], ['Траты', '/receipts'], ['Статистика', '/stats']])
+    expect(menu.add).toBe(true)
+    expect(ADD_AFTER).toBe(2)
+    expect(menu.more.map((item) => [item.label, item.to])).toEqual([['Каталог', '/catalog'], ['Обработка', '/recognition/jobs'], ['Состояние сервисов', '/health']])
     expect([...menu.primary, ...menu.more].some((item) => item.account)).toBe(false)
   })
 
   it('accounts: the same and the name of the person, the last one behind «Ещё»', () => {
     const menu = menuItems(reader, catalog)
-    expect(labels(menu.primary)).toEqual(['Каталог', 'Чеки', 'Статистика'])
-    expect(labels(menu.more)).toEqual(['Обработка', 'Состояние сервисов', 'synthetic-reader'])
-    expect(menu.more[2]).toEqual({ key: 'account', to: '/account', label: 'synthetic-reader', current: false, account: true })
+    expect(labels(menu.primary)).toEqual(['Главная', 'Траты', 'Статистика'])
+    expect(menu.add).toBe(true)
+    expect(labels(menu.more)).toEqual(['Каталог', 'Обработка', 'Состояние сервисов', 'synthetic-reader'])
+    expect(menu.more[3]).toEqual({ key: 'account', to: '/account', label: 'synthetic-reader', current: false, account: true })
   })
 
   it('never puts more into the bar than it holds, and keeps «Ещё» for at least two links', () => {
@@ -70,5 +75,9 @@ describe('items of the main menu and their split for the bottom bar of a phone',
     expect(current(reader, { kind: 'not-found', path: '/missing' })).toEqual([])
     expect(current(local, { kind: 'account' })).toEqual([])
     expect(current(guest, { kind: 'login' })).toEqual([])
+  })
+
+  it('marks «Главная» on the dashboard and its limits (route kinds of the dashboard branch)', () => {
+    for (const kind of ['dashboard', 'limits']) expect(current(reader, { kind } as unknown as Route)).toEqual(['home'])
   })
 })
