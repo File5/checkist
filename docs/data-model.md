@@ -834,3 +834,11 @@ docker compose -p checkist_dev cp postgres:/tmp/checkist.dump ./checkist.dump
 - Поведение на больших объёмах не измерялось: статистика замерена только на демо-базе (466 чеков, 5604 строки).
 
 Команды проверки трёх приложений — в [verification.md](verification.md#модель-данных-catalog-stores-receipts).
+
+## Профиль, главный в семье, скрытые платежи, приглашения (2026-10-12)
+
+- `accounts.Profile` — OneToOne с пользователем, `default_currency` → `stores.Currency` (NULL, `SET_NULL`), `updated_at`; строка создаётся первым `PATCH /api/me/settings/`. Место для следующих настроек.
+- `accounts.Membership.role` — `head` | `member` (по умолчанию `member`; прежние члены семей — `member`). Частичное уникальное ограничение `accounts_membership_one_head` (`household` при `role='head'`): главный в семье не больше одного. Главного назначает администратор (инлайн членов в форме семьи) либо клиент «Семья» (создатель семьи, передача роли). Пользователь без семьи — сам себе главный (`accounts.access.is_head`).
+- `accounts.Invite` — `household`, `token_hash` (SHA-256, уникален), `created_by`, `created_at`, `expires_at` (+7 дней), `used_at`, `used_by`; сам токен не хранится.
+- `receipts.Receipt.hidden` (bool, по умолчанию `false`), `hidden_by` (FK пользователь, NULL, `SET_NULL`), `hidden_at`. Скрытый платёж не виден членам семьи и не входит ни в какие суммы; правило — `accounts.access.visible_receipts_q`.
+- Миграции: `accounts.0003_profile_head_invite` (Profile, Invite, `role`, ограничение), `receipts.0008_receipt_hidden` — схема без данных. Откат: `migrate receipts 0007_manual_parse_request`, `migrate accounts 0002_household_membership` (роли, настройки и приглашения теряются; скрытые платежи снова видны всем).

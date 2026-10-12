@@ -68,4 +68,4 @@ class SpendingView(LocalAPIView):
         blocks = spending.summarize(
             data, group_by=group_by, limit=limit, tree=tree, category=category, generic=generic, stores=stores,
         )
-        return Response({**head, "currencies": [_block(block) for block in blocks]})
+        return Response({**head, "currencies": stats_common.primary_first(request, [_block(block) for block in blocks])})

@@ -440,14 +440,18 @@ SKIPPED_ROUTES = {
         ("auth-login", "auth-logout", "auth-password", "recognition-cancel", "recognition-retry",
          "recognition-image-confirm", "product-merges-detect", "product-merges-confirm", "product-merges-cancel",
          "product-merges-exclude", "product-classifications-confirm-many", "product-classifications-confirm",
-         "product-classifications-reject", "receipts-manual-parse"),
+         "product-classifications-reject", "receipts-manual-parse", "receipts-hide", "receipts-unhide",
+         "family-members", "family-member", "family-head", "family-leave", "family-invites", "family-invite",
+         "family-join"),
         "только POST",
     ),
     "receipts-manual-parse-detail": "запрос «Трата словами» своего пользователя; id чеков в нём нет",
+    "family": "только в accounts (в local_single — 404); id чеков в ответе нет",
     "budget-limit": "лимит семьи или пользователя; id чеков в нём нет",
     **dict.fromkeys(
         ("api-not-found", "recognition-not-found", "receipts-not-found", "product-merges-not-found",
-         "product-classifications-not-found", "stats-not-found", "budget-not-found", "export-not-found"),
+         "product-classifications-not-found", "stats-not-found", "budget-not-found", "export-not-found",
+         "family-not-found"),
         "ответ 404 без данных",
     ),
     **dict.fromkeys(
@@ -507,7 +511,7 @@ class NoForeignReceiptIdTests(ProjectionMixin, TestCase):
     def paths(self, receipts, recognition):
         """Адреса обхода: каталог и цены целиком, свои чеки и распознавание, статистика, слияния."""
         paths = [
-            "/api/me/", "/api/auth/csrf/",
+            "/api/me/", "/api/me/settings/", "/api/auth/csrf/",
             "/api/countries/", "/api/countries/?all=1", "/api/stores/", "/api/brands/", "/api/categories/",
             "/api/generic-products/", "/api/products/", "/api/products/?ordering=-last_observed_at",
             "/api/receipts/", "/api/receipts/?ordering=purchased_at", "/api/receipts/manual/",

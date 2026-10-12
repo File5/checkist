@@ -8,7 +8,7 @@
 """
 from django.db.models import BooleanField, ExpressionWrapper
 
-from accounts.access import owner_q
+from accounts.access import visible_receipts_q
 
 
 def own_annotation(request, prefix="receipt__"):
@@ -19,4 +19,4 @@ def own_annotation(request, prefix="receipt__"):
     ``local_single`` даёт JOIN с пользователем. ``owner`` не бывает NULL, значение — всегда
     ``True`` либо ``False``.
     """
-    return ExpressionWrapper(owner_q(request, prefix), output_field=BooleanField())
+    return ExpressionWrapper(visible_receipts_q(request, prefix), output_field=BooleanField())

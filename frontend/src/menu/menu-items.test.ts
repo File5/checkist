@@ -46,8 +46,8 @@ describe('items of the main menu and their split for the bottom bar of a phone',
     const menu = menuItems(reader, catalog)
     expect(labels(menu.primary)).toEqual(['Главная', 'Траты', 'Статистика'])
     expect(menu.add).toBe(true)
-    expect(labels(menu.more)).toEqual(['Каталог', 'Обработка', 'Выгрузка', 'Состояние сервисов', 'synthetic-reader'])
-    expect(menu.more[4]).toEqual({ key: 'account', to: '/account', label: 'synthetic-reader', current: false, account: true })
+    expect(labels(menu.more)).toEqual(['Каталог', 'Обработка', 'Выгрузка', 'Состояние сервисов', 'Семья', 'synthetic-reader'])
+    expect(menu.more[5]).toEqual({ key: 'account', to: '/account', label: 'synthetic-reader', current: false, account: true })
   })
 
   it('never puts more into the bar than it holds, and keeps «Ещё» for at least two links', () => {

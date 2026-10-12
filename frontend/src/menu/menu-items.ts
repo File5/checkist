@@ -50,6 +50,7 @@ function allItems(session: Session, route: Route): MenuItem[] {
     health,
   ]
   if (session.mode === 'accounts') {
+    items.push({ key: 'family', to: '/family', label: 'Семья', current: route.kind === 'family' })
     items.push({ key: 'account', to: '/account', label: personName(session.user.username, session.user.display_name), current: route.kind === 'account', account: true })
   }
   return items

@@ -250,6 +250,7 @@ class FamilyMeTests(FamilyMixin, TestCase):
             "id": self.family.pk, "name": "Демо-семья",
             "members": [username for username, _ in people],
             "people": [{"username": username, "display_name": name} for username, name in people],
+            "head": None,
         })
         self.assertEqual((body["user"]["username"], body["user"]["display_name"]), (self.third.username, "Лиза"))
         self.assertIsNone(self.client_of(self.second).get("/api/me/").json()["household"])

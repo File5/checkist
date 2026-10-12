@@ -134,8 +134,8 @@ describe('session gate of the shell (SSR only, no browser interaction)', () => {
     ['error', { kind: 'error' }, ['Состояние сервисов']],
     ['guest', guest, ['Состояние сервисов', 'Войти']],
     ['guest after an ended session', { kind: 'guest', expired: true }, ['Состояние сервисов', 'Войти']],
-    ['reader', reader, [...fullMenu, 'synthetic-reader']],
-    ['moderator', moderator, [...fullMenu, 'synthetic-moderator']],
+    ['reader', reader, [...fullMenu, 'Семья', 'synthetic-reader']],
+    ['moderator', moderator, [...fullMenu, 'Семья', 'synthetic-moderator']],
     ['local_single', local, fullMenu],
   ])('keeps health available for %s', (_name, session, menu) => {
     const html = render(session, { kind: 'health' }, '/health')
@@ -156,7 +156,7 @@ describe('signed-in shell (SSR only, no browser interaction)', () => {
     const html = render(reader, route, href)
     expect(screens(html)).toEqual([route.kind])
     expect(html.match(/<h1\b/g)).toHaveLength(1)
-    expect(mainNav(html)).toEqual([...fullMenu, 'synthetic-reader'])
+    expect(mainNav(html)).toEqual([...fullMenu, 'Семья', 'synthetic-reader'])
     expect(navLink(html, 'synthetic-reader')).toBe('<a class="account-link" aria-label="Аккаунт: synthetic-reader" href="/account">synthetic-reader</a>')
     expect(html).not.toContain('login-username')
   })

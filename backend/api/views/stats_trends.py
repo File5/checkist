@@ -97,7 +97,8 @@ class TrendsMonthlyView(LocalAPIView):
         tree = common.CategoryTree.load()
         rows = trends.collect_spending(_receipts(request), months, stats_common.owner_product_id())
         return Response({
-            **_head(months), "currencies": [_monthly_block(block) for block in trends.monthly(rows, months, tree)],
+            **_head(months), "currencies": stats_common.primary_first(
+                request, [_monthly_block(block) for block in trends.monthly(rows, months, tree)]),
         })
 
 
@@ -122,7 +123,8 @@ class TrendsCategoryView(LocalAPIView):
         suggested = category is None
         if suggested:
             category = trends.suggested_category(rows, tree)
-        blocks = [] if category is None else trends.category_series(rows, months, tree, category)
+        blocks = [] if category is None else stats_common.primary_first(
+            request, trends.category_series(rows, months, tree, category))
         return Response({
             **_head(months),
             "category": None if category is None else tree.category(category),
@@ -207,7 +209,7 @@ class TrendsPricesView(LocalAPIView):
         product_ref = stats_common.owner_product_id()
         purchases = trends.collect_purchases(_receipts(request), months, product_ref)
         names = dict(Product.objects.filter(pk__in=trends.product_ids(purchases)).values_list("pk", "name"))
-        blocks = trends.price_trend(purchases, months, names)
+        blocks = stats_common.primary_first(request, trends.price_trend(purchases, months, names))
         return Response({
             **_head(months),
             "currencies": [

@@ -8,7 +8,7 @@ from django.db.models import Count, Exists, F, IntegerField, OuterRef, Q, Subque
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
-from accounts.access import owner_q
+from accounts.access import owner_q, visible_receipts_q
 from accounts.people import display_name
 from api.common import amount, iso_date, percent, price, quantity, store_object, utc_datetime
 from receipts.decimal_math import price_context
@@ -400,10 +400,12 @@ def image_object(image, *, detail=False):
     return result
 
 
-def receipts_queryset(request):
+def receipts_queryset(request, include_hidden=False):
+    """Видимые запросу чеки (``visible_receipts_q``) с полями списка и карточки."""
     images = ReceiptImage.objects.filter(receipt_id=OuterRef("pk"))
     lines = ReceiptLine.objects.filter(receipt_id=OuterRef("pk"))
-    return Receipt.objects.filter(owner_q(request)).select_related("store__merchant", "owner").annotate(
+    return Receipt.objects.filter(visible_receipts_q(request, include_hidden=include_hidden)).select_related(
+        "store__merchant", "owner").annotate(
         lines_count=related_count(lines, "receipt_id"),
         # Строка ручной траты с категорией не «несопоставленный товар»: она вписана суммой в категорию.
         unmatched_products_count=related_count(
@@ -428,6 +430,7 @@ def receipt_object(receipt):
         "review_required": bool(receipt.has_review or receipt.unmatched_products_count),
         "lines_count": receipt.lines_count, "unmatched_products_count": receipt.unmatched_products_count,
         "receipt_images_count": receipt.image_count, "note": receipt.note,
+        "hidden": receipt.hidden, "hidden_at": utc_datetime(receipt.hidden_at),
         "preview_image_url": settings.MEDIA_URL + receipt.preview_file if receipt.preview_file else None,
         "preview_thumb_url": variant_url(receipt.preview_file, "thumb"),
         "created_at": utc_datetime(receipt.created_at), "updated_at": utc_datetime(receipt.updated_at),

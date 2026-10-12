@@ -1,7 +1,7 @@
 from django.urls import re_path
 
 from .views.receipts import (
-    ManualParseDetailView, ManualParseView, ManualReceiptView, ReceiptDiscountsView, ReceiptLinesView, ReceiptTaxesView, ReceiptView, ReceiptsView,
+    ManualParseDetailView, ManualParseView, ManualReceiptView, ReceiptDiscountsView, ReceiptHideView, ReceiptLinesView, ReceiptTaxesView, ReceiptView, ReceiptsView,
 )
 from .views.recognition import LocalNotFoundView
 
@@ -12,6 +12,8 @@ urlpatterns = [
     re_path(r"^receipts/manual/parse/(?P<pk>[1-9][0-9]{0,18})/$", ManualParseDetailView.as_view(),
             name="receipts-manual-parse-detail"),
     re_path(r"^receipts/(?P<pk>[1-9][0-9]{0,18})/$", ReceiptView.as_view(), name="receipts-detail"),
+    re_path(r"^receipts/(?P<pk>[1-9][0-9]{0,18})/hide/$", ReceiptHideView.as_view(hide=True), name="receipts-hide"),
+    re_path(r"^receipts/(?P<pk>[1-9][0-9]{0,18})/unhide/$", ReceiptHideView.as_view(hide=False), name="receipts-unhide"),
     re_path(r"^receipts/(?P<pk>[1-9][0-9]{0,18})/lines/$", ReceiptLinesView.as_view(), name="receipts-lines"),
     re_path(r"^receipts/(?P<pk>[1-9][0-9]{0,18})/discounts/$", ReceiptDiscountsView.as_view(), name="receipts-discounts"),
     re_path(r"^receipts/(?P<pk>[1-9][0-9]{0,18})/taxes/$", ReceiptTaxesView.as_view(), name="receipts-taxes"),

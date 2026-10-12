@@ -9,7 +9,7 @@ from datetime import date
 
 from django.db.models import BigIntegerField, Case, F, Q, When
 
-from accounts.access import owner_q
+from accounts.access import visible_receipts_q
 from merges.models import ProductMergeMember
 from receipts.decimal_math import price_context
 from receipts.models import Receipt
@@ -72,7 +72,26 @@ def receipts(request, scope, period=None):
 
     Закрытые поля не выбирайте — расчётам нужны только суммы и ключи.
     """
-    return Receipt.objects.filter(owner_q(request), receipt_q(scope, period))
+    return Receipt.objects.filter(visible_receipts_q(request), receipt_q(scope, period))
+
+
+def primary_first(request, blocks):
+    """Блоки валют с основной валютой пользователя (``accounts.Profile``) первой; прочие — в прежнем порядке.
+
+    Блок — словарь ответа либо объект расчёта с ``currency``. Без основной валюты порядок не меняется.
+    """
+    from accounts.profile import request_default_currency
+
+    blocks = list(blocks)
+    # Один запрос и только при нескольких валютах.
+    primary = request_default_currency(request) if len(blocks) > 1 else None
+    if not primary:
+        return blocks
+
+    def code(block):
+        return block["currency"] if isinstance(block, dict) else block.currency
+
+    return sorted(blocks, key=lambda block: code(block) != primary)
 
 
 # --- слитые товары ---

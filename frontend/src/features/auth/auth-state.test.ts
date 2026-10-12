@@ -267,7 +267,7 @@ describe('forms over the real adapters (mocked fetch, the backend\'s fixtures)',
     await result.run(credentials)
     expect(calls()).toEqual(['GET /api/auth/csrf/', 'POST /api/auth/login/'])
     expect(JSON.parse(fetchMock.mock.calls[1][1]!.body as string)).toEqual(credentials)
-    expect(getSession()).toEqual({ kind: 'user', mode: 'accounts', user: me().user, household: null, permissions: me().permissions })
+    expect(getSession()).toEqual({ kind: 'user', mode: 'accounts', user: me().user, household: null, permissions: me().permissions, isHead: true, settings: { default_currency: null } })
     expect(result.getSnapshot()).toEqual({ kind: 'idle' })
   })
   it('shows the wrong password once, keeps the guest and does not repeat the POST', async () => {

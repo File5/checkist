@@ -132,7 +132,7 @@ def build_input(row):
                   .values("pk", "name", "parent_id")[:CATEGORIES_MAX])
     return {
         "today": row.today.isoformat(),
-        "default_currency": manual.default_currency(Receipt.objects.filter(owner_id=row.owner_id)),
+        "default_currency": manual.default_currency(Receipt.objects.filter(owner_id=row.owner_id, hidden=False), row.owner),
         "currencies": list(Currency.objects.order_by("pk").values_list("pk", flat=True)),
         "categories": [{"id": item["pk"], "name": item["name"], "parent_id": item["parent_id"]} for item in categories],
         "text": row.text,

@@ -11,7 +11,7 @@ from rest_framework.parsers import BaseParser
 from rest_framework.response import Response
 from rest_framework import status
 
-from accounts.access import Moderator, is_moderator, owner_q, request_user
+from accounts.access import Moderator, is_moderator, request_user, visible_receipts_q
 from api.pagination import paginate
 from api.params import MAX_ID, Params
 from api.product_merge_serialization import group_briefs, group_object, line_object
@@ -152,7 +152,7 @@ class GroupLinesView(MergeAPIView):
         page = params.page()
         params.check()
         # Чеки личные: все строки группы видит только модератор, и чужие — без ссылки на чек.
-        mine = None if is_moderator(request) else owner_q(request, "receipt__")
+        mine = None if is_moderator(request) else visible_receipts_q(request, "receipt__")
         lines = services.group_lines(group, mine).annotate(own=own_annotation(request))
         return Response(paginate(lines, page, lambda line: line_object(line, line.own)))
 

@@ -52,7 +52,8 @@ export function applyFilters(query: ReceiptsQuery, draft: FilterDraft): { query:
 }
 
 export function receiptParams(query: ReceiptsQuery): ReceiptParams {
-  return { ...query, ordering: query.ordering ?? '-purchased_at' }
+  const { hidden, ...rest } = query
+  return { ...rest, ordering: query.ordering ?? '-purchased_at', ...(hidden === 1 && { hidden: '1' as const }) }
 }
 
 export function hasFilters(query: ReceiptsQuery): boolean {

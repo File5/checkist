@@ -38,6 +38,11 @@ class Receipt(models.Model):
     raw_text = models.TextField(blank=True, default="")
     extra = models.JSONField(default=dict, blank=True)  # кассир, способ оплаты, реклама
     note = models.TextField(blank=True, default="")  # комментарий человека к трате
+    # Скрытый платёж (решает главный в семье): не виден остальным и не входит ни в какие суммы.
+    hidden = models.BooleanField(default=False)
+    hidden_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+                                  related_name="+")
+    hidden_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

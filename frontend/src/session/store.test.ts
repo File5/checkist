@@ -18,8 +18,8 @@ function me(name = 'me.json', change: Partial<Me> = {}): Me {
 }
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status })
 const guestAnswer = () => json({ error: { code: 'not_authenticated', message: 'Требуется вход.' } }, 401)
-const reader: Session = { kind: 'user', mode: 'accounts', user: { id: 1, username: 'synthetic-reader', display_name: 'synthetic-reader', is_staff: false }, household: null, permissions: { moderate_catalog: false } }
-const local: Session = { kind: 'user', mode: 'local_single', user: { id: 1, username: 'local', display_name: 'local', is_staff: false }, household: null, permissions: { moderate_catalog: true } }
+const reader: Session = { kind: 'user', mode: 'accounts', user: { id: 1, username: 'synthetic-reader', display_name: 'synthetic-reader', is_staff: false }, household: null, permissions: { moderate_catalog: false }, isHead: true, settings: { default_currency: null } }
+const local: Session = { kind: 'user', mode: 'local_single', user: { id: 1, username: 'local', display_name: 'local', is_staff: false }, household: null, permissions: { moderate_catalog: true }, isHead: true, settings: { default_currency: null } }
 
 const fetchMock = vi.fn<typeof fetch>()
 const urls = () => fetchMock.mock.calls.map(([url]) => url)

@@ -12,7 +12,7 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
 
-from accounts.access import owner_q
+from accounts.access import visible_receipts_q
 from accounts.people import display_name
 from budget import dashboard
 from budget.access import limit_owner, limits_q, people
@@ -211,7 +211,7 @@ class DashboardView(LocalAPIView):
         month = read_month(params, today)
         params.check()
         tree = common.CategoryTree.load()
-        receipts = Receipt.objects.filter(owner_q(request))
+        receipts = Receipt.objects.filter(visible_receipts_q(request))
         product_ref = stats_common.owner_product_id()
         blocks = dashboard.currency_blocks(receipts, visible_limits(request), month, tree, product_ref)
         family = people(request)
@@ -219,6 +219,6 @@ class DashboardView(LocalAPIView):
             "month": month.label(), "previous_month": month.previous().label(),
             "days_left": dashboard.days_left(month, today),
             "members": [item["username"] for item in family], "people": family,
-            "currencies": [_block_object(block) for block in blocks],
+            "currencies": stats_common.primary_first(request, [_block_object(block) for block in blocks]),
             "recent": [_recent_object(*pair) for pair in dashboard.recent(receipts, tree, product_ref=product_ref)],
         })

@@ -2,7 +2,7 @@ import { onAuthSignal } from '../api/auth-signal.ts'
 import { clearRecognitionCsrf } from '../api/local.ts'
 import { getMe } from '../api/session.ts'
 import { forgetCachedAnswers } from '../offline/service-worker.ts'
-import type { Me } from '../api/session.ts'
+import type { Me, UserSettings } from '../api/session.ts'
 
 /** Who uses the application. No React here: the hook lives in `index.ts`.
  * `guest.expired` — the session ended in the middle of work, the sign-in explains it.
@@ -11,7 +11,12 @@ import type { Me } from '../api/session.ts'
 export type Session =
   | { kind: 'loading' } | { kind: 'error' }
   | { kind: 'guest'; expired: boolean }
-  | { kind: 'user'; mode: Me['mode']; user: Me['user']; household: Me['household']; permissions: Me['permissions'] }
+  | {
+    kind: 'user'; mode: Me['mode']; user: Me['user']; household: Me['household']; permissions: Me['permissions']
+    /** The family head: hides and shows payments. An older server without the field — `false`. */
+    isHead?: boolean
+    settings?: UserSettings
+  }
 
 let session: Session = { kind: 'loading' }
 /** A newer read, a sign-in or the end of the session makes every earlier answer of `/api/me/` stale. */
@@ -24,13 +29,16 @@ const sameUser = (a: Session, b: Session) => a.kind === 'user' && b.kind === 'us
 const peopleKey = (household: NonNullable<Me['household']>) => (household.people ?? [])
   .map((person) => `${person.username}\t${person.display_name}`).join('\n')
 const sameHousehold = (a: Me['household'], b: Me['household']) => a === b || (a !== null && b !== null
-  && a.id === b.id && a.name === b.name && a.members.join('\n') === b.members.join('\n') && peopleKey(a) === peopleKey(b))
+  && a.id === b.id && a.name === b.name && a.members.join('\n') === b.members.join('\n') && peopleKey(a) === peopleKey(b)
+  && (a.head ?? null) === (b.head ?? null))
 function same(a: Session, b: Session): boolean {
   if (a.kind === 'guest' && b.kind === 'guest') return a.expired === b.expired
   if (a.kind === 'user' && b.kind === 'user') {
     return sameUser(a, b) && a.user.username === b.user.username && a.user.display_name === b.user.display_name
       && a.user.is_staff === b.user.is_staff
       && a.permissions.moderate_catalog === b.permissions.moderate_catalog && sameHousehold(a.household, b.household)
+      && (a.isHead ?? false) === (b.isHead ?? false)
+      && (a.settings?.default_currency ?? null) === (b.settings?.default_currency ?? null)
   }
   return a.kind === b.kind
 }
@@ -47,8 +55,12 @@ const userOf = (me: Me): Session => ({
   household: me.household === null ? null : {
     id: me.household.id, name: me.household.name, members: [...me.household.members],
     ...(me.household.people && { people: me.household.people.map((person) => ({ username: person.username, display_name: person.display_name })) }),
+    ...(me.household.head !== undefined && { head: me.household.head }),
   },
   permissions: { moderate_catalog: me.permissions.moderate_catalog },
+  // Older servers leave both out: the session then has neither (not the head, no main currency).
+  ...(me.is_head !== undefined && { isHead: me.is_head }),
+  ...(me.settings !== undefined && { settings: { default_currency: me.settings.default_currency } }),
 })
 
 export function getSession(): Session {
@@ -88,6 +100,22 @@ export function applyMe(me: Me | null): void {
   generation++
   clearRecognitionCsrf()
   set(me ? userOf(me) : { kind: 'guest', expired: false })
+}
+
+/** The settings saved on `/account`: the session keeps them without reading «Я» again. */
+export function applySettings(settings: UserSettings): void {
+  if (session.kind !== 'user') return
+  set({ ...session, settings: { default_currency: settings.default_currency } })
+}
+
+/** The family head (or a user without a family, or local_single): may hide and show payments. */
+export function isHead(current: Session): boolean {
+  return current.kind === 'user' && current.isHead === true
+}
+
+/** The main currency of the user from the settings; `null` — not chosen. */
+export function defaultCurrency(current: Session): string | null {
+  return current.kind === 'user' ? current.settings?.default_currency ?? null : null
 }
 
 /** local_single always moderates; in accounts it is the right `catalog.moderate_catalog`. */
