@@ -279,8 +279,9 @@ class TrendsAndDashboardTests(TrendsFixtureMixin, TestCase):
         for number in range(12):
             category = Category.objects.create(name=f"Демо-категория {number}", parent=self.food)
             change(owner, category, "KZT", None, "10", date(2026, 6, 1), by=local_user())
-            change(owner, category, "EUR", None, "3", date(2026, 7, 1), by=local_user())
-            change(owner, category, "KZT", "10", "12", date(2026, 8, 1), by=local_user())
+            # Одна валюта: число валют — своя переменная запросов дашборда (основная валюта профиля).
+            change(owner, category, "KZT", "10", "11", date(2026, 7, 1), by=local_user())
+            change(owner, category, "KZT", "11", "12", date(2026, 8, 1), by=local_user())
         self.assertEqual([count(url) for url in urls], before)
         self.assertEqual(before[2], 4)  # категории, пользователь local, лимиты, журнал
 

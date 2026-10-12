@@ -11,7 +11,7 @@ import { formatPurchasedOn } from '../../lib/format'
 import { ownerName } from '../../lib/people'
 import { numbered } from '../../lib/text'
 import { buildReceiptsQuery, Link } from '../../navigation'
-import { useSession } from '../../session'
+import { isHead, useSession } from '../../session'
 import PendingSpends from '../../offline/PendingSpends'
 import type { ReceiptsQuery } from '../../navigation'
 import type { ReceiptsPageProps } from '../../pages/types'
@@ -20,7 +20,7 @@ import { clearReceiptsNotice, getReceiptsNotice } from './delete-receipt'
 import ReceiptFilters from './ReceiptFilters'
 import ReceiptMedia from './ReceiptMedia'
 import type { ReceiptRequestState } from './request'
-import { OwnerChips, SpendDays } from './SpendDays'
+import { HiddenChip, OwnerChips, SpendDays } from './SpendDays'
 import { localToday, ownerChips, reviewJobsQuery, reviewText } from './spends'
 import type { OwnerChip } from './spends'
 import { activeFilterCount, hasFilters, money, ownerShown, receiptParams, receiptPlace, recognizedText, recognizedValue } from './state'
@@ -47,6 +47,7 @@ export function ReceiptList({ receipts, showOwner = false }: { receipts: Receipt
       </dl>
       {receipt.unmatched_products_count > 0 && <p className="receipt-warning">Товары не сопоставлены: {receipt.unmatched_products_count.toLocaleString('ru-RU')}</p>}
       {receipt.review_required && <p className="receipt-warning">Данные требуют проверки</p>}
+      {receipt.hidden && <p className="receipt-warning" data-receipt-hidden>Скрыто</p>}
     </div>
   </li>)}</ul>
 }
@@ -60,7 +61,9 @@ export function ReviewBanner({ count }: { count: number | undefined }) {
   </p>
 }
 
-export function ReceiptsView({ query, state, retry, showOwner = false, narrow = false, chips = [], review, today = localToday(), pending, notice }: {
+export function ReceiptsView({ query, state, retry, showOwner = false, narrow = false, chips = [], review, today = localToday(), pending, notice, head = false }: {
+  /** The family head: the chip «Показать скрытые». */
+  head?: boolean
   query: ReceiptsQuery; state: ReceiptRequestState<Page<ReceiptListItem>>; retry: () => void; showOwner?: boolean
   /** A phone: days and rows instead of the cards of the wide screen. */
   narrow?: boolean
@@ -83,6 +86,7 @@ export function ReceiptsView({ query, state, retry, showOwner = false, narrow = 
     {notice && <p className="expense-notice" role="status">{notice}</p>}
     {pending}
     <OwnerChips chips={chips} query={query} />
+    <HiddenChip query={query} head={head} />
     <ReviewBanner count={review} />
     <div className="receipt-actions">
       <Link className="action-link receipt-primary" to="/receipts/upload">Загрузить фото</Link>
@@ -109,10 +113,10 @@ export function ReceiptsView({ query, state, retry, showOwner = false, narrow = 
 }
 
 export default function ReceiptsPage({ query }: ReceiptsPageProps) {
-  const { page, store, product, country, currency, operation, date_from, date_to, q, owner, page_size, ordering } = query
+  const { page, store, product, country, currency, operation, date_from, date_to, q, owner, hidden, page_size, ordering } = query
   const load = useCallback((signal: AbortSignal) => getReceipts(receiptParams({
-    page, store, product, country, currency, operation, date_from, date_to, q, owner, page_size, ordering,
-  }), { signal }), [page, store, product, country, currency, operation, date_from, date_to, q, owner, page_size, ordering])
+    page, store, product, country, currency, operation, date_from, date_to, q, owner, hidden, page_size, ordering,
+  }), { signal }), [page, store, product, country, currency, operation, date_from, date_to, q, owner, hidden, page_size, ordering])
   const request = useReceiptRequest(load)
   const loadReview = useCallback((signal: AbortSignal) => getJobs({ needs_review: reviewJobsQuery.needs_review, page_size: 1 }, { signal }), [])
   const review = useReceiptRequest(loadReview)
@@ -123,5 +127,5 @@ export default function ReceiptsPage({ query }: ReceiptsPageProps) {
   const [notice] = useState(getReceiptsNotice)
   useEffect(clearReceiptsNotice, [])
   return <ReceiptsView notice={notice} query={query} state={request.state} retry={request.retry} showOwner={ownerShown(session)} narrow={narrow}
-    chips={chips} review={review.state.kind === 'ok' ? review.state.data.count : undefined} pending={<PendingSpends />} />
+    chips={chips} head={isHead(session)} review={review.state.kind === 'ok' ? review.state.data.count : undefined} pending={<PendingSpends />} />
 }

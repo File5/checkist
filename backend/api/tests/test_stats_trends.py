@@ -416,7 +416,8 @@ class TrendsAPITests(TrendsFixture, TestCase):
     def test_query_count_does_not_grow_with_data(self):
         # Категории, строки, итоги чеков, товары; у цен — покупки и имена.
         BudgetLimit.objects.create(user=local_user(), category=self.food, currency_id="EUR", amount=D("5"))
-        cases = ((MONTHLY, 4), (CATEGORY, 4), (PRICES, 2), (LIMITS, 7), (RANGE, 1))
+        # Несколько валют: +1 запрос основной валюты профиля; у лимитов — ещё журнал.
+        cases = ((MONTHLY, 5), (CATEGORY, 5), (PRICES, 3), (LIMITS, 7), (RANGE, 1))
 
         def measure():
             for url, expected in cases:

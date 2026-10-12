@@ -1,11 +1,12 @@
 from django.contrib.postgres.aggregates import ArrayAgg
 from django.db.models import Exists, OuterRef, Q, Subquery
 from django.db.models.functions import Coalesce
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.exceptions import ParseError, UnsupportedMediaType
 from rest_framework.response import Response
 
-from accounts.access import owner_q, request_user
+from accounts.access import is_head, owner_q, request_user, visible_receipts_q
 from api.common import CategoryTree, get_or_404, utc_datetime
 from api.pagination import paginate
 from api.params import Params
@@ -17,7 +18,7 @@ from receipts import deletion, manual, manual_parse
 from receipts.models import ManualParseRequest, Receipt, ReceiptLine
 
 from .recognition import path_id
-from .recognition_base import JsonObjectParser, LocalAPIView
+from .recognition_base import EmptyObjectParser, JsonObjectParser, LocalAPIView
 
 # Причины отказа ``receipts.manual`` -> фиксированные тексты; значения запроса в ответ не идут.
 MANUAL_MESSAGES = {
@@ -100,10 +101,12 @@ class ReceiptsView(LocalAPIView):
         operation = params.choice("operation", Receipt.Operation.values)
         date_from, date_to = params.date_range()
         search = params.search()
+        # Скрытые платежи — только главному в семье и только по ``?hidden=1``; другим флажок ничего не даёт.
+        show_hidden = params.choice("hidden", ("0", "1"), default="0") == "1"
         # Логин того, кто добавил; видны только чеки семьи, поэтому чужой или неизвестный логин — пустой список.
         owner = params.raw("owner")
         params.check()
-        receipts = receipts_queryset(request)
+        receipts = receipts_queryset(request, include_hidden=show_hidden)
         if owner is not None:
             receipts = receipts.filter(owner__username=owner)
         for field, value in (("store_id", store), ("store__country_id", country),
@@ -126,7 +129,31 @@ class ReceiptsView(LocalAPIView):
 
 def own_receipt(request, pk):
     """The receipt of the request's user; another user's one is ``404`` like a missing one."""
-    return get_or_404(Receipt.objects.filter(owner_q(request)), path_id(pk))
+    return get_or_404(Receipt.objects.filter(visible_receipts_q(request, include_hidden=True)), path_id(pk))
+
+
+class ReceiptHideView(LocalAPIView):
+    """``POST`` — скрыть (``hide=True``) либо показать платёж; решает только главный в семье.
+
+    Чек ищется среди видимых запросу (``visible_receipts_q`` со скрытыми для главного): чужой
+    либо скрытый от члена семьи — ``404``; видимый, но запрос не от главного — ``403 head_only``.
+    Повтор безопасен: ответ — карточка чека.
+    """
+
+    http_method_names = ["post", "options"]
+    parser_classes = [EmptyObjectParser]
+    hide = True
+
+    def post(self, request, pk):
+        receipt = own_receipt(request, pk)
+        if not is_head(request):
+            raise RecognitionApiError("head_only")
+        if receipt.hidden != self.hide:
+            receipt.hidden = self.hide
+            receipt.hidden_by = request_user(request) if self.hide else None
+            receipt.hidden_at = timezone.now() if self.hide else None
+            receipt.save(update_fields=["hidden", "hidden_by", "hidden_at", "updated_at"])
+        return Response(receipt_object(get_or_404(receipts_queryset(request, include_hidden=True), receipt.pk)))
 
 
 class ManualReceiptView(LocalAPIView):
@@ -136,10 +163,11 @@ class ManualReceiptView(LocalAPIView):
     parser_classes = [ManualBodyParser]
 
     def get(self, request):
-        own = Receipt.objects.filter(owner_q(request))
+        own = Receipt.objects.filter(visible_receipts_q(request))
         return Response({
-            "currency": manual.default_currency(own),
-            "frequent_categories": manual.frequent_categories(ReceiptLine.objects.filter(owner_q(request, "receipt__"))),
+            "currency": manual.default_currency(own, request_user(request)),
+            "frequent_categories": manual.frequent_categories(
+                ReceiptLine.objects.filter(visible_receipts_q(request, "receipt__"))),
         })
 
     def post(self, request):
@@ -218,7 +246,7 @@ class ReceiptView(LocalAPIView):
     parser_classes = [ManualBodyParser]
 
     def get(self, request, pk):
-        return Response(receipt_object(get_or_404(receipts_queryset(request), path_id(pk))))
+        return Response(receipt_object(get_or_404(receipts_queryset(request, include_hidden=True), path_id(pk))))
 
     def manual_receipt(self, request, pk):
         receipt = own_receipt(request, pk)
@@ -233,7 +261,7 @@ class ReceiptView(LocalAPIView):
             manual.update(receipt.pk, data)
         except manual.ManualInvalid as error:
             raise manual_invalid(error) from None
-        return Response(receipt_object(get_or_404(receipts_queryset(request), receipt.pk)))
+        return Response(receipt_object(get_or_404(receipts_queryset(request, include_hidden=True), receipt.pk)))
 
     def delete(self, request, pk):
         receipt = own_receipt(request, pk)

@@ -1,7 +1,7 @@
 import type { ReceiptListItem } from '../../api/receipts'
 import { Link } from '../../navigation'
 import type { ReceiptsQuery } from '../../navigation'
-import { categoryTone, groupByDay, rowMeta, rowTitle, withOwner } from './spends'
+import { categoryTone, groupByDay, rowMeta, rowTitle, withHidden, withOwner } from './spends'
 import type { OwnerChip } from './spends'
 import { money } from './state'
 import ChipScroller from '../../components/ChipScroller'
@@ -43,6 +43,17 @@ export function SpendDays({ receipts, today, showOwner }: { receipts: ReceiptLis
 }
 
 /** «Вся семья / Андрей / Лиза»: links, so the choice lives in the address; one line that scrolls sideways. */
+/** The family head's «Показать скрытые»: a pressed chip lists hidden payments too. Nobody else sees it. */
+export function HiddenChip({ query, head }: { query: ReceiptsQuery; head: boolean }) {
+  if (!head) return null
+  const on = query.hidden === 1
+  return <div className="spends-chips">
+    <Link className="spends-chip" data-hidden-chip to={{ kind: 'receipts', query: withHidden(query, !on) }} aria-current={on ? 'true' : undefined}>
+      Показать скрытые
+    </Link>
+  </div>
+}
+
 export function OwnerChips({ chips, query }: { chips: OwnerChip[]; query: ReceiptsQuery }) {
   if (!chips.length) return null
   return <div className="spends-chips">

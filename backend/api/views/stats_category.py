@@ -59,7 +59,8 @@ class CategorySpendsView(LocalAPIView):
             raise ObjectNotFound()
         period = stats_common.Period(month.first, month.last)
         receipts = stats_common.receipts(request, stats_common.Scope(), period)
-        blocks = category_spends.collect(receipts, tree, category, stats_common.owner_product_id())
+        blocks = stats_common.primary_first(
+            request, category_spends.collect(receipts, tree, category, stats_common.owner_product_id()))
         return Response({
             "month": month.label(), "previous_month": month.previous().label(),
             "category": tree.category(category),

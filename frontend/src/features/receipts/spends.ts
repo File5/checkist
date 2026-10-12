@@ -127,6 +127,7 @@ export function categoriesText(receipt: Pick<ReceiptListItem, 'categories' | 'ca
 export function rowMeta(receipt: ReceiptListItem, showOwner: boolean): string[] {
   const categories = categoriesText(receipt)
   return [
+    ...(receipt.hidden ? ['скрыто'] : []),
     ...(categories ? [categories] : []),
     ...(showOwner ? [ownerName(receipt)] : []),
     sourceMark(receipt.source, receipt.note),
@@ -151,6 +152,13 @@ export function ownerChips(session: Session, owner: string | undefined): OwnerCh
 }
 
 /** The list with another owner: other filters stay, the page goes back to the first. */
+/** «Показать скрытые» on and off; back to the first page. */
+export function withHidden(query: ReceiptsQuery, on: boolean): ReceiptsQuery {
+  const next: ReceiptsQuery = { ...query, page: 1 }
+  delete next.hidden
+  return on ? { ...next, hidden: 1 } : next
+}
+
 export function withOwner(query: ReceiptsQuery, owner: string | undefined): ReceiptsQuery {
   const next: ReceiptsQuery = { ...query, page: 1 }
   delete next.owner

@@ -77,6 +77,50 @@ def owner_q(request, prefix=""):
     return own | Q(**{f"{prefix}owner_id__in": family})
 
 
+def is_head(request):
+    """is_head(request) -> bool; may hide and show payments of the household.
+
+    ``local_single``: always (one user). ``accounts``: the ``head`` member of the household;
+    a user without a household is the head of their own data; anonymous — ``False``.
+    """
+    if mode() == LOCAL_SINGLE:
+        return True
+    pk = request.user.pk
+    if pk is None:
+        return False
+    from accounts.models import Membership
+
+    role = Membership.objects.filter(user_id=pk).values_list("role", flat=True).first()
+    return role is None or role == Membership.Role.HEAD
+
+
+def visible_receipts_q(request, prefix="", include_hidden=False):
+    """visible_receipts_q(request, prefix="", include_hidden=False) -> Q; receipts the request reads.
+
+    ``owner_q`` without hidden payments (``Receipt.hidden``): every receipt and line read path
+    (lists, details, dashboard, stats, export, manual defaults) goes through here. ``prefix``
+    is the path to ``Receipt`` (``"receipt__"`` from a line). ``include_hidden=True`` keeps
+    hidden receipts only for the head (``is_head``): the receipts list with ``?hidden=1`` and
+    the receipt detail; totals never pass it, so a hidden payment counts for nobody.
+    """
+    condition = owner_q(request, prefix)
+    shown = Q(**{f"{prefix}hidden": False})
+    if include_hidden:
+        # «Запрос — главный» подзапросом, без отдельного запроса: число запросов карточки прежнее.
+        if mode() == LOCAL_SINGLE:
+            return condition
+        pk = request.user.pk
+        if pk is not None:
+            from django.db.models import Exists
+
+            from accounts.models import Membership
+
+            mine = Membership.objects.filter(user_id=pk)
+            head = ~Exists(mine) | Exists(mine.filter(role=Membership.Role.HEAD))
+            return condition & (shown | Q(head))
+    return condition & shown
+
+
 def household(request):
     """household(request) -> Household | None; the household of the request's user.
 

@@ -1,6 +1,6 @@
 import { array, bool, choice, isId, nullable, object, text } from './schema.ts'
 import type { Check, Guard } from './schema.ts'
-import type { AuthCsrf, Household, Me, PasswordIssue } from './session.ts'
+import type { AuthCsrf, Household, Me, PasswordIssue, UserSettings } from './session.ts'
 import { isPerson } from '../lib/people.ts'
 
 /** Django's token is 64 letters and digits. Never render or store this value outside the adapters. */
@@ -12,15 +12,19 @@ export const isAuthCsrf = object<AuthCsrf>({ csrf_token: csrfToken })
 /** A field an older server leaves out: missing passes, anything else must pass `check`. */
 const optional = (value: unknown, key: string, check: Check) => !Object.hasOwn(value as object, key) || check((value as Record<string, unknown>)[key])
 const isUser = object<Omit<Me['user'], 'display_name'>>({ id: isId, username, is_staff: bool })
-const isHousehold = object<Omit<Household, 'people'>>({ id: isId, name: text, members: array(username) })
-const isMeShape = object<Me>({
+const isHousehold = object<Omit<Household, 'people' | 'head'>>({ id: isId, name: text, members: array(username) })
+const isMeShape = object<Omit<Me, 'is_head' | 'settings'>>({
   mode: choice('accounts', 'local_single'),
   user: (value) => isUser(value) && optional(value, 'display_name', text),
-  household: nullable((value) => isHousehold(value) && optional(value, 'people', array(isPerson))),
+  household: nullable((value) => isHousehold(value) && optional(value, 'people', array(isPerson))
+    && optional(value, 'head', nullable(username))),
   permissions: object<Me['permissions']>({ moderate_catalog: bool }),
   csrf_token: csrfToken,
 })
+const currencyCode: Check = (value) => typeof value === 'string' && /^[A-Z]{3}$/.test(value)
+export const isUserSettings = object<UserSettings>({ default_currency: nullable(currencyCode) })
 export const isMe: Guard<Me> = (value): value is Me => isMeShape(value)
+  && optional(value, 'is_head', bool) && optional(value, 'settings', isUserSettings)
 
 export const PASSWORD_ISSUES = ['too_short', 'too_common', 'entirely_numeric', 'too_similar'] as const
 /** Codes travel next to `error`; every code is known and none repeats. */

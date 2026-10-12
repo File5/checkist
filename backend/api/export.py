@@ -27,7 +27,7 @@ from django.db.models import BooleanField, Count, Exists, ExpressionWrapper, Out
 from django.db.models.functions import TruncMonth
 from django.utils import timezone
 
-from accounts.access import owner_q
+from accounts.access import visible_receipts_q
 from accounts.people import display_name
 from budget.access import limits_q
 from budget.models import BudgetLimit
@@ -199,7 +199,7 @@ def _category_lines(category_ids):
 
 def receipts_queryset(request, filters):
     """Чеки семьи по фильтрам, без порядка и полей выгрузки."""
-    receipts = Receipt.objects.filter(owner_q(request))
+    receipts = Receipt.objects.filter(visible_receipts_q(request))
     for field, value in (("purchased_on__gte", filters.date_from), ("purchased_on__lte", filters.date_to),
                          ("currency_id", filters.currency), ("total__gte", filters.min_total),
                          ("total__lte", filters.max_total)):

@@ -52,6 +52,11 @@ export async function deleteManualSpend(id: number, options: RequestOptions = {}
   return deleteReceipt(id, {}, options)
 }
 
+/** The family head hides (`hidden: true`) or shows a payment. Refusals: `403 head_only`, `404` for an outsider. */
+export async function setReceiptHidden(id: number, hidden: boolean, options: RequestOptions = {}): Promise<LocalApiResult<Receipt>> {
+  return invalidIds({ id }, options.signal) ?? mutate(`receipts/${id}/${hidden ? 'hide' : 'unhide'}/`, '{}', isReceipt, options)
+}
+
 /** «Трата словами»: `202` with the queued request; `today` — the local date of the device for «вчера» and the like.
  * More than three unfinished requests (or 30 an hour) — `429 parse_limit`. */
 export function requestManualParse(text: string, today: string, options: RequestOptions = {}): Promise<LocalApiResult<ManualParse>> {

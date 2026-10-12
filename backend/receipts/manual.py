@@ -202,8 +202,13 @@ def _check_references(errors, values, refs):
 
 # --- значения по умолчанию ---
 
-def default_currency(receipts):
-    """Валюта последнего чека из ``receipts`` (queryset владельца), иначе ``KZT``."""
+def default_currency(receipts, user=None):
+    """Основная валюта ``user`` из настроек, иначе валюта последнего чека ``receipts``, иначе ``KZT``."""
+    from accounts.profile import default_currency as profile_currency
+
+    preferred = profile_currency(user)
+    if preferred:
+        return preferred
     last = receipts.order_by("-purchased_at", "-id").values_list("currency_id", flat=True).first()
     return last or DEFAULT_CURRENCY
 

@@ -40,6 +40,8 @@ def observation_q(prefix=""):
         f"{prefix}quantity__gt": 0,
         f"{prefix}receipt__operation": Receipt.Operation.SALE,
         f"{prefix}receipt__source": Receipt.Source.PHOTO,
+        # Скрытый платёж не наблюдение цены: он пропадает у всех и ни во что не входит.
+        f"{prefix}receipt__hidden": False,
     })
 
 

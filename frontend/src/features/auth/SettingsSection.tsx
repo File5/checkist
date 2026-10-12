@@ -1,0 +1,73 @@
+import { useEffect, useState } from 'react'
+import { getSettings, saveSettings } from '../../api/settings'
+import type { CurrencyOption } from '../../api/settings'
+import { applySettings } from '../../session'
+import { settingsTexts } from './settings-texts'
+
+/** The state of «Настройки»: loading, the loaded values, a save in flight, and the last notice. */
+export type SettingsState =
+  | { kind: 'loading' }
+  | { kind: 'failed' }
+  | { kind: 'ready'; currencies: CurrencyOption[]; currency: string | null; saving: boolean; notice: SettingsNotice | null }
+export type SettingsNotice = { kind: 'saved' | 'failed'; text: string }
+
+
+export type SettingsViewProps = { displayName: string; state: SettingsState; onCurrency: (code: string | null) => void }
+
+export function SettingsView({ displayName, state, onCurrency }: SettingsViewProps) {
+  return (
+    <section className="ck-auth-panel" aria-labelledby="account-settings-heading" data-account-settings>
+      <h2 id="account-settings-heading">{settingsTexts.heading}</h2>
+      <p data-settings-name><span className="ck-auth-username">{displayName}</span> · {settingsTexts.name}</p>
+      {state.kind === 'loading' && <p role="status">Загружаем…</p>}
+      {state.kind === 'failed' && <p role="alert">{settingsTexts.loadFailed}</p>}
+      {state.kind === 'ready' && (
+        <div className="ck-auth-field">
+          <label htmlFor="account-default-currency">{settingsTexts.currency}</label>
+          <select id="account-default-currency" data-settings-currency value={state.currency ?? ''} aria-describedby="account-currency-hint account-settings-notice"
+            aria-disabled={state.saving || undefined}
+            onChange={(event) => { if (!state.saving) onCurrency(event.target.value || null) }}>
+            <option value="">{settingsTexts.none}</option>
+            {state.currencies.map((item) => <option key={item.code} value={item.code}>{item.code} — {item.name}</option>)}
+          </select>
+          <p id="account-currency-hint" className="ck-auth-rules">{settingsTexts.currencyHint}</p>
+          <p id="account-settings-notice" role="status" data-settings-notice={state.notice?.kind}>{state.notice?.text ?? ''}</p>
+        </div>
+      )}
+    </section>
+  )
+}
+
+/** «Настройки» on `/account`: the choice is saved at once, the session learns the new value. */
+export default function SettingsSection({ displayName }: { displayName: string }) {
+  const [state, setState] = useState<SettingsState>({ kind: 'loading' })
+  useEffect(() => {
+    const controller = new AbortController()
+    void getSettings({ signal: controller.signal }).then((result) => {
+      if (result.kind === 'aborted') return
+      setState(result.kind === 'ok'
+        ? { kind: 'ready', currencies: result.data.currencies, currency: result.data.default_currency, saving: false, notice: null }
+        : { kind: 'failed' })
+    })
+    return () => controller.abort()
+  }, [])
+  const choose = (code: string | null) => {
+    if (state.kind !== 'ready') return
+    const previous = state.currency
+    setState({ ...state, currency: code, saving: true, notice: null })
+    void saveSettings({ default_currency: code }).then((result) => {
+      if (result.kind === 'aborted') return
+      if (result.kind === 'ok') {
+        applySettings(result.data)
+        setState((current) => current.kind === 'ready'
+          ? { ...current, currency: result.data.default_currency, saving: false, notice: { kind: 'saved', text: settingsTexts.saved(result.data.default_currency) } }
+          : current)
+      } else {
+        setState((current) => current.kind === 'ready'
+          ? { ...current, currency: previous, saving: false, notice: { kind: 'failed', text: settingsTexts.saveFailed } }
+          : current)
+      }
+    })
+  }
+  return <SettingsView displayName={displayName} state={state} onCurrency={choose} />
+}

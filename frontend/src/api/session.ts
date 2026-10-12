@@ -17,12 +17,21 @@ export type Me = {
   /** The family of the user: its members see each other's receipts. `null` — no family, and always in `local_single`. */
   household: Household | null
   permissions: { moderate_catalog: boolean }
+  /** The family head (hides payments); a user without a family heads their own data. Missing from an older server. */
+  is_head?: boolean
+  /** Profile settings: the main currency used by default. Missing from an older server. */
+  settings?: UserSettings
   /** Token of the current session. Never render it. */
   csrf_token: string
 }
+export type UserSettings = { default_currency: string | null }
 /** `members` — usernames by the alphabet (the key of filters); `people` — the same people with names to show,
  * missing from an older server (then the usernames are shown). */
-export type Household = { id: number; name: string; members: string[]; people?: Person[] }
+export type Household = {
+  id: number; name: string; members: string[]; people?: Person[]
+  /** Username of the family head; `null` until the admin sets one; missing from an older server. */
+  head?: string | null
+}
 export type AuthCsrf = { csrf_token: string }
 export type PasswordIssue = (typeof PASSWORD_ISSUES)[number]
 export type AuthFailureReason =

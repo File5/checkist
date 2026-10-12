@@ -452,7 +452,8 @@ class SpendingAPITests(TestCase):
         absorb(data.milk, make_product(data.milk_generic, "Демо-молоко дубль"))
         filters = f"country=DE&currency=EUR&store={data.lidl.pk}&{MARCH}"
         cases = (
-            ("", 4), ("group_by=generic", 3), ("group_by=product", 3), ("group_by=store", 4),
+            # Несколько валют: +1 запрос основной валюты профиля (порядок блоков).
+            ("", 5), ("group_by=generic", 4), ("group_by=product", 4), ("group_by=store", 5),
             (f"category={data.food.pk}", 4), (f"generic={data.milk_generic.pk}&group_by=product", 3),
             (filters, 7), (f"group_by=store&category={data.food.pk}&{filters}", 8),
         )

@@ -14,6 +14,7 @@ import { useSession } from '../../session'
 import type { ReceiptPageProps } from '../../pages/types'
 import { ReceiptBlock, ReceiptPagination } from './ReceiptBlock'
 import { ReceiptDeleteActions } from './ReceiptDeleteActions'
+import { ReceiptHideAction } from './ReceiptHideAction'
 import { ReceiptPhoto } from './ReceiptPhoto'
 import { useNarrow } from '../../lib/cards'
 import { ReceiptDiscounts, ReceiptHeader, ReceiptImages, ReceiptLines, ReceiptTaxes } from './ReceiptContent'
@@ -58,6 +59,7 @@ export function ReceiptView({ receiptId, returnTo, header, images, lines, discou
   const manual = receipt?.source === 'manual'
   const actions = receipt && (manual ? <ManualSpendActions receiptId={receiptId} narrow={narrow} />
     : <ReceiptDeleteActions receiptId={receiptId} narrow={narrow} />)
+  const hide = receipt && <ReceiptHideAction receiptId={receiptId} hidden={receipt.hidden === true} onChanged={header.retry} />
   const photo = narrow && receipt && !manual ? <ReceiptPhoto receiptId={receiptId} thumb={receipt.preview_thumb_url} image={receipt.preview_image_url}
     download={images.state.kind === 'ok' ? images.state.data.results[0]?.download_url : undefined} /> : undefined
   return <div className="receipts-page">
@@ -70,6 +72,7 @@ export function ReceiptView({ receiptId, returnTo, header, images, lines, discou
     <ReceiptBlock title={numbered(manual ? 'Трата' : 'Страница чека', receiptId)} state={header.state} retry={header.retry}>
       {receipt && <ReceiptHeader receipt={receipt} showOwner={showOwner} photo={photo} />}
       {!narrow && actions}
+      {!narrow && hide}
     </ReceiptBlock>
     {!manual && <PagedBlock title="Изображения чека" id="receipt-images" request={images} empty="У этого чека нет изображений."
       page={pages.images} onPage={(page) => onPage('images', page)}>
@@ -89,6 +92,7 @@ export function ReceiptView({ receiptId, returnTo, header, images, lines, discou
     </PagedBlock>}
     {/* Last on the page of a phone: pinned at the bottom above the navigation while the page is longer than the screen. */}
     {narrow && actions}
+    {narrow && hide}
   </div>
 }
 

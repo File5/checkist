@@ -2,7 +2,7 @@ from django.db.models import CharField, Count, Exists, F, Max, OuterRef, Q, Valu
 from django.db.models.functions import Cast, Coalesce, Concat, NullIf
 from rest_framework.response import Response
 
-from accounts.access import owner_q
+from accounts.access import visible_receipts_q
 from api.common import (
     CategoryTree, brand_brief, generic_brief, get_or_404, iso_date, package, price, store_name, store_object,
     utc_datetime,
@@ -87,7 +87,7 @@ class StoresView(ReadOnlyAPIView):
                 Concat(Value("Магазин №"), Cast("pk", CharField())), output_field=CharField(),
             ),
             # Чеки личные: счётчик — по чекам запроса, магазин без своих чеков остаётся в списке.
-            receipts_count=Count("receipts", filter=owner_q(request, "receipts__")),
+            receipts_count=Count("receipts", filter=visible_receipts_q(request, "receipts__")),
         )
         if country is not None:
             stores = stores.filter(country=country)

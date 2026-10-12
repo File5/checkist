@@ -10,5 +10,9 @@
   "permissions": {
     "moderate_catalog": true
   },
+  "is_head": true,
+  "settings": {
+    "default_currency": null
+  },
   "csrf_token": "Zq3mP8vK1xW6bN4cR9dT2fY7hJ5sL0aGuEoIiXkMnBvCzQwErTyUpAsDfGhJkLz1"
 }

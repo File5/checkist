@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import type { FormEvent } from 'react'
+import type { FormEvent, ReactNode } from 'react'
 import { changePassword, logout } from '../../api/session'
 import { Link } from '../../navigation'
-import { applyMe } from '../../session'
+import { applyMe, useSession } from '../../session'
+import SettingsSection from './SettingsSection'
 import { checkPassword, useAuthForm } from './auth-state'
 import type { FormState, PasswordInput } from './auth-state'
 import { logoutRefusal, passwordChangedText, passwordRefusal, passwordRules } from './labels'
@@ -18,9 +19,11 @@ export type AccountViewProps = {
   onPassword: () => void
   signOut: FormState
   onSignOut: () => void
+  /** «Настройки» between the user and the export; the page passes the live section. */
+  settings?: ReactNode
 }
 
-export function AccountView({ username, password, values, onChange, onPassword, signOut, onSignOut }: AccountViewProps) {
+export function AccountView({ username, password, values, onChange, onPassword, signOut, onSignOut, settings }: AccountViewProps) {
   const saving = password.kind === 'pending'
   const leaving = signOut.kind === 'pending'
   const invalid = (field: string) => (password.kind === 'failed' && password.fields.includes(field)) || undefined
@@ -43,10 +46,16 @@ export function AccountView({ username, password, values, onChange, onPassword, 
           <FormMessage state={signOut} id="logout-message" />
         </div>
       </section>
+      {settings}
       <section className="ck-auth-panel" aria-labelledby="account-export-heading">
         <h2 id="account-export-heading">Выгрузка данных</h2>
         <p>Все чеки и траты семьи файлом JSON, с фильтрами по периоду, категориям и людям.</p>
         <Link className="action-link" to="/export" data-auth-export>Выгрузить в JSON</Link>
+      </section>
+      <section className="ck-auth-panel" aria-labelledby="account-family-heading">
+        <h2 id="account-family-heading">Семья</h2>
+        <p>Члены семьи видят траты друг друга. Здесь создают семью, добавляют людей и передают роль главного.</p>
+        <Link className="action-link" to="/family" data-auth-family>Открыть «Семью»</Link>
       </section>
       <section aria-labelledby="account-password-heading">
         <form className="ck-auth-panel" method="post" noValidate onSubmit={submit}>
@@ -84,6 +93,8 @@ export default function AccountPage({ username }: { username: string }) {
     // A guest: the shell shows the sign-in in place of this page.
     success: () => { applyMe(null) },
   })
-  return <AccountView username={username} password={password.state} values={values} onChange={setValues} onPassword={() => { void password.run(values) }}
+  const session = useSession()
+  const displayName = session.kind === 'user' ? session.user.display_name || username : username
+  return <AccountView username={username} settings={<SettingsSection displayName={displayName} />} password={password.state} values={values} onChange={setValues} onPassword={() => { void password.run(values) }}
     signOut={signOut.state} onSignOut={() => { void signOut.run(null) }} />
 }

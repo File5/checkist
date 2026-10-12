@@ -123,13 +123,14 @@ class CategorySpendsTests(FixtureMixin, TestCase):
 
     def test_query_count_does_not_grow_with_data(self):
         query = f"category={self.food.pk}&month=2026-10"
-        with self.assertNumQueries(4):  # категории, строки, категории товаров, чеки
+        # Категории, строки, категории товаров, чеки и основная валюта профиля (у демо несколько валют).
+        with self.assertNumQueries(5):
             self.get(query)
         for number in range(25):
             leaf = Category.objects.create(name=f"Демо-лист {number}", parent=self.dairy)
             spend(local_user(), leaf, "10", date(2026, 10, 1 + number % 28), store_name=f"Демо-магазин {number}")
             split_spend(local_user(), date(2026, 10, 2), [("A", "1", leaf), ("B", "2", self.coffee)])
-        with self.assertNumQueries(4):
+        with self.assertNumQueries(5):
             body = self.get(query)
         self.assertEqual(body["currencies"][1]["receipts_count"], 51)
 

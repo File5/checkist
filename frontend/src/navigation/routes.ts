@@ -28,6 +28,8 @@ export interface ReceiptsQuery extends HistoryQuery {
   q?: string
   /** «Траты»: who added the receipt — a username of the family (`/api/me/` household members). */
   owner?: string
+  /** «Показать скрытые» of the family head: `1` also lists hidden payments. */
+  hidden?: 1
   operation?: ReceiptOperation
   page_size?: number
   ordering?: 'purchased_at' | '-purchased_at'
@@ -165,6 +167,8 @@ export type NavigableRoute = CatalogRoute
   | { kind: 'account' }
   /** «Выгрузка»: the family's data as one JSON document; the filters live in the address. */
   | { kind: 'export'; query: ExportQuery }
+  /** «Семья» (only with accounts): members, invites, the head role; `token` — an invite opened from its link. */
+  | { kind: 'family'; token?: string }
 
 export type Route = NavigableRoute
   | { kind: 'not-found'; path: string }
@@ -398,8 +402,10 @@ export function parseReceiptsQuery(search: string | URLSearchParams): ParsedQuer
   const ordering = reader.choice('ordering', ['purchased_at', '-purchased_at'] as const)
   const owner = reader.read('owner')
   if (owner !== undefined && !ownerPattern.test(owner)) reader.invalid('owner')
+  const hidden = reader.read('hidden')
+  if (hidden !== undefined && hidden !== '1') reader.invalid('hidden')
   return { query: { ...history.query, ...(product && { product }), ...(q && { q }), ...(operation && { operation }),
-    ...(owner && ownerPattern.test(owner) && { owner }), ...(page_size && { page_size }), ...(ordering && { ordering }) },
+    ...(owner && ownerPattern.test(owner) && { owner }), ...(hidden === '1' && { hidden: 1 as const }), ...(page_size && { page_size }), ...(ordering && { ordering }) },
     invalidFields: [...history.invalidFields, ...reader.invalidFields] }
 }
 
@@ -491,7 +497,7 @@ export function trendsHref(query: TrendsQuery = {}): string {
 }
 
 export function buildReceiptsQuery(query: ReceiptsQuery): string {
-  return buildQuery(query, ['store', 'product', 'country', 'currency', 'operation', 'date_from', 'date_to', 'q', 'owner', 'page', 'page_size', 'ordering'], parseReceiptsQuery)
+  return buildQuery(query, ['store', 'product', 'country', 'currency', 'operation', 'date_from', 'date_to', 'q', 'owner', 'hidden', 'page', 'page_size', 'ordering'], parseReceiptsQuery)
 }
 
 export function buildJobsQuery(query: JobsQuery): string {
@@ -548,6 +554,7 @@ export function buildRoute(route: NavigableRoute): string {
     case 'login': return '/login'
     case 'account': return '/account'
     case 'export': return exportHref(route.query)
+    case 'family': return route.token ? `/family/join?${new URLSearchParams({ token: route.token })}` : '/family'
   }
 }
 
@@ -586,6 +593,11 @@ export function parseRoute(input: string | URL): Route {
     return id === undefined ? { kind: 'not-found', path } : { kind: 'expense-edit', receiptId: id }
   }
   if (normalizedPath === '/account') return { kind: 'account' }
+  if (normalizedPath === '/family') return { kind: 'family' }
+  if (normalizedPath === '/family/join') {
+    const token = url.searchParams.get('token') ?? ''
+    return /^[A-Za-z0-9_-]{8,200}$/.test(token) ? { kind: 'family', token } : { kind: 'family' }
+  }
   // Like statistics, the export never answers with invalid-query: a wrong value is dropped.
   if (normalizedPath === '/export') return { kind: 'export', query: parseExportQuery(url.searchParams) }
   // Statistics never answer with invalid-query: a wrong value is dropped and the screen opens without it.

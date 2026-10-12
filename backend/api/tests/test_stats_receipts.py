@@ -316,7 +316,8 @@ class ReceiptSeriesAPITests(_StatsTestCase):
     def test_query_count_is_constant(self):
         data = self.data
         filters = f"country=DE&currency=EUR&store={data.lidl.pk}&date_from=2020-01-01&date_to=2026-12-31"
-        cases = (("", 3), ("interval=week", 3), ("interval=year", 3), (filters, 6), ("country=RU", 4))
+        # Несколько валют: +1 запрос основной валюты профиля.
+        cases = (("", 4), ("interval=week", 4), ("interval=year", 4), (filters, 6), ("country=RU", 4))
 
         def measure():
             for query, expected in cases:
@@ -658,7 +659,7 @@ class ReceiptCompareAPITests(_StatsTestCase):
         filters = f"{PERIODS}&country=DE&currency=EUR&store={data.lidl.pk}&limit=5"
         nothing = "base_from=2018-01-01&base_to=2018-12-31&current_from=2019-01-01&current_to=2019-12-31"
         # Без совпавших товаров запроса названий нет.
-        cases = ((PERIODS, 3), (filters, 6), (f"{PERIODS}&limit=100", 3), (nothing, 2))
+        cases = ((PERIODS, 4), (filters, 6), (f"{PERIODS}&limit=100", 4), (nothing, 2))
 
         def measure():
             for query, expected in cases:

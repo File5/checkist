@@ -46,7 +46,7 @@ class ReceiptSeriesView(LocalAPIView):
             found = basket.series(stats_common.receipts(request, scope, period), interval)
         except basket.TooManyBuckets:
             raise RangeTooLarge() from None
-        return Response({"interval": interval, **period.as_json(), "currencies": [_series(item) for item in found]})
+        return Response({"interval": interval, **period.as_json(), "currencies": stats_common.primary_first(request, [_series(item) for item in found])})
 
 
 def _side(side, period):
@@ -133,6 +133,7 @@ class ReceiptCompareView(LocalAPIView):
         return Response({
             "base": base.as_json(), "current": current.as_json(),
             "currencies": [
-                _comparison(block, base, current, data.names) for block in basket.compare(data, limit=limit)
+                _comparison(block, base, current, data.names)
+                for block in stats_common.primary_first(request, basket.compare(data, limit=limit))
             ],
         })

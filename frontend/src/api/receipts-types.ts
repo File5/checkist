@@ -17,6 +17,8 @@ export type Receipt = {
   /** WebP thumbnail (400 px) of the same crop, made on first request. */
   preview_thumb_url: string | null
   created_at: ISODateTime; updated_at: ISODateTime; lines_url: string; discounts_url: string; taxes_url: string; images_url: string
+  /** A payment hidden by the family head: only the head ever gets one (detail, list with `hidden: '1'`); missing from an older server. */
+  hidden?: boolean
 }
 /** An item of `GET /api/receipts/` (the list only): the first line's name and the one top-level category of the lines.
  * Optional for an older server: a missing field reads as null. */
@@ -40,6 +42,8 @@ export type ReceiptParams = PageParams & {
   date_from?: ISODate; date_to?: ISODate; q?: string; ordering?: 'purchased_at' | '-purchased_at'
   /** Username of who added the receipt; one outside the family gives an empty page. */
   owner?: string
+  /** `'1'` — the family head also gets hidden payments; for anyone else it changes nothing. */
+  hidden?: '1'
 }
 export type ReceiptLineParams = PageParams & { kind?: LineKind; matching?: MatchingStatus }
 
