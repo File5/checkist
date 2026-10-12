@@ -280,7 +280,8 @@ describe('crop card around the confirmation', () => {
     expect(html).not.toContain('ck-review-refusal'); expect(html).not.toContain('Исправление и подтверждение')
   })
   it('marks every card as the owner of its focus, so that the block heading never takes it', () => {
-    expect(cards(image(), { kind: 'idle' })).toContain('<li class="ck-rec-card" data-request-focus-own="">')
+    // A crop that waits for a person is also the target of «Проверить и подтвердить»; a resolved one is not.
+    expect(cards(image(), { kind: 'idle' })).toContain('<li class="ck-rec-card" data-request-focus-own="" data-review-crop="" tabindex="-1">')
     expect(cards(confirmed().image, { kind: 'idle' })).toContain('<li class="ck-rec-card" data-request-focus-own="">')
   })
   it.each(['reused', 'updated'] as const)('states that corrections were not applied to an existing receipt (%s), also after a reload', (status) => {
@@ -301,5 +302,20 @@ describe('crop card around the confirmation', () => {
     expect(html.match(/disabled=""/g)).toHaveLength(2); expect(html).toContain('>Повторить обработку<')
     expect(renderToStaticMarkup(<ActionButtons job={value} state={{ kind: 'idle' }} run={vi.fn()} />)).toMatch(/<button type="button">Повторить обработку/)
     expect(renderToStaticMarkup(<JobSummary job={confirmed().job} />)).toContain('После подтверждения вырезки человеком счётчики и статус задания пересчитываются.')
+  })
+  it('makes the review the main action of a job that waits for a person, and the retry a secondary one', () => {
+    const value = publicFixture('job.json'); if (!isJobDetail(value)) throw new Error('Invalid fixture')
+    const waiting = renderToStaticMarkup(<ActionButtons job={{ ...value, review_required: true }} state={{ kind: 'idle' }} run={vi.fn()} onReview={vi.fn()} />)
+    expect(waiting.indexOf('>Проверить и подтвердить<')).toBeGreaterThan(-1)
+    expect(waiting.indexOf('>Проверить и подтвердить<')).toBeLessThan(waiting.indexOf('Повторить обработку'))
+    expect(waiting).toMatch(/<button type="button" class="ck-review-secondary"[^>]*>Повторить обработку/)
+    // Nothing to review, or no way to reach the crops: the buttons stay as they were.
+    for (const html of [
+      renderToStaticMarkup(<ActionButtons job={{ ...value, review_required: false }} state={{ kind: 'idle' }} run={vi.fn()} onReview={vi.fn()} />),
+      renderToStaticMarkup(<ActionButtons job={{ ...value, review_required: true }} state={{ kind: 'idle' }} run={vi.fn()} />),
+    ]) {
+      expect(html).not.toContain('Проверить и подтвердить')
+      expect(html).toMatch(/<button type="button">Повторить обработку/)
+    }
   })
 })

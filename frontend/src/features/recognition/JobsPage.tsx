@@ -40,7 +40,7 @@ export default function JobsPage({ query }: JobsPageProps) {
             <h3><Link to={{ kind: 'job', jobId: job.id }}>{numbered('Задание', job.id)}</Link></h3>
             <p><span className="ck-rec-pair">{numbered('Фото', job.photo_id)}</span>{job.retry_of !== null && <> · повтор <span className="ck-rec-pair">{numbered('задания', job.retry_of)}</span></>}</p>
             <JobSummary job={job} announce />
-            <ActionButtons job={job} state={actions.state} run={actions.run} />
+            <ActionButtons job={job} state={actions.state} run={actions.run} onReview={() => navigate({ kind: 'job', jobId: job.id })} />
           </li>)}</ul>}
         <Pagination page={data.page} pages={data.pages} buildPageHref={(nextPage) => ({ kind: 'jobs', query: { ...query, page: nextPage } })} label="Страницы заданий" />
       </>}

@@ -8,6 +8,7 @@ import { formatObservedAt } from '../../lib/format'
 import { glue, numbered } from '../../lib/text'
 import { Link } from '../../navigation'
 import { imageLabels } from './labels'
+import { reviewCropAttribute } from './review-crop'
 import MediaImage from './MediaImage'
 import ReviewResult from './ReviewResult'
 import { rememberConfirmed } from './review-actions'
@@ -36,7 +37,7 @@ function ImageCard({ item, confirmed, finished, busy, review, remember, result }
     lastStatus.current = shown.status
     if (left && addressed && (!document.activeElement || document.activeElement === document.body)) card.current?.querySelector<HTMLElement>('.ck-rec-result')?.focus()
   }, [shown.status, addressed])
-  return <li className="ck-rec-card" ref={card} {...{ [focusOwnerAttribute]: '' }}>
+  return <li className="ck-rec-card" ref={card} {...{ [focusOwnerAttribute]: '' }} {...(shown.status === 'needs_review' ? { [reviewCropAttribute]: '', tabIndex: -1 } : {})}>
     <h3><span className="ck-rec-pair">{glue('Чек', shown.position)}</span> · {imageLabels[shown.status]}</h3>
     <MediaImage url={shown.image_url} alt={`Вырезка чека ${shown.position}`} />
     {shown.clipped && <p className="ck-rec-warning">Часть чека обрезана.</p>}

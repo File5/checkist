@@ -9,6 +9,7 @@ import ActionButtons from './ActionButtons'
 import JobSummary from './JobSummary'
 import MediaImage from './MediaImage'
 import ReceiptImages from './ReceiptImages'
+import { toReviewCrop } from './review-crop'
 import RequestBlock from './RequestBlock'
 import { acceptJob, isActive, jobExecutorNote } from './labels'
 import { getJobNotice, retryNotice, setJobNotice } from './upload-state'
@@ -85,7 +86,7 @@ export default function JobPage({ jobId, returnTo }: JobPageProps) {
         {job.retry_of !== null && <p>Повтор <Link to={{ kind: 'job', jobId: job.retry_of }} className="ck-rec-pair">{numbered('задания', job.retry_of)}</Link>.</p>}
         {executorNote && <p className={executorNote.warning ? 'ck-rec-warning' : undefined}>{executorNote.text}</p>}
         {job.status === 'cancel_requested' && <p>Ждём подтверждения отмены от воркера. Уже сохранённые чеки не удаляются.</p>}
-        <ActionButtons job={job} state={actions.state} run={actions.run} busy={review.state.kind === 'pending'} />
+        <ActionButtons job={job} state={actions.state} run={actions.run} busy={review.state.kind === 'pending'} onReview={toReviewCrop} />
         <Link to={{ kind: 'jobs', query: { page: 1, photo: job.photo_id } }}>Все задания этого фото</Link>
       </> }}
     </RequestBlock>
