@@ -4,7 +4,7 @@ from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
 from django.db import connection
-from django.db.models import Count, Exists, IntegerField, OuterRef, Q, Subquery, Value
+from django.db.models import Count, Exists, F, IntegerField, OuterRef, Q, Subquery, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
@@ -212,6 +212,7 @@ def annotate_jobs(jobs):
                          .filter(REVIEW_IMAGES)),
         has_active_sibling=Exists(ProcessingJob.objects.filter(photo_id=OuterRef("photo_id"),
                                   status__in=["queued", "running", "cancel_requested"])),
+        owner_username=F("photo__owner__username"),
     )
 
 
@@ -230,7 +231,7 @@ def job_object(job, executor, *, items=None):
         code = code if code in ISSUE_MESSAGES else "provider_error"
         error = {"code": code, "message": ISSUE_MESSAGES[code]}
     result = {
-        "id": job.pk, "photo_id": job.photo_id, "retry_of": job.retry_of_id,
+        "id": job.pk, "photo_id": job.photo_id, "retry_of": job.retry_of_id, "owner": job.owner_username,
         "status": job.status, "stage": job.stage, "version": job.version,
         **{key: utc_datetime(getattr(job, key)) for key in
            ("created_at", "started_at", "finished_at", "cancel_requested_at", "heartbeat_at")},
@@ -378,7 +379,7 @@ def image_object(image, *, detail=False):
 def receipts_queryset(request):
     images = ReceiptImage.objects.filter(receipt_id=OuterRef("pk"))
     lines = ReceiptLine.objects.filter(receipt_id=OuterRef("pk"))
-    return Receipt.objects.filter(owner_q(request)).select_related("store__merchant").annotate(
+    return Receipt.objects.filter(owner_q(request)).select_related("store__merchant", "owner").annotate(
         lines_count=related_count(lines, "receipt_id"),
         unmatched_products_count=related_count(lines.filter(kind="product", product__isnull=True), "receipt_id"),
         image_count=related_count(images, "receipt_id"),
@@ -390,7 +391,8 @@ def receipts_queryset(request):
 def receipt_object(receipt):
     base = f"/api/receipts/{receipt.pk}"
     return {
-        "id": receipt.pk, "store": store_object(receipt.store), "currency": receipt.currency_id,
+        "id": receipt.pk, "owner": receipt.owner.get_username(), "store": store_object(receipt.store),
+        "currency": receipt.currency_id,
         "operation": receipt.operation, "purchased_on": iso_date(receipt.purchased_on),
         "purchased_at": utc_datetime(receipt.purchased_at), "total": amount(receipt.total),
         "discount_total": amount(receipt.discount_total), "prices_include_tax": receipt.prices_include_tax,

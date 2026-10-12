@@ -10,7 +10,7 @@ import type { Me } from '../api/session.ts'
 export type Session =
   | { kind: 'loading' } | { kind: 'error' }
   | { kind: 'guest'; expired: boolean }
-  | { kind: 'user'; mode: Me['mode']; user: Me['user']; permissions: Me['permissions'] }
+  | { kind: 'user'; mode: Me['mode']; user: Me['user']; household: Me['household']; permissions: Me['permissions'] }
 
 let session: Session = { kind: 'loading' }
 /** A newer read, a sign-in or the end of the session makes every earlier answer of `/api/me/` stale. */
@@ -20,11 +20,13 @@ const listeners = new Set<() => void>()
 
 const sameUser = (a: Session, b: Session) => a.kind === 'user' && b.kind === 'user'
   && a.mode === b.mode && a.user.id === b.user.id
+const sameHousehold = (a: Me['household'], b: Me['household']) => a === b || (a !== null && b !== null
+  && a.id === b.id && a.name === b.name && a.members.join('\n') === b.members.join('\n'))
 function same(a: Session, b: Session): boolean {
   if (a.kind === 'guest' && b.kind === 'guest') return a.expired === b.expired
   if (a.kind === 'user' && b.kind === 'user') {
     return sameUser(a, b) && a.user.username === b.user.username && a.user.is_staff === b.user.is_staff
-      && a.permissions.moderate_catalog === b.permissions.moderate_catalog
+      && a.permissions.moderate_catalog === b.permissions.moderate_catalog && sameHousehold(a.household, b.household)
   }
   return a.kind === b.kind
 }
@@ -37,6 +39,7 @@ function set(next: Session): void {
 const userOf = (me: Me): Session => ({
   kind: 'user', mode: me.mode,
   user: { id: me.user.id, username: me.user.username, is_staff: me.user.is_staff },
+  household: me.household === null ? null : { id: me.household.id, name: me.household.name, members: [...me.household.members] },
   permissions: { moderate_catalog: me.permissions.moderate_catalog },
 })
 

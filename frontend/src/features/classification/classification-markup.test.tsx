@@ -29,7 +29,7 @@ vi.mock('../../navigation', async (importOriginal) => ({
 }))
 // «Я» as the server answers: without accounts everyone moderates, with them — only the holder of the right.
 const me = (mode: Me['mode'], moderate_catalog: boolean): Me =>
-  ({ mode, user: { id: 3, username: 'anna', is_staff: false }, permissions: { moderate_catalog }, csrf_token: 'token' })
+  ({ mode, user: { id: 3, username: 'anna', is_staff: false }, household: null, permissions: { moderate_catalog }, csrf_token: 'token' })
 const local = me('local_single', true)
 const moderator = me('accounts', true)
 const reader = me('accounts', false)

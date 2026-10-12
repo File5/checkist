@@ -59,10 +59,34 @@ def owner_q(request, prefix=""):
     ``"photo__"`` from a job or a receipt image, ``"receipts__"`` from a store.
     ``local_single`` filters by the username through a JOIN, without a query for the user.
     An anonymous request in ``accounts`` matches nothing: ``owner`` is never NULL.
+
+    ``accounts``: the rows of the user and of every member of the user's household
+    (``accounts.Membership``); without a household — only the user's own rows. One
+    subquery, no separate query for the household.
     """
     if mode() == LOCAL_SINGLE:
         return Q(**{f"{prefix}owner__username": LOCAL_USERNAME})
-    return Q(**{f"{prefix}owner_id": request.user.pk})
+    pk = request.user.pk
+    own = Q(**{f"{prefix}owner_id": pk})
+    if pk is None:
+        return own
+    from accounts.models import Membership
+
+    family = Membership.objects.filter(
+        household_id__in=Membership.objects.filter(user_id=pk).values("household_id")).values("user_id")
+    return own | Q(**{f"{prefix}owner_id__in": family})
+
+
+def household(request):
+    """household(request) -> Household | None; the household of the request's user.
+
+    ``local_single`` and an anonymous request: ``None``.
+    """
+    if mode() == LOCAL_SINGLE or request.user.pk is None:
+        return None
+    from accounts.models import Household
+
+    return Household.objects.filter(memberships__user_id=request.user.pk).first()
 
 
 def is_moderator(request):

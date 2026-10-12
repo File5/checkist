@@ -1,6 +1,6 @@
-import { bool, choice, isId, object } from './schema.ts'
+import { array, bool, choice, isId, nullable, object, text } from './schema.ts'
 import type { Check, Guard } from './schema.ts'
-import type { AuthCsrf, Me, PasswordIssue } from './session.ts'
+import type { AuthCsrf, Household, Me, PasswordIssue } from './session.ts'
 
 /** Django's token is 64 letters and digits. Never render or store this value outside the adapters. */
 const csrfToken: Check = (value) => typeof value === 'string' && /^[A-Za-z0-9_]{1,128}$/.test(value)
@@ -11,6 +11,7 @@ export const isAuthCsrf = object<AuthCsrf>({ csrf_token: csrfToken })
 export const isMe = object<Me>({
   mode: choice('accounts', 'local_single'),
   user: object<Me['user']>({ id: isId, username, is_staff: bool }),
+  household: nullable(object<Household>({ id: isId, name: text, members: array(username) })),
   permissions: object<Me['permissions']>({ moderate_catalog: bool }),
   csrf_token: csrfToken,
 })

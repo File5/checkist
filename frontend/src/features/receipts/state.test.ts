@@ -57,7 +57,7 @@ describe('receipt URL filters and display values', () => {
     const denied = { kind: 'error' as const, reason: 'permission_denied' as const }
     const former = errorMessage(denied)
     const me = (mode: 'accounts' | 'local_single') =>
-      ({ mode, user: { id: 3, username: 'anna', is_staff: false }, permissions: { moderate_catalog: mode === 'local_single' }, csrf_token: 'token' })
+      ({ mode, user: { id: 3, username: 'anna', is_staff: false }, household: null, permissions: { moderate_catalog: mode === 'local_single' }, csrf_token: 'token' })
     try {
       applyMe(me('accounts'))
       expect(errorMessage(denied)).toBe('Нет права модератора каталога.')

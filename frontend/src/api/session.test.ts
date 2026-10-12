@@ -42,9 +42,15 @@ describe('schema of «Я» on the backend fixtures', () => {
     ['user', { id: 1.5, username: 'a', is_staff: false }], ['user', { id: 1, username: '', is_staff: false }],
     ['user', { id: 1, username: 'a'.repeat(151), is_staff: false }], ['user', { id: 1, username: 'a', is_staff: 0 }],
     ['user', { id: 1, username: 'a' }], ['permissions', {}], ['permissions', { moderate_catalog: 'yes' }], ['permissions', null],
+    ['household', { id: 1, name: 'Семья' }], ['household', { id: 0, name: 'Семья', members: [] }],
+    ['household', { id: 1, name: 'Семья', members: [''] }], ['household', { id: 1, name: null, members: ['a'] }],
     ['csrf_token', ''], ['csrf_token', 'with space'], ['csrf_token', 'a'.repeat(129)], ['csrf_token', null],
   ])('rejects %s = %j', (key, value) => { expect(isMe({ ...me(), [key]: value })).toBe(false) })
-  it.each(['mode', 'user', 'permissions', 'csrf_token'] as const)('rejects «Я» without %s', (key) => {
+  it('accepts the household of a family member and null without one', () => {
+    expect(me().household).toBeNull()
+    expect(isMe({ ...me(), household: { id: 4, name: 'Демо-семья', members: ['synthetic-reader', 'synthetic-two'] } })).toBe(true)
+  })
+  it.each(['mode', 'user', 'household', 'permissions', 'csrf_token'] as const)('rejects «Я» without %s', (key) => {
     const body: Partial<Me> = me()
     delete body[key]
     expect(isMe(body)).toBe(false)

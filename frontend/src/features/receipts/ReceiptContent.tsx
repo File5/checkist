@@ -17,7 +17,7 @@ const lineKinds: Record<Line['kind'], string> = {
 /** One source of the headings for the table and for the cards of the phone view. */
 const lineColumns: LineColumns = ['Строка и товар каталога', 'Количество', 'Цена', 'Сумма', 'Скидка', 'Оплачено']
 const linesCaption = 'Строки в порядке печати на чеке'
-export function ReceiptHeader({ receipt }: { receipt: Receipt }) {
+export function ReceiptHeader({ receipt, showOwner = false }: { receipt: Receipt; showOwner?: boolean }) {
   return <>
     <h3 className="receipt-store-name">{recognizedText(receipt.store.name)}</h3>
     <dl className="receipt-facts">
@@ -29,6 +29,7 @@ export function ReceiptHeader({ receipt }: { receipt: Receipt }) {
       <div><dt>Сумма скидок</dt><dd className="receipt-number">{money(receipt.discount_total, receipt.currency)}</dd></div>
       <div><dt>Валюта</dt><dd>{receipt.currency}</dd></div>
       <div><dt>Налог в ценах</dt><dd>{receipt.prices_include_tax ? 'Включён' : 'Не включён'}</dd></div>
+      {showOwner && <div><dt>Добавил</dt><dd className="receipt-owner">{receipt.owner}</dd></div>}
     </dl>
     {receipt.unmatched_products_count > 0 && <p className="receipt-warning">Товары не сопоставлены: {receipt.unmatched_products_count.toLocaleString('ru-RU')}</p>}
     {receipt.review_required && <p className="receipt-warning">Данные требуют проверки. Проверьте несопоставленные товары и замечания к изображениям.</p>}

@@ -18,8 +18,8 @@ function me(name = 'me.json', change: Partial<Me> = {}): Me {
 }
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status })
 const guestAnswer = () => json({ error: { code: 'not_authenticated', message: 'Требуется вход.' } }, 401)
-const reader: Session = { kind: 'user', mode: 'accounts', user: { id: 1, username: 'synthetic-reader', is_staff: false }, permissions: { moderate_catalog: false } }
-const local: Session = { kind: 'user', mode: 'local_single', user: { id: 1, username: 'local', is_staff: false }, permissions: { moderate_catalog: true } }
+const reader: Session = { kind: 'user', mode: 'accounts', user: { id: 1, username: 'synthetic-reader', is_staff: false }, household: null, permissions: { moderate_catalog: false } }
+const local: Session = { kind: 'user', mode: 'local_single', user: { id: 1, username: 'local', is_staff: false }, household: null, permissions: { moderate_catalog: true } }
 
 const fetchMock = vi.fn<typeof fetch>()
 const urls = () => fetchMock.mock.calls.map(([url]) => url)
@@ -129,6 +129,23 @@ describe('re-reading a known session', () => {
     fetchMock.mockResolvedValueOnce(json(me('me.json', { user: { id: 2, username: 'synthetic-other', is_staff: false } })))
     await loadSession()
     expect(getSession()).toMatchObject({ kind: 'user', user: { id: 2 } })
+    expect(seen).toHaveLength(3)
+  })
+  it('applies a joined family and a new member, and keeps the snapshot for the same family', async () => {
+    const family = { id: 4, name: 'Демо-семья', members: ['synthetic-reader', 'synthetic-two'] }
+    fetchMock.mockResolvedValueOnce(json(me('me.json', { household: family })))
+    await loadSession()
+    expect(getSession()).toEqual({ ...reader, household: family })
+    const snapshot = getSession()
+    fetchMock.mockResolvedValueOnce(json(me('me.json', { household: { ...family, members: [...family.members] } })))
+    await loadSession()
+    expect(getSession()).toBe(snapshot)
+    fetchMock.mockResolvedValueOnce(json(me('me.json', { household: { ...family, members: [...family.members, 'synthetic-three'] } })))
+    await loadSession()
+    expect(getSession()).toMatchObject({ household: { members: ['synthetic-reader', 'synthetic-two', 'synthetic-three'] } })
+    fetchMock.mockResolvedValueOnce(json(me()))
+    await loadSession()
+    expect(getSession()).toEqual(reader)
     expect(seen).toHaveLength(3)
   })
 })

@@ -25,9 +25,9 @@ vi.mock('../features/classification', () => ({ ClassificationPage: () => <pre da
 vi.mock('../features/stats', () => ({ SpendingPage: () => <pre data-screen="spending" />, ReceiptsStatsPage: () => <pre data-screen="receipts-stats" /> }))
 
 const guest: Session = { kind: 'guest', expired: false }
-const reader: Session = { kind: 'user', mode: 'accounts', user: { id: 1, username: 'synthetic-reader', is_staff: false }, permissions: { moderate_catalog: false } }
-const moderator: Session = { kind: 'user', mode: 'accounts', user: { id: 2, username: 'synthetic-moderator', is_staff: false }, permissions: { moderate_catalog: true } }
-const local: Session = { kind: 'user', mode: 'local_single', user: { id: 1, username: 'local', is_staff: false }, permissions: { moderate_catalog: true } }
+const reader: Session = { kind: 'user', mode: 'accounts', user: { id: 1, username: 'synthetic-reader', is_staff: false }, household: null, permissions: { moderate_catalog: false } }
+const moderator: Session = { kind: 'user', mode: 'accounts', user: { id: 2, username: 'synthetic-moderator', is_staff: false }, household: null, permissions: { moderate_catalog: true } }
+const local: Session = { kind: 'user', mode: 'local_single', user: { id: 1, username: 'local', is_staff: false }, household: null, permissions: { moderate_catalog: true } }
 
 /** Every data route with the address a person could open directly. */
 const pages: [Route, string][] = [
@@ -214,7 +214,7 @@ describe('signed-in shell (SSR only, no browser interaction)', () => {
     }
   })
   it('renders a name that looks like markup as text', () => {
-    const tricky: Session = { kind: 'user', mode: 'accounts', user: { id: 3, username: '<i>x</i>', is_staff: false }, permissions: { moderate_catalog: false } }
+    const tricky: Session = { kind: 'user', mode: 'accounts', user: { id: 3, username: '<i>x</i>', is_staff: false }, household: null, permissions: { moderate_catalog: false } }
     const html = render(tricky, { kind: 'catalog', query: { page: 1 } }, '/catalog')
     expect(html).toContain('aria-label="Аккаунт: &lt;i&gt;x&lt;/i&gt;" href="/account">&lt;i&gt;x&lt;/i&gt;</a>')
     expect(html).not.toContain('<i>x</i>')

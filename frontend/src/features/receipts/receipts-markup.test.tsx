@@ -11,7 +11,8 @@ import ReceiptMedia, { ReceiptImageFallback } from './ReceiptMedia'
 import { ReceiptPagination } from './ReceiptBlock'
 import { ReceiptView } from './ReceiptPage'
 import type { BlockRequest, ReceiptViewProps } from './ReceiptPage'
-import { ReceiptsView } from './ReceiptsPage'
+import { ReceiptList, ReceiptsView } from './ReceiptsPage'
+import { ownerShown } from './state'
 import { imageLabels, reasonLabels } from '../../lib/recognition-labels'
 
 const receipt = publicFixture('receipt.json') as Receipt
@@ -264,5 +265,33 @@ describe('receipt screens (Vitest/SSR, not browser visual acceptance)', () => {
     const html = renderToStaticMarkup(<ReceiptsView query={{ page: 5, q: 'MILCH' }} state={{ kind: 'error', reason: 'page_out_of_range', status: 404 }} retry={noop} />)
     expect(html).toContain('href="/receipts?q=MILCH"')
     expect(html).toContain('На первую страницу')
+  })
+})
+
+describe('who added the receipt (family)', () => {
+  const page = { ...emptyPage<Receipt>(), count: 1, pages: 1, results: [{ ...receipt, owner: 'synthetic-two' }] }
+  it('names who added it in the list and on the receipt page of a family member', () => {
+    expect(receipt.owner).toBe('local')
+    const list = renderToStaticMarkup(<ReceiptsView query={{ page: 1 }} state={{ kind: 'ok', data: page }} retry={noop} showOwner />)
+    expect(list).toContain('<dt>Добавил</dt><dd class="receipt-owner">synthetic-two</dd>')
+    const detail = renderToStaticMarkup(<ReceiptView {...view} showOwner />)
+    expect(detail).toContain('<dt>Добавил</dt><dd class="receipt-owner">local</dd>')
+  })
+  it('shows nothing without a family', () => {
+    expect(renderToStaticMarkup(<ReceiptList receipts={page.results} />)).not.toContain('Добавил')
+    expect(renderToStaticMarkup(<ReceiptView {...view} />)).not.toContain('Добавил')
+    expect(renderToStaticMarkup(<ReceiptHeader receipt={receipt} />)).not.toContain('Добавил')
+  })
+  it('escapes the name as text', () => {
+    const html = renderToStaticMarkup(<ReceiptList receipts={[{ ...receipt, owner: '<i>x</i>' }]} showOwner />)
+    expect(html).toContain('&lt;i&gt;x&lt;/i&gt;')
+    expect(html).not.toContain('<i>x</i>')
+  })
+  it('is shown only to a signed-in member of a family', () => {
+    const user = { kind: 'user' as const, mode: 'accounts' as const, user: { id: 1, username: 'synthetic-reader', is_staff: false }, permissions: { moderate_catalog: false } }
+    expect(ownerShown({ ...user, household: { id: 4, name: 'Демо-семья', members: ['synthetic-reader', 'synthetic-two'] } })).toBe(true)
+    expect(ownerShown({ ...user, household: null })).toBe(false)
+    expect(ownerShown({ kind: 'guest', expired: false })).toBe(false)
+    expect(ownerShown({ kind: 'loading' })).toBe(false)
   })
 })

@@ -43,6 +43,10 @@
 | П | Серверные настройки, запрет индексации, адрес клиента за прокси, gunicorn, Caddy, systemd, резервные копии | `backend/config/settings.py`, `config/robots.py`, `config/proxy.py`, `deploy/`, `manage.py backup`, [deployment.md](deployment.md) |
 | И | QA-демо двух учётных записей, proxy-скрипт двух сессий, ручная приёмка интерфейса и сервера | `manage.py seed_accounts_demo`, `frontend/scripts/check_accounts_proxy.mjs`, `frontend/src/features/auth/ACCEPTANCE.md`, [deployment-acceptance.md](deployment-acceptance.md) |
 
+### Семья (2026-10-12, шаг 1 плана семейного бюджета)
+
+`accounts.Household` (название, дата) и `accounts.Membership` (пользователь уникален — не больше одной семьи, семья), миграция `accounts.0002_household_membership` (откат — `manage.py migrate accounts 0001_initial`). Семью и членов заводит администратор в `/admin/` (семья со списком членов в одной форме); приглашений и флагов «поделиться чеком» нет. Правило одно — `accounts.access.owner_q`: в `accounts` «своё» — строки пользователя и всех членов его семьи (подзапрос, без отдельного запроса к базе), без семьи — только свои, `local_single` и аноним не меняются. Поэтому члены семьи видят и меняют одни и те же чеки, фото, задания и вырезки (подтверждение вырезки, cancel / retry), MEDIA, статистику; `own` в точках цен, `stores.receipts_count`, `products.last_observed_at` и покупки группы слияния у не модератора считают семейные строки своими; вью и сервисы не менялись. `owner` по-прежнему «кто добавил»: новый чек и фото — на загрузившего, чек из вырезки — на владельца фото; дедупликация чеков и `sha256` фото — в пределах владельца, так что один чек от двух членов семьи — две записи. API: `household` (`{"id", "name", "members"}` либо `null`) в «Я», `owner` (логин) у Receipt и Job; клиент показывает «Добавил: имя» в списке и на странице чека, только если у пользователя есть семья. Тесты — `backend/accounts/tests/test_household.py`.
+
 ### Чем реализация отличается от проекта
 
 | № | В проекте | В коде |

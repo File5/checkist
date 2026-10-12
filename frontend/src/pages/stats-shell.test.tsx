@@ -12,7 +12,7 @@ vi.mock('../navigation', async (importOriginal) => ({
 // The shell needs to know who works: these tests check the unchanged interface of local_single.
 vi.mock('../session', async (importOriginal) => ({
   ...await importOriginal<typeof import('../session')>(),
-  useSession: () => ({ kind: 'user', mode: 'local_single', user: { id: 1, username: 'local', is_staff: false }, permissions: { moderate_catalog: true } }),
+  useSession: () => ({ kind: 'user', mode: 'local_single', user: { id: 1, username: 'local', is_staff: false }, household: null, permissions: { moderate_catalog: true } }),
 }))
 // The shell is checked apart from what the screens show: their content belongs to the tests of features/stats.
 vi.mock('../features/stats', () => ({

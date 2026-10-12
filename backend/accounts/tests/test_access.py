@@ -538,8 +538,12 @@ class RequestIdentityTests(TestCase):
             with self.subTest(request=type(request).__name__), self.assertNumQueries(0):
                 self.assertEqual(access.request_user(request), self.account)
                 self.assertEqual(request_owner(request), self.account)
-                self.assertEqual(access.owner_q(request), Q(owner_id=self.account.pk))
-                self.assertEqual(access.owner_q(request, "receipts__"), Q(receipts__owner_id=self.account.pk))
+                # Своё либо любого члена своей семьи: подзапрос строится без запроса к БД.
+                for prefix in ("", "receipts__"):
+                    q = access.owner_q(request, prefix)
+                    self.assertEqual(q.connector, Q.OR)
+                    self.assertEqual(q.children[0], (f"{prefix}owner_id", self.account.pk))
+                    self.assertEqual(q.children[1][0], f"{prefix}owner_id__in")
 
     @accounts()
     def test_accounts_anonymous_filter_matches_nothing(self):

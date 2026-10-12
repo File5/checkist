@@ -107,7 +107,7 @@ describe('upload and object URL lifecycle', () => {
     const denied = { kind: 'error' as const, reason: 'permission_denied' as const }
     const former = [errorText(denied), errorText(denied, true)]
     const me = (mode: 'accounts' | 'local_single') =>
-      ({ mode, user: { id: 3, username: 'anna', is_staff: false }, permissions: { moderate_catalog: mode === 'local_single' }, csrf_token: 'token' })
+      ({ mode, user: { id: 3, username: 'anna', is_staff: false }, household: null, permissions: { moderate_catalog: mode === 'local_single' }, csrf_token: 'token' })
     try {
       applyMe(me('accounts'))
       expect([errorText(denied), errorText(denied, true)]).toEqual(Array(2).fill('Нет права модератора каталога.'))

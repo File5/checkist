@@ -103,7 +103,9 @@ Probes запускаются параллельно, поэтому их обы
 | 13 GET каталога и цен, `prices/series/` | Нужен вход | Открыты анонимно, как раньше |
 | Чеки, распознавание, статистика, слияния, предположения | Нужен вход; `DEBUG`, `ALLOW_LOCAL_RECOGNITION_API` и адрес запроса не читаются | `DEBUG` + `ALLOW_LOCAL_RECOGNITION_API=1` + loopback `REMOTE_ADDR`, иначе `403 permission_denied` — как раньше |
 | Право модератора каталога | `catalog.moderate_catalog` у пользователя либо его группы; у суперпользователя есть всегда | Есть всегда |
-| `/media/…` | Только владельцу фото, [ниже](#media) | Любой файл под `MEDIA_ROOT` при `DEBUG` |
+| `/media/…` | Только владельцу фото и членам его семьи, [ниже](#media) | Любой файл под `MEDIA_ROOT` при `DEBUG` |
+
+**Семья** (`accounts.Household`, `accounts.Membership`; у пользователя не больше одной, заводит администратор в `/admin/`). В `accounts` «свои» строки — строки пользователя и всех членов его семьи: чеки, фото, задания, вырезки, статистика, `own` в точках цен, `stores.receipts_count`, `products.last_observed_at`, покупки группы слияния у не модератора; чтение и запись (подтверждение вырезки, cancel / retry) — одинаково, правило одно — `accounts.access.owner_q`. Без семьи — только свои строки, как раньше; `local_single` не меняется. `owner` по-прежнему значит «кто добавил»: новый чек и фото пишутся на того, кто загрузил фото; дедупликация чеков и `sha256` фото — в пределах владельца. Имя добавившего — поле `owner` (логин) у Receipt и Job.
 
 Анонимны в обоих режимах: `GET /api/health/`, `GET /api/auth/csrf/` и запасной `404 not_found` неизвестного пути под `/api/`. Выключенный пользователь (`is_active=False`) считается не вошедшим: его открытые сессии отвечают `401`.
 
@@ -124,11 +126,12 @@ Probes запускаются параллельно, поэтому их обы
 ```json
 {"mode": "accounts",
  "user": {"id": 1, "username": "synthetic-reader", "is_staff": false},
+ "household": null,
  "permissions": {"moderate_catalog": false},
  "csrf_token": "…"}
 ```
 
-`mode` — `accounts` либо `local_single`; `permissions.moderate_catalog` — можно ли менять общий каталог (в `local_single` всегда `true`); `csrf_token` — токен текущей сессии. Вход меняет ключ сессии и токен CSRF: дальше клиент берёт токен из ответа входа.
+`mode` — `accounts` либо `local_single`; `household` — семья пользователя `{"id", "name", "members": [логины по алфавиту]}` либо `null` (без семьи и всегда в `local_single`); `permissions.moderate_catalog` — можно ли менять общий каталог (в `local_single` всегда `true`); `csrf_token` — токен текущей сессии. Вход меняет ключ сессии и токен CSRF: дальше клиент берёт токен из ответа входа.
 
 Правила трёх POST:
 
@@ -651,7 +654,7 @@ Photo имеет поля `id,created_at,content_type,bytes,raw_width,raw_height
 ### Job: progress, действия и наблюдение воркера
 
 ```json
-{"id":31,"photo_id":11,"retry_of":null,"status":"partial_succeeded","stage":"finished","version":1,"created_at":"2026-10-04T12:35:00Z","started_at":null,"finished_at":"2026-10-04T12:35:00Z","cancel_requested_at":null,"heartbeat_at":null,"stalled":false,"executor":{"available":false,"state":"absent","last_seen_at":null},"progress":{"detected":2,"current_position":null,"completed":2,"imported":1,"reused":0,"review":1,"failed":0,"cancelled":0},"review_required":true,"error":null,"actions":{"can_cancel":false,"can_retry":true},"items_count":2,"items":[{"image_id":41,"position":1,"status":"imported","receipt_id":71},{"image_id":42,"position":2,"status":"needs_review","receipt_id":null}]}
+{"id":31,"photo_id":11,"retry_of":null,"owner":"local","status":"partial_succeeded","stage":"finished","version":1,"created_at":"2026-10-04T12:35:00Z","started_at":null,"finished_at":"2026-10-04T12:35:00Z","cancel_requested_at":null,"heartbeat_at":null,"stalled":false,"executor":{"available":false,"state":"absent","last_seen_at":null},"progress":{"detected":2,"current_position":null,"completed":2,"imported":1,"reused":0,"review":1,"failed":0,"cancelled":0},"review_required":true,"error":null,"actions":{"can_cancel":false,"can_retry":true},"items_count":2,"items":[{"image_id":41,"position":1,"status":"imported","receipt_id":71},{"image_id":42,"position":2,"status":"needs_review","receipt_id":null}]}
 ```
 
 `detected` до детекции null. Счётчики — сохранённые исходы; imported/reused считаются после commit. `version` изменяет сервис очереди; heartbeat может обновиться с той же version. `items_count` есть и в списке, `items` — только в detail. Items содержат ровно image_id,position,status,receipt_id; поля черновиков отсутствуют. `review_required` — наличие вырезки needs_review, issues у неуспешной вырезки либо геометрическая ошибка задания (`geometry_requires_review`, `clipped`, `overlap`); отдельного процесса разрешения review нет. Начиная с И4, issues у imported/reused/updated являются замечаниями, не увеличивают progress.review и не мешают Job.succeeded. Terminal progress не пересчитывается API, старые outcomes меняются только новым retry-job — с одним исключением: [подтверждение вырезки человеком](#подтверждение-вырезки-needs_review-человеком) пересчитывает счётчики завершённого задания, увеличивает `version` и переводит `partial_succeeded` в `succeeded`, когда успешны все вырезки.
@@ -917,7 +920,7 @@ List и detail `/api/recognition/receipt-images/` отдают у **каждог
 
 ### Receipt, Line, Discount, Tax
 
-Receipt содержит ровно `id,store,currency,operation,purchased_on,purchased_at,total,discount_total,prices_include_tax,origin,review_required,lines_count,unmatched_products_count,receipt_images_count,preview_image_url,created_at,updated_at,lines_url,discounts_url,taxes_url,images_url`. Store — прежний `api.common.store_object`, без вложенного Merchant. `origin="recognized"` при наличии связанной вырезки, иначе `"legacy/manual"`: это вычисляемый индикатор связи, без новой provenance-модели. Preview — последняя связанная вырезка по created_at/id, при отсутствии null. `review_required` — несопоставленный товар, связанная вырезка needs_review или issues у неуспешной вырезки; замечания успешных вырезок сами по себе review не требуют. Несопоставленный товар может требовать проверки Receipt, хотя импорт и Job уже succeeded. Canonical Receipt не содержит непринятый результат: его смотрят через ReceiptImage.
+Receipt содержит ровно `id,owner,store,currency,operation,purchased_on,purchased_at,total,discount_total,prices_include_tax,origin,review_required,lines_count,unmatched_products_count,receipt_images_count,preview_image_url,created_at,updated_at,lines_url,discounts_url,taxes_url,images_url`. `owner` — логин того, кто добавил чек (владельца фото). Store — прежний `api.common.store_object`, без вложенного Merchant. `origin="recognized"` при наличии связанной вырезки, иначе `"legacy/manual"`: это вычисляемый индикатор связи, без новой provenance-модели. Preview — последняя связанная вырезка по created_at/id, при отсутствии null. `review_required` — несопоставленный товар, связанная вырезка needs_review или issues у неуспешной вырезки; замечания успешных вырезок сами по себе review не требуют. Несопоставленный товар может требовать проверки Receipt, хотя импорт и Job уже succeeded. Canonical Receipt не содержит непринятый результат: его смотрят через ReceiptImage.
 
 ```json
 {"id":101,"position":1,"kind":"product","parent_id":null,"name":"MILCH 1 L","name_i18n":{},"store_item_code":"M1","barcode":"","quantity":"2.000","unit":"pcs","unit_price":"1.2900","amount":"2.58","discount_amount":"0.20","paid_amount":"2.38","product":{"id":61,"name":"Молоко 1 л"},"matching_status":"matched","tax_rate":{"id":3,"country":"DE","kind":"vat","rate":"7.00"},"tax_code":"A","tax_amount":null,"is_excise":false,"is_marked":false}

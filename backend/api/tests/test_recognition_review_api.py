@@ -19,7 +19,7 @@ from stores.models import Merchant, Store
 
 IMAGE_KEYS = ["id", "photo_id", "job_id", "position", "created_at", "status", "receipt_id", "receipt_deleted",
               "image_url", "width", "height", "bbox", "clipped", "issues", "normalized_result", "confirmed_at"]
-JOB_KEYS = ["id", "photo_id", "retry_of", "status", "stage", "version", "created_at", "started_at", "finished_at",
+JOB_KEYS = ["id", "photo_id", "retry_of", "owner", "status", "stage", "version", "created_at", "started_at", "finished_at",
             "cancel_requested_at", "heartbeat_at", "stalled", "executor", "progress", "review_required", "error",
             "actions", "items_count", "items"]
 ISSUE_KEYS = ["code", "field", "message", "reason", "severity", "context"]

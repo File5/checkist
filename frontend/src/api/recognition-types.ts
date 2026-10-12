@@ -41,7 +41,8 @@ export type RecognitionIssue = RecognitionError & { field: string; reason?: stri
 export type JobItem = { image_id: number; position: number; status: ReceiptImageStatus; receipt_id: number | null }
 /** List projection. The detail and mutation responses add items. */
 export type Job = {
-  id: number; photo_id: number; retry_of: number | null; status: JobStatus; stage: JobStage; version: number
+  /** `owner` — username of who uploaded the photo. */
+  id: number; photo_id: number; retry_of: number | null; owner: string; status: JobStatus; stage: JobStage; version: number
   created_at: ISODateTime; started_at: ISODateTime | null; finished_at: ISODateTime | null
   cancel_requested_at: ISODateTime | null; heartbeat_at: ISODateTime | null; stalled: boolean; executor: Executor
   progress: JobProgress; review_required: boolean; error: RecognitionError | null; actions: JobActions; items_count: number

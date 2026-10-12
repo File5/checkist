@@ -7,17 +7,18 @@ import RequestState from '../../components/RequestState'
 import { formatPurchasedOn } from '../../lib/format'
 import { numbered } from '../../lib/text'
 import { buildReceiptsQuery, Link } from '../../navigation'
+import { useSession } from '../../session'
 import type { ReceiptsQuery } from '../../navigation'
 import type { ReceiptsPageProps } from '../../pages/types'
 import { ReceiptBlock } from './ReceiptBlock'
 import ReceiptFilters from './ReceiptFilters'
 import ReceiptMedia from './ReceiptMedia'
 import type { ReceiptRequestState } from './request'
-import { hasFilters, money, receiptParams, recognizedText, recognizedValue } from './state'
+import { hasFilters, money, ownerShown, receiptParams, recognizedText, recognizedValue } from './state'
 import { useReceiptRequest } from './useReceiptRequest'
 import './Receipts.css'
 
-export function ReceiptList({ receipts }: { receipts: Receipt[] }) {
+export function ReceiptList({ receipts, showOwner = false }: { receipts: Receipt[]; showOwner?: boolean }) {
   return <ul className="receipt-list">{receipts.map((receipt) => <li key={receipt.id} className="receipt-list-card">
     {receipt.preview_image_url && <ReceiptMedia url={receipt.preview_image_url} thumbnail alt={`Миниатюра чека №${receipt.id}`} />}
     <div className="receipt-list-content">
@@ -28,6 +29,7 @@ export function ReceiptList({ receipts }: { receipts: Receipt[] }) {
         <div><dt>Итог</dt><dd className="receipt-number receipt-total">{money(receipt.total, receipt.currency)}</dd></div>
         <div><dt>Строк</dt><dd>{receipt.lines_count.toLocaleString('ru-RU')}</dd></div>
         <div><dt>Операция</dt><dd>{receipt.operation === 'refund' ? 'Возврат' : 'Продажа'}</dd></div>
+        {showOwner && <div><dt>Добавил</dt><dd className="receipt-owner">{receipt.owner}</dd></div>}
       </dl>
       {receipt.unmatched_products_count > 0 && <p className="receipt-warning">Товары не сопоставлены: {receipt.unmatched_products_count.toLocaleString('ru-RU')}</p>}
       {receipt.review_required && <p className="receipt-warning">Данные требуют проверки</p>}
@@ -35,8 +37,8 @@ export function ReceiptList({ receipts }: { receipts: Receipt[] }) {
   </li>)}</ul>
 }
 
-export function ReceiptsView({ query, state, retry }: {
-  query: ReceiptsQuery; state: ReceiptRequestState<Page<Receipt>>; retry: () => void
+export function ReceiptsView({ query, state, retry, showOwner = false }: {
+  query: ReceiptsQuery; state: ReceiptRequestState<Page<Receipt>>; retry: () => void; showOwner?: boolean
 }) {
   const recovery = state.kind === 'error' && state.reason === 'page_out_of_range'
     ? <Link className="action-link" to={{ kind: 'receipts', query: { ...query, page: 1 } }}>На первую страницу</Link>
@@ -51,7 +53,7 @@ export function ReceiptsView({ query, state, retry }: {
     <ReceiptBlock title="Список чеков" state={state} retry={retry} recovery={recovery}>
       {state.kind === 'ok' && (state.data.results.length ? <>
         <p className="receipt-note" role="status">Чеков: {state.data.count.toLocaleString('ru-RU')} · Страница {state.data.page.toLocaleString('ru-RU')} из {state.data.pages.toLocaleString('ru-RU')}</p>
-        <ReceiptList receipts={state.data.results} />
+        <ReceiptList receipts={state.data.results} showOwner={showOwner} />
         <Pagination page={state.data.page} pages={state.data.pages}
           buildPageHref={(page) => `/receipts${buildReceiptsQuery({ ...query, page })}`} label="Страницы чеков" />
       </> : <RequestState kind="empty" message={hasFilters(query) ? 'По выбранным фильтрам чеков нет.' : 'Чеков пока нет. Загрузите первое фото чека.'}
@@ -67,5 +69,6 @@ export default function ReceiptsPage({ query }: ReceiptsPageProps) {
     page, store, product, country, currency, operation, date_from, date_to, q, page_size, ordering,
   }), { signal }), [page, store, product, country, currency, operation, date_from, date_to, q, page_size, ordering])
   const request = useReceiptRequest(load)
-  return <ReceiptsView query={query} state={request.state} retry={request.retry} />
+  const showOwner = ownerShown(useSession())
+  return <ReceiptsView query={query} state={request.state} retry={request.retry} showOwner={showOwner} />
 }

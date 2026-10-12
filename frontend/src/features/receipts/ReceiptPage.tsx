@@ -8,10 +8,12 @@ import type { Page } from '../../api/types'
 import RequestState from '../../components/RequestState'
 import { numbered } from '../../lib/text'
 import { Link } from '../../navigation'
+import { useSession } from '../../session'
 import type { ReceiptPageProps } from '../../pages/types'
 import { ReceiptBlock, ReceiptPagination } from './ReceiptBlock'
 import { ReceiptDiscounts, ReceiptHeader, ReceiptImages, ReceiptLines, ReceiptTaxes } from './ReceiptContent'
 import type { ReceiptRequestState } from './request'
+import { ownerShown } from './state'
 import { useReceiptRequest } from './useReceiptRequest'
 import './Receipts.css'
 
@@ -21,6 +23,8 @@ export type ReceiptViewProps = ReceiptPageProps & {
   header: BlockRequest<Receipt>; images: BlockRequest<Page<ReceiptImage>>; lines: BlockRequest<Page<Line>>
   discounts: BlockRequest<Page<Discount>>; taxes: BlockRequest<Page<Tax>>
   pages: DetailPages; onPage: (block: keyof DetailPages, page: number) => void
+  /** «Добавил: имя» in the header: the user is a member of a family. */
+  showOwner?: boolean
 }
 
 function PagedBlock<T>({ title, request, empty, page, onPage, children, id }: {
@@ -38,7 +42,7 @@ function PagedBlock<T>({ title, request, empty, page, onPage, children, id }: {
   </ReceiptBlock>
 }
 
-export function ReceiptView({ receiptId, returnTo, header, images, lines, discounts, taxes, pages, onPage }: ReceiptViewProps) {
+export function ReceiptView({ receiptId, returnTo, header, images, lines, discounts, taxes, pages, onPage, showOwner = false }: ReceiptViewProps) {
   const receipt = header.state.kind === 'ok' ? header.state.data : undefined
   const visibleLines = lines.state.kind === 'ok' ? lines.state.data.results : []
   return <div className="receipts-page">
@@ -48,7 +52,7 @@ export function ReceiptView({ receiptId, returnTo, header, images, lines, discou
       <Link className="action-link" to="/recognition/jobs">Обработка</Link>
     </div>
     <ReceiptBlock title={numbered('Страница чека', receiptId)} state={header.state} retry={header.retry}>
-      {receipt && <ReceiptHeader receipt={receipt} />}
+      {receipt && <ReceiptHeader receipt={receipt} showOwner={showOwner} />}
     </ReceiptBlock>
     <PagedBlock title="Изображения чека" id="receipt-images" request={images} empty="У этого чека нет изображений."
       page={pages.images} onPage={(page) => onPage('images', page)}>
@@ -81,7 +85,8 @@ function ReceiptScreen({ receiptId, returnTo }: ReceiptPageProps) {
   const lines = useReceiptRequest(loadLines)
   const discounts = useReceiptRequest(loadDiscounts)
   const taxes = useReceiptRequest(loadTaxes)
-  return <ReceiptView receiptId={receiptId} returnTo={returnTo} header={header} images={images} lines={lines} discounts={discounts} taxes={taxes}
+  const showOwner = ownerShown(useSession())
+  return <ReceiptView showOwner={showOwner} receiptId={receiptId} returnTo={returnTo} header={header} images={images} lines={lines} discounts={discounts} taxes={taxes}
     pages={pages} onPage={(block, page) => setPages((previous) => ({ ...previous, [block]: page }))} />
 }
 
