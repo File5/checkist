@@ -10,7 +10,8 @@ import { ownerChips } from './spends'
 
 const NBSP = ' '
 const noop = () => {}
-const base = (publicFixture('receipts.json') as Page<ReceiptListItem>).results[0]
+// The rows of these tests name their categories themselves: the public example's own list is dropped.
+const base: ReceiptListItem = { ...(publicFixture('receipts.json') as Page<ReceiptListItem>).results[0], categories: undefined }
 const rows: ReceiptListItem[] = [
   { ...base, id: 1, purchased_on: '2026-10-12', currency: 'KZT', total: '18940.00', owner: 'liza', owner_name: 'Лиза', lines_count: 23,
     store: { ...base.store!, name: 'Magnum' }, category: { id: 3, name: 'Продукты' } },

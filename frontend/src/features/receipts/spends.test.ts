@@ -8,7 +8,8 @@ import {
 } from './spends'
 
 const NBSP = ' '
-const base = (publicFixture('receipts.json') as { results: ReceiptListItem[] }).results[0]
+// The rows of these tests name their categories themselves: the public example's own list is dropped.
+const base: ReceiptListItem = { ...(publicFixture('receipts.json') as { results: ReceiptListItem[] }).results[0], categories: undefined }
 let next = 100
 const receipt = (fields: Partial<ReceiptListItem>): ReceiptListItem => ({ ...base, id: next++, ...fields })
 const manual = (fields: Partial<ReceiptListItem>) => receipt({ source: 'manual', store: null, preview_image_url: null, ...fields })
