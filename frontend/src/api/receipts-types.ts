@@ -15,6 +15,9 @@ export type Receipt = {
   lines_count: number; unmatched_products_count: number; receipt_images_count: number; preview_image_url: string | null
   created_at: ISODateTime; updated_at: ISODateTime; lines_url: string; discounts_url: string; taxes_url: string; images_url: string
 }
+/** An item of `GET /api/receipts/` (the list only): the first line's name and the one top-level category of the lines.
+ * Optional for an older server: a missing field reads as null. */
+export type ReceiptListItem = Receipt & { first_line?: string | null; category?: NamedObject | null }
 export type Line = {
   id: number; position: number; kind: LineKind; parent_id: number | null; name: string; name_i18n: Record<string, string>
   store_item_code: string; barcode: string; quantity: Decimal; unit: Unit; unit_price: Decimal; amount: Decimal
@@ -28,6 +31,8 @@ export type Tax = { id: number; tax_rate: TaxRate; tax_code: string; net: Decima
 export type ReceiptParams = PageParams & {
   store?: number; product?: number; country?: string; currency?: CurrencyCode; operation?: ReceiptOperation
   date_from?: ISODate; date_to?: ISODate; q?: string; ordering?: 'purchased_at' | '-purchased_at'
+  /** Username of who added the receipt; one outside the family gives an empty page. */
+  owner?: string
 }
 export type ReceiptLineParams = PageParams & { kind?: LineKind; matching?: MatchingStatus }
 

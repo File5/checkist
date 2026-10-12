@@ -55,7 +55,7 @@ export function receiptParams(query: ReceiptsQuery): ReceiptParams {
 }
 
 export function hasFilters(query: ReceiptsQuery): boolean {
-  return Boolean(query.q || query.date_from || query.date_to || query.operation || query.store || query.product || query.country || query.currency)
+  return Boolean(query.q || query.date_from || query.date_to || query.operation || query.store || query.product || query.country || query.currency || query.owner)
 }
 
 /** With accounts a refused access is a missing right, not a switched off local mode. */

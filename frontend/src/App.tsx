@@ -32,7 +32,7 @@ function pageTitle(route: Route) {
     case 'spending': return 'Траты за период'
     case 'receipts-stats': return 'Средний чек'
     case 'health': return 'Состояние сервисов'
-    case 'receipts': return 'Чеки'
+    case 'receipts': return 'Траты'
     case 'upload': return 'Загрузка фото чеков'
     case 'expense-new': return 'Добавить трату'
     case 'expense-edit': return 'Изменить трату'

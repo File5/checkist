@@ -585,8 +585,9 @@ class QueryCountTests(IsolationMixin, TestCase):
     def measure(self, client, own, extra):
         receipt = f"/api/receipts/{own['receipt'].pk}/"
         # Путь, число запросов, число своих строк: чужие пять в счёт и на страницу не попадают.
+        # Список чеков: count + страница + дерево категорий (строки страницы с категорией).
         lists = (
-            ("/api/receipts/", 2, 5), (receipt + "lines/", 3, 1), (receipt + "discounts/", 3, 1),
+            ("/api/receipts/", 3, 5), (receipt + "lines/", 3, 1), (receipt + "discounts/", 3, 1),
             (receipt + "taxes/", 3, 1), ("/api/recognition/photos/", 2, 5),
             ("/api/recognition/jobs/", 4, 5),  # count + page + executing lease + worker slot
             ("/api/recognition/receipt-images/", 2, 5),

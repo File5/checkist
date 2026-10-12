@@ -24,6 +24,8 @@ export interface HistoryQuery {
 export interface ReceiptsQuery extends HistoryQuery {
   product?: number
   q?: string
+  /** «Траты»: who added the receipt — a username of the family (`/api/me/` household members). */
+  owner?: string
   operation?: ReceiptOperation
   page_size?: number
   ordering?: 'purchased_at' | '-purchased_at'
@@ -305,6 +307,9 @@ export function parseReceiptsStatsQuery(search: string | URLSearchParams): Parse
   }
 }
 
+/** A Django username: letters, digits and @.+-_, at most 150 characters. A wrong one is refused like any wrong filter. */
+const ownerPattern = /^[\p{L}\p{N}_@.+-]{1,150}$/u
+
 export function parseReceiptsQuery(search: string | URLSearchParams): ParsedQuery<ReceiptsQuery> {
   const history = parseHistoryQuery(search)
   const reader = queryReader(search)
@@ -314,8 +319,11 @@ export function parseReceiptsQuery(search: string | URLSearchParams): ParsedQuer
   const operation = reader.choice('operation', ['sale', 'refund'] as const)
   const page_size = reader.pageSize()
   const ordering = reader.choice('ordering', ['purchased_at', '-purchased_at'] as const)
+  const owner = reader.read('owner')
+  if (owner !== undefined && !ownerPattern.test(owner)) reader.invalid('owner')
   return { query: { ...history.query, ...(product && { product }), ...(q && { q }), ...(operation && { operation }),
-    ...(page_size && { page_size }), ...(ordering && { ordering }) }, invalidFields: [...history.invalidFields, ...reader.invalidFields] }
+    ...(owner && ownerPattern.test(owner) && { owner }), ...(page_size && { page_size }), ...(ordering && { ordering }) },
+    invalidFields: [...history.invalidFields, ...reader.invalidFields] }
 }
 
 export function parseJobsQuery(search: string | URLSearchParams): ParsedQuery<JobsQuery> {
@@ -397,7 +405,7 @@ export function receiptsStatsHref(query: ReceiptsStatsQuery = {}): string {
 }
 
 export function buildReceiptsQuery(query: ReceiptsQuery): string {
-  return buildQuery(query, ['store', 'product', 'country', 'currency', 'operation', 'date_from', 'date_to', 'q', 'page', 'page_size', 'ordering'], parseReceiptsQuery)
+  return buildQuery(query, ['store', 'product', 'country', 'currency', 'operation', 'date_from', 'date_to', 'q', 'owner', 'page', 'page_size', 'ordering'], parseReceiptsQuery)
 }
 
 export function buildJobsQuery(query: JobsQuery): string {
