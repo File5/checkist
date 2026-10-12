@@ -3927,3 +3927,14 @@ $taskDuration = Measure-Command {
 Ctrl+C локальные QA-процессы, затем `docker compose -p checkist_qa down` (для QA2 — `docker compose -p checkist_qa2 down`). Это удаляет только выделенные QA-контейнеры; не используйте глобальные stop/prune. Не удаляйте тома автоматически. Закройте QA-терминалы, чтобы environment overrides не попали в последующий dev-запуск. Убедитесь, что фильтр своего QA project в `docker ps -a` возвращает пустой вывод.
 
 Отчёт всегда разделяет **«проверено и прошло / проверено и не прошло / не проверено и почему»**, включает команды, exit codes, ограничения и воспроизведение. Принятие результата не разрешает самостоятельно merge, публикацию или release.
+
+## Фактические результаты: работа без сети, 2026-10-12
+
+Ветка `feature/offline` (от `main` bc9ee60), выполнял разработчик (агент), macOS, Node из `frontend/`:
+
+- `npm ci` — exit 0.
+- `npx vitest run` — exit 0, 127 файлов / 3873 теста (новые: `src/offline/sw.test.ts` — `public/sw.js` в Node с подменными `self`, `caches`, `fetch`; `src/offline/pending.test.ts`; `src/offline/offline-markup.test.tsx`).
+- `npm run lint` — exit 0.
+- `npm run build` — exit 0; `dist/sw.js` есть, `dist/assets/index-*.js` содержит `register(`/sw.js`, …)`; `sw.js`, загруженный в Node, находит в настоящем `dist/index.html` JS и CSS, а в них — шрифт и четыре WebP.
+
+Не проверено: браузер, iPhone/Android, авиарежим, настоящий кэш service worker, выкладка новой версии, Caddy (файлы не менялись: `/sw.js` отдаёт общий `handle` с `Cache-Control: no-cache`), backend-тесты и proxy-скрипты (сервер не менялся). Ручная приёмка — `frontend/OFFLINE_ACCEPTANCE.md`.

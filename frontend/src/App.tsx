@@ -21,6 +21,8 @@ import { canModerate, loadSession, useSession } from './session'
 import { menuKey, useCurrentItemInView } from './menu-view'
 import MainMenu from './menu/MainMenu'
 import { ThemeToggle } from './theme'
+import OfflineBanner from './offline/OfflineBanner'
+import { usePendingSync } from './offline/pending-store'
 import emblem from './assets/brand/emblem-96.webp'
 import emblem2x from './assets/brand/emblem-192.webp'
 
@@ -108,6 +110,8 @@ export default function App() {
   const shell = `${view}:${contentKey}`
 
   useEffect(() => watchSession(loadSession, document), [])
+  // Spends kept on the phone without network belong to one person and are sent when the network is back.
+  usePendingSync(session.kind === 'user' ? session.user.username : null)
 
   useLayoutEffect(() => {
     const previous = previousNavigation.current
@@ -179,6 +183,7 @@ export default function App() {
   return (
     <>
       <a className="skip-link" href="#page-heading">К содержимому</a>
+      <OfflineBanner />
       <header className="brand-bar">
         <Link className="brand" to="/catalog" aria-label="Чекист — каталог">
           <img className="brand-mark" src={emblem} srcSet={`${emblem} 1x, ${emblem2x} 2x`} width={44} height={44} alt="" />

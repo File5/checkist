@@ -16,8 +16,9 @@
     <meta name="description" content="Чекист — учёт покупок по фото чеков: распознавание, каталог товаров, цены в магазинах и статистика трат." />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <!-- Installable app: «На экран Домой» on iPhone, «Установить приложение» on Android. No service worker:
-         the app needs the network anyway, and a cache would keep an old version after a deploy. -->
+    <!-- Installable app: «На экран Домой» on iPhone, «Установить приложение» on Android. The service worker
+         (public/sw.js, registered in src/offline/service-worker.ts) opens the app without network; navigations go to
+         the network first, so a deploy is shown on the next online open. -->
     <link rel="manifest" href="/manifest.json" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />

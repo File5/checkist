@@ -7,6 +7,9 @@ import type { Category, LocalApiResult } from '../../api/types'
 import RequestState from '../../components/RequestState'
 import { formatAmount } from '../../lib/format'
 import { Link, navigate } from '../../navigation'
+import { isNetworkFailure } from '../../offline/pending'
+import { clearHandoff, discardPending, draftFromPending, enqueueSpend, peekHandoff } from '../../offline/pending-store'
+import { useSession } from '../../session'
 import { errorMessage } from '../receipts/state'
 import type { Failure } from '../receipts/state'
 import { saveMessage } from './labels'
@@ -148,6 +151,11 @@ export default function ExpensePage({ receiptId }: { receiptId?: number }) {
   const [saving, setSaving] = useState(false)
   const [failure, setFailure] = useState<string>()
   const saveController = useRef<AbortController | undefined>(undefined)
+  // «Исправить» of a spend waiting on the phone: the form starts from it and replaces it once saved.
+  const [handed] = useState(() => receiptId === undefined ? peekHandoff() : undefined)
+  const session = useSession()
+  const owner = session.kind === 'user' ? session.user.username : undefined
+  useEffect(() => () => clearHandoff(), [])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -168,7 +176,7 @@ export default function ExpensePage({ receiptId }: { receiptId?: number }) {
       let frequent: number[] = []
       if (receiptId === undefined) {
         const defaults = values[1] as ManualDefaults
-        next = emptyDraft(defaults.currency)
+        next = handed ? draftFromPending(handed.body, categoryData.results) : emptyDraft(defaults.currency)
         frequent = defaults.frequent_categories
       } else {
         const receipt = values[1] as Receipt
@@ -179,7 +187,7 @@ export default function ExpensePage({ receiptId }: { receiptId?: number }) {
       setLoad({ kind: 'ok', data: { draft: next, chips: categoryChips(categoryData.results, frequent) } })
     })()
     return () => controller.abort()
-  }, [receiptId, attempt])
+  }, [receiptId, attempt, handed])
 
   useEffect(() => () => saveController.current?.abort(), [])
 
@@ -196,8 +204,16 @@ export default function ExpensePage({ receiptId }: { receiptId?: number }) {
       ? await createManualSpend(checked.body, { signal: controller.signal })
       : await updateManualSpend(receiptId, checked.body, { signal: controller.signal })
     if (controller.signal.aborted || result.kind === 'aborted') return
+    if (receiptId === undefined && owner !== undefined && isNetworkFailure(result)) {
+      // No network: the spend waits on the phone and is sent from «Чеки» (src/offline).
+      await enqueueSpend(checked.body, owner)
+      if (handed) await discardPending(handed.id)
+      navigate('/receipts')
+      return
+    }
     setSaving(false)
     if (result.kind === 'ok') {
+      if (handed) await discardPending(handed.id)
       setExpenseNotice(result.data.id, receiptId === undefined ? savedNotice : updatedNotice)
       navigate({ kind: 'receipt', receiptId: result.data.id })
       return

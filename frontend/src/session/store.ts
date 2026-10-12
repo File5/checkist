@@ -1,6 +1,7 @@
 import { onAuthSignal } from '../api/auth-signal.ts'
 import { clearRecognitionCsrf } from '../api/local.ts'
 import { getMe } from '../api/session.ts'
+import { forgetCachedAnswers } from '../offline/service-worker.ts'
 import type { Me } from '../api/session.ts'
 
 /** Who uses the application. No React here: the hook lives in `index.ts`.
@@ -63,7 +64,7 @@ export async function loadSession(signal?: AbortSignal): Promise<void> {
   if (result.kind === 'ok') {
     const next = userOf(result.data)
     // Another person or mode on the same cookie: no token read before belongs to them.
-    if (before.kind === 'user' && !sameUser(before, next)) clearRecognitionCsrf()
+    if (before.kind === 'user' && !sameUser(before, next)) { clearRecognitionCsrf(); forgetCachedAnswers() }
     set(next)
   } else if (result.reason === 'not_authenticated') {
     if (before.kind === 'user') clearRecognitionCsrf()
@@ -106,6 +107,7 @@ onAuthSignal((signal) => {
   if (signal === 'unauthenticated') {
     generation++
     clearRecognitionCsrf()
+    forgetCachedAnswers()
     set({ kind: 'guest', expired: true })
   } else if (!refreshing) {
     // The right may have been withdrawn: «Я» answers. Several refusals share one read.
