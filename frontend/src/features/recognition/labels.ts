@@ -38,7 +38,7 @@ export function isExecutorAbsent(data: { executor: { state: ExecutorState } }) {
 const accountsSession = () => { const session = getSession(); return session.kind === 'user' && session.mode === 'accounts' }
 export function errorText(error: LocalApiFailure, mutation = false): string {
   switch (error.reason) {
-    case 'unsupported_format': case 'unsupported_media_type': return 'Формат не поддерживается. HEIC и другие форматы сохраните в JPEG или PNG и выберите файл заново.'
+    case 'unsupported_format': case 'unsupported_media_type': return 'Формат не поддерживается. Выберите фото в JPEG, PNG, WebP или HEIC.'
     case 'upload_too_large': return 'Файл слишком большой. Уменьшите его размер до лимита сервера.'
     case 'image_too_large': return 'Разрешение фото превышает лимит сервера. Уменьшите изображение.'
     case 'invalid_image': return 'Изображение повреждено, пусто или содержит несколько кадров. Сохраните одно фото в JPEG или PNG.'

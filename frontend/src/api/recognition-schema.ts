@@ -12,6 +12,7 @@ import type {
 export const jobStages = ['waiting', 'prepare', 'detect', 'crop', 'recognize', 'validate', 'import', 'finished'] as const
 export const imageStatuses = ['pending', 'running', 'imported', 'reused', 'updated', 'needs_review', 'failed', 'cancelled'] as const
 const format = choice('image/jpeg', 'image/png', 'image/webp')
+const uploadFormat = choice('image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif')
 const count = (max: number): Check => (value) => nonNegativeInteger(value) && (value as number) <= max
 const position: Check = (value) => isId(value) && value <= 10
 const finiteRange = (min: number, max: number): Check => (value) => typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max
@@ -29,7 +30,7 @@ export const isExecutor: Guard<Executor> = (value): value is Executor => {
   return true
 }
 export const isRecognitionLimits = object<RecognitionLimits>({
-  formats: (value) => Array.isArray(value) && value.length > 0 && value.length <= 3 && value.every(format),
+  formats: (value) => Array.isArray(value) && value.length > 0 && value.length <= 5 && value.every(uploadFormat),
   max_bytes: isId, max_pixels: isId, max_receipts: position,
 })
 export const isRecognitionCsrf = object<RecognitionCsrf>({

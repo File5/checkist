@@ -82,6 +82,8 @@ describe('public recognition/receipts contract fixtures', () => {
     ['receipt-image.json', { issues: [{ code: 'missing_required', field: '/fiscal', message: 'error' }] }],
     ['receipt.json', { total: 2.38 }], ['receipt.json', { total: '2.3800' }], ['receipt.json', { purchased_at: 'yesterday' }],
     ['receipt.json', { origin: 'manual' }], ['receipt.json', { lines_url: 'https://outside.test/api/receipts/71/lines/' }],
+    ['csrf.json', { limits: { formats: ['image/avif'], max_bytes: 1, max_pixels: 1, max_receipts: 1 } }],
+    ['csrf.json', { limits: { formats: ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'image/jpeg'], max_bytes: 1, max_pixels: 1, max_receipts: 1 } }],
     ['csrf.json', { csrf_token: 'token\r\nInjected: 1' }], ['csrf.json', { executor: { available: 'false', last_seen_at: null } }],
   ])('rejects malformed nested fields in %s %#', (name, patch) => {
     expect(schemas[name]({ ...(publicFixture(name) as object), ...patch })).toBe(false)

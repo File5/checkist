@@ -46,7 +46,7 @@ class CsrfView(LocalAPIView):
     def get(self, request):
         return Response({
             "csrf_token": get_token(request._request),
-            "limits": {"formats": ["image/jpeg", "image/png", "image/webp"],
+            "limits": {"formats": ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"],
                        "max_bytes": settings.RECEIPT_IMAGE_MAX_BYTES,
                        "max_pixels": settings.RECEIPT_IMAGE_MAX_PIXELS,
                        "max_receipts": settings.RECEIPT_IMAGE_MAX_RECEIPTS},

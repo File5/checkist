@@ -12,7 +12,7 @@ from pathlib import Path
 from django.conf import settings
 from django.db import transaction
 
-from .images import ImageError, crop_receipt, inspect_image, prepare_upright
+from .images import ImageError, convert_heif, crop_receipt, inspect_image, prepare_upright
 from .models import ReceiptImage, SourcePhoto
 from .queue import QueueError, fenced_job
 
@@ -83,6 +83,8 @@ def accept_upload(upload, *, owner):
     Duplicate uploads of the same owner reuse the existing row/files, including
     concurrent uploads; created=False only for the owner's own photo. The same
     bytes of another owner are a separate row and a separate directory.
+    HEIF/HEIC is converted to JPEG first and then handled exactly like an uploaded
+    JPEG: limits, sha256 and replay are those of the JPEG bytes.
     Preview preparation happens separately in the fenced worker.
     """
     owner_id = getattr(owner, "pk", owner)
@@ -103,8 +105,13 @@ def accept_upload(upload, *, owner):
                         raise ImageError("file_too_large")
                     stream.write(chunk)
                     digest.update(chunk)
+            converted = Path(directory) / "converted.jpg"
+            if convert_heif(staged, converted):
+                staged = converted
+                sha256 = _digest(converted)
+            else:
+                sha256 = digest.hexdigest()
             info = inspect_image(staged)
-            sha256 = digest.hexdigest()
             existing = SourcePhoto.objects.filter(owner_id=owner_id, sha256=sha256).first()
             if existing:
                 media_path(existing.original_file.name)

@@ -12,7 +12,7 @@ from django.conf import settings
 from django.test import SimpleTestCase, override_settings
 from PIL import Image, ImageOps, PngImagePlugin
 
-from recognition.images import ImageError, crop_receipt, inspect_image, prepare_upright, validate_geometry
+from recognition.images import ImageError, convert_heif, crop_receipt, inspect_image, prepare_upright, validate_geometry
 
 BOX = {"x_min": 0.2, "y_min": 0.25, "x_max": 0.8, "y_max": 0.75}
 
@@ -79,7 +79,8 @@ class ImageTests(SimpleTestCase):
     def test_empty_corrupt_truncated_and_heic(self):
         cases = [(b"", "invalid_image"), (b"\xff\xd8broken", "invalid_image"),
                  (b"\x89PNG\r\n\x1a\n", "invalid_image"),
-                 (b"\x00\x00\x00\x18ftypheic\x00\x00\x00\x00heic", "unsupported_format"),
+                 (b"\x00\x00\x00\x18ftypheic\x00\x00\x00\x00heic", "invalid_image"),
+                 (b"\x00\x00\x00\x18ftypavif\x00\x00\x00\x00avif", "unsupported_format"),
                  (b"<svg></svg>", "unsupported_format")]
         for index, (data, code) in enumerate(cases):
             path = self.root / str(index)
@@ -98,6 +99,86 @@ class ImageTests(SimpleTestCase):
             with Image.new("RGB", (10, 10), "white") as first, Image.new("RGB", (10, 10), "black") as second:
                 first.save(path, format=format, save_all=True, append_images=[second], duration=50, loop=0)
             self.error("unsupported_format" if format == "GIF" else "invalid_image", lambda: inspect_image(path))
+
+    def mpo(self, path, first=(0, 128, 0)):
+        # iPhone shape: a JPEG first frame, then a smaller second one (the HDR gain map).
+        with Image.new("RGB", (100, 200), first) as image, Image.new("RGB", (50, 100), "black") as gain:
+            exif = Image.Exif()
+            exif[274] = 6
+            image.save(path, format="MPO", save_all=True, append_images=[gain], exif=exif)
+        return path
+
+    def test_mpo_is_a_jpeg_and_uses_the_first_frame(self):
+        path = self.mpo(self.root / "iphone.jpg")
+        with Image.open(path) as image:
+            self.assertEqual((image.format, image.n_frames), ("MPO", 2))
+        source_bytes = path.read_bytes()
+        info = inspect_image(path)
+        self.assertEqual((info.content_type, info.extension, info.exif_orientation), ("image/jpeg", "jpg", 6))
+        self.assertEqual((info.raw_width, info.raw_height, info.width, info.height), (100, 200, 200, 100))
+        target = self.root / "mpo-upright.png"
+        prepare_upright(path, target)
+        with Image.open(target) as upright:
+            self.assertEqual((upright.size, upright.info), ((200, 100), {}))
+            red, green, blue = upright.getpixel((100, 50))
+            self.assertTrue(green > 100 and red < 30 and blue < 30)
+        self.assertEqual(path.read_bytes(), source_bytes)
+        crop_receipt(target, self.root / "mpo-crop.png", BOX)
+
+    def test_mpo_truncated_still_invalid(self):
+        path = self.mpo(self.root / "broken.jpg")
+        path.write_bytes(path.read_bytes()[:400])
+        self.error("invalid_image", lambda: inspect_image(path))
+
+    def heif(self, path, size=(60, 20), orientation=6):
+        exif = Image.Exif()
+        exif[274] = orientation
+        exif[270] = "Private description"
+        exif[0x8825] = {1: "N", 2: (55.0, 45.0, 0.0)}
+        with Image.new("RGB", size, (200, 30, 30)) as image:
+            image.save(path, format="HEIF", exif=exif.tobytes())
+        return path
+
+    def test_heif_converted_to_upright_jpeg_without_metadata(self):
+        for name in ("photo.heic", "photo.heif", "photo"):
+            with self.subTest(name=name):
+                source = self.heif(self.root / name)
+                target = self.root / f"{name}-converted.jpg"
+                self.assertTrue(convert_heif(source, target))
+                info = inspect_image(target)
+                self.assertEqual((info.content_type, info.extension, info.exif_orientation), ("image/jpeg", "jpg", 1))
+                self.assertEqual((info.raw_width, info.raw_height), (20, 60))
+                with Image.open(target) as converted:
+                    self.assertEqual((converted.format, converted.mode), ("JPEG", "RGB"))
+                    self.assertEqual(len(converted.getexif()), 0)
+                    self.assertNotIn("exif", converted.info)
+                    self.assertNotIn("icc_profile", converted.info)
+                    red, green, blue = converted.getpixel((10, 30))
+                    self.assertTrue(red > 150 and green < 80 and blue < 80)
+                self.assertNotIn(b"Private", target.read_bytes())
+
+    def test_heif_itself_is_never_inspected_as_stored_format(self):
+        self.error("unsupported_format", lambda: inspect_image(self.heif(self.root / "raw.heic")))
+
+    def test_other_formats_not_converted(self):
+        for format in ("JPEG", "PNG", "WEBP"):
+            with self.subTest(format=format):
+                target = self.root / f"{format}.jpg"
+                self.assertFalse(convert_heif(self.source(format), target))
+                self.assertFalse(target.exists())
+        garbage = self.root / "garbage"
+        garbage.write_bytes(b"<svg></svg>")
+        self.assertFalse(convert_heif(garbage, self.root / "garbage.jpg"))
+
+    def test_heif_pixel_limit_and_broken_data(self):
+        source = self.heif(self.root / "large.heic", size=(64, 64), orientation=1)
+        with override_settings(RECEIPT_IMAGE_MAX_PIXELS=64 * 64 - 1):
+            self.error("image_too_large", lambda: convert_heif(source, self.root / "large.jpg"))
+        broken = self.root / "broken.heic"
+        broken.write_bytes(source.read_bytes()[:-40])
+        # Not recognized as an image at all: inspect_image() tells a broken HEIF by its header.
+        self.assertFalse(convert_heif(broken, self.root / "broken.jpg"))
+        self.error("invalid_image", lambda: inspect_image(broken))
 
     def test_exif_all_orientations_and_no_metadata(self):
         for orientation in range(1, 9):

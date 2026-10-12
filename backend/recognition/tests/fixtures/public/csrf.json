@@ -4,7 +4,9 @@
     "formats": [
       "image/jpeg",
       "image/png",
-      "image/webp"
+      "image/webp",
+      "image/heic",
+      "image/heif"
     ],
     "max_bytes": 20971520,
     "max_pixels": 40000000,
