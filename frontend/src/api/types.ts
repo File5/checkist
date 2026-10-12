@@ -19,7 +19,7 @@ export type LocalApiErrorReason = ApiErrorReason
   | 'merge_conflict' | 'merge_resolved' | 'merge_changed' | 'merge_busy'
   | 'review_unavailable' | 'review_resolved' | 'review_busy' | 'review_invalid'
   | 'classification_resolved' | 'classification_changed' | 'classification_busy'
-  | 'receipt_read_only'
+  | 'receipt_read_only' | 'parse_limit'
   | 'upload_too_large' | 'unsupported_media_type' | 'unsupported_format' | 'invalid_image' | 'image_too_large'
   | 'storage_unavailable' | 'database_unavailable' | 'method_not_allowed' | 'not_acceptable'
 export type ApiFailure = {

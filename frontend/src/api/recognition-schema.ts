@@ -1,6 +1,7 @@
-import { amount, array, bool, choice, isId, isISODate, isISODateTime, nonNegativeInteger, nullable, object, price, quantity, text, unit } from './schema.ts'
+import { amount, array, bool, choice, currency, isId, isISODate, isISODateTime, nonNegativeInteger, nullable, object, price, quantity, text, unit } from './schema.ts'
 import type { Check, Guard } from './schema.ts'
 import { lineKind, mediaPath, receiptOperation, taxKind } from './receipts-schema.ts'
+import type { ManualParse, ManualParseDraft, ManualParseLine } from './receipts-types.ts'
 import { executorStates, issueSeverities, jobStatuses } from './recognition-types.ts'
 import type {
   Bbox, Executor, IssueContext, Job, JobActions, JobDetail, JobItem, JobProgress, NormalizedDiscount, NormalizedLine,
@@ -140,3 +141,20 @@ const bodyShape = exact<ReviewConfirmInput>({
 })
 /** Formats and the closed key set only; uniqueness, references and import rules belong to the server. */
 export const isReviewConfirmInput: Guard<ReviewConfirmInput> = (value): value is ReviewConfirmInput => bodyShape(value) && value.lines.length > 0
+
+/** Amounts of a parse draft as the manual save takes them: «4500», «230.5», «680.50». */
+const draftMoney = (value: unknown) => typeof value === 'string' && /^[0-9]{1,12}(?:\.[0-9]{1,2})?$/.test(value)
+const draftQuantity = (value: unknown) => typeof value === 'string' && /^[0-9]{1,9}(?:\.[0-9]{1,3})?$/.test(value)
+const isParseLine = object<ManualParseLine>({ name: text, amount: draftMoney, quantity: nullable(draftQuantity), category: nullable(isId) })
+const isParseDraft = object<ManualParseDraft>({
+  total: nullable(draftMoney), currency, category: nullable(isId), purchased_on: isISODate,
+  store_name: nullable(text), note: text, lines: array(isParseLine),
+})
+const isParseError = object<{ code: string; message: string }>({ code: text, message: text })
+const manualParseShape = object<ManualParse>({
+  id: isId, status: choice('queued', 'running', 'succeeded', 'failed'), draft: nullable(isParseDraft),
+  error: nullable(isParseError), created_at: isISODateTime, finished_at: nullable(isISODateTime), executor: isExecutor,
+})
+/** A draft comes only with `succeeded`, an error only with `failed`. */
+export const isManualParse: Guard<ManualParse> = (value): value is ManualParse => manualParseShape(value)
+  && (value.draft !== null) === (value.status === 'succeeded') && (value.error !== null) === (value.status === 'failed')

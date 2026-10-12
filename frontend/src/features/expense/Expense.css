@@ -27,8 +27,19 @@
 .expense-notice { margin: 0; padding: 12px; border: 1px solid var(--ck-success-border); border-radius: var(--ck-radius-sm); background: var(--ck-success-bg); color: var(--ck-success-text); }
 .expense-confirm { display: grid; gap: 12px; padding: 12px; border: 1px solid var(--ck-warning-border); border-radius: var(--ck-radius-sm); background: var(--ck-warning-bg); }
 .expense-confirm p { margin: 0; color: var(--ck-warning-text); }
+/* «Трата словами»: the hint above the form, its own small form. */
+.expense-hint { display: grid; gap: 10px; min-width: 0; padding: 16px 24px; border: 1px solid var(--ck-accent); border-radius: var(--ck-radius); background: var(--ck-accent-bg); }
+.expense-hint-label { font-weight: 600; color: var(--ck-accent-text); }
+.expense-hint-row { display: flex; gap: 12px; align-items: stretch; min-width: 0; }
+.expense-hint-row input { flex: 1 1 auto; min-width: 0; min-height: 44px; padding: 8px 12px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-surface); color: var(--ck-text); font: inherit; }
+.expense-hint-send { flex: 0 0 auto; min-height: 44px; padding: 0 20px; background: var(--ck-brand); border-color: var(--ck-brand); color: var(--ck-on-brand); white-space: nowrap; }
+.expense-hint-status { margin: 0; color: var(--ck-text-muted); }
+.expense-hint-status:empty { display: none; }
+.expense-hint-filled { color: var(--ck-success-text); }
+.expense-hint-failed { color: var(--ck-error-text); }
 @media (max-width: 540px) {
   .expense-form { padding: 16px; }
+  .expense-hint { padding: 16px; }
   .expense-grid { grid-template-columns: minmax(0, 1fr); }
   .expense-line { grid-template-columns: minmax(0, 1fr) minmax(0, 7.5rem); }
   .expense-line-remove { grid-column: 1 / -1; justify-self: start; }

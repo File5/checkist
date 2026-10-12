@@ -228,3 +228,45 @@ class ProductAlias(models.Model):
 
     def __str__(self):
         return self.raw_name
+
+
+class ManualParseRequest(models.Model):
+    """«Трата словами»: текст человека ждёт воркера, ответ — черновик формы траты.
+
+    Строка ничего не меняет в чеках и каталоге: черновик человек проверяет и сохраняет
+    обычной ручной тратой. Очередь и исполнение — ``receipts.manual_parse``.
+    """
+
+    class Status(models.TextChoices):
+        QUEUED = "queued"
+        RUNNING = "running"
+        SUCCEEDED = "succeeded"
+        FAILED = "failed"
+
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="manual_parse_requests")
+    text = models.CharField(max_length=500)
+    # «Сегодня» для относительных дат текста: дата клиента либо сервера.
+    today = models.DateField()
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.QUEUED)
+    draft = models.JSONField(null=True, blank=True)
+    error_code = models.CharField(max_length=32, blank=True, default="")
+    run_token = models.UUIDField(null=True, blank=True)
+    lease_expires_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["status", "id"], name="receipts_parse_status_idx"),
+            models.Index(fields=["owner", "created_at"], name="receipts_parse_owner_idx"),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(status__in=["queued", "running", "succeeded", "failed"]),
+                name="receipts_parse_status_check",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.pk} {self.status}"
