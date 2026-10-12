@@ -1775,7 +1775,7 @@ Line несёт ещё `category` (`{"id","name"}` либо `null`, после `
 ```json
 {"month": "2026-10", "previous_month": "2026-09", "days_left": 19, "members": ["andrey", "liza"],
  "people": [{"username": "andrey", "display_name": "Андрей"}, {"username": "liza", "display_name": "Лиза"}],
- "currencies": [{"currency": "KZT", "spent": "287450.00", "previous_spent": "326100.00", "limit_total": "400000.00",
+ "currencies": [{"currency": "KZT", "spent": "287450.00", "previous_spent": "326100.00", "limit_total": "400000.00", "limited_spent": "342300.00",
    "categories": [
      {"category_id": 3, "name": "Продукты", "spent": "92300.00", "limit": "120000.00", "limit_id": 7, "children": []},
      {"category_id": 10, "name": "Жильё", "spent": "250000.00", "limit": null, "limit_id": null, "children": [
@@ -1784,6 +1784,8 @@ Line несёт ещё `category` (`{"id","name"}` либо `null`, после `
  "recent": [{"id": 12, "source": "photo", "title": "Magnum", "category_name": "Продукты", "owner": "liza", "owner_name": "Лиза",
    "purchased_on": "2026-10-12", "total": "18940.00", "currency": "KZT", "lines_count": 23}]}
 ```
+
+`limited_spent` (2026-10-12) — сколько потрачено в категориях, входящих в `limit_total` (каждая с потомками, вложенный лимит не считается дважды), null без лимитов. Общая полоса «Главной» сравнивает `limit_total` с ним, а не со всеми тратами месяца: траты категорий без лимита в «сверх лимита» не попадают.
 
 - Месяц — по локальной дате чека `purchased_on`, прошлый месяц — так же. `days_left` — дней до конца месяца, включая сегодня, если месяц текущий; иначе `0`. `members` — логины членов семьи по алфавиту, без семьи — `[свой]` (`local_single` — `["local"]`); `people` — те же люди в том же порядке `{"username", "display_name"}` (имя — как в [«Я»](#вход-выход-смена-пароля-кто-я)).
 - `currencies` — по коду валюты; валюты не складываются. Блок есть, если в валюте есть чеки этого или прошлого месяца либо лимит. `spent` / `previous_spent` — `Σ Receipt.total` месяца (заплачено, со скидкой на весь чек; возврат — со своим знаком), как `totals.receipts_total` в [`/api/stats/spending/`](#get-apistatsspending); нет чеков — `"0.00"`. `limit_total` — сумма лимитов валюты, у которых нет лимита у предка в той же валюте (лимит подкатегории — часть лимита родителя, а не добавка к нему; лимиты подкатегорий без лимита у предка — складываются), либо `null`.

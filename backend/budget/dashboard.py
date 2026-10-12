@@ -11,7 +11,8 @@
 подкатегории с лимитом и их предки (чтобы карточка оставалась короткой); их «потрачено» —
 свои строки и строки всех потомков, тем же расчётом ``receipts.spending`` с фильтром
 категории. В ``limit_total`` входят лимиты, у которых нет лимита у предка в той же валюте:
-вложенный лимит — часть лимита родителя, а не добавка к нему.
+вложенный лимит — часть лимита родителя, а не добавка к нему. ``limited_spent`` — траты
+этих же категорий (с потомками): общий лимит сравнивается с ним, а не со всеми тратами.
 """
 import calendar
 from dataclasses import dataclass, field
@@ -78,6 +79,9 @@ class CurrencyBlock:
     spent: Decimal = _ZERO
     previous_spent: Decimal = _ZERO
     limit_total: Decimal | None = None
+    # Потрачено в категориях, которые входят в ``limit_total`` (каждая — с потомками): общий
+    # лимит сравнивается с этим, а не со всеми тратами месяца.
+    limited_spent: Decimal | None = None
     categories: list = field(default_factory=list)
 
 
@@ -162,6 +166,7 @@ def currency_blocks(receipts, limits, month, tree, product_ref=None):
                 target.categories.append(row)
         if not any((limit.currency_id, ancestor) in limited for ancestor in path[:-1]):
             target.limit_total = (target.limit_total or _ZERO) + limit.amount
+            target.limited_spent = (target.limited_spent or _ZERO) + row.spent
         row.limit, row.limit_id = limit.amount, limit.pk
     result = []
     for currency in sorted(blocks):

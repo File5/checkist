@@ -20,9 +20,10 @@ const categoryShape = object<Omit<DashboardCategory, 'children'>>({
   category_id: nullable(isId), name: text, spent: amount, limit: nullable(amount), limit_id: nullable(isId),
 })
 const dashboardCategory: Check = (value) => categoryShape(value) && optional(value, 'children', array(subCategory(0)))
-const dashboardCurrency = object<DashboardCurrency>({
+const dashboardCurrencyShape = object<Omit<DashboardCurrency, 'limited_spent'>>({
   currency, spent: amount, previous_spent: amount, limit_total: nullable(amount), categories: array(dashboardCategory),
 })
+const dashboardCurrency: Check = (value) => dashboardCurrencyShape(value) && optional(value, 'limited_spent', nullable(amount))
 const dashboardRecent = object<Omit<DashboardRecent, 'owner_name'>>({
   id: isId, source: choice('photo', 'manual'), title: text, category_name: nullable(text), owner: username,
   purchased_on: isISODate, total: amount, currency, lines_count: nonNegativeInteger,

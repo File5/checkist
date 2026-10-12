@@ -36,7 +36,7 @@ describe('«Главная» markup (Vitest/SSR, not browser visual acceptance)'
   })
   it('says the overall overspend and drops the days left of a past month', () => {
     const data = dashboardFixture()
-    const over = { ...data, currencies: [{ ...data.currencies[0], spent: '410000.00' }] }
+    const over = { ...data, currencies: [{ ...data.currencies[0], spent: '410000.00', limited_spent: '410000.00' }] }
     const html = view(over, '2026-11')
     expect(html).toContain('dash-bar dash-bar-over')
     expect(html).toContain(`<span class="dash-over">Сверх лимита на <span class="dash-value">${nb('10 000 KZT')}</span></span>`)
@@ -49,6 +49,15 @@ describe('«Главная» markup (Vitest/SSR, not browser visual acceptance)'
     expect(actions).toContain('<button type="button" class="dash-action dash-action-spend">Из галереи</button>')
     expect(actions).toContain('<input class="ck-quick-shot-input" type="file" accept="image/*,.heic,.heif,application/pdf" tabindex="-1" aria-hidden="true"/>')
     expect(actions).toContain('<a class="dash-action dash-action-spend" href="/receipts/new">Трата</a>')
+  })
+  it('compares the overall limit with the spending of limited categories only, not the whole month', () => {
+    const data = dashboardFixture()
+    // October 2026 on the server: 472 273 spent in all, 245 015 of it in «Жильё», the only limit is 250 000.
+    const real = { ...data, currencies: [{ ...data.currencies[0], spent: '472272.10', limit_total: '250000.00', limited_spent: '245014.02' }] }
+    const spentCard = view(real, '2026-10').split('dash-limits')[0]
+    expect(spentCard).not.toContain('Сверх лимита на')
+    expect(spentCard).toContain(`Осталось <span class="dash-value dash-strong">${nb('4 986 KZT')}</span>`)
+    expect(spentCard).toContain(`Категории с лимитом: <span class="dash-value">${nb('245 015 KZT')}</span>`)
   })
   it('lists the limits by category colour with bars, overspend and categories without a limit', () => {
     const limits = between(view(), 'dash-limits', '</section>')

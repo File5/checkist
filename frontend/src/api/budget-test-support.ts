@@ -5,7 +5,7 @@ export function dashboardFixture(): Dashboard {
   return {
     month: '2026-10', previous_month: '2026-09', days_left: 19, members: ['andrey', 'liza'],
     currencies: [{
-      currency: 'KZT', spent: '287450.00', previous_spent: '326100.00', limit_total: '400000.00',
+      currency: 'KZT', spent: '287450.00', previous_spent: '326100.00', limit_total: '400000.00', limited_spent: '287450.00',
       categories: [
         { category_id: 3, name: 'Продукты', spent: '92300.00', limit: '120000.00', limit_id: 7 },
         { category_id: 8, name: 'Кафе', spent: '54300.00', limit: '50000.00', limit_id: 8 },

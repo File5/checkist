@@ -197,6 +197,7 @@ def _block_object(block):
     return {
         "currency": block.currency, "spent": common.amount(block.spent),
         "previous_spent": common.amount(block.previous_spent), "limit_total": common.amount(block.limit_total),
+        "limited_spent": common.amount(block.limited_spent),
         "categories": [_category_object(row) for row in block.categories],
     }
 

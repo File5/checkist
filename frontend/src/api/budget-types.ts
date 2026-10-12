@@ -21,6 +21,8 @@ export type DashboardCategory = {
 /** One currency of the month. Currencies are never summed together. */
 export type DashboardCurrency = {
   currency: CurrencyCode; spent: Decimal; previous_spent: Decimal; limit_total: Decimal | null
+  /** Spent in the categories counted in `limit_total` (each with its sub-categories); optional for older servers. */
+  limited_spent?: Decimal | null
   /** Sorted by `spent` descending; a category with a limit is present even with nothing spent. */
   categories: DashboardCategory[]
 }

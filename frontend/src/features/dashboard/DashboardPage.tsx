@@ -24,14 +24,16 @@ function Bar({ value, label, small = false }: { value: Progress; label: string; 
 
 function SpentCard({ block, data, family, current }: { block: DashboardCurrency; data: Dashboard; family: boolean; current: boolean }) {
   const comparison = compareMonths(block.spent, block.previous_spent, data.previous_month)
-  const total = progress(block.spent, block.limit_total)
+  // The overall limit covers only the categories that have one: compare it with their spending, not the whole month.
+  const total = block.limited_spent != null ? progress(block.limited_spent, block.limit_total) : undefined
   return <section className="dash-card dash-spent" aria-label={`Потрачено, ${block.currency}`}>
     <p className="dash-label">{family ? 'Потрачено семьёй' : 'Потрачено'}</p>
     <p className="dash-total">{formatMoney(block.spent, block.currency)}</p>
     {comparison && <p className={`dash-compare dash-compare-${comparison.tone}`}>{comparison.text}</p>}
     <Link className="dash-link" to="/stats/trends">Динамика →</Link>
-    {total && block.limit_total && <>
+    {total && block.limit_total && block.limited_spent != null && <>
       <Bar value={total} label={`Потрачено ${total.percent}% общего лимита`} />
+      <p className="dash-note">Категории с лимитом: <span className="dash-value">{formatMoney(block.limited_spent, block.currency)}</span> из <span className="dash-value">{formatMoney(block.limit_total, block.currency)}</span></p>
       <p className="dash-left">
         {total.over
           ? <span className="dash-over">Сверх лимита на <span className="dash-value">{formatMoney(total.overBy, block.currency)}</span></span>
