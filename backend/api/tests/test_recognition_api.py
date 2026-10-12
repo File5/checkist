@@ -21,6 +21,7 @@ from recognition.management.commands.recognition_worker import worker_slot
 from recognition.models import ProcessingJob, ReceiptImage, SourcePhoto
 from recognition.queue import WORKER_LOCK, claim_job, request_cancel
 from recognition.storage import StorageError
+from recognition.tests.pdf_factories import pdf_bytes
 
 
 NOW = datetime(2026, 10, 4, 12, 35, tzinfo=dt_timezone.utc)
@@ -365,6 +366,41 @@ class RecognitionAPITests(TestCase):
                 photo = response.json()["photo"]
                 self.assertEqual((photo["content_type"], photo["width"], photo["height"]), ("image/jpeg", 10, 20))
                 self.assertTrue(photo["original_url"].endswith("/source.jpg"))
+
+    def test_pdf_upload_becomes_an_image_photo_with_its_document(self):
+        data = pdf_bytes(pages=2)
+        response = self.client.post("/api/recognition/photos/", {"file": upload(data, "Квитанция.pdf", "application/pdf")}, format="multipart")
+        self.assertEqual(response.status_code, 202, response.content)
+        photo = response.json()["photo"]
+        self.assertEqual(photo["content_type"], "image/png")
+        self.assertEqual(photo["document"], {"content_type": "application/pdf", "bytes": len(data), "pages": 2})
+        base = photo["original_url"].rsplit("/", 1)[0]
+        self.assertEqual(photo["original_url"], base + "/source.png")
+        self.assertEqual(photo["download_url"], base + "/source.pdf?download=1")
+        self.assertEqual(photo["display_url"], base + "/preview-1600-v1.webp")
+        self.assertEqual(photo["thumb_url"], base + "/thumb-400-v1.webp")
+        self.assertEqual(response.json()["job"]["status"], "queued")
+        download = self.client.get(photo["download_url"])
+        self.assertEqual(b"".join(download.streaming_content), data)
+        self.assertTrue(download["Content-Disposition"].startswith("attachment;"))
+        replay = self.client.post("/api/recognition/photos/", {"file": upload(data, "again.pdf", "application/pdf")}, format="multipart")
+        self.assertEqual(replay.status_code, 200)
+        self.assertTrue(replay.json()["reused"])
+        self.assertEqual(SourcePhoto.objects.count(), 1)
+
+    def test_refused_pdfs_have_their_own_codes(self):
+        for data, code in ((pdf_bytes(pages=4), "pdf_too_many_pages"), (pdf_bytes(encrypted=True), "pdf_encrypted"),
+                           (b"%PDF-1.7\nbroken", "invalid_pdf")):
+            with self.subTest(code=code):
+                self.error(self.client.post("/api/recognition/photos/", {"file": upload(data, "bill.pdf", "application/pdf")},
+                                            format="multipart"), 400, code)
+        self.assertEqual(SourcePhoto.objects.count(), 0)
+        self.assertEqual(ProcessingJob.objects.count(), 0)
+
+    def test_image_photo_downloads_its_original(self):
+        photo = self.post_photo().json()["photo"]
+        self.assertIsNone(photo["document"])
+        self.assertEqual(photo["download_url"], photo["original_url"] + "?download=1")
 
     def test_file_validation_and_no_records(self):
         cases = [(b"\x00\x00\x00\x18ftypheic" + b"\0" * 20, "invalid_image"),

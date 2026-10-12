@@ -23,6 +23,11 @@ class SourcePhoto(models.Model):
     storage_uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     original_file = models.FileField(max_length=255)
     upright_file = models.FileField(max_length=255, null=True, blank=True)
+    # A PDF upload: original_file is its rendered image, the PDF is kept beside it for download
+    # and sha256 is that of the PDF bytes. All three are null for an uploaded image.
+    document_file = models.FileField(max_length=255, null=True, blank=True)
+    document_bytes = models.PositiveIntegerField(null=True, blank=True)
+    document_pages = models.PositiveSmallIntegerField(null=True, blank=True)
     sha256 = models.CharField(max_length=64, validators=[SHA256_VALIDATOR])
     content_type = models.CharField(max_length=16)
     bytes = models.PositiveIntegerField()
@@ -51,6 +56,16 @@ class SourcePhoto(models.Model):
             ),
             models.CheckConstraint(condition=Q(exif_orientation__gte=1, exif_orientation__lte=8), name="rec_photo_orientation_check"),
             models.CheckConstraint(condition=Q(content_type__in=["image/jpeg", "image/png", "image/webp"]), name="rec_photo_type_check"),
+            # Every branch tests NULL explicitly: a comparison with NULL is unknown and would pass a CHECK.
+            # An image upload stores the empty FileField as '' (or NULL), never a size or a page count.
+            models.CheckConstraint(
+                condition=(Q(document_bytes__isnull=True, document_pages__isnull=True)
+                           & (Q(document_file__isnull=True) | Q(document_file="")))
+                | Q(document_file__isnull=False, document_bytes__isnull=False, document_pages__isnull=False,
+                    document_bytes__gt=0, document_bytes__lte=20971520, document_pages__gte=1, document_pages__lte=3)
+                & ~Q(document_file=""),
+                name="rec_photo_document_check",
+            ),
         ]
 
 

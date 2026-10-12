@@ -15,6 +15,7 @@ from api.recognition_serialization import (
 from config.exceptions import InvalidParameter, InvalidRequest, ObjectNotFound, RecognitionApiError
 from recognition.images import ImageError
 from recognition.models import ProcessingJob, SourcePhoto
+from recognition.pdf import PDF_CONTENT_TYPE, PDF_MAX_PAGES
 from recognition.queue import QueueError, create_job, create_retry, request_cancel
 from recognition.statuses import ACTIVE_JOB_STATUSES, JobStatus
 from recognition.storage import StorageError, accept_upload
@@ -46,10 +47,11 @@ class CsrfView(LocalAPIView):
     def get(self, request):
         return Response({
             "csrf_token": get_token(request._request),
-            "limits": {"formats": ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"],
+            "limits": {"formats": ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", PDF_CONTENT_TYPE],
                        "max_bytes": settings.RECEIPT_IMAGE_MAX_BYTES,
                        "max_pixels": settings.RECEIPT_IMAGE_MAX_PIXELS,
-                       "max_receipts": settings.RECEIPT_IMAGE_MAX_RECEIPTS},
+                       "max_receipts": settings.RECEIPT_IMAGE_MAX_RECEIPTS,
+                       "max_pdf_pages": PDF_MAX_PAGES},
             "executor": executor_object(),
         })
 

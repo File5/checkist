@@ -457,6 +457,19 @@ node frontend/scripts/check_stats_proxy.mjs preview http://127.0.0.1:15173
 
 `403` настоящим HTTP — отдельным сервером с тем же environment и `$env:ALLOW_LOCAL_RECOGNITION_API='0'` на свободном порту: `curl.exe -s -o NUL -w "%{http_code}" "http://127.0.0.1:18001/api/stats/spending/"` — `403`, а `…/api/products/1/prices/series/?date_from=2025-01-01` — `200`.
 
+### Фактические результаты: PDF и сжатые копии фото, 2026-10-12
+
+Ветка `feature/pdf-and-previews` от `main` `469a791`, macOS (arm64), агент-разработчик, не QA. Модель не вызывалась: `RECEIPT_OCR_PROVIDER=fake`, `RECEIPT_OCR_CODEX_EXECUTABLE=nonexistent-checkist-codex`.
+
+Проверено и прошло:
+
+- Backend — одноразовый `postgres:17` (`docker run --rm -d -p 127.0.0.1:25600:5432 …`), `.env` из `.env.example` с `POSTGRES_PORT=25600`, `DJANGO_DEBUG=1`, `CHECKIST_AUTH_MODE=local_single`, автозапуски 0; отдельный venv с `pypdfium2==5.13.0`: `python -X utf8 manage.py test catalog stores receipts health api recognition merges classification accounts config --noinput --parallel 1` — 2795 тестов, 3 пропущены; не прошли только 6 известных на macOS: `recognition.tests.test_supervisor` (4), `test_storage.test_db_failure_removes_only_own_file`, `health … test_real_cache_round_trip_and_probe_cleanup` (без Redis). Новые: `recognition.tests.test_pdf` (16), `recognition.tests.test_previews` (8), `accounts.tests.test_media` (+6), `api.tests.test_recognition_api` (+3); обновлены эталоны `backend/recognition/tests/fixtures/public/` и `test_owner_migration` (новые колонки и откат, который снимает `0005` раньше, чем отказывает `0004`).
+- `manage.py makemigrations --check --dry-run` — «No changes detected»; `manage.py check` — без замечаний.
+- Frontend: `npx vitest run` — 3839 тестов / 125 файлов; `npm run lint`, `npm run build` — exit 0.
+- Docker: `docker build --target app -t checkist-pdf-test .` — exit 0; в образе `python -c "import pypdfium2"` — 5.13.0 (aarch64), `python -I /app/backend/recognition/pdf_render.py` на трёхстраничном PDF — `{"pages": 3, …}`, изображение 556 × 2502; образ удалён.
+
+Не проверено и почему: proxy-скрипты (`check_recognition_proxy.mjs`, `check_accounts_proxy.mjs`, `features/*/check-http.mjs`) и реальная модель на PDF-счёте — нужна QA-среда; образ amd64 не собирался (колёса `pypdfium2` для manylinux x86_64 есть на PyPI); экраны в браузере и на телефоне — человеком по `frontend/src/features/recognition/ACCEPTANCE.md`, «PDF и сжатые копии».
+
 ### Фактические результаты: мобильная адаптация клиента, итог (И), 2026-10-09
 
 Ветка `orca/task_mv14h4on14` поверх `feature/run_muyoretgap-mobilnaya-adaptatsiya-klienta-posle-redi` (коммит слияния `9ec2bc3` «К3: доводка CSS карточек…», база — `main` `d655c73`). В ветку слиты: К0 — контракт `src/lib/cards`, `ActionBar.css`, токены раскладки; М1 — нижняя панель меню; К1 — транспорт загрузки; К2 — экран загрузки, «Снять чек»; Г — графики под палец; Т1–Т6 — карточки вместо таблиц и панели действий; К3 — доводка CSS карточек. Описание — [frontend.md](frontend.md#мобильная-раскладка-карточки-панели-действий-нижнее-меню-камера-и-графики-под-палец-2026-10-09). Windows 11, PowerShell, каталог `frontend/`, Node v24.18.0, npm 11.16.0. Сервер, контракт API, миграции и backend-код не менялись: вне `frontend/` в ветке нет ни одного изменённого файла (до документов этого итога).

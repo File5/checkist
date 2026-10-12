@@ -9,6 +9,11 @@ The route has no ``DEBUG`` condition, the rule depends on ``mode()``:
 Every refusal is the same empty ``404``: a foreign file, an anonymous request, a missing
 file, ``demo/``, a path that tries to leave its directory. Nothing in the answer tells them
 apart, so a path cannot be probed for existence.
+
+A display variant (``recognition.previews``: ``preview-1600-v1.webp``, ``thumb-400-v1.webp`` in an
+``originals``/``crops`` directory) is written on its first allowed request, after the same owner
+check, and is sent with a year of private caching: its name never points at other pixels.
+``?download=1`` sends any allowed file as an attachment (``Content-Disposition``).
 """
 import uuid
 from pathlib import Path
@@ -21,9 +26,12 @@ from django.views.decorators.http import require_http_methods
 
 from accounts.access import LOCAL_SINGLE, mode, owner_q
 from recognition.models import SourcePhoto
+from recognition.previews import ensure_variant, is_variant
+from recognition.storage import StorageError
 
 OWNED_DIRECTORIES = frozenset({"originals", "prepared", "crops"})
 CACHE_CONTROL = "private, no-store"
+VARIANT_CACHE_CONTROL = "private, max-age=31536000, immutable"
 # A segment with any of these is never a name written by ``recognition.storage``: the
 # backslash and the colon are a separator, a drive and a data stream on Windows.
 _FORBIDDEN = frozenset('\\:\x00')
@@ -77,13 +85,24 @@ def serve(request, path):
     segments = _segments(path)
     if not _allowed(request, segments):
         return _not_found()
+    variant = is_variant(segments)
     try:
         full_path = Path(safe_join(settings.MEDIA_ROOT, *segments))
+        if variant and not ensure_variant(full_path):
+            return _not_found()
         if not full_path.is_file():
             return _not_found()
         opened = full_path.open("rb")
-    except (SuspiciousFileOperation, OSError, ValueError):
+    except (SuspiciousFileOperation, StorageError, OSError, ValueError):
         return _not_found()
-    response = FileResponse(opened)
-    response["Cache-Control"] = CACHE_CONTROL
+    download = request.GET.get("download") == "1"
+    response = FileResponse(opened, as_attachment=download, filename=_download_name(segments) if download else "")
+    response["Cache-Control"] = VARIANT_CACHE_CONTROL if variant and not download else CACHE_CONTROL
     return response
+
+
+def _download_name(segments):
+    """«checkist-1a2b3c4d.pdf»: the storage directory says which upload, the extension what it is."""
+    stem = segments[1][:8] if len(segments) > 2 else "file"
+    suffix = Path(segments[-1]).suffix.lower()
+    return f"checkist-{stem}{suffix}" if stem.isalnum() else f"checkist{suffix}"

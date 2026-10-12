@@ -1,4 +1,4 @@
-"""Bounded JPEG/PNG/WebP decoding, HEIF to JPEG conversion and bbox crops; no OCR or ORM writes."""
+"""Bounded JPEG/PNG/WebP decoding, HEIF to JPEG conversion, bbox crops and display previews; no OCR or ORM writes."""
 import math
 import warnings
 from dataclasses import dataclass
@@ -157,6 +157,34 @@ def prepare_upright(source, destination):
                 clean.save(destination, format="PNG")
         return info
     except (OSError, ValueError):
+        raise ImageError("invalid_image") from None
+
+
+PREVIEW_WEBP_QUALITY = 80
+
+
+def write_preview(source, destination, longest):
+    """write_preview(source, destination, longest: int) -> (width, height); display-only WebP.
+
+    Upright (EXIF), RGB on white, metadata-free, longest side at most ``longest`` (never enlarged).
+    Only the formats and pixel limit of stored images are read; recognition never uses the result.
+    """
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(source) as image:
+                _header(image)
+                # JPEG decodes at 1/2, 1/4 or 1/8 directly: far less work for a big photo.
+                image.draft("RGB", (longest, longest))
+                with _upright_rgb(image) as clean:
+                    clean.thumbnail((longest, longest), Image.Resampling.LANCZOS)
+                    clean.save(destination, format="WEBP", quality=PREVIEW_WEBP_QUALITY, method=4)
+                    return clean.size
+    except ImageError:
+        raise
+    except (Image.DecompressionBombError, Image.DecompressionBombWarning):
+        raise ImageError("image_too_large") from None
+    except (OSError, ValueError, SyntaxError, EOFError, OverflowError):
         raise ImageError("invalid_image") from None
 
 

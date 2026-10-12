@@ -19,6 +19,21 @@ OWNER_MIGRATIONS = ["0002_sourcephoto_owner", "0003_assign_local_owner", "0004_s
 SHA256 = "a" * 64
 
 
+# Columns added after the owner migrations (PDF upload): empty for every row these tests make.
+LATER_COLUMNS = ("document_file", "document_bytes", "document_pages")
+# Their migration: each migration is its own transaction, so a refused rollback to BEFORE has
+# already undone it (empty columns) when the owner step fails.
+LATER_MIGRATIONS = {"0005_sourcephoto_document"}
+
+
+def without_later_columns(row):
+    row = dict(row)
+    for column in LATER_COLUMNS:
+        if column in row:
+            assert row.pop(column) in (None, ""), column
+    return row
+
+
 def names(operations):
     return [type(operation).__name__ for operation in operations]
 
@@ -147,7 +162,7 @@ class PhotoOwnerMigrationTests(TransactionTestCase):
         self.assertFalse(local.has_usable_password())
         self.assertFalse(local.user_permissions.exists())
         self.assertEqual(sorted(SourcePhoto.objects.values_list("pk", flat=True)), sorted([first.pk, second.pk]))
-        after = list(SourcePhoto.objects.order_by("pk").values())
+        after = [without_later_columns(row) for row in SourcePhoto.objects.order_by("pk").values()]
         for row in after:
             self.assertEqual(row.pop("owner_id"), local.pk)
         self.assertEqual(after, before)
@@ -184,7 +199,7 @@ class PhotoOwnerMigrationTests(TransactionTestCase):
     def test_reverse_and_reapply_keep_photos_and_single_local_user(self):
         local = User.objects.get_or_create(username="local")[0]
         photo = SourcePhoto.objects.create(owner=local, **values(sha256=SHA256))
-        before = SourcePhoto.objects.filter(pk=photo.pk).values().get()
+        before = without_later_columns(SourcePhoto.objects.filter(pk=photo.pk).values().get())
 
         OldPhoto = self.migrate_before().get_model("recognition", "SourcePhoto")
 
@@ -199,7 +214,7 @@ class PhotoOwnerMigrationTests(TransactionTestCase):
         self.migrate_to_latest()
 
         self.assertEqual(User.objects.filter(username="local").count(), 1)
-        self.assertEqual(SourcePhoto.objects.filter(pk=photo.pk).values().get(), before)
+        self.assertEqual(without_later_columns(SourcePhoto.objects.filter(pk=photo.pk).values().get()), before)
 
     def test_reverse_is_refused_when_two_owners_have_the_same_file(self):
         first = User.objects.create_user("synthetic-owner-one")
@@ -210,9 +225,10 @@ class PhotoOwnerMigrationTests(TransactionTestCase):
         with self.assertRaises(IntegrityError):
             MigrationExecutor(connection).migrate(BEFORE)
 
-        # Nothing partial: the migrations are still applied, the owners and the new ban are in place.
-        self.assertEqual(self.applied(), applied)
+        # Nothing partial: the owner migrations are still applied, the owners and the new ban are in place.
+        self.assertEqual(self.applied() - LATER_MIGRATIONS, applied - LATER_MIGRATIONS)
         self.assertTrue(set(OWNER_MIGRATIONS) <= applied)
+        self.migrate_to_latest()  # the current model has the later columns
         self.assertEqual(
             sorted(SourcePhoto.objects.values_list("pk", "owner_id")), sorted(zip(ids, (first.pk, second.pk))),
         )

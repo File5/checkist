@@ -35,6 +35,9 @@
     ],
     "normalized_result": null,
     "confirmed_at": "2026-10-04T12:35:00Z",
+    "display_url": "/media/crops/test/preview-1600-v1.webp",
+    "thumb_url": "/media/crops/test/thumb-400-v1.webp",
+    "download_url": "/media/originals/test/source.png?download=1",
     "quad": [
       {
         "x": 0.1,
