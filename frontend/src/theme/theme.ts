@@ -8,7 +8,7 @@ export const defaultTheme: Theme = 'dark'
 /** The media query that tells the system preference; the inline script of index.html asks the same one. */
 export const lightSchemeQuery = '(prefers-color-scheme: light)'
 /** Page background of each theme for `<meta name="theme-color">`; the same values as `--ck-bg` in tokens.css. */
-export const themeColors: Record<Theme, string> = { dark: '#0e1316', light: '#f3f5f7' }
+export const themeColors: Record<Theme, string> = { dark: '#141110', light: '#f6efdc' }
 
 /** A saved `light` or `dark` is the choice of the person; anything else (first visit, garbage, another type)
  * is no choice, and the theme of the system — `fallback` — applies. */

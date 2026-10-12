@@ -1,10 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="12" fill="#0E6B63"/>
-  <path d="M19 19H45V54l-3.25-2.5-3.25 2.5-3.25-2.5-3.25 2.5-3.25-2.5-3.25 2.5-3.25-2.5L19 54Z" fill="#fff"/>
-  <path d="M21 19 24 9Q32 7 40 9L43 19Z" fill="#17202B"/>
-  <ellipse cx="32" cy="19.5" rx="18" ry="3" fill="#17202B"/>
-  <rect x="21.5" y="25" width="9.5" height="6" rx="2.5" fill="#17202B"/>
-  <rect x="33" y="25" width="9.5" height="6" rx="2.5" fill="#17202B"/>
-  <rect x="30" y="26.5" width="4" height="1.6" fill="#17202B"/>
-  <path d="M27 36q5 3 10-.5" fill="none" stroke="#17202B" stroke-width="1.8" stroke-linecap="round"/>
+  <rect width="64" height="64" rx="12" fill="#B01212"/>
+  <path d="M19 19H45V54l-3.25-2.5-3.25 2.5-3.25-2.5-3.25 2.5-3.25-2.5-3.25 2.5-3.25-2.5L19 54Z" fill="#FFFAF0"/>
+  <path d="M21 19 24 9Q32 7 40 9L43 19Z" fill="#2A1B16"/>
+  <rect x="22.5" y="15" width="19" height="2.6" fill="#F0C24B"/>
+  <ellipse cx="32" cy="19.5" rx="18" ry="3" fill="#2A1B16"/>
+  <rect x="21.5" y="25" width="9.5" height="6" rx="2.5" fill="#2A1B16"/>
+  <rect x="33" y="25" width="9.5" height="6" rx="2.5" fill="#2A1B16"/>
+  <rect x="30" y="26.5" width="4" height="1.6" fill="#2A1B16"/>
+  <path d="M27 36q5 3 10-.5" fill="none" stroke="#2A1B16" stroke-width="1.8" stroke-linecap="round"/>
 </svg>

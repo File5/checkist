@@ -32,7 +32,7 @@ h2 { font-size: 1.35rem; letter-spacing: 0; }
 .skip-link:focus { transform: none; }
 /* The focused link lies over the header bar, dark in both themes. */
 .skip-link:focus-visible { outline-color: var(--ck-header-focus); }
-/* The header bar takes the colour of a card in each theme and spans the window; its content keeps the width of .page:
+/* The header bar is dark in both themes (red/gold palette) and spans the window; its content keeps the width of .page:
    the side padding is half the window minus half of .page's max-width, plus .page's own padding (600 - 36). */
 .brand-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 16px; padding: 14px max(36px, calc(50% - 564px)) 13px; border-bottom: 1px solid var(--ck-header-border); background: var(--ck-header-bg); color: var(--ck-header-text); overflow-wrap: anywhere; }
 .brand-bar :focus-visible { outline-color: var(--ck-header-focus); }
