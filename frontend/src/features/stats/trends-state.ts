@@ -8,7 +8,8 @@ import type { Decimal } from '../../api/types'
 import type { LineChartPoint, LineChartSeries, StackedColumn, StackedLegendEntry } from '../../lib/charts'
 import { formatAxisTick } from '../../lib/charts/scale'
 import { categoryTone } from '../../lib/category-tone'
-import { formatAmount, formatPercent, formatPrice } from '../../lib/format'
+import { formatPercent, formatPrice } from '../../lib/format'
+import { formatMoney } from '../../lib/money'
 import { glue } from '../../lib/text'
 import { spendingHref, trendsHref, trendsMonthChoices } from '../../navigation'
 import type { TrendsMonths, TrendsQuery } from '../../navigation'
@@ -20,7 +21,7 @@ import { intervalName } from './receipts-series'
  * `formatMoney`, rounding up to whole units for display), swap the body of this function and nothing else.
  */
 export function money(value: Decimal | null, currency: string): string {
-  return formatAmount(value, currency)
+  return formatMoney(value, currency)
 }
 
 export const defaultTrendsMonths = 12

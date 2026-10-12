@@ -51,10 +51,10 @@ describe('«Траты по месяцам»', () => {
     expect(chart.columns).toHaveLength(12)
     const last = chart.columns.at(-1)!
     expect(last.x).toBe('2026-09-01')
-    expect(nb(last.totalText)).toBe('190,24 EUR')
+    expect(nb(last.totalText)).toBe('191 EUR')
     expect(last.href).toBe('/stats/trends?month=2026-09')
     expect(last.segments.map((segment) => [segment.key, nb(segment.valueText)])).toEqual([
-      ['6', '85,05 EUR'], ['1', '86,11 EUR'], ['5', '13,94 EUR'], [uncategorizedKey, '5,14 EUR'],
+      ['6', '86 EUR'], ['1', '87 EUR'], ['5', '14 EUR'], [uncategorizedKey, '6 EUR'],
     ])
   })
   it('keeps an empty month as a column of zero', () => {
@@ -78,7 +78,7 @@ describe('summary strip', () => {
   it('compares the last month with the previous one and with the average by arrow, sign and words', () => {
     const card = spendSummary(monthlyFixture().currencies[1])
     expect(nb(card.monthTitle)).toBe('сентябрь 2026')
-    expect(nb(card.spent)).toBe('7 836,00 KZT')
+    expect(nb(card.spent)).toBe('7 836 KZT')
     expect(card.vsPrevious && [card.vsPrevious.badge.arrow, nb(card.vsPrevious.badge.text), nb(card.vsPrevious.label)]).toEqual(['▼', '−12,41 %', 'чем в августе 2026'])
     expect(card.vsAverage && [card.vsAverage.badge.tone, nb(card.vsAverage.badge.text)]).toEqual(['up', '+8,10 %'])
   })
@@ -100,7 +100,7 @@ describe('«Месяц к месяцу»', () => {
     ])
     expect(rows[1].values).toHaveLength(12)
     expect(rows[1].href).toBe('/stats/trends?months=6&category=1')
-    expect(nb(rows[1].last)).toBe('86,11 EUR')
+    expect(nb(rows[1].last)).toBe('87 EUR')
     expect(Object.values(monthRowHeadings(block)).map(nb)).toEqual(['август 2026', 'сентябрь 2026'])
   })
 })
@@ -113,7 +113,7 @@ describe('«Категория во времени»', () => {
     expect(new Set(average.points.map((point) => point.valueText)).size).toBe(1)
     expect(average.slot).toBe(1)
     const change = lastMonthChange(block)!
-    expect([change.tone, nb(change.last), nb(change.text)]).toEqual(['more', '35 100,00 KZT', 'Больше, чем в сентябре 2026 (30 800,00 KZT)'])
+    expect([change.tone, nb(change.last), nb(change.text)]).toEqual(['more', '35 100 KZT', 'Больше, чем в сентябре 2026 (30 800 KZT)'])
   })
   it('splits utilities by sub-category in colours of the categories and keeps the category\'s own lines neutral', () => {
     const block = utilitiesFixture().currencies[0]
@@ -123,7 +123,7 @@ describe('«Категория во времени»', () => {
     ])
     // Summer without heating: the segment is left out, not drawn as zero.
     expect(parts.columns[1].segments.map((segment) => segment.key)).toEqual(['23', '25', '26', '27'])
-    expect(nb(parts.columns[5].totalText)).toBe('35 100,00 KZT')
+    expect(nb(parts.columns[5].totalText)).toBe('35 100 KZT')
     expect(partsChart({ ...block, parts: [] }, 'x', [])).toBeNull()
   })
   it('shows parts of a category with sub-categories from the demo', () => {
@@ -136,7 +136,7 @@ describe('«Категория во времени»', () => {
 describe('«Лимиты по месяцам»', () => {
   it('marks over-limit months by more than colour and counts them', () => {
     const [eur] = limitRows(limitsFixture().limits)
-    expect([eur.name, nb(eur.amount)]).toEqual(['Продукты питания', '80,00 EUR'])
+    expect([eur.name, nb(eur.amount)]).toEqual(['Продукты питания', '80 EUR'])
     expect(eur.cells.map((cell) => [nb(cell.percent), cell.over, cell.fill])).toEqual([
       ['86,16 %', false, 86], ['103,68 %', true, 100], ['88,63 %', false, 89], ['92,91 %', false, 93], ['95,94 %', false, 96], ['107,64 %', true, 100],
     ])
