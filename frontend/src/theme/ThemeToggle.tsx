@@ -2,7 +2,7 @@ import { themeLabel, useTheme } from './theme'
 import './ThemeToggle.css'
 
 export type ThemeToggleProps = {
-  /** `header` — on the dark header bar, which stays dark in both themes; `page` — on the page or a panel. */
+  /** `header` — on the header bar (header tokens); `page` — on the page or a panel. */
   placement?: 'page' | 'header'
 }
 

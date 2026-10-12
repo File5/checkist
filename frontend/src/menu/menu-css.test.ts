@@ -55,8 +55,10 @@ describe('bottom bar of the main menu on a phone (text of the rules, not renderi
   it('orders the layers: the list over the bar, the skip link over everything', () => {
     expect(list).toContain('z-index: var(--ck-z-menu-sheet);')
     expect(rule('.skip-link', rest)).toContain('z-index: var(--ck-z-skip-link);')
+    // Both sheets of the bar, «Ещё» and «＋», lie on the same layer.
+    expect(rule('.brand-bar .main-add[data-open] .main-add-list', bar)).toContain('z-index: var(--ck-z-menu-sheet);')
     expect([...app.matchAll(/z-index: ([^;]+);/g)].map((match) => match[1]).sort()).toEqual(
-      ['var(--ck-z-bottom-nav)', 'var(--ck-z-menu-sheet)', 'var(--ck-z-skip-link)'])
+      ['var(--ck-z-bottom-nav)', 'var(--ck-z-menu-sheet)', 'var(--ck-z-menu-sheet)', 'var(--ck-z-skip-link)'])
   })
 
   it('reads only tokens that the theme defines and writes no colour', () => {
@@ -105,6 +107,17 @@ describe('bottom bar of the main menu on a phone (text of the rules, not renderi
     expect(rules(bar).filter((item) => item.selector.includes('::before')).map((item) => item.selector)).toEqual(['.brand-bar .main-navigation > a[aria-current]::before'])
     const forced = app.slice(app.indexOf('@media (forced-colors: active)'))
     expect(rule('.main-more-toggle[data-current]', forced)).toContain('text-decoration: underline;')
+  })
+
+  it('raises a round «＋» in the accent colours, drawn only in the bar, with a touch target of at least 44 px', () => {
+    expect(rule('.main-add', rest)).toBe('display: none;')
+    const toggle = rule('.brand-bar .main-add-toggle', bar)
+    expect(toggle).toContain('background: var(--ck-accent); color: var(--ck-on-accent);')
+    expect(toggle).toContain('border-radius: 50%;')
+    const side = Number(/width: (\d+)px; height: (\d+)px;/.exec(toggle)?.[1])
+    expect(side).toBeGreaterThanOrEqual(44)
+    expect(rule('.brand-bar .main-add-list', bar)).toBe('display: none;')
+    expect(rule('.brand-bar .main-add-list .main-add-action', bar)).toContain('min-height: 48px;')
   })
 
   it('makes no text smaller and leaves the menu of a section inside the page alone', () => {

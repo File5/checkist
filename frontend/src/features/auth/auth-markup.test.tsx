@@ -102,7 +102,9 @@ describe('sign-in form (Node server markup, not browser behavior)', () => {
   })
   it('words the screen: motto, invitation and the note under the form', () => {
     const html = loginHtml()
-    expect(html).toContain('<p class="ck-login-subtitle">Продуктовая разведка</p>')
+    // The joke of the brand stays in the name of the logo picture; the subtitle tells what the tool is.
+    expect(html).toContain('<p class="ck-login-subtitle">Семейный бюджет</p>')
+    expect(html).not.toContain('<p class="ck-login-subtitle">Продуктовая разведка</p>')
     expect(html).toContain('<p class="ck-login-invite">Предъявите пропуск</p>')
     expect(html).toContain('<p class="ck-login-note">Пропуска выдаёт администратор</p>')
     expect(html.indexOf('ck-login-invite')).toBeLessThan(html.indexOf('<form'))

@@ -71,9 +71,9 @@ describe('emblem of the header (text of the rules and headers of the files, not 
   it('lies straight on the header bar: no backing, no frame, only the size', () => {
     const own = rules(app).filter((item) => /\.brand-mark(?![\w-])/.test(item.selector))
     expect(own.map((item) => item.body)).toEqual(['flex: none; width: 44px; height: 44px;', 'width: 40px; height: 40px;'])
-    // The bar under the transparent emblem is dark in both themes: the light block does not redefine it.
+    // The bar under the transparent emblem takes the colour of a card in each theme: both blocks define it.
     expect(rule('.brand-bar', app)).toContain('background: var(--ck-header-bg);')
-    expect(tokens.match(/^\s*--ck-header-bg:/gm)).toHaveLength(1)
+    expect(tokens.match(/^\s*--ck-header-bg:/gm)).toHaveLength(2)
   })
 
   it.each([['emblem-96.webp', 96], ['emblem-192.webp', 192]])('%s is a square WebP with an alpha channel', (name, side) => {
@@ -110,6 +110,8 @@ describe('state rules of the shell (text of the rules, not rendering)', () => {
       '.action-link:where(:hover) = 1', '.rec-issues summary:focus-visible = 2',
       // The button «Ещё» of the phone's bottom bar: the shell's own part, like the links of the header.
       '.brand-bar .main-more-toggle:where(:hover) = 2', '.brand-bar .main-more-toggle[aria-expanded="true"] = 3',
+      // «＋» of the bar turns its cross while the sheet is open.
+      '.brand-bar .main-add-toggle[aria-expanded="true"] svg = 3',
     ])
   })
 

@@ -17,7 +17,7 @@ vi.mock('../features/catalog/CatalogPage', () => ({ default: () => <pre data-scr
 vi.mock('../features/catalog/CategoryPage', () => ({ default: () => <pre data-screen="category" /> }))
 vi.mock('../features/product/ProductPage', () => ({ default: () => <pre data-screen="product" /> }))
 vi.mock('../features/recognition', () => ({
-  UploadPage: () => <pre data-screen="upload" />, JobsPage: () => <pre data-screen="jobs" />, JobPage: () => <pre data-screen="job" />, QuickShot: () => <pre data-quick-shot="" />,
+  UploadPage: () => <pre data-screen="upload" />, JobsPage: () => <pre data-screen="jobs" />, JobPage: () => <pre data-screen="job" />,
 }))
 vi.mock('../features/receipts', () => ({ ReceiptsPage: () => <pre data-screen="receipts" />, ReceiptPage: () => <pre data-screen="receipt" /> }))
 vi.mock('../features/merges', () => ({ MergesPage: () => <pre data-screen="merges" />, MergePage: () => <pre data-screen="merge" /> }))
@@ -71,7 +71,8 @@ const mainNav = (html: string) => {
   return [...nav.matchAll(/<a\b[^>]*>([^<]*)<\/a>/g)].map((match) => match[1])
 }
 const navLink = (html: string, text: string) => html.match(new RegExp(`<a\\b[^>]*>${text}</a>`))?.[0] ?? ''
-const fullMenu = ['Каталог', 'Чеки', 'Статистика', 'Обработка', 'Состояние сервисов']
+/** The links of the header row; «Добавить трату» is the link of the «＋» sheet, drawn on a phone only. */
+const fullMenu = ['Главная', 'Траты', 'Добавить трату', 'Статистика', 'Каталог', 'Обработка', 'Состояние сервисов']
 
 const fetchMock = vi.fn<typeof fetch>()
 beforeEach(() => { fetchMock.mockReset(); vi.stubGlobal('fetch', fetchMock) })
@@ -180,19 +181,24 @@ describe('signed-in shell (SSR only, no browser interaction)', () => {
     expect(html).toContain('aria-label="Раздел каталога"')
     expect(html).not.toContain('Раздел доступен модератору каталога')
   })
-  it('offers «Снять чек» on every page of a signed-in person except the upload itself', () => {
-    expect(render(reader, { kind: 'catalog', query: { page: 1 } }, '/catalog')).toContain('data-quick-shot')
-    expect(render(reader, { kind: 'upload' }, '/receipts/upload')).not.toContain('data-quick-shot')
-    expect(render(guest, { kind: 'health' }, '/health')).not.toContain('data-quick-shot')
-  })
-  it('stacks «Добавить трату» with «Снять чек» and hides both on the forms with their own save bar', () => {
-    const catalog = render(reader, { kind: 'catalog', query: { page: 1 } }, '/catalog')
-    expect(catalog).toContain('<div class="ck-quick-actions"><a class="ck-quick-expense" href="/receipts/new">Добавить трату</a><pre data-quick-shot=""></pre></div>')
-    for (const [route, href] of [[{ kind: 'expense-new' }, '/receipts/new'], [{ kind: 'expense-edit', receiptId: 9 }, '/receipts/9/edit']] as const) {
+  it('offers «Снять чек» and «Добавить трату» behind «＋» of the menu to a signed-in person only', () => {
+    for (const [route, href] of [[{ kind: 'catalog', query: { page: 1 } }, '/catalog'], [{ kind: 'upload' }, '/receipts/upload'], [{ kind: 'expense-new' }, '/receipts/new']] as const) {
       const html = render(reader, route, href)
-      expect(html).not.toContain('ck-quick-actions')
-      expect(html).toContain(route.kind === 'expense-new' ? 'Добавить трату</h1>' : 'Изменить трату</h1>')
+      expect(html.match(/<div class="main-add">/g), route.kind).toHaveLength(1)
+      expect(html).toContain('<button type="button" class="main-add-action">Снять чек</button>')
+      expect(html).toContain('class="ck-quick-shot-input"')
+      // The floating stack of the former design is gone: its function lives in «＋».
+      expect(html).not.toMatch(/ck-quick-(actions|expense)|class="ck-quick-shot"/)
     }
+    expect(render(reader, { kind: 'expense-edit', receiptId: 9 }, '/receipts/9/edit')).toContain('Изменить трату</h1>')
+    expect(render(guest, { kind: 'health' }, '/health')).not.toContain('main-add')
+  })
+  it('keeps the old jokes in the footer line only, with no eyebrow over the heading', () => {
+    const html = render(reader, { kind: 'catalog', query: { page: 1 } }, '/catalog')
+    expect(html).toContain('<footer>Чекист — семейный бюджет · Доверяй, но проверяй чек</footer>')
+    expect(html).not.toContain('class="eyebrow"')
+    expect(html).not.toContain('Совершенно несекретно')
+    expect(html).toContain('<a class="brand" aria-label="Чекист — главная" href="/">')
   })
   it('shows the catalog subsections to a moderator on the catalog itself', () => {
     const html = render(moderator, { kind: 'catalog', query: { page: 1 } }, '/catalog')
@@ -211,7 +217,7 @@ describe('signed-in shell (SSR only, no browser interaction)', () => {
       expect(screens(html)).toEqual([])
     }
   })
-  it('mounts nothing at /login for a signed-in person: the shell sends them to the catalog', () => {
+  it('mounts nothing at /login for a signed-in person: the shell sends them to the home page', () => {
     // The transition itself is a layout effect and is not run here; the person checks it by hand.
     for (const session of [reader, moderator]) {
       const html = render(session, { kind: 'login' }, '/login')

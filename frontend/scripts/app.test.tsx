@@ -62,14 +62,16 @@ describe('App feature connections (Node server markup, not browser behavior)', (
     expect(html).not.toContain('Распознавание магазина и адреса, товаров и их стоимостей')
   })
 
-  it('draws the header bar with the brand, five sections and the theme switch; local_single has no sign-in link', () => {
+  it('draws the header bar with the brand, the sections and the theme switch; local_single has no sign-in link', () => {
     const html = renderToStaticMarkup(<App />)
     const header = html.slice(html.indexOf('<header'), html.indexOf('</header>'))
     expect(header).toContain('<span>Чекист</span>')
     expect(header).toMatch(/<img class="brand-mark" src="[^"]*emblem-96[^"]*" srcSet="[^"]*emblem-96[^"]* 1x, [^"]*emblem-192[^"]* 2x" width="44" height="44" alt=""\/>/)
     expect(header.match(/<a\b[^>]*href="[^"]*"/g)).toEqual([
-      '<a class="brand" aria-label="Чекист — каталог" href="/catalog"', '<a aria-current="page" href="/catalog"',
-      '<a href="/receipts"', '<a href="/stats"', '<a href="/recognition/jobs"', '<a href="/health"',
+      '<a class="brand" aria-label="Чекист — главная" href="/"', '<a href="/"', '<a href="/receipts"',
+      // «Добавить трату» of the «＋» sheet: drawn only in the bottom bar of a phone.
+      '<a class="main-add-action" href="/receipts/new"',
+      '<a href="/stats"', '<a aria-current="page" href="/catalog"', '<a href="/recognition/jobs"', '<a href="/health"',
     ])
     expect(html).not.toContain('href="/login"')
     expect(header.match(/<button\b[^>]*class="ck-theme-toggle ck-theme-toggle-header"/g)).toHaveLength(1)

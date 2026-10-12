@@ -49,7 +49,7 @@ export function LoginView({ state, expired, values, onChange, onSubmit, heading 
         </div>
         <div className="ck-login-panel">
           {heading}
-          <p className="ck-login-subtitle">Продуктовая разведка</p>
+          <p className="ck-login-subtitle">Семейный бюджет</p>
           <div className="ck-login-rule" aria-hidden="true">
             <svg className="ck-login-star" viewBox="0 0 24 24" width="24" height="24" focusable="false">
               <path d="m12 1.8 2.9 6.6 7.1.7-5.4 4.8 1.6 7-6.2-3.7-6.2 3.7 1.6-7L2 9.1l7.1-.7L12 1.8Z" />
