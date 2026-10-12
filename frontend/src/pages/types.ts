@@ -1,4 +1,4 @@
-import type { CatalogQuery, ClassificationQuery, JobsQuery, MergesQuery, ProductQuery, ReceiptsQuery, ReceiptsStatsQuery, SpendingQuery } from '../navigation'
+import type { CatalogQuery, ClassificationQuery, JobsQuery, MergesQuery, ProductQuery, ReceiptsQuery, ReceiptsStatsQuery, SpendingQuery, TrendsQuery } from '../navigation'
 
 /** The shell owns the page's single h1. Feature screens render below it. */
 export interface CatalogPageProps {
@@ -37,3 +37,5 @@ export interface ClassificationPageProps { query: ClassificationQuery }
  */
 export interface SpendingPageProps { query: SpendingQuery }
 export interface ReceiptsStatsPageProps { query: ReceiptsStatsQuery }
+/** «Динамика»: the window length, the opened month and the chosen category live in the URL (`trendsHref`). */
+export interface TrendsPageProps { query: TrendsQuery }

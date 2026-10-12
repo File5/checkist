@@ -1,0 +1,29 @@
+/* Stacked columns (StackedColumns.tsx). Colours are tokens only: a category is --ck-cat-N in both themes, the same
+   number as on «Главная» (src/lib/category-tone.ts); 0 is what has no category. */
+.ck-columns-tone-0 { --ck-col: var(--ck-series-other); }
+.ck-columns-tone-1 { --ck-col: var(--ck-cat-1); }
+.ck-columns-tone-2 { --ck-col: var(--ck-cat-2); }
+.ck-columns-tone-3 { --ck-col: var(--ck-cat-3); }
+.ck-columns-tone-4 { --ck-col: var(--ck-cat-4); }
+.ck-columns-tone-5 { --ck-col: var(--ck-cat-5); }
+.ck-columns-tone-6 { --ck-col: var(--ck-cat-6); }
+
+.ck-columns-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0; padding: 0; list-style: none; }
+.ck-columns-legend li { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.ck-columns-swatch { flex: 0 0 auto; width: 12px; height: 12px; border-radius: 3px; background: var(--ck-col); }
+
+/* The drawing is shown one to one (usePlotWidth): its text stays 12px. */
+.ck-columns-plot { position: relative; width: 100%; touch-action: pan-y pinch-zoom; }
+.ck-columns-svg { display: block; width: 100%; height: auto; }
+/* A thin line of the card's surface between segments: two neighbouring categories never melt into one. */
+.ck-columns-segment { fill: var(--ck-col); stroke: var(--ck-chart-surface); stroke-width: 1; }
+.ck-columns-stack[data-state="dim"] .ck-columns-segment { opacity: 0.45; }
+.ck-columns-active { fill: var(--ck-chart-highlight); }
+.ck-chart svg text.ck-columns-tick-active { fill: var(--ck-chart-ink); font-weight: 600; }
+
+/* Every column is a link over its whole slot, so a finger does not have to hit a thin bar. */
+.ck-columns-hits { position: absolute; inset: 0; margin: 0; padding: 0; list-style: none; pointer-events: none; }
+.ck-columns-hits li { position: absolute; display: flex; }
+.ck-columns-hit { flex: 1 1 auto; border-radius: var(--ck-radius-sm); pointer-events: auto; }
+.ck-columns-hit:hover { background: var(--ck-chart-highlight); opacity: 0.35; }
+.ck-columns-hit:focus-visible { outline: 3px solid var(--ck-chart-focus); outline-offset: -3px; }

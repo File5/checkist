@@ -1,22 +1,23 @@
-import { useEffect, useLayoutEffect, useReducer, useRef } from 'react'
+import { useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react'
 import type { FocusEvent, MouseEvent, RefObject } from 'react'
 import { Link } from '../navigation'
 import type { Route } from '../navigation'
 import type { Session } from '../session'
 import { useQuickShot } from '../features/recognition/QuickShot'
+import Sheet from '../components/Sheet'
 import { menuItems, ADD_AFTER } from './menu-items'
 import type { MenuItem } from './menu-items'
 import { MORE_MENU_CLOSED, PRESS_END_EVENTS, moreMenuStep } from './more-menu'
 
 const MORE_LIST_ID = 'main-more-list'
-const ADD_LIST_ID = 'main-add-list'
+const ADD_SHEET_ID = 'main-add-sheet'
 
 function item({ key, to, label, current, account }: MenuItem) {
   return <Link key={key} className={account ? 'account-link' : undefined} to={to} aria-label={account ? `Аккаунт: ${label}` : undefined}
     aria-current={current ? 'page' : undefined}>{label}</Link>
 }
 
-/** A button and the list it opens, as in the bottom bar of a phone: «Ещё» and «＋» behave alike.
+/** A button and the list it opens: «Ещё» of the bottom bar of a phone.
  * Only the button opens the list; Esc, a press outside, an action of the list and the focus that leaves close it.
  */
 function usePopup() {
@@ -79,25 +80,31 @@ function usePopup() {
   return { open, toggle, list, wrapperProps, onListClick, onToggle: () => dispatch('toggle') }
 }
 
-/** «＋» of the phone's bar: a raised round button and a small sheet with «Снять чек», «Из галереи» and «Добавить трату».
- * «Снять чек» opens the camera and «Из галереи» the picker from the very press (both fields stay mounted outside
- * of the sheet); the chosen file goes to the upload page and is sent by itself. */
+/** «＋» of the phone's bar: a raised round button and a sheet from the bottom (components/Sheet) with «Снять чек»,
+ * «Из галереи» and «Добавить трату». «Снять чек» opens the camera and «Из галереи» the picker from the very press
+ * (both fields stay mounted outside of the sheet); the chosen file goes to the upload page and is sent by itself.
+ * The sheet is a modal dialog: Esc, the backdrop and its close button close it, the focus returns to «＋». */
 function AddMenu() {
-  const { open, toggle, list, wrapperProps, onListClick, onToggle } = usePopup()
+  const [open, setOpen] = useState(false)
   const shot = useQuickShot('camera')
   const gallery = useQuickShot('gallery')
+  const close = () => setOpen(false)
+  // The picker is opened inside the same press, before the sheet is gone: the browser keeps the user activation.
+  const choose = (action: () => void) => () => { close(); action() }
   return (
-    <div className="main-add" {...wrapperProps}>
+    <div className="main-add">
       {/* Hidden wherever the menu is a row of links. */}
-      <button type="button" className="main-add-toggle" ref={toggle} aria-expanded={open} aria-controls={ADD_LIST_ID}
-        aria-label="Добавить: снять чек, выбрать из галереи или добавить трату" onClick={onToggle}>
+      <button type="button" className="main-add-toggle" aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? ADD_SHEET_ID : undefined}
+        aria-label="Добавить: снять чек, выбрать из галереи или добавить трату" onClick={() => setOpen(true)}>
         <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false"><path d="M11 4h2v7h7v2h-7v7h-2v-7H4v-2h7z" /></svg>
       </button>
-      <div className="main-add-list" id={ADD_LIST_ID} ref={list} onClick={onListClick}>
-        <button type="button" className="main-add-action" onClick={shot.open}>Снять чек</button>
-        <button type="button" className="main-add-action main-add-gallery" onClick={gallery.open}>Из галереи</button>
-        <Link className="main-add-action" to="/receipts/new">Добавить трату</Link>
-      </div>
+      <Sheet open={open} onClose={close} title="Добавить" id={ADD_SHEET_ID}>
+        <div className="main-add-list">
+          <button type="button" className="main-add-action" onClick={choose(shot.open)}>Снять чек</button>
+          <button type="button" className="main-add-action ck-button-secondary" onClick={choose(gallery.open)}>Из галереи</button>
+          <Link className="main-add-action" to="/receipts/new" onClick={close}>Добавить трату</Link>
+        </div>
+      </Sheet>
       {shot.field}
       {gallery.field}
     </div>

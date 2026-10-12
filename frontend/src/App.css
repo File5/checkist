@@ -13,10 +13,10 @@ body { margin: 0; min-width: 280px; }
 /* The page reaches under the cut-out of a phone (viewport-fit=cover): a phone on its side keeps the content beside it.
    Upright both insets are zero; the block of the bottom bar below takes this over for the header and the page. */
 body { padding-inline: env(safe-area-inset-left, 0px) env(safe-area-inset-right, 0px); }
-button, a, input, select { -webkit-tap-highlight-color: transparent; }
-button, input, select { font: inherit; }
+button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
+button, input, select, textarea { font: inherit; }
 a { color: inherit; }
-button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible { outline: 3px solid var(--ck-focus); outline-offset: 4px; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible { outline: 3px solid var(--ck-focus); outline-offset: 4px; }
 /* The heading of the page is focused by script only (tabindex="-1": after a load, a transition, the sign-in), for the
    screen reader and the order of Tab. No person reaches it with Tab, and a ring round the title reads as a fault:
    it is not drawn. Everything a person can reach with Tab keeps the ring of the rule above. */
@@ -53,14 +53,23 @@ h2 { font-size: 1.35rem; letter-spacing: 0; }
    stand in the row of the menu like the others, and the button is not drawn. */
 .main-more, .main-more-list { display: contents; }
 .main-more-toggle { display: none; }
-/* «＋» («Снять чек», «Добавить трату») belongs to the bottom bar of a phone only; the dashboard has its own buttons. */
+/* «＋» («Снять чек», «Из галереи», «Добавить трату») belongs to the bottom bar of a phone only; the dashboard has its own buttons. */
 .main-add { display: none; }
+/* The sheet of «＋» lies in the body, outside of the bar: three big actions under the thumb. «Снять чек» is the
+   brand fill of `button`; «Из галереи» and «Добавить трату» are outlines (.ck-button-secondary, the link below). */
+.main-add-list { display: grid; gap: 8px; padding-top: 4px; }
+.main-add-action { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 52px; padding: 10px 16px; border-radius: var(--ck-radius-button); font-weight: 600; text-decoration: none; white-space: nowrap; }
+a.main-add-action { border: 1px solid var(--ck-link); background: var(--ck-surface); color: var(--ck-link); }
 .section-navigation { margin-bottom: 20px; }
 .account-link { max-width: 100%; font-weight: 600; overflow-wrap: anywhere; }
 /* The account link lies on the header bar: its text is the header text; hover, the current
    page and the focus ring come from the header rules above, which weigh more than this one. */
 .brand-bar .account-link { color: var(--ck-header-text); }
 .intro { max-width: 650px; padding: 52px 0 36px; }
+/* «Назад» of the top bar belongs to a phone; wider screens lead back by the links of the page itself. */
+.ck-back { display: none; }
+/* The note of a page stands under its heading, outside of the bar that a phone pins to the top. */
+.intro-note-after { margin: -24px 0 36px; }
 .eyebrow { color: var(--ck-text-muted); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; margin-bottom: 12px; }
 .intro-text { font-size: 1.2rem; margin-top: 18px; }
 .intro-note { color: var(--ck-text-muted); margin-top: 12px; max-width: 540px; }
@@ -74,6 +83,7 @@ button:where(:hover:not(:disabled)) { border-color: var(--ck-brand-hover); backg
 button:where(:active:not(:disabled)) { border-color: var(--ck-brand-active); background: var(--ck-brand-active); }
 button:disabled { background: var(--ck-disabled-bg); border-color: var(--ck-disabled-border); color: var(--ck-disabled-text); cursor: default; }
 input, select { min-height: 44px; max-width: 100%; }
+textarea { min-height: 44px; max-width: 100%; }
 /* iOS Safari draws a field of a date by its own look: the padding and the frame are added to `width: 100%`, so the
    field leaves its panel, and the value stands in the middle. Without that look it is a box like any other field;
    the height comes from the rule above. :where keeps the rule weightless: a screen may still override it. */
@@ -83,11 +93,21 @@ input::-webkit-date-and-time-value { text-align: left; }
 /* :where keeps the hover as weak as `.action-link`: a filled link of a screen (its class sets the fill and the text
    over it) keeps its own text and border while hovered instead of taking the link colour. */
 .action-link:where(:hover) { border-color: var(--ck-link-hover); color: var(--ck-link-hover); }
+/* Three looks of a button: the brand fill of `button` (primary), the outline (secondary) and the quiet danger: an
+   outline in the error colours, never a fill, so a delete does not shout louder than the main action. The states
+   go through :where(): as weak as the class, written after it. A disabled button keeps the look of `button:disabled`. */
+.ck-button-secondary { border-color: var(--ck-link); background: var(--ck-surface); color: var(--ck-link); }
+.ck-button-secondary:where(:hover:not(:disabled)) { border-color: var(--ck-link-hover); background: var(--ck-surface-raised); color: var(--ck-link-hover); }
+.ck-button-secondary:where(:active:not(:disabled)) { border-color: var(--ck-link-hover); background: var(--ck-accent-bg); color: var(--ck-link-hover); }
+.ck-button-danger, .expense-danger { border-color: var(--ck-error-border); background: var(--ck-surface); color: var(--ck-error-text); }
+.ck-button-danger:where(:hover:not(:disabled)), .ck-button-danger:where(:active:not(:disabled)), .expense-danger:where(:hover:not(:disabled)), .expense-danger:where(:active:not(:disabled)) { border-color: var(--ck-error-text); background: var(--ck-error-bg); color: var(--ck-error-text); }
 .request-state { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 18px; min-height: 192px; padding: 28px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius); background: var(--ck-surface); box-shadow: 0 1px 2px var(--ck-panel-shadow); }
 .request-state-error { border-color: var(--ck-error-border); }
 .request-state-loading { color: var(--ck-text-muted); }
-.request-state-action { max-width: 100%; }
-.request-state-note { color: var(--ck-text-muted); margin-bottom: 18px; }
+.request-state-title { font-size: var(--ck-text-lg); }
+/* The action of an empty or failed state: a link or a button beside the words, never alone at the end of a page. */
+.request-state-action { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; max-width: 100%; }
+.request-state-note { flex: 1 0 100%; color: var(--ck-text-muted); margin-bottom: 6px; }
 .pagination { padding: 24px 0; }
 .pagination ul { display: flex; flex-wrap: wrap; gap: 8px; padding: 0; margin: 0; list-style: none; }
 .pagination a, .pagination li > span { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; padding: 8px 12px; border-radius: var(--ck-radius-pill); }
@@ -148,10 +168,21 @@ footer { border-top: 1px solid var(--ck-divider); color: var(--ck-text-muted); p
   /* One row scrolled sideways; the padding leaves room for the focus ring inside the scroller. */
   .brand-bar .main-navigation { flex-wrap: nowrap; margin: 0 -20px; padding: 7px 20px; overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--ck-header-text-muted) var(--ck-header-bg); }
   .brand-bar .main-navigation a { flex: none; white-space: nowrap; }
-  .intro { padding-top: 36px; }
+  /* The heading of the page is one compact line: «назад» on a nested page, the title, nothing above it. */
+  .intro { display: flex; align-items: center; gap: 4px; max-width: none; min-height: 56px; padding: 8px 0; }
+  .intro h1 { min-width: 0; font-size: var(--ck-text-xl); line-height: 1.25; }
+  .intro .eyebrow { display: none; }
+  .ck-back { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 44px; height: 44px; margin-left: -10px; border-radius: var(--ck-radius-sm); color: var(--ck-link); }
+  .ck-back svg { fill: currentColor; }
+  .intro-note-after { margin: 0 0 16px; }
+  /* Fields 48 px tall and never under 16 px: iOS does not zoom the page into a field. Buttons of the page are
+     48 px too. :where() keeps them as weak as the element: a class of a screen still sets its own size. */
+  main :where(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"])), main :where(select), main :where(textarea) { min-height: 48px; font-size: max(var(--ck-text-base), 1em); }
+  main :where(button), main :where(.action-link) { min-height: 48px; }
+  .request-state-action > :where(button), .request-state-action > :where(.action-link) { flex: 1 1 100%; }
   .intro-text { font-size: 1.05rem; }
   .health-panel { padding: 20px; }
-  .request-state { padding: 20px; min-height: 220px; }
+  .request-state { padding: 20px; min-height: 160px; }
   .panel-heading { flex-wrap: wrap; gap: 14px; }
   .panel-heading button { width: 100%; }
   .health-summary { padding: 14px; min-height: 182px; }
@@ -171,10 +202,12 @@ footer { border-top: 1px solid var(--ck-divider); color: var(--ck-text-muted); p
   .brand-bar { padding-inline: max(20px, env(safe-area-inset-left, 0px)) max(20px, env(safe-area-inset-right, 0px)); }
   /* The end of the page stays above the bar. */
   .page { padding: 0 max(20px, env(safe-area-inset-right, 0px)) var(--ck-bottom-occupied) max(20px, env(safe-area-inset-left, 0px)); }
+  /* The top bar of a phone: the heading row sticks to the top of the window, in the colour of the page, edge to edge. */
+  .intro { position: sticky; top: 0; z-index: var(--ck-z-top-bar); margin-inline: calc(-1 * max(20px, env(safe-area-inset-left, 0px))) calc(-1 * max(20px, env(safe-area-inset-right, 0px))); padding: max(8px, env(safe-area-inset-top, 0px)) max(20px, env(safe-area-inset-right, 0px)) 8px max(20px, env(safe-area-inset-left, 0px)); background: var(--ck-bg); box-shadow: 0 1px 0 var(--ck-divider); }
   .brand-bar .main-navigation { position: fixed; inset: auto 0 0; z-index: var(--ck-z-bottom-nav); align-items: stretch; gap: 2px; width: auto; min-height: calc(var(--ck-bottom-nav-height) + var(--ck-safe-bottom)); margin: 0; padding: 0 max(4px, env(safe-area-inset-right, 0px)) 0 max(4px, env(safe-area-inset-left, 0px)); padding-bottom: var(--ck-safe-bottom); overflow: visible; border-top: 1px solid var(--ck-header-border); background: var(--ck-header-bg); color: var(--ck-header-text); }
   /* Columns as wide as their words: «Статистика» does not fit an equal quarter of 320 px.
      The focus ring is drawn closer than elsewhere, so the edge of the window does not cut it. */
-  .brand-bar .main-navigation > a, .brand-bar .main-more-toggle { flex: 1 1 auto; justify-content: center; margin-block: 5px; padding-inline: 2px; outline-offset: 1px; }
+  .brand-bar .main-navigation > a, .brand-bar .main-more-toggle { flex: 1 1 auto; justify-content: center; margin-block: 5px; padding-inline: 2px; border-radius: var(--ck-radius-sm); outline-offset: 1px; }
   .brand-bar .main-more-toggle { display: inline-flex; align-items: center; border-color: transparent; background: transparent; color: inherit; white-space: nowrap; }
   .brand-bar .main-more-toggle:where(:hover) { background: var(--ck-header-hover-bg); text-decoration: underline; }
   .brand-bar .main-more-toggle[aria-expanded="true"] { background: var(--ck-header-hover-bg); }
@@ -188,20 +221,13 @@ footer { border-top: 1px solid var(--ck-divider); color: var(--ck-text-muted); p
   .brand-bar .main-more[data-open] .main-more-list { display: flex; flex-direction: column; gap: 2px; position: absolute; right: max(4px, env(safe-area-inset-right, 0px)); bottom: 100%; z-index: var(--ck-z-menu-sheet); min-width: min(240px, calc(100% - 8px)); max-width: calc(100% - 8px); margin-bottom: 6px; padding: 6px; border: 1px solid var(--ck-header-border); border-radius: var(--ck-radius); background: var(--ck-header-bg); box-shadow: 0 4px 16px var(--ck-popover-shadow); }
   /* A long name of the person wraps inside the list instead of leaving the window. */
   .brand-bar .main-more-list a { white-space: normal; }
-  /* «＋»: a round accent button in the middle of the bar; its sheet opens above the bar, centred, at once.
+  /* «＋»: a round accent button in the middle of the bar; it opens the sheet from the bottom (components/Sheet).
      It stays inside the 3.5rem of the bar: a part sticking out above would cover the pinned action bars (.ck-action-bar
      stops at the top edge of the bar), and a tap on «Сохранить» would open the sheet instead.
      The text over the accent is --ck-on-accent: white in the light theme, dark in the dark one. */
   .brand-bar .main-add { display: flex; flex: none; align-items: center; justify-content: center; padding-inline: 0; }
   .brand-bar .main-add-toggle { display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px; min-height: 48px; margin: 0; padding: 0; border: 0; border-radius: 50%; background: var(--ck-accent); color: var(--ck-on-accent); box-shadow: 0 1px 4px var(--ck-panel-shadow); outline-offset: 2px; }
   .brand-bar .main-add-toggle svg { flex: none; fill: currentColor; }
-  .brand-bar .main-add-toggle[aria-expanded="true"] svg { transform: rotate(45deg); }
-  .brand-bar .main-add-list { display: none; }
-  .brand-bar .main-add[data-open] .main-add-list { display: flex; flex-direction: column; gap: 8px; position: absolute; left: 50%; bottom: 100%; z-index: var(--ck-z-menu-sheet); width: min(280px, calc(100% - 16px)); margin-bottom: 12px; padding: 12px; border: 1px solid var(--ck-header-border); border-radius: var(--ck-radius); background: var(--ck-header-bg); box-shadow: 0 4px 16px var(--ck-popover-shadow); transform: translateX(-50%); }
-  .brand-bar .main-add-list .main-add-action { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 48px; padding: 10px 16px; border-radius: var(--ck-radius-button); font-weight: 600; text-decoration: none; white-space: nowrap; }
-  .brand-bar .main-add-list a.main-add-action { border: 1px solid var(--ck-link); background: var(--ck-surface); color: var(--ck-link); }
-  /* «Из галереи»: the second way to the same upload, drawn like the link and not like the filled camera button. */
-  .brand-bar .main-add-list .main-add-gallery { border: 1px solid var(--ck-link); background: var(--ck-surface); color: var(--ck-link); }
 }
 
 @media (forced-colors: active) {

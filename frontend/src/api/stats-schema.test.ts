@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { readError } from './http'
 import { isPriceSeries } from './price-series-schema'
 import { isReceiptCompare, isReceiptSeries, isSpending } from './stats-schema'
+import { isTrendsCategory, isTrendsLimits, isTrendsMonthly, isTrendsPrices } from './trends-schema'
 import { fixturesOf, statsErrorFixtures, statsFixture, statsFixtureNames } from './stats-test-support'
 import { dateMs, decimalNumber } from './stats-types'
 import type { PriceSeries } from './price-series-types'
@@ -10,6 +11,7 @@ import type { ReceiptCompare, ReceiptSeries, Spending } from './stats-types'
 type Validate = (value: unknown) => boolean
 const families: [string, Validate][] = [
   ['spending-', isSpending], ['series-', isReceiptSeries], ['compare-', isReceiptCompare], ['price-series-', isPriceSeries],
+  ['trends-monthly', isTrendsMonthly], ['trends-category', isTrendsCategory], ['trends-prices', isTrendsPrices], ['trends-limits', isTrendsLimits],
 ]
 const cases = families.flatMap(([prefix, validate]) => fixturesOf(prefix).map((name): [string, Validate] => [name, validate]))
 /** Each mutation spoils a fresh copy of a real answer; the schema has to notice. */
@@ -28,7 +30,7 @@ const drop = (target: object, key: string) => { delete (target as Record<string,
 describe('public statistics fixtures', () => {
   it('covers every JSON supplied by backend, including future additions', () => {
     expect([...cases.map(([name]) => name), ...Object.keys(statsErrorFixtures)].sort()).toEqual(statsFixtureNames())
-    expect(cases).toHaveLength(22)
+    expect(cases).toHaveLength(27)
   })
   it.each(cases)('validates %s and requires every root field', (name, validate) => {
     const body = statsFixture(name) as Record<string, unknown>

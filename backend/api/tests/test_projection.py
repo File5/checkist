@@ -515,6 +515,7 @@ class NoForeignReceiptIdTests(ProjectionMixin, TestCase):
             "/api/recognition/receipt-images/",
             "/api/stats/spending/", "/api/stats/spending/?group_by=product", "/api/stats/spending/?group_by=store",
             "/api/stats/receipts/series/", f"/api/stats/receipts/compare/?{PERIODS}",
+            "/api/stats/trends/monthly/", "/api/stats/trends/category/", "/api/stats/trends/prices/", "/api/stats/trends/limits/",
             "/api/product-merges/", "/api/product-classifications/", "/api/product-classifications/status/",
             "/api/product-classifications/runs/", "/api/budget/limits/", "/api/dashboard/",
             "/api/dashboard/?month=2026-06",

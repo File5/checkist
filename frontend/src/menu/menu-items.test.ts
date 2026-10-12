@@ -64,7 +64,7 @@ describe('items of the main menu and their split for the bottom bar of a phone',
     [{ kind: 'product', productId: 5, query: { page: 1 } }, 'catalog'], [{ kind: 'merges', query: { page: 1 } }, 'catalog'],
     [{ kind: 'merge', groupId: 2 }, 'catalog'], [{ kind: 'classification', query: { page: 1 } }, 'catalog'],
     [{ kind: 'receipts', query: { page: 1 } }, 'receipts'], [{ kind: 'upload' }, 'receipts'], [{ kind: 'receipt', receiptId: 7 }, 'receipts'],
-    [{ kind: 'spending', query: {} }, 'stats'], [{ kind: 'receipts-stats', query: {} }, 'stats'],
+    [{ kind: 'spending', query: {} }, 'stats'], [{ kind: 'receipts-stats', query: {} }, 'stats'], [{ kind: 'trends', query: {} }, 'stats'],
     [{ kind: 'jobs', query: { page: 1 } }, 'jobs'], [{ kind: 'job', jobId: 9 }, 'jobs'],
     [health, 'health'], [{ kind: 'account' }, 'account'],
   ])('marks one current item at %j', (route, key) => {
