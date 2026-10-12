@@ -2,7 +2,8 @@
 import { decimalNumber } from '../../api/stats'
 import type { CompareCurrency, ComparePriceIndex, CompareSide } from '../../api/stats'
 import type { CurrencyCode, Decimal } from '../../api/types'
-import { formatAmount, formatIndex, formatPercent, formatPrice, formatQuantity } from '../../lib/format'
+import { formatIndex, formatPercent, formatPrice, formatQuantity } from '../../lib/format'
+import { formatMoney } from '../../lib/money'
 
 export type Sign = -1 | 0 | 1
 /** Sign of a wire decimal without turning money into a float; `null` for an absent or broken value. */
@@ -15,7 +16,7 @@ export function decimalSign(value: Decimal | null | undefined): Sign | null {
 const unsigned = (value: Decimal) => value.replace(/^-/, '')
 const plus = (value: Decimal | null, text: string) => (decimalSign(value) === 1 ? `+${text}` : text)
 /** «+8,65 EUR», «-3,10 EUR», «0,00 EUR». */
-export const signedAmount = (value: Decimal | null, currency: CurrencyCode) => plus(value, formatAmount(value, currency))
+export const signedAmount = (value: Decimal | null, currency: CurrencyCode) => plus(value, formatMoney(value, currency))
 export const signedPercent = (value: Decimal | null) => plus(value, formatPercent(value))
 /** An index or a ratio with up to four places and no unit. */
 const count = (value: number) => value.toLocaleString('ru-RU')
@@ -30,11 +31,11 @@ const visits = (value: number) => `${count(value)} ${plural(value, ['поход'
 export function sideFacts(side: CompareSide, currency: CurrencyCode): [string, string][] {
   return [
     ['Походов в магазин', `${count(side.receipts_count)} (${formatQuantity(side.receipts_per_month)} в месяц)`],
-    ['Средний чек', formatAmount(side.avg_receipt, currency)],
-    ['Медианный чек', formatAmount(side.median_receipt, currency)],
+    ['Средний чек', formatMoney(side.avg_receipt, currency)],
+    ['Медианный чек', formatMoney(side.median_receipt, currency)],
     ['Позиций на чек', formatQuantity(side.lines_per_receipt)],
     ['Сумма на позицию', formatPrice(side.paid_per_line, currency)],
-    ['Потрачено всего', formatAmount(side.total, currency)],
+    ['Потрачено всего', formatMoney(side.total, currency)],
   ]
 }
 export function refundsNote(block: CompareCurrency): string | null {
@@ -106,7 +107,7 @@ function oneSided(block: CompareCurrency, empty: 'base' | 'current'): Verdict {
   return {
     kind: empty === 'base' ? 'no-base' : 'no-current',
     headline: `В ${emptyName} периоде походов в ${block.currency} нет, поэтому изменение среднего чека посчитать нельзя.`,
-    lead: `В ${otherName} периоде: ${visits(side.receipts_count)}, средний чек ${formatAmount(side.avg_receipt, block.currency)}.`,
+    lead: `В ${otherName} периоде: ${visits(side.receipts_count)}, средний чек ${formatMoney(side.avg_receipt, block.currency)}.`,
     parts: [], note: null,
   }
 }
@@ -119,8 +120,8 @@ export function verdict(block: CompareCurrency): Verdict {
   const kind: VerdictKind = direction > 0 ? 'grew' : direction < 0 ? 'fell' : 'same'
   const percent = change.avg_receipt_percent === null ? '' : ` (${signedPercent(change.avg_receipt_percent)})`
   const headline = kind === 'same'
-    ? `Средний чек не изменился: ${formatAmount(current.avg_receipt, currency)} в обоих периодах.`
-    : `Средний чек ${kind === 'grew' ? 'вырос' : 'снизился'} на ${formatAmount(unsigned(change.avg_receipt), currency)}${percent}: с ${formatAmount(base.avg_receipt, currency)} до ${formatAmount(current.avg_receipt, currency)}.`
+    ? `Средний чек не изменился: ${formatMoney(current.avg_receipt, currency)} в обоих периодах.`
+    : `Средний чек ${kind === 'grew' ? 'вырос' : 'снизился'} на ${formatMoney(unsigned(change.avg_receipt), currency)}${percent}: с ${formatMoney(base.avg_receipt, currency)} до ${formatMoney(current.avg_receipt, currency)}.`
   const parts = effectParts(block)
   if (!parts.length) return { kind, headline, lead: null, parts, note: noLinesNote }
   const note = parts.some((part) => part.key === 'price_per_line') ? noMatchedNote : null

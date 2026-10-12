@@ -38,9 +38,18 @@ export function createManualSpend(input: ManualSpendInput, options: RequestOptio
 export async function updateManualSpend(id: number, input: ManualSpendInput, options: RequestOptions = {}): Promise<LocalApiResult<Receipt>> {
   return invalidIds({ id }, options.signal) ?? mutate(`receipts/${id}/`, JSON.stringify(input), isReceipt, options, false, undefined, { method: 'PATCH' })
 }
-export async function deleteManualSpend(id: number, options: RequestOptions = {}): Promise<LocalApiResult<null>> {
+/**
+ * Deletes any visible receipt: a manual spend, or a photo receipt with its lines. The crops of a photo receipt stay
+ * without the link; `withPhoto` also deletes the source photo with its jobs, crops and files. Refusals:
+ * `409 job_active` (the photo is still being recognized), `409 photo_shared` (another receipt comes from the photo).
+ */
+export async function deleteReceipt(id: number, { withPhoto = false }: { withPhoto?: boolean } = {}, options: RequestOptions = {}): Promise<LocalApiResult<null>> {
   return invalidIds({ id }, options.signal)
-    ?? mutate(`receipts/${id}/`, '', (value): value is null => value === null, options, false, undefined, { method: 'DELETE' })
+    ?? mutate(`receipts/${id}/`, '', (value): value is null => value === null, options, false, undefined,
+      { method: 'DELETE', ...(withPhoto && { query: { with_photo: '1' } }) })
+}
+export async function deleteManualSpend(id: number, options: RequestOptions = {}): Promise<LocalApiResult<null>> {
+  return deleteReceipt(id, {}, options)
 }
 
 /** «Трата словами»: `202` with the queued request; `today` — the local date of the device for «вчера» and the like.

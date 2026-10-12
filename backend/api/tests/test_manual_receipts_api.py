@@ -26,7 +26,7 @@ D = Decimal
 MANUAL = "/api/receipts/manual/"
 READ_ONLY = {"error": {
     "code": "receipt_read_only",
-    "message": "Чек с фото через API не меняется: править и удалять можно только трату, внесённую вручную.",
+    "message": "Чек с фото через API не правится: изменять можно только трату, внесённую вручную.",
 }}
 
 
@@ -245,11 +245,13 @@ class ManualChangeTests(ManualMixin, TestCase):
     def test_photo_receipt_stays_read_only(self):
         photo = make_receipt(samples.lidl_store(), "EUR", date(2026, 9, 1), owner=local_user(), total=D("1.00"))
         url = f"/api/receipts/{photo.pk}/"
-        for response in (self.patch({"total": "2"}, url), self.client.delete(url)):
-            self.assertEqual(response.status_code, 409)
-            self.assertEqual(response.json(), READ_ONLY)
+        response = self.patch({"total": "2"}, url)
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json(), READ_ONLY)
         self.assertTrue(Receipt.objects.filter(pk=photo.pk, total=D("1.00")).exists())
         self.assertEqual(self.client.put(url, {}, format="json").status_code, 405)
+        # A photo receipt can be deleted (test_receipt_delete_api), only not changed.
+        self.assertEqual(self.client.delete(url).status_code, 204)
 
     def test_patch_validation_leaves_spend_unchanged(self):
         response = self.patch({"total": "-1", "category": 999999})

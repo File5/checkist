@@ -12,8 +12,8 @@ from api.params import Params
 from api.recognition_serialization import (
     discount_object, executor_object, line_object, receipt_object, receipts_queryset, tax_object,
 )
-from config.exceptions import InvalidParameter, InvalidRequest, RecognitionApiError
-from receipts import manual, manual_parse
+from config.exceptions import InvalidParameter, InvalidRequest, ObjectNotFound, RecognitionApiError
+from receipts import deletion, manual, manual_parse
 from receipts.models import ManualParseRequest, Receipt, ReceiptLine
 
 from .recognition import path_id
@@ -204,7 +204,12 @@ class ManualParseDetailView(LocalAPIView):
 
 
 class ReceiptView(LocalAPIView):
-    """Чек; ``PATCH`` и ``DELETE`` — только у траты, внесённой вручную (иначе ``409 receipt_read_only``)."""
+    """Чек; ``PATCH`` — только у траты, внесённой вручную (иначе ``409 receipt_read_only``).
+
+    ``DELETE`` — любой видимый чек (свой либо члена семьи). Чек с фото удаляется со строками, его вырезки
+    остаются без связи; ``?with_photo=1`` удаляет и исходное фото со всеми заданиями, вырезками, попытками и
+    файлами (``receipts.deletion``). Отказы: ``409 job_active``, ``409 photo_shared``.
+    """
 
     http_method_names = ["get", "patch", "delete", "head", "options"]
     parser_classes = [ManualBodyParser]
@@ -228,8 +233,19 @@ class ReceiptView(LocalAPIView):
         return Response(receipt_object(get_or_404(receipts_queryset(request), receipt.pk)))
 
     def delete(self, request, pk):
-        receipt = self.manual_receipt(request, pk)
-        manual.delete(receipt.pk)
+        receipt = own_receipt(request, pk)
+        params = Params(request.query_params)
+        with_photo = params.boolean("with_photo", default=False)
+        params.check()
+        if receipt.source == Receipt.Source.MANUAL:
+            manual.delete(receipt.pk)
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        try:
+            deletion.delete_receipt(receipt.pk, with_photo=with_photo)
+        except Receipt.DoesNotExist:
+            raise ObjectNotFound() from None
+        except deletion.DeleteRefused as refused:
+            raise RecognitionApiError(refused.code) from None
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

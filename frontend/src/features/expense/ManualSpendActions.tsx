@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { deleteManualSpend } from '../../api/receipts'
 import { Link, navigate } from '../../navigation'
+import { setReceiptsNotice } from '../receipts/delete-receipt'
 import { saveMessage } from './labels'
 import './Expense.css'
 
@@ -20,7 +21,11 @@ export function ManualSpendActions({ receiptId, initial = { kind: 'idle' } }: { 
     controller.current = current
     const result = await deleteManualSpend(receiptId, { signal: current.signal })
     if (current.signal.aborted || result.kind === 'aborted') return
-    if (result.kind === 'ok' || result.reason === 'not_found') { navigate('/receipts'); return }
+    if (result.kind === 'ok' || result.reason === 'not_found') {
+      setReceiptsNotice(result.kind === 'ok' ? 'Трата удалена.' : 'Трата уже удалена.')
+      navigate('/receipts')
+      return
+    }
     setStep({ kind: 'failed', message: saveMessage(result) })
   }
 

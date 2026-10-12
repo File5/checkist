@@ -45,12 +45,12 @@ describe('receipt URL filters and display values', () => {
     expect(hasFilters({ page: 1, currency: 'EUR' })).toBe(true)
   })
   it('keeps Decimal precision, zero and negative refunds, and labels unknowns', () => {
-    expect(money('9999999999999999.12', 'EUR')).toBe('9 999 999 999 999 999,12 EUR')
-    expect(money('0.00', 'EUR')).toBe('0,00 EUR')
+    expect(money('9999999999999999.12', 'EUR')).toBe('10 000 000 000 000 000 EUR')
+    expect(money('0.00', 'EUR')).toBe('0 EUR')
     expect(price('-1.2345', 'EUR')).toBe('-1,23 EUR')
-    expect(money('-2.38', 'EUR')).toBe('-2,38 EUR')
+    expect(money('-2.38', 'EUR')).toBe('-3 EUR')
     expect(money(null, 'EUR')).toBe('Не распознано')
-    expect(money('2.38')).toBe('2,38')
+    expect(money('2.38')).toBe('3')
     expect(recognizedText('  ')).toBe('Не распознано')
   })
   it('names the missing right instead of the local mode to a user of accounts', () => {

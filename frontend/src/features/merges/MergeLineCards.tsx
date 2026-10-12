@@ -1,7 +1,8 @@
 import type { MergeLine } from '../../api/product-merges'
 import { Card, CardList } from '../../lib/cards'
 import type { CardFact } from '../../lib/cards'
-import { formatAmount, formatPrice, formatPurchasedOn, formatQuantity } from '../../lib/format'
+import { formatPrice, formatPurchasedOn, formatQuantity } from '../../lib/format'
+import { formatMoney } from '../../lib/money'
 import { glue, numbered } from '../../lib/text'
 import { Link } from '../../navigation'
 
@@ -20,7 +21,7 @@ export default function MergeLineCards({ lines, columns, caption, label, origin 
         { key: 'store', label: columns.store, kind: 'text', value: <>{line.store.name.trim() || 'Не указано'}<span className="ck-merge-subtext">{[line.store.city.trim(), line.store.country].filter(Boolean).join(' · ')}</span></> },
         { key: 'quantity', label: columns.quantity, value: formatQuantity(line.quantity, line.unit) },
         { key: 'price', label: columns.price, value: formatPrice(line.unit_price, line.currency) },
-        { key: 'amount', label: columns.amount, value: formatAmount(line.amount, line.currency) },
+        { key: 'amount', label: columns.amount, value: formatMoney(line.amount, line.currency) },
         { key: 'receipt', label: columns.receipt, value: line.receipt_id === null ? 'Чужая покупка'
           : <><Link to={{ kind: 'receipt', receiptId: line.receipt_id }}>{numbered('Чек', line.receipt_id)}</Link><span className="ck-merge-subtext">{glue('позиция', line.position)}</span></> },
       ]

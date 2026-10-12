@@ -3,7 +3,8 @@ import type { CompareCurrency, CompareProduct, ComparePriceIndex, ReceiptCompare
 import RequestState from '../../components/RequestState'
 import { useLocalRequestFocus } from '../../components/useLocalRequestFocus'
 import { useNarrow } from '../../lib/cards'
-import { formatAmount, formatPrice, formatQuantity } from '../../lib/format'
+import { formatPrice, formatQuantity } from '../../lib/format'
+import { formatMoney } from '../../lib/money'
 import { Link, receiptsStatsHref } from '../../navigation'
 import type { ReceiptsStatsQuery } from '../../navigation'
 import { DateRange } from './period'
@@ -113,8 +114,8 @@ function Products({ block }: { block: CompareCurrency }) {
       <td className="stats-number">{signedPercent(item.price_change_percent)}</td>
       <td className="stats-number">{formatQuantity(item.base.quantity, item.unit)}</td>
       <td className="stats-number">{formatQuantity(item.current.quantity, item.unit)}</td>
-      <td className="stats-number">{formatAmount(item.base.amount, currency)}</td>
-      <td className="stats-number">{formatAmount(item.current.amount, currency)}</td>
+      <td className="stats-number">{formatMoney(item.base.amount, currency)}</td>
+      <td className="stats-number">{formatMoney(item.current.amount, currency)}</td>
     </tr>
   )
   return (

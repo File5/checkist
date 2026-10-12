@@ -5,7 +5,7 @@ import { createManualSpend, getManualDefaults, getReceipt, getReceiptLines, upda
 import type { Line, ManualDefaults, Receipt } from '../../api/receipts'
 import type { Category, LocalApiResult } from '../../api/types'
 import RequestState from '../../components/RequestState'
-import { formatAmount } from '../../lib/format'
+import { formatMoney } from '../../lib/money'
 import { Link, navigate } from '../../navigation'
 import { isNetworkFailure } from '../../offline/pending'
 import { clearHandoff, discardPending, draftFromPending, enqueueSpend, peekHandoff } from '../../offline/pending-store'
@@ -130,7 +130,7 @@ export function ExpenseForm({ draft, chips, errors, saving, failure, receiptId, 
     <div className="expense-actions ck-action-bar">
       <button type="submit" className="expense-save" disabled={saving}>{saving ? 'Сохраняем…' : 'Сохранить'}</button>
       <Link className="action-link" to={receiptId === undefined ? '/receipts' : `/receipts/${receiptId}`}>Отмена</Link>
-      {itemized && sum && <span className="expense-sum receipt-number">{formatAmount(sum, draft.currency)}</span>}
+      {itemized && sum && <span className="expense-sum receipt-number">{formatMoney(sum, draft.currency)}</span>}
     </div>
   </form>
 }

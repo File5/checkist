@@ -2,6 +2,7 @@ import type { Dashboard, DashboardCategory, DashboardRecent, DashboardSubCategor
 import { ownerName, peopleOf } from '../../lib/people'
 import type { Person } from '../../lib/people'
 import type { Decimal, LocalApiFailure } from '../../api/types'
+import { formatCentsNumber } from '../../lib/money'
 import { NBSP, glue } from '../../lib/text'
 
 /** Money is counted in cents with BigInt: a Decimal never becomes a Number. A malformed value counts as zero. */
@@ -14,14 +15,9 @@ export function cents(value: Decimal | null | undefined): bigint {
 
 const groupDigits = (digits: string) => digits.replace(/\B(?=(\d{3})+(?!\d))/g, NBSP)
 
-/** «287 450», «1 500,50»: kopecks only when there are any. */
+/** «287 450», «1 501»: whole units rounded up (`lib/money.ts`); the cents themselves stay exact. */
 export function formatNumber(value: Decimal | bigint): string {
-  const amount = typeof value === 'bigint' ? value : cents(value)
-  const negative = amount < 0n
-  const absolute = negative ? -amount : amount
-  const whole = groupDigits((absolute / 100n).toString())
-  const fraction = absolute % 100n
-  return `${negative ? '-' : ''}${whole}${fraction ? `,${fraction.toString().padStart(2, '0')}` : ''}`
+  return formatCentsNumber(typeof value === 'bigint' ? value : cents(value))
 }
 
 /** «287 450 KZT»: the whole value never breaks. */

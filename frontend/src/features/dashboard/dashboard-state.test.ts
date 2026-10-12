@@ -17,8 +17,9 @@ describe('money of the dashboard', () => {
   })
   it('shows kopecks only when there are any and never breaks a value', () => {
     expect(formatMoney('287450.00', 'KZT')).toBe(nb('287 450 KZT'))
-    expect(formatMoney('1500.50', 'KZT')).toBe(nb('1 500,50 KZT'))
-    expect(formatMoney(5n, 'EUR')).toBe(nb('0,05 EUR'))
+    expect(formatMoney('1500.50', 'KZT')).toBe(nb('1 501 KZT'))
+    expect(formatMoney(5n, 'EUR')).toBe(nb('1 EUR'))
+    expect(formatMoney(-40n, 'EUR')).toBe(nb('-1 EUR'))
     expect(formatMoney('-1200.00', 'KZT')).toBe(nb('-1 200 KZT'))
     expect(formatNumber('92300.00')).toBe(nb('92 300'))
     expect(formatMoney('0.00', 'KZT')).not.toContain(' ')

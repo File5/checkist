@@ -18,12 +18,12 @@ describe('spending answer → chart and table rows (server fixtures)', () => {
   it('keeps the order, the wire amounts and the shares of the server', () => {
     const items = pieItems(eur, 'category', {})
     expect(items.map((item) => [item.key, item.label, item.valueText, item.shareText])).toEqual([
-      ['category:1', 'Продукты питания', money('5 590,75 EUR'), money('42,73 %')],
-      ['category:6', 'Не разобрано', money('5 184,91 EUR'), money('39,63 %')],
-      ['category:5', 'Бытовая химия', money('1 767,78 EUR'), money('13,51 %')],
-      ['unmatched', 'Строки без товара', money('336,88 EUR'), money('2,57 %')],
-      ['service', 'Услуги', money('75,84 EUR'), money('0,58 %')],
-      ['deposit', 'Залог за тару', money('127,50 EUR'), money('0,97 %')],
+      ['category:1', 'Продукты питания', money('5 591 EUR'), money('42,73 %')],
+      ['category:6', 'Не разобрано', money('5 185 EUR'), money('39,63 %')],
+      ['category:5', 'Бытовая химия', money('1 768 EUR'), money('13,51 %')],
+      ['unmatched', 'Строки без товара', money('337 EUR'), money('2,57 %')],
+      ['service', 'Услуги', money('76 EUR'), money('0,58 %')],
+      ['deposit', 'Залог за тару', money('128 EUR'), money('0,97 %')],
     ])
     expect(items.map((item) => item.value)).toEqual([5590.75, 5184.91, 1767.78, 336.88, 75.84, 127.5])
   })
@@ -46,30 +46,30 @@ describe('spending answer → chart and table rows (server fixtures)', () => {
   it('builds one independent block per currency and never adds them up', () => {
     const views = category.currencies.map((block) => blockView(block, 'category', {}))
     expect(views.map((view) => [view.currency, view.title, view.total, view.receipts, view.center])).toEqual([
-      ['EUR', 'Траты по категориям, EUR', { label: 'Итого по чекам', text: money('13 041,07 EUR') }, '373 чека',
-        { label: 'Сумма строк', value: money('13 083,66 EUR') }],
-      ['KZT', 'Траты по категориям, KZT', { label: 'Итого по чекам', text: money('438 091,92 KZT') }, '93 чека',
-        { label: 'Сумма строк', value: money('439 741,92 KZT') }],
+      ['EUR', 'Траты по категориям, EUR', { label: 'Итого по чекам', text: money('13 042 EUR') }, '373 чека',
+        { label: 'Сумма строк', value: money('13 084 EUR') }],
+      ['KZT', 'Траты по категориям, KZT', { label: 'Итого по чекам', text: money('438 092 KZT') }, '93 чека',
+        { label: 'Сумма строк', value: money('439 742 KZT') }],
     ])
     expect(views.every((view) => view.needsAdminHint)).toBe(true)
     expect(views[1].items.every((item) => item.valueText.endsWith('KZT'))).toBe(true)
     expect(kzt.items).toHaveLength(views[1].items.length)
   })
   it('explains the difference between the sum of receipts and the sum of lines', () => {
-    expect(differenceText(eur)).toBe(`Сумма чеков — ${money('13 041,07 EUR')}, сумма строк — ${money('13 083,66 EUR')}, разница — ${money('-42,59 EUR')}. `
+    expect(differenceText(eur)).toBe(`Сумма чеков — ${money('13 042 EUR')}, сумма строк — ${money('13 084 EUR')}, разница — ${money('-43 EUR')}. `
       + 'Разница — это скидки на весь чек, налог сверх цен и округление: по строкам они не распределяются.')
     const store = read('spending-store.json').currencies[0]
-    expect(differenceText(store)).toBe(`Сумма чеков совпадает с суммой строк: ${money('13 041,07 EUR')}.`)
+    expect(differenceText(store)).toBe(`Сумма чеков совпадает с суммой строк: ${money('13 042 EUR')}.`)
     const filtered = read('spending-generic-filter.json').currencies[0]
     expect(differenceText(filtered)).toContain('считаются только строки сопоставленных товаров')
-    expect(blockView(filtered, 'product', { generic: 1, group_by: 'product' }).total).toEqual({ label: 'Сумма строк товаров', text: money('545,75 EUR') })
+    expect(blockView(filtered, 'product', { generic: 1, group_by: 'product' }).total).toEqual({ label: 'Сумма строк товаров', text: money('546 EUR') })
   })
   it('puts «Прочее» after the regular items and before the special rows', () => {
     const generic = read('spending-generic.json').currencies[0]
     const items = pieItems(generic, 'generic', {})
     expect(items.map((item) => item.key)).toEqual(['generic:15', 'generic:11', 'generic:13', 'generic:3', 'generic:6', 'other', 'unmatched', 'service', 'deposit'])
     expect(items[5]).toEqual({
-      key: 'other', label: 'Прочее', value: 3508.72, tone: 'other', valueText: money('3 508,72 EUR'), shareText: money('26,82 %'),
+      key: 'other', label: 'Прочее', value: 3508.72, tone: 'other', valueText: money('3 509 EUR'), shareText: money('26,82 %'),
       note: 'Ещё 9 обобщённых продуктов с меньшими суммами, одной строкой.',
       action: { label: 'Показать состав', ariaLabel: 'Показать состав „Прочего“, EUR', href: '/stats?other=open', expanded: false },
     })
@@ -107,7 +107,7 @@ describe('spending answer → chart and table rows (server fixtures)', () => {
   it('keeps an item that is not positive for the table only: no share, a value the chart will not draw', () => {
     const refund = read('spending-refund-day.json').currencies[0]
     const [item] = pieItems(refund, 'category', { date_from: '2026-03-14', date_to: '2026-03-14' })
-    expect(item).toMatchObject({ key: 'category:6', value: -7.14, valueText: money('-7,14 EUR'), shareText: '—' })
+    expect(item).toMatchObject({ key: 'category:6', value: -7.14, valueText: money('-8 EUR'), shareText: '—' })
     expect(blockView(refund, 'category', {}).receipts).toBe('1 чек')
   })
   it.each(fixturesOf('spending-'))('%s: rows are unique and their amounts still add up to the sum of lines', (name) => {
@@ -164,7 +164,7 @@ describe('open «Прочее»: the composition under its row', () => {
   it('keeps the row, its sum and its share, renames the note and turns the link', () => {
     const closed = pieItems(short, 'generic', { currency: 'EUR', group_by: 'generic' }).find((item) => item.key === 'other')
     const opened = other(tail)
-    expect(closed).toMatchObject({ valueText: money('6 145,09 EUR'), shareText: money('46,97 %'), note: 'Ещё 12 обобщённых продуктов с меньшими суммами, одной строкой.' })
+    expect(closed).toMatchObject({ valueText: money('6 146 EUR'), shareText: money('46,97 %'), note: 'Ещё 12 обобщённых продуктов с меньшими суммами, одной строкой.' })
     expect(opened).toMatchObject({ key: 'other', label: 'Прочее', tone: 'other', value: closed?.value, valueText: closed?.valueText, shareText: closed?.shareText,
       note: '12 обобщённых продуктов с меньшими суммами.' })
     expect(opened?.action).toEqual({ label: 'Скрыть состав', ariaLabel: 'Скрыть состав „Прочего“, EUR', href: '/stats?currency=EUR&group_by=generic', expanded: true })
@@ -173,13 +173,13 @@ describe('open «Прочее»: the composition under its row', () => {
   })
   it('lists the composition in the order of the server with its own sums, shares, notes and drill-down links', () => {
     expect(other(tail)?.children).toEqual([
-      { key: 'generic:13', label: long.items[2].name, href: '/stats?currency=EUR&group_by=product&generic=13', valueText: money('1 012,70 EUR'), shareText: money('7,74 %'),
+      { key: 'generic:13', label: long.items[2].name, href: '/stats?currency=EUR&group_by=product&generic=13', valueText: money('1 013 EUR'), shareText: money('7,74 %'),
         note: expect.stringMatching(/^\S+ строк\S* · \S+ чек\S*\.$/) },
-      { key: 'generic:3', label: long.items[3].name, href: '/stats?currency=EUR&group_by=product&generic=3', valueText: money('928,99 EUR'), shareText: money('7,10 %'),
+      { key: 'generic:3', label: long.items[3].name, href: '/stats?currency=EUR&group_by=product&generic=3', valueText: money('929 EUR'), shareText: money('7,10 %'),
         note: expect.any(String) },
-      { key: 'generic:6', label: long.items[4].name, href: '/stats?currency=EUR&group_by=product&generic=6', valueText: money('694,68 EUR'), shareText: money('5,31 %'),
+      { key: 'generic:6', label: long.items[4].name, href: '/stats?currency=EUR&group_by=product&generic=6', valueText: money('695 EUR'), shareText: money('5,31 %'),
         note: expect.any(String) },
-      { key: 'rest', label: 'Ещё 9 обобщённых продуктов с меньшими суммами, одной строкой', valueText: money('3 508,72 EUR'), shareText: money('26,82 %'),
+      { key: 'rest', label: 'Ещё 9 обобщённых продуктов с меньшими суммами, одной строкой', valueText: money('3 509 EUR'), shareText: money('26,82 %'),
         note: 'Чтобы увидеть их, сузьте период или откройте категорию.' },
     ])
     // A drill-down from the composition opens the next level closed.
@@ -205,7 +205,7 @@ describe('open «Прочее»: the composition under its row', () => {
   it('names the remainder and its hint by the breakdown, in Russian plurals', () => {
     const rest = (groupBy: SpendingGroupBy, count: number) => tailChildren(short, groupBy, {}, { kind: 'ok', items: [], sharesDiffer: false,
       rest: { count, amount: '46.31', share_percent: '0.42' } })[0]
-    expect(rest('product', 20)).toEqual({ key: 'rest', label: 'Ещё 20 товаров с меньшими суммами, одной строкой', valueText: money('46,31 EUR'), shareText: money('0,42 %'),
+    expect(rest('product', 20)).toEqual({ key: 'rest', label: 'Ещё 20 товаров с меньшими суммами, одной строкой', valueText: money('47 EUR'), shareText: money('0,42 %'),
       note: 'Чтобы увидеть их, сузьте период или откройте обобщённый продукт.' })
     expect(rest('product', 1).label).toBe('Ещё 1 товар с меньшими суммами, одной строкой')
     expect(rest('generic', 2).label).toBe('Ещё 2 обобщённых продукта с меньшими суммами, одной строкой')
@@ -220,7 +220,7 @@ describe('open «Прочее»: the composition under its row', () => {
     const rows = tailChildren(block, 'store', { group_by: 'store' }, whole)
     expect(rows.map((row) => [row.key, row.label, row.href])).toEqual([['store:2', 'Beispielkorb · Beispielhausen · DE · ID 2', undefined]])
     const refund: TailView = { kind: 'ok', rest: null, sharesDiffer: true, items: [{ ...long.items[4], amount: '-22.66', share_percent: null } as SpendingTailItem] }
-    expect(tailChildren(short, 'generic', query, refund)[0]).toMatchObject({ valueText: money('-22,66 EUR'), shareText: '—' })
+    expect(tailChildren(short, 'generic', query, refund)[0]).toMatchObject({ valueText: money('-23 EUR'), shareText: '—' })
   })
   it('keeps the «Не разобрано» hint for a row of the composition and for the note under the block', () => {
     const unassigned: TailView = { kind: 'ok', rest: null, sharesDiffer: false, items: [{ ...long.items[4], unassigned: true } as SpendingTailItem] }

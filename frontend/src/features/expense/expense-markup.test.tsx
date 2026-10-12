@@ -60,7 +60,8 @@ describe('«Добавить трату» form (Vitest/SSR, not browser visual a
     expect(html).toContain('Категория позиций без своей')
     expect(html.match(/expense-lines-1-amount-error/g)).toHaveLength(2)
     expect(html).toContain('aria-label="Убрать позицию 3"')
-    expect(html).toContain('350,50')
+    // The exact sum stays in the field; the summary next to it shows whole units, rounded up.
+    expect(html).toMatch(/class="expense-sum receipt-number">351.KZT</)
   })
   it('leads «Отмена» of an edit back to the spend', () => {
     expect(form(emptyDraft('KZT', '2026-10-12'), { receiptId: 90, saving: true })).toContain('href="/receipts/90"')

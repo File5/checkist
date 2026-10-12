@@ -8,6 +8,8 @@
 .action-link.receipt-primary:hover { background: var(--ck-brand-hover); border-color: var(--ck-brand-hover); color: var(--ck-on-brand); }
 .action-link.receipt-primary:active { background: var(--ck-brand-active); border-color: var(--ck-brand-active); color: var(--ck-on-brand); }
 .receipt-secondary { background: var(--ck-surface); border-color: var(--ck-border-field); color: var(--ck-link); }
+/* «Удалить и фото» in the inline confirmation of a deletion: the whole label is the touch target. */
+.receipt-delete-photo { display: flex; align-items: center; gap: 8px; min-height: 44px; }
 .receipt-secondary:hover:not(:disabled) { background: var(--ck-surface-raised); }
 .receipt-filter-grid, .receipt-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .receipt-field { display: grid; gap: 6px; min-width: 0; }

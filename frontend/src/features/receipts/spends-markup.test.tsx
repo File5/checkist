@@ -28,11 +28,11 @@ describe('«Траты» on a phone (Vitest/SSR, not browser visual acceptance)'
     const html = renderToStaticMarkup(<SpendDays receipts={rows} today="2026-10-12" showOwner />)
     expect(html.match(/<h3>[^]*?<\/h3>/g)).toEqual([
       '<h3><time dateTime="2026-10-12">Сегодня</time></h3>', `<h3><time dateTime="2026-10-11">Вчера, 11${NBSP}окт</time></h3>`])
-    expect(html).toContain(`<span class="spends-day-sum">20${NBSP}000,00${NBSP}KZT</span>`)
-    expect(html).toContain(`<span class="spends-day-sum">2,38${NBSP}EUR</span>`)
+    expect(html).toContain(`<span class="spends-day-sum">20${NBSP}000${NBSP}KZT</span>`)
+    expect(html).toContain(`<span class="spends-day-sum">3${NBSP}EUR</span>`)
     expect(html.match(/<a class="spends-row" href="\/receipts\/\d+">/g)).toHaveLength(3)
     expect(html).toContain(`<span class="spends-row-title">Magnum</span><span class="spends-row-meta">Продукты · Лиза · 23${NBSP}позиции</span>`)
-    expect(html).toContain(`<span class="spends-row-amount">18${NBSP}940,00${NBSP}KZT</span>`)
+    expect(html).toContain(`<span class="spends-row-amount">18${NBSP}940${NBSP}KZT</span>`)
     // A spend without a place is titled by its first line and says it has no receipt only to a screen reader.
     expect(html).toContain('<span class="spends-row-title">Такси<span class="spends-hidden"> (трата без чека)</span></span>')
   })
