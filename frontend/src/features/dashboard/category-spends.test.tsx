@@ -47,7 +47,7 @@ describe('«Траты категории» rules', () => {
   })
   it('shows the whole receipt only when it has other categories too', () => {
     expect(wholeReceipt(item(), 'KZT')).toBeUndefined()
-    expect(wholeReceipt(item({ category_amount: '500.40', receipt_total: '12500.00' }), 'KZT')).toBe(`из ${nb('12 500 KZT')} по чеку`)
+    expect(wholeReceipt(item({ category_amount: '500.40', receipt_total: '12500.00' }), 'KZT')).toBe(`из ${nb('12 500 ₸')} по чеку`)
   })
   it('measures a part against the total and lists lines that say more than the row', () => {
     expect(partShare({ amount: '16000.00' }, '24500.40')).toBe(65)
@@ -94,7 +94,7 @@ describe('«Траты категории» markup (Vitest/SSR, not browser visu
     expect(html).toContain('<a class="dash-month-step" aria-label="Предыдущий месяц" href="/spends/category/51?month=2026-09">‹</a>')
     expect(html).not.toContain('Следующий месяц')
     expect(view(fixture(), '2026-11')).toContain('href="/spends/category/51?month=2026-11">›</a>')
-    expect(html).toContain(`<p class="dash-total ck-hero-figure">${nb('24 501 KZT')}</p>`)
+    expect(html).toContain(`<p class="dash-total ck-hero-figure">${nb('24 501 ₸')}</p>`)
     expect(html.match(/ck-hero-figure/g)).toHaveLength(1)
   })
   it('breaks the total down by sub-category, each a link one level deeper', () => {
@@ -107,9 +107,9 @@ describe('«Траты категории» markup (Vitest/SSR, not browser visu
     const html = view()
     expect(html).toContain('<a class="cat-spend-row" href="/receipts/812"><span class="cat-spend-main"><span class="cat-spend-title">Steam</span><span class="cat-spend-note">Steam purchase</span>')
     expect(html).toContain(`<time dateTime="2026-10-09">${nb('9 октября')}</time> · Выписка Kaspi Gold · Андрей`)
-    expect(html).toContain(`<span class="ck-figures">${nb('501 KZT')}</span><span class="cat-spend-whole">из ${nb('12 500 KZT')} по чеку</span>`)
+    expect(html).toContain(`<span class="ck-figures">${nb('501 ₸')}</span><span class="cat-spend-whole">из ${nb('12 500 ₸')} по чеку</span>`)
     expect(html).toContain('<details class="cat-spend-lines"><summary>Позиции: 2</summary>')
-    expect(html).toContain(`<li class="ck-leader"><span class="cat-spend-line-name">Карты UNO<span class="cat-spend-line-category"> · Игры</span></span><span class="ck-figures">${nb('400 KZT')}</span></li>`)
+    expect(html).toContain(`<li class="ck-leader"><span class="cat-spend-line-name">Карты UNO<span class="cat-spend-line-category"> · Игры</span></span><span class="ck-figures">${nb('400 ₸')}</span></li>`)
     // A spend of one line from a statement needs no list of lines.
     expect(html.match(/cat-spend-lines/g)).toHaveLength(1)
   })

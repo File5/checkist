@@ -71,7 +71,7 @@ describe('«Выгрузка» markup (Vitest/SSR, not browser visual acceptance
   it('says what will be exported in figures and links the file', () => {
     const html = render()
     expect(html).toContain('<p class="export-preview" aria-live="polite"><span>Будет выгружено: </span><span class="ck-figures">2 чека</span>')
-    expect(html).toContain('<span class="ck-figures">5 790 KZT</span>')
+    expect(html).toContain('<span class="ck-figures">5 790 ₸</span>')
     expect(html).toContain('<div class="export-actions ck-action-bar">')
     expect(html).toContain('href="/api/export/?from=2026-10-01&amp;to=2026-10-31&amp;include=receipts%2Clines%2Ccategories%2Cstores%2Climits%2Csummary&amp;download=1" download="">Скачать JSON</a>')
     expect(html).toContain('target="_blank" rel="noopener">Открыть</a>')

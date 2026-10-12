@@ -48,13 +48,20 @@ export function formatCentsNumber(cents: bigint): string {
   return wholeText(centsWholeUnits(cents))
 }
 
-/** «9 822 KZT»: the number and its currency never break apart; without a currency only the number. */
-export function formatMoney(value: Decimal | null | undefined, currency: string | null | undefined): string {
-  const number = formatMoneyNumber(value)
-  return number === missing ? missing : glue(number, currency ?? '')
+const SYMBOLS: Record<string, string> = { KZT: '₸', RUB: '₽', USD: '$', EUR: '€', GBP: '£', CNY: '¥', TRY: '₺' }
+
+/** «₸» for KZT: the sign people write after an amount; a code without a common sign stays a code (UZS, KGS, AED). */
+export function currencySymbol(currency: string | null | undefined): string {
+  return currency ? SYMBOLS[currency] ?? currency : ''
 }
 
-/** «1 501 KZT» for 150050n cents. */
+/** «9 822 ₸»: the number and its currency sign never break apart; without a currency only the number. */
+export function formatMoney(value: Decimal | null | undefined, currency: string | null | undefined): string {
+  const number = formatMoneyNumber(value)
+  return number === missing ? missing : glue(number, currencySymbol(currency))
+}
+
+/** «1 501 ₸» for 150050n cents. */
 export function formatCents(cents: bigint, currency: string | null | undefined): string {
-  return glue(formatCentsNumber(cents), currency ?? '')
+  return glue(formatCentsNumber(cents), currencySymbol(currency))
 }

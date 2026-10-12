@@ -113,9 +113,9 @@
      --ck-radius-pill      999px: чип, текущий пункт меню, страница пагинации
      --ck-font-body        Manrope (Google Fonts, display=swap), затем system-ui
      --ck-font-display     заголовки и вывеска: тот же Manrope
-     --ck-font-figures     цифры денег, количеств и цен: JetBrains Mono 500–600
+     --ck-font-figures     цифры денег, количеств и цен: Manrope 700 с tabular-nums (артефакт 2026-10-13)
                            (Google Fonts, кириллица); только через .ck-figures
-     --ck-font-display-figures  сумма-герой (одна на экран): Unbounded 600;
+     --ck-font-display-figures  сумма-герой (одна на экран): Manrope 800;
                            только через .ck-hero-figure
    Шкала размеров текста (мобильный дизайн 2026-10-12; font-size меняется
    только этими токенами): --ck-text-xs 13px · -sm 15px · -base 16px (и не
@@ -232,6 +232,13 @@
   --ck-accent-text: #f0c24b;
   --ck-accent-bg: #3a2e12;
 
+  /* Главное действие (артефакт 2026-10-13): «＋», «Сохранить», «Снять чек» — в тёмной золото, в светлой красный. */
+  --ck-primary: #f0c24b;
+  --ck-primary-hover: #ffd45e;
+  --ck-on-primary: #2a1b16;
+  --ck-card-shadow: none;
+  --ck-fab-shadow: 0 6px 16px #00000080;
+  --ck-nav-bg: #1f1a17;
   --ck-link: #f0c24b;
   --ck-link-hover: #ffd97a;
 
@@ -300,8 +307,8 @@
   --ck-radius-pill: 999px;
   --ck-font-body: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
   --ck-font-display: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --ck-font-figures: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  --ck-font-display-figures: "Unbounded", "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --ck-font-figures: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --ck-font-display-figures: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
   --ck-text-xs: 0.8125rem;
   --ck-text-sm: 0.9375rem;
   --ck-text-base: 1rem;
@@ -355,6 +362,12 @@
   --ck-accent-text: #7a5600;
   --ck-accent-bg: #f8e7b4;
 
+  --ck-primary: #b01212;
+  --ck-primary-hover: #8f0e0e;
+  --ck-on-primary: #ffffff;
+  --ck-card-shadow: 0 1px 2px #2a1b1614;
+  --ck-fab-shadow: 0 6px 16px #b0121255;
+  --ck-nav-bg: #fffaf0;
   --ck-link: #9b1414;
   --ck-link-hover: #6f0d0d;
 
@@ -435,10 +448,10 @@
    ========================================================================== */
 
 /* Цифры денег, количеств и цен: голос кассовой ленты. Только для значений, не для текста. */
-.ck-figures { font-family: var(--ck-font-figures); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ck-figures { font-family: var(--ck-font-figures); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* Сумма-герой: не больше одной на экран. На узком окне уменьшается вместе с ним (10vw), но не выше шкалы. */
-.ck-hero-figure { font-family: var(--ck-font-display-figures); font-size: min(var(--ck-text-hero), 10vw); font-weight: 600; line-height: 1.1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ck-hero-figure { font-family: var(--ck-font-display-figures); font-size: min(var(--ck-text-hero), 10vw); font-weight: 800; line-height: 1.1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* Точечная выноска «Молоко ……… 450 ₸» в строке flex: точки встают перед последним ребёнком (суммой).
    Точки — декор цветом вторичного текста; имя переносится, сумма — никогда. */

@@ -104,8 +104,8 @@ describe('price history cards against the table on the same data (SSR in Node, n
     const { cards, html } = cardsOf([foreign])
     expect(cards[0].title).toBe('ID 7 · Учебный магазин · DE · адрес неизвестен')
     expect(cards[0].facts.map((fact) => [fact.label, text(fact.value)])).toEqual([
-      ['Дата', '04.10.2026'], ['До скидки', '1,10\u00a0EUR/шт'], ['После скидки', '1,20\u00a0EUR/шт'],
-      ['За базовую единицу', '1,30\u00a0EUR/л'], ['Покупка', 'Чужая'],
+      ['Дата', '04.10.2026'], ['До скидки', '1,10\u00a0€/шт'], ['После скидки', '1,20\u00a0€/шт'],
+      ['За базовую единицу', '1,30\u00a0€/л'], ['Покупка', 'Чужая'],
     ])
     expect(cards[0].facts[0].value).toBe('<time dateTime="2026-10-04">04.10.2026</time>')
     for (const absent of ['<a ', '/receipts/', 'Моя', 'Чек', 'product-subtext', 'UTC', 'null']) expect(html).not.toContain(absent)
@@ -127,11 +127,11 @@ describe('price history cards against the table on the same data (SSR in Node, n
       }
     }
     // Prices are in the figures font of the money; words and dates are not.
-    expect(cards[0].facts[1].value).toBe('<span class="ck-figures">0,00\u00a0EUR/шт</span>')
+    expect(cards[0].facts[1].value).toBe('<span class="ck-figures">0,00\u00a0€/шт</span>')
     expect(cards[0].facts[3].value).toBe('<span class="product-cell-text">Нет данных для пересчёта</span>'
       + '<span class="product-subtext product-cell-text">Не сопоставимо с базовой единицей товара</span>')
     // Two decimals of a unit price, the actual normalized unit.
-    expect(cards[2].facts.map((fact) => fact.value).slice(2, 4)).toEqual(['<span class="ck-figures">130,59\u00a0EUR/шт</span>', '<span class="ck-figures">12,35\u00a0EUR/м</span>'])
+    expect(cards[2].facts.map((fact) => fact.value).slice(2, 4)).toEqual(['<span class="ck-figures">130,59\u00a0€/шт</span>', '<span class="ck-figures">12,35\u00a0€/м</span>'])
   })
 
   it('tells identical chain points apart by the store in the heading', () => {

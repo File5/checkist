@@ -1,5 +1,6 @@
 import { isISODate, isISODateTime } from '../api/schema.ts'
 import type { CurrencyCode, Decimal, ISODate, ISODateTime, Unit } from '../api/types.ts'
+import { currencySymbol } from './money.ts'
 
 const missing = '—'
 const space = '\u00a0'
@@ -31,7 +32,7 @@ export function formatPrice(value: Decimal | null, currency: CurrencyCode, unit?
     const precise = decimal(value, 4)
     if (precise !== '0') number = precise
   }
-  return number === missing ? missing : `${number}${space}${currency}${unit == null ? '' : `/${formatUnit(unit)}`}`
+  return number === missing ? missing : `${number}${space}${currencySymbol(currency)}${unit == null ? '' : `/${formatUnit(unit)}`}`
 }
 export function formatQuantity(value: Decimal | null, unit?: Unit | null): string {
   const number = decimal(value, 3)

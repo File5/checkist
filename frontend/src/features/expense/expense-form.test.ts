@@ -130,11 +130,11 @@ describe('the notice after a save', () => {
 describe('the mobile spend form', () => {
   it('names the rounded amount on the save button, the positions sum when there are any', () => {
     expect(saveLabel(emptyDraft('KZT'))).toBe('Сохранить')
-    expect(saveLabel({ ...emptyDraft('KZT'), amount: '12 500,01' })).toBe('Сохранить · 12\u00a0501\u00a0KZT')
+    expect(saveLabel({ ...emptyDraft('KZT'), amount: '12 500,01' })).toBe('Сохранить · 12\u00a0501\u00a0₸')
     expect(saveLabel({ ...emptyDraft('KZT'), amount: '0' })).toBe('Сохранить')
     expect(saveLabel({ ...emptyDraft('kz'), amount: '10' })).toBe('Сохранить · 10')
     const lines = [{ ...newLine(), name: 'Хлеб', amount: '250' }, { ...newLine(), name: 'Сок', amount: '100,5' }]
-    expect(saveLabel({ ...emptyDraft('KZT'), amount: '9', lines })).toBe('Сохранить · 351\u00a0KZT')
+    expect(saveLabel({ ...emptyDraft('KZT'), amount: '9', lines })).toBe('Сохранить · 351\u00a0₸')
   })
   it('chooses «Сегодня», «Вчера» or the calendar, across a month and a year', () => {
     expect(dateChoice('2026-10-12', '2026-10-12')).toBe('today')

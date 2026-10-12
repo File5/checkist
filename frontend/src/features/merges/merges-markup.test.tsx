@@ -262,7 +262,7 @@ describe('purchases of a group', () => {
     expect(html).toContain('<th scope="row">Steinhof PizzaSpezial</th><td class="ck-merge-text">№26: Steinhof PizzaSpezial</td>')
     expect(html).toContain('<td class="ck-merge-text">Добавлена после слияния</td>')
     expect(html).toContain('<time dateTime="2026-10-01">01.10.2026</time>')
-    expect(html).toContain('3,49 EUR'); expect(html).toContain('3,59 EUR'); expect(html).toContain('>4\u00a0EUR<'); expect(html).toContain('1 шт')
+    expect(html).toContain('3,49 €'); expect(html).toContain('3,59 €'); expect(html).toContain('>4\u00a0€<'); expect(html).toContain('1 шт')
     expect(html).toContain('href="/receipts/13">Чек\u00a0№13</a>')
     expect(html).toContain('Musterstadt · DE')
     expect(html).not.toContain('<nav')
@@ -284,7 +284,7 @@ describe('purchases of a group', () => {
       expect(row).not.toContain('Чек\u00a0№')
       expect(row).not.toContain('позиция')
       expect(row).toContain('Demomarkt'); expect(row).toContain('шт')
-      expect(row).toMatch(/<td class="ck-merge-number">[^<]*3,49[^<]*EUR<\/td>/); expect(row).toMatch(/<td class="ck-merge-number">4\u00a0EUR<\/td>/)
+      expect(row).toMatch(/<td class="ck-merge-number">[^<]*3,49[^<]*€<\/td>/); expect(row).toMatch(/<td class="ck-merge-number">4\u00a0€<\/td>/)
     }
     const mine = rows.filter((row) => !row.includes('Чужая покупка'))
     expect(mine[0]).toContain('href="/receipts/9">Чек\u00a0№9</a><span class="ck-merge-subtext">позиция\u00a01</span>')

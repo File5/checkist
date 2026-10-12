@@ -105,7 +105,7 @@ describe('receipt screens (Vitest/SSR, not browser visual acceptance)', () => {
   })
   it('renders canonical receipt, printed line, linked catalog item, discount and tax from backend fixtures', () => {
     const html = renderToStaticMarkup(<ReceiptView {...view} />)
-    for (const text of ['Тестовый магазин', 'Teststrasse 12', '04.10.2026', '14:35', 'Продажа', '3 EUR', '1 EUR', 'MILCH 1 L', '2 шт', '1,29 EUR', '3 EUR', 'Rabatt MILCH', 'НДС 7,00 %', '3 EUR', '1 EUR']) expect(html).toContain(text)
+    for (const text of ['Тестовый магазин', 'Teststrasse 12', '04.10.2026', '14:35', 'Продажа', '3 €', '1 €', 'MILCH 1 L', '2 шт', '1,29 €', '3 €', 'Rabatt MILCH', 'НДС 7,00 %', '3 €', '1 €']) expect(html).toContain(text)
     expect(html).toContain('href="/catalog/products/61"')
     expect(html).toContain('href="/recognition/jobs/31"')
     expect(html).toContain('href="#receipt-line-101"')
@@ -128,7 +128,7 @@ describe('receipt screens (Vitest/SSR, not browser visual acceptance)', () => {
     expect(html).toContain('href="#receipt-line-103"')
     expect(html).toContain('Строка\u00a04 · Услуга')
     expect(html).toContain('Возврат залога')
-    expect(html).toContain('-1 EUR')
+    expect(html).toContain('-1 €')
   })
   it('keeps parent identity visible when a deposit/discount references another page', () => {
     const deposit: Line = { ...lines.results[0], kind: 'deposit', parent_id: 999 }
@@ -190,8 +190,8 @@ describe('receipt screens (Vitest/SSR, not browser visual acceptance)', () => {
     const html = renderToStaticMarkup(<ReceiptHeader receipt={{ ...receipt, operation: 'refund', total: '-2.38', discount_total: '0.00', store: { ...receipt.store!, name: '', address: '' } }} />)
     expect(html.match(/Не распознано/g)).toHaveLength(2)
     expect(html).toContain('Возврат')
-    expect(html).toContain('-3 EUR')
-    expect(html).toContain('0 EUR')
+    expect(html).toContain('-3 €')
+    expect(html).toContain('0 €')
     expect(renderToStaticMarkup(<ReceiptTaxes taxes={[{ ...taxes.results[0], tax_rate: { ...taxes.results[0].tax_rate, kind: 'exempt', rate: null }, tax_code: '' }]} currency="EUR" />)).toContain('Без НДС')
   })
   it('empty unfiltered list invites first upload, filtered list offers reset', () => {
@@ -207,7 +207,7 @@ describe('receipt screens (Vitest/SSR, not browser visual acceptance)', () => {
     const data = { ...(publicFixture('receipts.json') as Page<Receipt>), count: 5, page: 2, pages: 3,
       results: [{ ...receipt, unmatched_products_count: 1, review_required: true }] }
     const html = renderToStaticMarkup(<ReceiptsView query={{ page: 2, q: 'MILCH', date_from: '2026-10-01', date_to: '2026-10-04', operation: 'sale' }} state={{ kind: 'ok', data }} retry={noop} />)
-    for (const text of ['Товары не сопоставлены: 1', 'Данные требуют проверки', '3 EUR', '04.10.2026', 'Строк', 'Страница 2 из 3']) expect(html).toContain(text)
+    for (const text of ['Товары не сопоставлены: 1', 'Данные требуют проверки', '3 €', '04.10.2026', 'Строк', 'Страница 2 из 3']) expect(html).toContain(text)
     expect(html).toContain('href="/receipts/71"')
     expect(html).toContain('alt="Миниатюра чека №71"')
     const nextHref = /<a rel="next" href="([^"]+)"/.exec(html)![1].replaceAll('&amp;', '&')

@@ -28,9 +28,9 @@ describe('signs and signed numbers', () => {
   it.each([['18.71', 1], ['-3.10', -1], ['0.00', 0], ['-0.00', 0], ['0', 0], [null, null], ['abc', null], ['1e3', null]] as const)(
     'reads the sign of %s without a float', (value, sign) => expect(decimalSign(value)).toBe(sign))
   it('marks only a positive value with a plus', () => {
-    expect(plain(signedAmount('8.65', 'EUR'))).toBe('+9 EUR')
-    expect(plain(signedAmount('-3.10', 'EUR'))).toBe('-4 EUR')
-    expect(plain(signedAmount('0.00', 'EUR'))).toBe('0 EUR')
+    expect(plain(signedAmount('8.65', 'EUR'))).toBe('+9 €')
+    expect(plain(signedAmount('-3.10', 'EUR'))).toBe('-4 €')
+    expect(plain(signedAmount('0.00', 'EUR'))).toBe('0 €')
     expect(signedAmount(null, 'EUR')).toBe('—')
     expect(plain(signedPercent('46.23'))).toBe('+46,23 %')
     expect(plain(signedPercent('-12.50'))).toBe('-12,50 %')
@@ -43,8 +43,8 @@ describe('the answer in words (server fixtures)', () => {
   it('names growth, its size and the main cause for the main question of the demo', () => {
     const result = verdict(eur)
     expect(result.kind).toBe('grew')
-    expect(plain(result.headline)).toBe('Средний чек вырос на 19 EUR (+69,27 %): с 28 EUR до 46 EUR.')
-    expect(plain(result.lead)).toBe('Главная причина: стал покупать больше позиций за поход — +9 EUR, 46,23 % изменения.')
+    expect(plain(result.headline)).toBe('Средний чек вырос на 19 € (+69,27 %): с 28 € до 46 €.')
+    expect(plain(result.lead)).toBe('Главная причина: стал покупать больше позиций за поход — +9 €, 46,23 % изменения.')
     expect(result.note).toBeNull()
     expect(result.parts.map((part) => [part.key, part.amount, part.percent, part.phrase, part.against])).toEqual([
       ['quantity', '8.65', '46.23', 'стал покупать больше позиций за поход', false],
@@ -54,8 +54,8 @@ describe('the answer in words (server fixtures)', () => {
   })
   it('picks prices as the main cause where they outweigh quantity (KZT)', () => {
     const result = verdict(kzt)
-    expect(plain(result.headline)).toBe('Средний чек вырос на 4 425 KZT (+144,88 %): с 3 055 KZT до 7 480 KZT.')
-    expect(plain(result.lead)).toBe('Главная причина: выросли цены на те же товары — +2 823 KZT, 63,79 % изменения.')
+    expect(plain(result.headline)).toBe('Средний чек вырос на 4 425 ₸ (+144,88 %): с 3 055 ₸ до 7 480 ₸.')
+    expect(plain(result.lead)).toBe('Главная причина: выросли цены на те же товары — +2 823 ₸, 63,79 % изменения.')
   })
   it('shows quantity and the price per line when no product was bought in both periods', () => {
     const [only] = compare('compare-no-matched-products.json').currencies
@@ -66,14 +66,14 @@ describe('the answer in words (server fixtures)', () => {
     expect(result.note).toBe(noMatchedNote)
     expect(result.note).toContain('рост цен нельзя отделить от смены состава')
     // The largest term has no share from the server, so none is invented.
-    expect(plain(result.lead)).toBe('Главная причина: выросла средняя сумма за одну позицию — +14 EUR.')
+    expect(plain(result.lead)).toBe('Главная причина: выросла средняя сумма за одну позицию — +14 €.')
   })
   it('says there is nothing to compare with when one period has no visits', () => {
     const [only] = compare('compare-one-sided.json').currencies
     const result = verdict(only)
     expect(result.kind).toBe('no-base')
     expect(result.headline).toBe('В базовом периоде походов в KZT нет, поэтому изменение среднего чека посчитать нельзя.')
-    expect(plain(result.lead)).toBe('В текущем периоде: 1 поход, средний чек 7 836 KZT.')
+    expect(plain(result.lead)).toBe('В текущем периоде: 1 поход, средний чек 7 836 ₸.')
     expect(result.parts).toEqual([])
     expect(effectParts(only)).toEqual([])
     expect(decompositionBar(result.parts)).toBeNull()
@@ -83,7 +83,7 @@ describe('the answer in words (server fixtures)', () => {
     const result = verdict({ ...only, base: only.current, current: only.base })
     expect(result.kind).toBe('no-current')
     expect(result.headline).toContain('В текущем периоде походов в KZT нет')
-    expect(plain(result.lead)).toBe('В базовом периоде: 1 поход, средний чек 7 836 KZT.')
+    expect(plain(result.lead)).toBe('В базовом периоде: 1 поход, средний чек 7 836 ₸.')
   })
 })
 
@@ -94,8 +94,8 @@ describe('the answer in words (other signs)', () => {
     })
     const result = verdict(lower)
     expect(result.kind).toBe('fell')
-    expect(plain(result.headline)).toBe('Средний чек снизился на 7 EUR (-14,22 %): с 46 EUR до 40 EUR.')
-    expect(plain(result.lead)).toBe('Главная причина: стал покупать меньше позиций за поход — -4 EUR, 61,54 % изменения.')
+    expect(plain(result.headline)).toBe('Средний чек снизился на 7 € (-14,22 %): с 46 € до 40 €.')
+    expect(plain(result.lead)).toBe('Главная причина: стал покупать меньше позиций за поход — -4 €, 61,54 % изменения.')
     expect(result.parts.map((part) => part.phrase)).toEqual([
       'стал покупать меньше позиций за поход', 'снизились цены на те же товары', 'другой состав покупок: позиции в среднем дешевле',
     ])
@@ -106,7 +106,7 @@ describe('the answer in words (other signs)', () => {
     const result = verdict(mixed)
     expect(result.kind).toBe('grew')
     expect(result.parts.map((part) => [part.key, part.sign, part.against])).toEqual([['quantity', -1, true], ['price', 1, false], ['mix', 1, false]])
-    expect(plain(result.lead)).toBe('Главная причина: выросли цены на те же товары — +6 EUR, 300,00 % изменения.')
+    expect(plain(result.lead)).toBe('Главная причина: выросли цены на те же товары — +6 €, 300,00 % изменения.')
   })
   it('says the terms cancelled out when the receipt did not change', () => {
     const flat = block('0.00', { quantity: '3.00', price: '-3.00', mix: '0.00', quantity_percent: null, price_percent: null, mix_percent: null }, {
@@ -114,7 +114,7 @@ describe('the answer in words (other signs)', () => {
     })
     const result = verdict(flat)
     expect(result.kind).toBe('same')
-    expect(plain(result.headline)).toBe('Средний чек не изменился: 46 EUR в обоих периодах.')
+    expect(plain(result.headline)).toBe('Средний чек не изменился: 46 € в обоих периодах.')
     expect(result.lead).toBe('Слагаемые уравновесили друг друга.')
     expect(result.parts.map((part) => [part.phrase, part.against, part.percent])).toEqual([
       ['стал покупать больше позиций за поход', false, null], ['снизились цены на те же товары', false, null], ['состав покупок на чек не повлиял', false, null],
@@ -133,7 +133,7 @@ describe('the answer in words (other signs)', () => {
   })
   it('omits the percent the server could not give', () => {
     const result = verdict(block('18.71', {}, { change: { avg_receipt: '18.71', avg_receipt_percent: null } }))
-    expect(plain(result.headline)).toBe('Средний чек вырос на 19 EUR: с 28 EUR до 46 EUR.')
+    expect(plain(result.headline)).toBe('Средний чек вырос на 19 €: с 28 € до 46 €.')
   })
 })
 
@@ -190,13 +190,13 @@ describe('price index', () => {
 describe('period cards', () => {
   it('formats the facts of a period from the wire decimals', () => {
     expect(sideFacts(eur.base, 'EUR').map(([label, value]) => [label, plain(value)])).toEqual([
-      ['Походов в магазин', '48 (3,99 в месяц)'], ['Средний чек', '28 EUR'], ['Медианный чек', '28 EUR'],
-      ['Позиций на чек', '11,5'], ['Сумма на позицию', '2,35 EUR'], ['Потрачено всего', '1 297 EUR'],
+      ['Походов в магазин', '48 (3,99 в месяц)'], ['Средний чек', '28 €'], ['Медианный чек', '28 €'],
+      ['Позиций на чек', '11,5'], ['Сумма на позицию', '2,35 €'], ['Потрачено всего', '1 297 €'],
     ])
   })
   it('leaves the averages of a period without visits empty instead of zero', () => {
     const [only] = compare('compare-one-sided.json').currencies
-    expect(sideFacts(only.base, 'KZT').map(([, value]) => plain(value))).toEqual(['0 (0 в месяц)', '—', '—', '—', '—', '0 KZT'])
+    expect(sideFacts(only.base, 'KZT').map(([, value]) => plain(value))).toEqual(['0 (0 в месяц)', '—', '—', '—', '—', '0 ₸'])
   })
   it('mentions excluded refunds only when there are any', () => {
     expect(refundsNote(eur)).toBe('Возвраты в расчёт не входят: в базовом периоде исключено 0, в текущем — 1.')

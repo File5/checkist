@@ -190,8 +190,8 @@ describe('chart series from the server fixtures', () => {
     const [eur] = series('series-month.json').currencies
     const charts = trendCharts(eur)
     expect(charts.receipts.map((item) => [item.key, item.label, item.points.length])).toEqual([['avg', 'Средний чек', 9], ['median', 'Медианный чек', 9]])
-    expect(charts.receipts[0].points[0]).toEqual({ x: '2026-01-01', value: 45.12, valueText: '46\u00a0EUR' })
-    expect(charts.receipts[1].points[0]).toEqual({ x: '2026-01-01', value: 45.85, valueText: '46\u00a0EUR' })
+    expect(charts.receipts[0].points[0]).toEqual({ x: '2026-01-01', value: 45.12, valueText: '46\u00a0€' })
+    expect(charts.receipts[1].points[0]).toEqual({ x: '2026-01-01', value: 45.85, valueText: '46\u00a0€' })
     expect(charts.lines).toHaveLength(1)
     expect(charts.lines[0].points[0]).toEqual({ x: '2026-01-01', value: 14.75, valueText: '14,75' })
   })
@@ -200,8 +200,8 @@ describe('chart series from the server fixtures', () => {
     expect(data.currencies.map((block) => block.currency)).toEqual(['EUR', 'KZT'])
     const [eur, kzt] = data.currencies.map(trendCharts)
     expect(eur.receipts[0].points.map((point) => point.x)).toEqual(data.currencies[0].buckets.map((bucket) => bucket.period_start))
-    expect(eur.receipts[0].points.every((point) => point.valueText.endsWith('EUR'))).toBe(true)
-    expect(kzt.receipts[0].points.every((point) => point.valueText.endsWith('KZT'))).toBe(true)
+    expect(eur.receipts[0].points.every((point) => point.valueText.endsWith('€'))).toBe(true)
+    expect(kzt.receipts[0].points.every((point) => point.valueText.endsWith('₸'))).toBe(true)
   })
   it('gives no charts for an empty answer', () => expect(series('series-empty.json').currencies).toEqual([]))
   it.each([

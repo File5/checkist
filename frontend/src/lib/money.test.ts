@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { centsWholeUnits, formatCents, formatCentsNumber, formatMoney, formatMoneyNumber, moneyWholeUnits } from './money'
+import { centsWholeUnits, formatCents, formatCentsNumber, formatMoney, formatMoneyNumber, moneyWholeUnits, currencySymbol } from './money'
 
 const n = ' '
 
@@ -14,7 +14,9 @@ describe('money is shown in whole units, rounded up', () => {
   })
 
   it('glues the currency and keeps an absent or malformed value as a dash', () => {
-    expect(formatMoney('4500', 'KZT')).toBe(`4${n}500${n}KZT`)
+    expect(formatMoney('4500', 'KZT')).toBe(`4${n}500${n}₸`)
+    expect(formatMoney('4500', 'UZS')).toBe(`4${n}500${n}UZS`)
+    expect(currencySymbol('USD')).toBe('$')
     expect(formatMoney('4499.10', '₸')).toBe(`4${n}500${n}₸`)
     expect(formatMoney('12.3', '')).toBe('13')
     expect(formatMoney('12.3', undefined)).toBe('13')
@@ -33,6 +35,6 @@ describe('money is shown in whole units, rounded up', () => {
     expect(centsWholeUnits(-200n)).toBe(-2n)
     expect(formatCentsNumber(28745000n)).toBe(`287${n}450`)
     expect(formatCentsNumber(150050n)).toBe(`1${n}501`)
-    expect(formatCents(-1n, 'KZT')).toBe(`-1${n}KZT`)
+    expect(formatCents(-1n, 'KZT')).toBe(`-1${n}₸`)
   })
 })

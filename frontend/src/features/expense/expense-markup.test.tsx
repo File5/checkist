@@ -62,11 +62,11 @@ describe('«Добавить трату» form (Vitest/SSR, not browser visual a
     expect(html.match(/expense-lines-1-amount-error/g)).toHaveLength(2)
     expect(html).toContain('aria-label="Убрать позицию 3"')
     // The exact sum stays in the field; the summary next to it shows whole units, rounded up.
-    expect(html).toContain('<button type="submit" class="expense-save">Сохранить · 351\u00a0KZT</button>')
+    expect(html).toContain('<button type="submit" class="expense-save">Сохранить · 351\u00a0₸</button>')
   })
   it('names the rounded amount on the save button, chooses the date by chips and keeps the calendar', () => {
     const html = form({ ...emptyDraft('KZT', '2026-10-11'), amount: '4500,40' }, { today: '2026-10-12' })
-    expect(html).toContain('<button type="submit" class="expense-save">Сохранить · 4\u00a0501\u00a0KZT</button>')
+    expect(html).toContain('<button type="submit" class="expense-save">Сохранить · 4\u00a0501\u00a0₸</button>')
     expect(html).toContain('<button type="button" class="expense-chip" aria-pressed="false">Сегодня</button>')
     expect(html).toContain('<button type="button" class="expense-chip" aria-pressed="true">Вчера</button>')
     expect(html).toContain('<label class="expense-date-chip"><span class="expense-visually-hidden">Дата покупки</span><input id="expense-date" type="date"')

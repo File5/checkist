@@ -287,11 +287,10 @@ describe('theme contract in the files', () => {
   })
 
   it('loads the fonts of figures the same way, with only the weights the design uses', () => {
-    // JetBrains Mono 500–600 for sums, quantities and prices; Unbounded 600 for the one hero sum of a screen.
-    expect(html).toContain('<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;600&amp;family=Unbounded:wght@600&amp;display=swap" />')
-    expect(html.match(/fonts\.googleapis\.com\/css2/g)).toHaveLength(2)
-    expect(dark).toContain('--ck-font-figures: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;')
-    expect(dark).toContain('--ck-font-display-figures: "Unbounded", "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;')
+    // Artifact design 2026-10-13: figures are Manrope (tabular-nums in .ck-figures), one font request for the page.
+    expect(html.match(/fonts\.googleapis\.com\/css2/g)).toHaveLength(1)
+    expect(dark).toContain('--ck-font-figures: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;')
+    expect(dark).toContain('--ck-font-display-figures: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;')
   })
 
   it('defines the text scale of a phone: 13 / 15 / 16 / 18 / 22 / 40 px', () => {

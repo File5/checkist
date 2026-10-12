@@ -26,7 +26,7 @@ describe('phone view of the catalog (SSR markup and the text of the rules)', () 
     const html = renderToStaticMarkup(<ProductRows products={[product]} />)
     expect(html).toContain('<h3><a class="ck-catalog-row-link" href="/catalog/products/9">Молоко 850 мл</a></h3>')
     expect(html).toMatch(/<p class="ck-catalog-note">Пример · 850\sмл · Молоко<\/p>/u)
-    expect(html).toMatch(/<div class="ck-catalog-row-prices"><p><span class="ck-catalog-price">[^<]*EUR<\/span><span class="ck-catalog-note">DE · <time dateTime="2026-10-04">/)
+    expect(html).toMatch(/<div class="ck-catalog-row-prices"><p><span class="ck-catalog-price">[^<]*€<\/span><span class="ck-catalog-note">DE · <time dateTime="2026-10-04">/)
     const empty: Product = { ...product, brand: null, package: null, prices: [] }
     const bare = renderToStaticMarkup(<ProductRows products={[empty]} />)
     expect(bare).toContain('<p class="ck-catalog-note">Молоко</p>'); expect(bare).toContain('Покупок нет')

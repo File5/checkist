@@ -42,13 +42,13 @@ describe('comparison block (Vitest/SSR, not browser acceptance)', () => {
     expect(eur).toContain('<h4 id="')
     expect(eur).toContain('>EUR</h4>')
     expect(eur).toContain('<div class="stats-verdict" data-kind="grew">')
-    expect(eur).toContain('Средний чек вырос на 19 EUR (+69,27 %): с 28 EUR до 46 EUR.')
-    expect(eur).toContain('Главная причина: стал покупать больше позиций за поход — +9 EUR, 46,23 % изменения.')
-    expect(text(eur)).toContain('+8 EUR (+39,50 % изменения) — выросли цены на те же товары')
-    expect(text(eur)).toContain('+3 EUR (+14,27 % изменения) — другой состав покупок: позиции в среднем дороже')
+    expect(eur).toContain('Средний чек вырос на 19 € (+69,27 %): с 28 € до 46 €.')
+    expect(eur).toContain('Главная причина: стал покупать больше позиций за поход — +9 €, 46,23 % изменения.')
+    expect(text(eur)).toContain('+8 € (+39,50 % изменения) — выросли цены на те же товары')
+    expect(text(eur)).toContain('+3 € (+14,27 % изменения) — другой состав покупок: позиции в среднем дороже')
     // Both periods with their dates and facts.
-    expect(text(eur)).toContain('Базовый период 01.01.2020 — 31.12.2020 Походов в магазин 48 (3,99 в месяц) Средний чек 28 EUR Медианный чек 28 EUR Позиций на чек 11,5 Сумма на позицию 2,35 EUR')
-    expect(text(eur)).toContain('Текущий период 01.01.2026 — 30.09.2026 Походов в магазин 36 (4,01 в месяц) Средний чек 46 EUR Медианный чек 46 EUR Позиций на чек 14,67 Сумма на позицию 3,12 EUR')
+    expect(text(eur)).toContain('Базовый период 01.01.2020 — 31.12.2020 Походов в магазин 48 (3,99 в месяц) Средний чек 28 € Медианный чек 28 € Позиций на чек 11,5 Сумма на позицию 2,35 €')
+    expect(text(eur)).toContain('Текущий период 01.01.2026 — 30.09.2026 Походов в магазин 36 (4,01 в месяц) Средний чек 46 € Медианный чек 46 € Позиций на чек 14,67 Сумма на позицию 3,12 €')
     expect(eur).toContain('Возвраты в расчёт не входят: в базовом периоде исключено 0, в текущем — 1.')
   })
   it('writes a period as two whole dates with one dash that never starts a line', () => {
@@ -69,10 +69,10 @@ describe('comparison block (Vitest/SSR, not browser acceptance)', () => {
     expect(eur).not.toContain('← уменьшает чек')
     const table = eur.split('<table class="stats-table stats-effects-table">')[1].split('</table>')[0]
     expect(table.match(/<tr>/g)).toHaveLength(5)
-    expect(text(table)).toContain('Количество позиций стал покупать больше позиций за поход +9 EUR +46,23 %')
-    expect(text(table)).toContain('Цены на те же товары выросли цены на те же товары +8 EUR +39,50 %')
-    expect(text(table)).toContain('Состав покупок другой состав покупок: позиции в среднем дороже +3 EUR +14,27 %')
-    expect(text(table)).toContain('Изменение среднего чека +19 EUR +69,27 % к базовому чеку')
+    expect(text(table)).toContain('Количество позиций стал покупать больше позиций за поход +9 € +46,23 %')
+    expect(text(table)).toContain('Цены на те же товары выросли цены на те же товары +8 € +39,50 %')
+    expect(text(table)).toContain('Состав покупок другой состав покупок: позиции в среднем дороже +3 € +14,27 %')
+    expect(text(table)).toContain('Изменение среднего чека +19 € +69,27 % к базовому чеку')
     // The words stand on their own line under the number, and the whole column can be left out on a phone.
     expect(table).toContain('<td class="stats-number stats-effect-share">+69,27 % <span class="stats-number-note">к базовому чеку</span></td>')
     expect(table.match(/class="stats-number stats-effect-share"/g)).toHaveLength(5)
@@ -99,7 +99,7 @@ describe('comparison block (Vitest/SSR, not browser acceptance)', () => {
     const products = eur.split('stats-products-table">')[1].split('</table>')[0]
     expect(products).toContain('Показаны 5 из 24 совпавших товаров с наибольшим изменением суммы покупок.')
     expect(products.match(/<a href="\/catalog\/products\/\d+">/g)).toEqual([24, 10, 21, 4, 17].map((id) => `<a href="/catalog/products/${id}">`))
-    expect(text(products)).toContain('Demo Hähnchenbrust 600g 6,17 EUR/шт 7,87 EUR/шт +27,49 % 19 шт 18 шт 118 EUR 142 EUR')
+    expect(text(products)).toContain('Demo Hähnchenbrust 600g 6,17 €/шт 7,87 €/шт +27,49 % 19 шт 18 шт 118 € 142 €')
     expect(products.match(/<th scope="col"/g)).toHaveLength(8)
     // Both wide tables scroll inside a focusable region named by its heading: the terms and the products.
     const regions = [...eur.matchAll(/<div class="stats-table-scroll" role="region" aria-labelledby="([^"]+)" tabindex="0">/g)].map((match) => match[1])
@@ -113,16 +113,16 @@ describe('comparison block (Vitest/SSR, not browser acceptance)', () => {
     expect(markup.match(/<article class="stats-currency"/g)).toHaveLength(2)
     expect(markup).toContain('Валюты не складываются и не пересчитываются')
     expect(markup).toContain('>KZT</h4>')
-    expect(markup).toContain('Средний чек вырос на 4 425 KZT (+144,88 %)')
+    expect(markup).toContain('Средний чек вырос на 4 425 ₸ (+144,88 %)')
     expect(compare(loaded('compare-no-matched-products.json'))).not.toContain('Валюты не складываются')
   })
   it('replaces prices and mix with the price per line when no product matched', () => {
     const markup = compare(loaded('compare-no-matched-products.json'))
-    expect(markup).toContain('Средний чек вырос на 22 EUR (+90,74 %): с 24 EUR до 45 EUR.')
+    expect(markup).toContain('Средний чек вырос на 22 € (+90,74 %): с 24 € до 45 €.')
     expect(markup.match(/<span class="stats-bar-segment stats-effect-([a-z_]+)"/g)).toEqual([
       '<span class="stats-bar-segment stats-effect-quantity"', '<span class="stats-bar-segment stats-effect-price_per_line"',
     ])
-    expect(text(markup)).toContain('Цена позиции (цены и состав вместе) выросла средняя сумма за одну позицию +14 EUR —')
+    expect(text(markup)).toContain('Цена позиции (цены и состав вместе) выросла средняя сумма за одну позицию +14 € —')
     expect(markup).toContain(noMatchedNote)
     expect(markup).not.toContain('Индекс цен')
     expect(markup).not.toContain('stats-products')
@@ -132,7 +132,7 @@ describe('comparison block (Vitest/SSR, not browser acceptance)', () => {
     const markup = compare(loaded('compare-one-sided.json'))
     expect(markup).toContain('<div class="stats-verdict" data-kind="no-base">')
     expect(markup).toContain('В базовом периоде походов в KZT нет, поэтому изменение среднего чека посчитать нельзя.')
-    expect(markup).toContain('В текущем периоде: 1 поход, средний чек 7 836 KZT.')
+    expect(markup).toContain('В текущем периоде: 1 поход, средний чек 7 836 ₸.')
     expect(text(markup)).toContain('Походов в магазин 0 (0 в месяц) Средний чек — Медианный чек —')
     expect(markup).not.toMatch(/<table|stats-bar|Индекс цен/)
   })
@@ -145,8 +145,8 @@ describe('comparison block (Vitest/SSR, not browser acceptance)', () => {
     expect(markup).toContain('<span class="stats-bar-segment stats-effect-quantity" data-sign="negative" style="width:41.67%" title="Количество позиций"></span><span class="stats-bar-zero"></span>')
     expect(markup).toContain('← уменьшает чек')
     expect(markup).toContain('<span class="stats-swatch stats-effect-quantity" data-sign="negative" aria-hidden="true"></span>')
-    expect(text(markup)).toContain('-5 EUR (-250,00 % изменения) — стал покупать меньше позиций за поход, против общего изменения')
-    expect(text(markup)).toContain('стал покупать меньше позиций за поход — действует против общего изменения -5 EUR -250,00 %')
+    expect(text(markup)).toContain('-5 € (-250,00 % изменения) — стал покупать меньше позиций за поход, против общего изменения')
+    expect(text(markup)).toContain('стал покупать меньше позиций за поход — действует против общего изменения -5 € -250,00 %')
   })
 
   it('keeps the heading as the focus target in every state', () => {
@@ -204,7 +204,7 @@ describe('chart block (Vitest/SSR, not browser acceptance)', () => {
       'role="group" aria-label="Средний и медианный чек, KZT"', 'role="group" aria-label="Позиций на чек"',
     ])
     expect(markup.match(/<svg class="ck-line-svg"/g)).toHaveLength(4)
-    expect(text(markup)).toContain('2020 28 EUR 28 EUR')
+    expect(text(markup)).toContain('2020 28 € 28 €')
     expect(markup).toContain('Вертикальная ось: EUR.')
     expect(markup).toContain('Возвраты в график не входят: исключено 1.')
     expect(markup.match(/Возвраты в график/g)).toHaveLength(1)
@@ -228,7 +228,7 @@ describe('chart block (Vitest/SSR, not browser acceptance)', () => {
   })
   it('names months in the table of a monthly chart', () => {
     const markup = trend({ kind: 'ok', data: seriesFixture('series-month.json') })
-    expect(text(markup)).toContain('январь 2026 46 EUR 46 EUR')
+    expect(text(markup)).toContain('январь 2026 46 € 46 €')
     expect(markup).not.toContain('Валюты не складываются')
   })
   it('switches the interval with links that keep the periods and marks the current one', () => {

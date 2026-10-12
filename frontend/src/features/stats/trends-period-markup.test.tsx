@@ -59,10 +59,10 @@ describe('«Месяц к месяцу» with every month of the period', () => 
   it('gives every row all six months, the sum and the average; the line starts at the first month with spending', () => {
     const [rent, utilities, osi] = monthRows(realBlock(), { from: '2026-05', to: '2026-10' })
     expect(rent.months.map((cell) => [cell.month, cell.amount.replace(/\s/g, ' '), cell.badge?.text.replace(/\s/g, ' ') ?? null])).toEqual([
-      ['2026-05', '0 KZT', null], ['2026-06', '200 000 KZT', null], ['2026-07', '220 000 KZT', '+10,00 %'],
-      ['2026-08', '220 000 KZT', '0,00 %'], ['2026-09', '220 000 KZT', '0,00 %'], ['2026-10', '220 000 KZT', '0,00 %'],
+      ['2026-05', '0 ₸', null], ['2026-06', '200 000 ₸', null], ['2026-07', '220 000 ₸', '+10,00 %'],
+      ['2026-08', '220 000 ₸', '0,00 %'], ['2026-09', '220 000 ₸', '0,00 %'], ['2026-10', '220 000 ₸', '0,00 %'],
     ])
-    expect([rent.total, rent.average].map((value) => value.replace(/\s/g, ' '))).toEqual(['1 080 000 KZT', '180 000 KZT'])
+    expect([rent.total, rent.average].map((value) => value.replace(/\s/g, ' '))).toEqual(['1 080 000 ₸', '180 000 ₸'])
     expect(rent.values).toHaveLength(5)
     expect(rent.sparkFrom?.replace(/\s/g, ' ')).toBe('с июня 2026')
     expect(utilities.values).toHaveLength(6)
@@ -81,7 +81,7 @@ describe('«Месяц к месяцу» with every month of the period', () => 
     const rent = cards.slice(cards.indexOf('Аренда'), cards.indexOf('Коммунальные услуги'))
     expect(rent.indexOf('октябрь 2026')).toBeLessThan(rent.indexOf('май 2026'))
     expect(text(rent)).toContain('с июня 2026')
-    expect(text(rent)).toContain('Итого за период 1 080 000 KZT')
-    expect(text(rent)).toContain('В среднем за месяц 180 000 KZT')
+    expect(text(rent)).toContain('Итого за период 1 080 000 ₸')
+    expect(text(rent)).toContain('В среднем за месяц 180 000 ₸')
   })
 })

@@ -22,14 +22,14 @@ const utilities = tokens.slice(tokens.indexOf('.ck-figures'))
 
 describe('utilities of the mobile design in tokens.css (text of the rules, not rendering)', () => {
   it('draws figures by the figures font, in columns, never broken', () => {
-    expect(rule('.ck-figures', utilities)).toBe('font-family: var(--ck-font-figures); font-variant-numeric: tabular-nums; white-space: nowrap;')
+    expect(rule('.ck-figures', utilities)).toBe('font-family: var(--ck-font-figures); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap;')
   })
 
   it('draws the hero sum by the display figures at the hero size, no wider than the window allows', () => {
     const hero = rule('.ck-hero-figure', utilities)
     expect(hero).toContain('font-family: var(--ck-font-display-figures);')
     expect(hero).toContain('font-size: min(var(--ck-text-hero), 10vw);')
-    expect(hero).toContain('font-weight: 600;')
+    expect(hero).toContain('font-weight: 800;')
     expect(hero).toContain('white-space: nowrap;')
   })
 
