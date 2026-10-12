@@ -302,6 +302,7 @@ def seed_tail_demo():
     from catalog.models import Category, GenericProduct, Product
     from receipts.models import Receipt, ReceiptLine
     from receipts.ownership import local_user
+    from receipts.service_charges import seeded_category_ids
     from stores.models import Country, Currency, Merchant, Store
 
     if not allowed_database(settings.DATABASES["default"]["NAME"]):
@@ -320,9 +321,10 @@ def seed_tail_demo():
         with transaction.atomic():
             if Merchant.objects.filter(tax_id__startswith=TAX_PREFIX).exists():
                 return {"created": False, **summary()}
+            # The categories of reference migrations (service charges, catalog.0003) are not data.
             busy = [
                 model._meta.label for model in (Category, GenericProduct, Product, Merchant, Store, Receipt)
-                if model.objects.exists()
+                if (model.objects.exclude(pk__in=seeded_category_ids()) if model is Category else model.objects).exists()
             ]
             if busy:
                 raise DemoError(f"Stats tail demo data require an empty QA database; found {', '.join(busy)}.")

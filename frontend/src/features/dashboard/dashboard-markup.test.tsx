@@ -42,10 +42,12 @@ describe('«Главная» markup (Vitest/SSR, not browser visual acceptance)'
     expect(html).toContain(`<span class="dash-over">Сверх лимита на <span class="dash-value">${nb('10 000 KZT')}</span></span>`)
     expect(html).not.toContain('dash-days')
   })
-  it('has the two big actions: the camera of «Снять чек» and the form of «Трата»', () => {
+  it('has the big actions: the camera of «Снять чек», the picker of «Из галереи» and the form of «Трата»', () => {
     const actions = between(view(), 'dash-actions', '</div>')
     expect(actions).toContain('<button type="button" class="dash-action dash-action-shot">Снять чек</button>')
     expect(actions).toContain('<input class="ck-quick-shot-input" type="file" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true"/>')
+    expect(actions).toContain('<button type="button" class="dash-action dash-action-spend">Из галереи</button>')
+    expect(actions).toContain('<input class="ck-quick-shot-input" type="file" accept="image/*,.heic,.heif,application/pdf" tabindex="-1" aria-hidden="true"/>')
     expect(actions).toContain('<a class="dash-action dash-action-spend" href="/receipts/new">Трата</a>')
   })
   it('lists the limits by category colour with bars, overspend and categories without a limit', () => {

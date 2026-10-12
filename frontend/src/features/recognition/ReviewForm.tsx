@@ -9,6 +9,7 @@ import { focusAfterAttribute, focusAfterPress, replacedFieldKeepsFocus } from '.
 import { addField, headerField, problemsAt, rowField, storeLabel } from './review-state'
 import type { ReviewEdit, ReviewHeader, ReviewLine, ReviewList, ReviewState, ReviewStore } from './review-state'
 import { useRequest } from './useRequest'
+import { SERVICE_CHARGE_CATEGORY, isServiceCharge } from './service-charge'
 
 const kinds = { product: 'Товар', service: 'Услуга', deposit: 'Залог', deposit_return: 'Возврат залога' }
 const units: Unit[] = ['pcs', 'g', 'kg', 'ml', 'l', 'm']
@@ -210,6 +211,8 @@ export default function ReviewForm({ imageId, state, dispatch, countries, countr
             {rate('lines', line, edit)}
             {input(`${id}.tax_code`, 'Код налога', line.taxCode, (taxCode) => edit({ taxCode }), { max: 8 })}
           </div>
+          {/* Read-only: the server puts such a line into its category on import, the form sends nothing for it. */}
+          {isServiceCharge(line.kind, line.name) && <p className="ck-rec-note">Будет учтено как: {SERVICE_CHARGE_CATEGORY}</p>}
           <button type="button" className="ck-review-secondary" onClick={() => dispatch({ type: 'remove', list: 'lines', key: line.key })}>Удалить строку {index + 1}</button>
         </fieldset></li>
       })}</ol>

@@ -8,7 +8,8 @@
 строкам не распределяется и видна разницей ``receipts_total − lines_paid``.
 
 Категория строки — категория её товара, а у строки без товара — собственная
-``ReceiptLine.category`` (трата, внесённая вручную). Такая строка в разбивке по
+``ReceiptLine.category`` (трата, внесённая вручную, либо строка-услуга обслуживания и
+чаевых — ``receipts.service_charges``). Такая строка в разбивке по
 категориям лежит в своей категории, по обобщённым продуктам и товарам — в особом
 элементе ``no_product``. Чеки без магазина (``store`` NULL) в разбивке по магазинам —
 особый элемент ``no_store``. Строка без товара и без категории — ``unmatched``, как раньше.
@@ -153,8 +154,12 @@ class _Bucket:
 
 
 def _special(row, product):
-    """Особый элемент строки либо ``None`` для строки товара или категории."""
-    if row.kind != _KIND.PRODUCT:
+    """Особый элемент строки либо ``None`` для строки товара или категории.
+
+    Строка-услуга с категорией (обслуживание и чаевые, ``receipts.service_charges``) лежит
+    в своей категории, как трата вручную; без категории — в особом ``service``.
+    """
+    if row.kind != _KIND.PRODUCT and not (row.kind == _KIND.SERVICE and row.category_id is not None):
         return _SPECIAL_KINDS[row.kind]
     return "unmatched" if product is None and row.category_id is None else None
 

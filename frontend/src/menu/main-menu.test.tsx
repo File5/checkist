@@ -37,7 +37,7 @@ describe('markup of the main menu (SSR only: the bar, touches and keys are check
     expect(links(html)).toEqual(['Главная', 'Траты', 'Добавить трату', 'Статистика', ...more])
     // Closed buttons that name the lists they open; no list is a dialog.
     expect(html).toContain('<button type="button" class="main-more-toggle" aria-expanded="false" aria-controls="main-more-list">Ещё</button>')
-    expect(html).toContain('<button type="button" class="main-add-toggle" aria-expanded="false" aria-controls="main-add-list" aria-label="Добавить: снять чек или добавить трату">')
+    expect(html).toContain('<button type="button" class="main-add-toggle" aria-expanded="false" aria-controls="main-add-list" aria-label="Добавить: снять чек, выбрать из галереи или добавить трату">')
     const list = html.split('<div class="main-more-list" id="main-more-list">')[1].split('</div>')[0]
     expect(links(list)).toEqual(more)
     expect(html.match(/id="main-more-list"/g)).toHaveLength(1)
@@ -47,12 +47,17 @@ describe('markup of the main menu (SSR only: the bar, touches and keys are check
     expect(html.match(/<svg[^>]*>/g)).toEqual(['<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false">'])
   })
 
-  it('offers «Снять чек» with the camera field outside of the sheet, and «Добавить трату»', () => {
+  it('offers three actions: «Снять чек» and «Из галереи» with their fields outside of the sheet, and «Добавить трату»', () => {
     const html = render(reader, catalog)
     const add = html.slice(html.indexOf('<div class="main-add">'), html.indexOf('<a href="/stats">'))
-    expect(add).toContain('<div class="main-add-list" id="main-add-list"><button type="button" class="main-add-action">Снять чек</button><a class="main-add-action" href="/receipts/new">Добавить трату</a></div>')
-    // The field stays mounted when the sheet closes: iOS opens the camera only from the press itself.
-    expect(add).toMatch(/<\/div><input class="ck-quick-shot-input" type="file" accept="image\/\*" capture="environment" tabindex="-1" aria-hidden="true"\/><\/div>$/)
+    expect(add).toContain('<div class="main-add-list" id="main-add-list"><button type="button" class="main-add-action">Снять чек</button>'
+      + '<button type="button" class="main-add-action main-add-gallery">Из галереи</button><a class="main-add-action" href="/receipts/new">Добавить трату</a></div>')
+    const sheet = add.split('<div class="main-add-list" id="main-add-list">')[1].split('</div>')[0]
+    expect(sheet.match(/class="main-add-action[^"]*"/g)).toHaveLength(3)
+    // The fields stay mounted when the sheet closes: iOS opens the camera or the picker only from the press itself.
+    // The gallery has no capture, so iOS offers the photo library and Files; a PDF bill is accepted too.
+    expect(add).toMatch(/<\/div><input class="ck-quick-shot-input" type="file" accept="image\/\*" capture="environment" tabindex="-1" aria-hidden="true"\/>/)
+    expect(add).toMatch(/<input class="ck-quick-shot-input" type="file" accept="image\/\*,\.heic,\.heif,application\/pdf" tabindex="-1" aria-hidden="true"\/><\/div>$/)
   })
 
   it('keeps the account link as it was in the header', () => {

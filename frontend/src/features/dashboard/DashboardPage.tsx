@@ -152,6 +152,7 @@ export function DashboardView({ data, today = deviceMonth(), family = data.membe
 
     <div className="dash-actions">
       <QuickShot className="dash-action dash-action-shot" label="Снять чек" />
+      <QuickShot className="dash-action dash-action-spend" source="gallery" label="Из галереи" />
       <Link className="dash-action dash-action-spend" to="/receipts/new">Трата</Link>
     </div>
 
