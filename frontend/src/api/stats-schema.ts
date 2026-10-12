@@ -42,9 +42,9 @@ const spendingShape = object<Spending>({
 })
 export const isSpending: Guard<Spending> = (value): value is Spending => spendingShape(value)
   && distinct(value.currencies)
-  // Regular items are of the requested grouping; a store grouping has no special items.
+  // Regular items are of the requested grouping; a store grouping has only «Без места» among the special ones.
   && value.currencies.every((block) => block.items.every((entry) => entry.kind === value.group_by
-    || (value.group_by !== 'store' && special(entry.kind))))
+    || (value.group_by === 'store' ? entry.kind === 'no_store' : special(entry.kind) && entry.kind !== 'no_store')))
 
 const bucketShape = object<ReceiptBucket>({
   period_start: isISODate, receipts_count: isId, total: amount, avg_receipt: amount, median_receipt: amount,

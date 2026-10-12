@@ -920,13 +920,13 @@ List и detail `/api/recognition/receipt-images/` отдают у **каждог
 
 ### Receipt, Line, Discount, Tax
 
-Receipt содержит ровно `id,owner,store,currency,operation,purchased_on,purchased_at,total,discount_total,prices_include_tax,origin,review_required,lines_count,unmatched_products_count,receipt_images_count,preview_image_url,created_at,updated_at,lines_url,discounts_url,taxes_url,images_url`. `owner` — логин того, кто добавил чек (владельца фото). Store — прежний `api.common.store_object`, без вложенного Merchant. `origin="recognized"` при наличии связанной вырезки, иначе `"legacy/manual"`: это вычисляемый индикатор связи, без новой provenance-модели. Preview — последняя связанная вырезка по created_at/id, при отсутствии null. `review_required` — несопоставленный товар, связанная вырезка needs_review или issues у неуспешной вырезки; замечания успешных вырезок сами по себе review не требуют. Несопоставленный товар может требовать проверки Receipt, хотя импорт и Job уже succeeded. Canonical Receipt не содержит непринятый результат: его смотрят через ReceiptImage.
+Receipt содержит ровно `id,owner,source,store,currency,operation,purchased_on,purchased_at,total,discount_total,prices_include_tax,origin,review_required,lines_count,unmatched_products_count,receipt_images_count,note,preview_image_url,created_at,updated_at,lines_url,discounts_url,taxes_url,images_url`. `owner` — логин того, кто добавил чек (владельца фото). Store — прежний `api.common.store_object`, без вложенного Merchant; `null` — «Без места», бывает только у `source=manual` ([трата без чека](#реализовано-трата-без-чека)). `source` — `photo` (чек с фото и всё прежнее) либо `manual`; `note` — комментарий человека, у чеков с фото пустая строка. `origin="recognized"` при наличии связанной вырезки, иначе `"legacy/manual"`: это вычисляемый индикатор связи, без новой provenance-модели. Preview — последняя связанная вырезка по created_at/id, при отсутствии null. `review_required` — несопоставленный товар, связанная вырезка needs_review или issues у неуспешной вырезки; замечания успешных вырезок сами по себе review не требуют. Несопоставленный товар может требовать проверки Receipt, хотя импорт и Job уже succeeded. Canonical Receipt не содержит непринятый результат: его смотрят через ReceiptImage.
 
 ```json
 {"id":101,"position":1,"kind":"product","parent_id":null,"name":"MILCH 1 L","name_i18n":{},"store_item_code":"M1","barcode":"","quantity":"2.000","unit":"pcs","unit_price":"1.2900","amount":"2.58","discount_amount":"0.20","paid_amount":"2.38","product":{"id":61,"name":"Молоко 1 л"},"matching_status":"matched","tax_rate":{"id":3,"country":"DE","kind":"vat","rate":"7.00"},"tax_code":"A","tax_amount":null,"is_excise":false,"is_marked":false}
 ```
 
-Line.product=null → matching_status=unmatched; ambiguous здесь отсутствует (отдельных draft assignment нет). `name` — напечатанное raw_name, не весь raw_text; `parent_id` — ID строки, legacy position=0 допустима при чтении. name_i18n содержит только строковые значения с ключами языков. paid_amount = amount - discount_amount, без распределения скидки чека и без float, независимо от Decimal-контекста вызывающего кода. В ответах деньги имеют 2 знака, unit_price 4, quantity 3, tax rate 2; неизвестное значение — null. Валюты не смешиваются.
+Line несёт ещё `category` (`{"id","name"}` либо `null`, после `product`) — категорию строки без товара, её задаёт только трата без чека. Строка без товара, но с категорией в `unmatched_products_count` и `review_required` не входит. Line.product=null → matching_status=unmatched; ambiguous здесь отсутствует (отдельных draft assignment нет). `name` — напечатанное raw_name, не весь raw_text; `parent_id` — ID строки, legacy position=0 допустима при чтении. name_i18n содержит только строковые значения с ключами языков. paid_amount = amount - discount_amount, без распределения скидки чека и без float, независимо от Decimal-контекста вызывающего кода. В ответах деньги имеют 2 знака, unit_price 4, quantity 3, tax rate 2; неизвестное значение — null. Валюты не смешиваются.
 
 ```json
 {"id":201,"position":1,"line_id":101,"name":"Rabatt MILCH","amount":"0.20"}
@@ -956,6 +956,7 @@ Line.product=null → matching_status=unmatched; ambiguous здесь отсут
 | 406 | not_acceptable | неподходящий Accept |
 | 409 | job_active / job_terminal / retry_not_allowed | конфликт состояния |
 | 409 | review_unavailable / review_resolved / review_busy / review_invalid | [подтверждение вырезки](#подтверждение-вырезки-needs_review-человеком); у `review_invalid` рядом с `error` есть `issues` |
+| 409 | receipt_read_only | `PATCH` / `DELETE /api/receipts/{id}/` чека с фото ([трата без чека](#реализовано-трата-без-чека)) |
 | 413 | upload_too_large | файл >20 MiB или multipart >21 MiB |
 | 415 | unsupported_media_type | неверный Content-Type тела |
 | 503 | storage_unavailable / database_unavailable | известный отказ хранения; OperationalError/InterfaceError БД только в новых views |
@@ -1478,7 +1479,8 @@ Line.product=null → matching_status=unmatched; ambiguous здесь отсут
 
 - В траты входят **все чеки**, включая возвраты со своим знаком. Значение элемента — `Σ (amount − discount_amount)` его строк. Скидка на весь чек по строкам не распределяется.
 - `group_by=category` без `category` — корневые категории вместе с потомками; с `category=N` — прямые подкатегории `N` плюс элемент самой `N` с `"direct": true` для товаров, лежащих прямо в ней; `parent` — `{"id", "name", "path"}` категории фильтра, иначе `null`.
-- Особые элементы идут после обычных и в «прочее» не сворачиваются: `unmatched` (строки `kind=product` без товара), `service`, `deposit` (залог и возврат тары чистой суммой); у них `id` и `name` — `null`. При `group_by=store` особых элементов нет, значение магазина — `Σ Receipt.total`, у элемента дополнительно `city` и `country`.
+- Особые элементы идут после обычных и в «прочее» не сворачиваются: `unmatched` (строки `kind=product` без товара и без категории строки), `service`, `deposit` (залог и возврат тары чистой суммой), `no_product` (строки трат без чека: без товара, с категорией строки — только при `group_by=generic` и `product`); у них `id` и `name` — `null`. При `group_by=store` из особых бывает только `no_store` — чеки без магазина («Без места»); значение магазина — `Σ Receipt.total`, у элемента магазина дополнительно `city` и `country`.
+- Категория строки — категория её товара, а у строки без товара — `ReceiptLine.category` (трата без чека): при `group_by=category` такая строка лежит в своей категории, фильтр `category` её учитывает (при разбивке по продуктам и товарам — в `no_product`), фильтр `generic` — нет. Эталоны `fixtures/stats/` не менялись: у чеков с фото категории строки нет.
 - `unassigned: true` — у категории и обобщённого продукта «Не разобрано» (туда импорт кладёт новые товары; настоящую категорию назначает человек в админке).
 - `totals.receipts_total` — `Σ Receipt.total`; `lines_paid` — сумма всех элементов и «прочего»; `difference = receipts_total − lines_paid` (скидки на весь чек, налог сверх цен, округление). С фильтром `category` или `generic` считаются только строки сопоставленных товаров: особых элементов нет, `receipts_total` и `difference` — `null`, `receipts_count` — число чеков с такими строками, значение магазина — сумма этих строк.
 - `share_percent` — доля от суммы **положительных** элементов блока (показанных и «прочего»); у элемента с суммой ≤ 0 — `null`.
@@ -1605,6 +1607,34 @@ Line.product=null → matching_status=unmatched; ambiguous здесь отсут
 ### Производительность и откат статистики
 
 Индекса по `purchased_on` нет. Замер на демо-базе (466 чеков, 5604 строки) — [verification.md](verification.md#статистика-серверная-часть-с5): самый медленный запрос — 132 мс при критерии 500 мс, поэтому индекс не добавлялся. На базе существенно больше демо время не измерялось. Откат — revert кода; данных и схемы эндпоинты не меняют.
+
+## Реализовано: трата без чека
+
+Трата без чека (наличные, перевод, счёт) — обычный `Receipt` с `source=manual`: списки, страница чека и статистика читают её той же выборкой. Модель и миграция — [data-model](data-model.md#трата-без-чека); сервис — `backend/receipts/manual.py`, представления — `backend/api/views/receipts.py`.
+
+Доступ — как у `POST` распознавания: `local_single` — `DEBUG` + `ALLOW_LOCAL_RECOGNITION_API=1` + loopback и CSRF, `accounts` — вход и CSRF; владелец новой траты — пользователь запроса, видимость — `owner_q` (чужая трата — `404` тем же телом, что несуществующая). Ответы — `Cache-Control: no-store`, тело запроса — объект JSON до 64 КБ (`Content-Type: application/json`, иначе `415`; пустое или не объект — `400 invalid_request`).
+
+| Метод и путь | Ответ |
+| --- | --- |
+| `GET /api/receipts/manual/` | `200 {"currency", "frequent_categories"}`: валюта последнего чека пользователя (по `purchased_at`, `-id`), без чеков — `KZT`; до 8 id категорий его ручных трат по числу строк |
+| `POST /api/receipts/manual/` | `201` — Receipt в форме `GET /api/receipts/{id}/` |
+| `PATCH /api/receipts/{id}/` | `200` — Receipt; только `source=manual`, иначе `409 receipt_read_only` |
+| `DELETE /api/receipts/{id}/` | `204` без тела; только `source=manual`, иначе `409 receipt_read_only`; строки удаляются вместе с тратой |
+
+Тело (`POST`; у `PATCH` — любые из этих ключей, остальные не меняются):
+
+```json
+{"total": "450", "currency": "KZT", "category": 12, "purchased_on": "2026-10-12", "store_name": "Кофейня", "note": "с другом",
+ "lines": [{"name": "Капучино", "amount": "300", "quantity": "1", "category": 12}]}
+```
+
+- `total` — сумма > 0, строка или число, не больше 12 целых и 2 дробных знаков (запятая допустима). `currency` — существующий код из трёх букв, по умолчанию — как в `GET …/manual/`. `purchased_on` — `ГГГГ-ММ-ДД`, по умолчанию — сегодня в поясе сервера (`TIME_ZONE`). `store_name` — до 100 символов: магазин с такой вывеской или названием без учёта регистра либо новый продавец с магазином (страна по валюте: KZT → KZ, RUB → RU, EUR → DE, иначе KZ); пусто или `null` — «Без места». `note` — до 1000 символов.
+- Без `lines` (или с пустым списком) обязательны `total` и `category`: одна строка «<название категории>» на всю сумму с этой категорией. С `lines` (до 100): у позиции обязательны `name` (до 200 символов) и `amount`, `quantity` > 0 до 3 знаков (по умолчанию 1), `category` — своя, иначе общая `category`, иначе нет (строка тогда — `unmatched`, как несопоставленная строка чека). Итог — сумма позиций; переданный `total` обязан с ней совпасть.
+- Строки ручной траты товаром каталога не сопоставляются: сопоставление импорта идёт по написаниям продавца (`ProductAlias` по `merchant`), а у траты продавца может не быть; новый товар попал бы в «Не разобрано» и спрятал бы выбранную категорию. Строка — `kind=product`, `unit=pcs`, `unit_price = amount / quantity`, `product=null`, `category` — как выше. Операция — всегда `sale`; `purchased_at` — момент сохранения, если дата сегодняшняя в поясе места (без места — сервера), иначе полдень этой даты.
+- `PATCH`: `lines` заменяет все строки (пустой список — снова одна сумма в `category`; без `category` берётся категория единственной прежней строки). Без `lines` у траты из одной строки `total` и `category` меняют эту строку (название «<категория>» следует за категорией); у траты с позициями `total` должен совпасть с их суммой, `category` — `400` (`У траты с позициями категорию задают позициям.`). Смена `purchased_on` пересчитывает `purchased_at`.
+- Ошибки проверки — `400 invalid_parameter` с `fields`: имена — `total`, `currency`, `category`, `purchased_on`, `store_name`, `note`, `lines`, `lines.N.name|amount|quantity|category` (N — индекс в теле) и неизвестные ключи (`Неизвестное поле.`). Сообщения фиксированные, значения запроса в ответ не попадают. При отказе ничего не сохраняется.
+- Три правила дедупликации чека к ручным тратам не применяются (условие `source='photo'` у ограничений, `find_duplicates` их не ищет): две одинаковые траты за день — две траты. Ручная трата не наблюдение цены (`observation_q` — только `source=photo`): история цен, сводки, сравнение и ряды цен её не видят.
+- Списки: `/api/receipts/?q=` ищет также по `note`; фильтры `store` и `country` трату «Без места» не находят. Статистика — как у чека: категория строки, `no_product`, `no_store` ([траты](#get-apistatsspending)); `/api/stats/receipts/*` считают трату походом.
 
 ## Планируется
 

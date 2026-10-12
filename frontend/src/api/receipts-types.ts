@@ -1,13 +1,15 @@
 import type { CurrencyCode, Decimal, ISODate, ISODateTime, NamedObject, PageParams, Store, Unit } from './types.ts'
 
 export type ReceiptOperation = 'sale' | 'refund'
+/** `manual` — a spend without a receipt: no photo, may have no store, editable through the API. */
+export type ReceiptSource = 'photo' | 'manual'
 export type LineKind = 'product' | 'service' | 'deposit' | 'deposit_return'
 export type MatchingStatus = 'matched' | 'unmatched'
 export type TaxKind = 'vat' | 'exempt'
 export type TaxRate = { id: number; country: string; kind: TaxKind; rate: Decimal | null }
 export type Receipt = {
-  /** Username of who added the receipt; members of a family see each other's receipts. */
-  id: number; owner: string; store: Store; currency: CurrencyCode; operation: ReceiptOperation; purchased_on: ISODate; purchased_at: ISODateTime
+  /** `owner` — username of who added the receipt (family members see each other's); `store: null` — «Без места», only for a manual spend. */
+  id: number; owner: string; source: ReceiptSource; store: Store | null; note: string; currency: CurrencyCode; operation: ReceiptOperation; purchased_on: ISODate; purchased_at: ISODateTime
   total: Decimal; discount_total: Decimal; prices_include_tax: boolean; origin: 'recognized' | 'legacy/manual'; review_required: boolean
   lines_count: number; unmatched_products_count: number; receipt_images_count: number; preview_image_url: string | null
   created_at: ISODateTime; updated_at: ISODateTime; lines_url: string; discounts_url: string; taxes_url: string; images_url: string
@@ -15,7 +17,9 @@ export type Receipt = {
 export type Line = {
   id: number; position: number; kind: LineKind; parent_id: number | null; name: string; name_i18n: Record<string, string>
   store_item_code: string; barcode: string; quantity: Decimal; unit: Unit; unit_price: Decimal; amount: Decimal
-  discount_amount: Decimal; paid_amount: Decimal; product: NamedObject | null; matching_status: MatchingStatus
+  discount_amount: Decimal; paid_amount: Decimal; product: NamedObject | null
+  /** The category of a line without a product (a manual spend); a line with a product takes the product's. */
+  category: NamedObject | null; matching_status: MatchingStatus
   tax_rate: TaxRate | null; tax_code: string; tax_amount: Decimal | null; is_excise: boolean; is_marked: boolean
 }
 export type Discount = { id: number; position: number; line_id: number | null; name: string; amount: Decimal }
@@ -25,3 +29,12 @@ export type ReceiptParams = PageParams & {
   date_from?: ISODate; date_to?: ISODate; q?: string; ordering?: 'purchased_at' | '-purchased_at'
 }
 export type ReceiptLineParams = PageParams & { kind?: LineKind; matching?: MatchingStatus }
+
+/** Defaults of the «Добавить трату» form: the currency of the last receipt and the categories of manual spends by use. */
+export type ManualDefaults = { currency: CurrencyCode; frequent_categories: number[] }
+export type ManualLineInput = { name: string; amount: Decimal; quantity?: Decimal; category?: number | null }
+/** Body of `POST /api/receipts/manual/` and of `PATCH /api/receipts/{id}/`. Without lines `total` and `category` are required. */
+export type ManualSpendInput = {
+  total?: Decimal; currency?: CurrencyCode; category?: number | null; purchased_on?: ISODate
+  store_name?: string | null; note?: string; lines?: ManualLineInput[]
+}

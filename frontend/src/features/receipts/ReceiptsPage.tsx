@@ -14,7 +14,8 @@ import { ReceiptBlock } from './ReceiptBlock'
 import ReceiptFilters from './ReceiptFilters'
 import ReceiptMedia from './ReceiptMedia'
 import type { ReceiptRequestState } from './request'
-import { hasFilters, money, ownerShown, receiptParams, recognizedText, recognizedValue } from './state'
+import { hasFilters, money, ownerShown, receiptParams, receiptPlace, recognizedText, recognizedValue } from './state'
+import { ManualMark } from './ManualMark'
 import { useReceiptRequest } from './useReceiptRequest'
 import './Receipts.css'
 
@@ -22,8 +23,10 @@ export function ReceiptList({ receipts, showOwner = false }: { receipts: Receipt
   return <ul className="receipt-list">{receipts.map((receipt) => <li key={receipt.id} className="receipt-list-card">
     {receipt.preview_image_url && <ReceiptMedia url={receipt.preview_image_url} thumbnail alt={`Миниатюра чека №${receipt.id}`} />}
     <div className="receipt-list-content">
-      <h3><Link to={`/receipts/${receipt.id}`}>{recognizedText(receipt.store.name)} · {numbered('чек', receipt.id)}</Link></h3>
-      <p className="receipt-note">{recognizedText(receipt.store.city)} · {recognizedText(receipt.store.address)}</p>
+      <h3><Link to={`/receipts/${receipt.id}`}>{receiptPlace(receipt)} · {numbered(receipt.source === 'manual' ? 'трата' : 'чек', receipt.id)}</Link>
+        {receipt.source === 'manual' && <> <ManualMark /></>}</h3>
+      {receipt.store ? <p className="receipt-note">{recognizedText(receipt.store.city)} · {recognizedText(receipt.store.address)}</p>
+        : receipt.note && <p className="receipt-note">{receipt.note}</p>}
       <dl className="receipt-facts">
         <div><dt>Дата покупки</dt><dd><time dateTime={receipt.purchased_on}>{recognizedValue(formatPurchasedOn(receipt.purchased_on))}</time></dd></div>
         <div><dt>Итог</dt><dd className="receipt-number receipt-total">{money(receipt.total, receipt.currency)}</dd></div>
@@ -47,6 +50,7 @@ export function ReceiptsView({ query, state, retry, showOwner = false }: {
   return <div className="receipts-page">
     <div className="receipt-actions">
       <Link className="action-link receipt-primary" to="/receipts/upload">Загрузить фото</Link>
+      <Link className="action-link receipt-primary" to="/receipts/new">Добавить трату</Link>
       <Link className="action-link" to="/recognition/jobs">Обработка</Link>
     </div>
     <ReceiptFilters query={query} failure={state.kind === 'error' ? state : undefined} />

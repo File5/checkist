@@ -13,7 +13,8 @@ export type StatsPeriod = { date_from: ISODate | null; date_to: ISODate | null }
 
 export const spendingGroupings = ['category', 'generic', 'product', 'store'] as const
 export type SpendingGroupBy = typeof spendingGroupings[number]
-export const spendingSpecialKinds = ['unmatched', 'service', 'deposit'] as const
+/** `no_product` — lines of manual spends by generic product or product; `no_store` — receipts without a store, only by store. */
+export const spendingSpecialKinds = ['unmatched', 'service', 'deposit', 'no_product', 'no_store'] as const
 export type SpendingSpecialKind = typeof spendingSpecialKinds[number]
 export type SpendingParams = StatsFilters & {
   group_by?: SpendingGroupBy

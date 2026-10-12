@@ -68,12 +68,16 @@ export function clearRecognitionCsrf(options: Pick<RequestOptions, 'baseUrl'> = 
   pending?.controller.abort()
 }
 
+/** PATCH and DELETE of a manual spend use the same token; DELETE sends no body and is answered by 204. */
+export type MutationMethod = { method?: 'POST' | 'PATCH' | 'DELETE' }
+
 /** One CSRF-protected POST of the local API, shared by recognition and product merges.
  * `onProgress` moves a multipart body to XMLHttpRequest where it exists: same refusals and session signal, the deadline
  * is «no movement» instead of the total 60 s. Without it, or without XMLHttpRequest (Node), the `fetch` path is unchanged.
  */
 export async function mutate<T>(
   path: string, body: BodyInit, validate: Guard<T>, options: RequestOptions, multipart = false, onProgress?: UploadProgress,
+  write: MutationMethod = {},
 ): Promise<LocalApiResult<T>> {
   if (options.signal?.aborted) return { kind: 'aborted' }
   const key = csrfKey(options)
@@ -88,8 +92,9 @@ export async function mutate<T>(
       { signal: options.signal, headers: { 'X-CSRFToken': token }, successStatuses: [200, 202], onProgress },
       (status, answer) => refuse(status, answer, true))
     : await requestJson(path, {}, validate, options, {
-      local: true, method: 'POST', body, credentials: 'same-origin', timeoutMs: multipart ? 60_000 : 15_000,
-      successStatuses: [200, 202], headers: { 'X-CSRFToken': token, ...(!multipart && { 'Content-Type': 'application/json' }) },
+      local: true, method: write.method ?? 'POST', body: write.method === 'DELETE' ? undefined : body,
+      credentials: 'same-origin', timeoutMs: multipart ? 60_000 : 15_000,
+      successStatuses: [200, 201, 202], emptyStatuses: write.method === 'DELETE' ? [204] : [], headers: { 'X-CSRFToken': token, ...(!multipart && { 'Content-Type': 'application/json' }) },
     })
   // Never replay a mutation implicitly. The next explicit attempt obtains a new token.
   if (result.kind === 'error' && result.reason === 'csrf_failed' && tokens.get(key) === token) tokens.delete(key)

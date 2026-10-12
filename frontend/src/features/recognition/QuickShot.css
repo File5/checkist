@@ -1,18 +1,43 @@
-/* «Снять чек» from any screen: only where there is a camera to hold, above the bottom menu and the gesture strip. */
-.ck-quick-shot { display: none; }
+/* The floating actions from any screen: «Добавить трату» above «Снять чек», only where there is a finger to press them,
+   above the bottom menu and the gesture strip. Elsewhere the stack lays nothing out. */
+.ck-quick-actions { display: contents; }
+.ck-quick-shot, .ck-quick-expense { display: none; }
 /* Out of sight but clickable: iOS Safari does not open a camera for a field with display: none. */
 .ck-quick-shot-input { position: absolute; width: 1px; height: 1px; padding: 0; border: 0; opacity: 0; overflow: hidden; clip-path: inset(50%); pointer-events: none; }
 @media (pointer: coarse) {
-  .ck-quick-shot {
-    display: block;
+  .ck-quick-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 12px;
     position: fixed;
     right: 16px;
     bottom: calc(var(--ck-bottom-occupied) + 16px);
     z-index: var(--ck-z-bottom-nav);
+    /* The stack itself does not catch touches between and beside its buttons. */
+    pointer-events: none;
+  }
+  .ck-quick-actions > button, .ck-quick-actions > a { pointer-events: auto; }
+  .ck-quick-shot {
+    display: block;
     min-height: 56px;
     padding: 0 24px;
     border-radius: 28px;
     box-shadow: 0 4px 16px var(--ck-popover-shadow);
+    white-space: nowrap;
+  }
+  .ck-quick-expense {
+    display: inline-flex;
+    align-items: center;
+    min-height: 48px;
+    padding: 0 20px;
+    border: 1px solid var(--ck-border-field);
+    border-radius: 24px;
+    background: var(--ck-surface);
+    color: var(--ck-link);
+    box-shadow: 0 4px 16px var(--ck-popover-shadow);
+    font-weight: 600;
+    text-decoration: none;
     white-space: nowrap;
   }
 }

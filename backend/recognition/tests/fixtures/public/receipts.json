@@ -7,6 +7,7 @@
     {
       "id": 71,
       "owner": "local",
+      "source": "photo",
       "store": {
         "id": 51,
         "name": "Тестовый магазин",
@@ -27,6 +28,7 @@
       "lines_count": 1,
       "unmatched_products_count": 0,
       "receipt_images_count": 1,
+      "note": "",
       "preview_image_url": "/media/crops/test/crop.png",
       "created_at": "2026-10-04T12:35:00Z",
       "updated_at": "2026-10-04T12:35:00Z",

@@ -31,6 +31,7 @@ describe('fields of a date keep the width of their panel (text of the rules and 
     const found = files.filter((path) => path.endsWith('.tsx') && !path.includes('.test.') && !preview(path))
       .flatMap((path) => [...raw(path).matchAll(written)].map((match) => `${path}: ${match[1] ?? match[2]}`))
     expect(found.sort()).toEqual([
+      'features/expense/ExpensePage.tsx: date',
       'features/product/ProductPage.tsx: date',
       'features/receipts/ReceiptFilters.tsx: date',
       'features/receipts/ReceiptFilters.tsx: date',

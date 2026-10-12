@@ -17,13 +17,17 @@ const counted = (count: number, one: string, few: string, many: string) => `${co
 export const receiptsText = (count: number) => counted(count, 'чек', 'чека', 'чеков')
 const linesText = (count: number) => counted(count, 'строка', 'строки', 'строк')
 
-export const specialLabels = { unmatched: 'Строки без товара', service: 'Услуги', deposit: 'Залог за тару' } as const
+export const specialLabels = {
+  unmatched: 'Строки без товара', service: 'Услуги', deposit: 'Залог за тару', no_product: 'Траты без товара', no_store: 'Без места',
+} as const
 export const otherLabel = 'Прочее'
 export const unassignedHint = 'Категорию и обобщённый продукт товару назначают в админке.'
 const specialNotes = {
   unmatched: 'Строки чеков, не сопоставленные с товаром каталога. Товар строке назначают в админке.',
   service: 'Строки услуг: в категории товаров не входят.',
   deposit: 'Залог и возврат тары, чистой суммой.',
+  no_product: 'Траты, внесённые вручную суммой в категорию: товара каталога у них нет.',
+  no_store: 'Траты, внесённые вручную без места.',
 } as const
 const otherNouns: Record<SpendingGroupBy, [string, string, string]> = {
   category: ['категория', 'категории', 'категорий'], generic: ['обобщённый продукт', 'обобщённых продукта', 'обобщённых продуктов'],
@@ -52,7 +56,7 @@ export function itemKey(item: SpendingItem): string {
 
 export function itemLabel(item: SpendingItem): string {
   switch (item.kind) {
-    case 'unmatched': case 'service': case 'deposit': return specialLabels[item.kind]
+    case 'unmatched': case 'service': case 'deposit': case 'no_product': case 'no_store': return specialLabels[item.kind]
     case 'store': return [item.name, item.city, item.country, `ID ${item.id}`].filter(Boolean).join(' · ')
     case 'category': return item.direct ? `${item.name}: товары без подкатегории` : item.name
     default: return item.name
@@ -63,7 +67,7 @@ function itemNote(item: SpendingItem): string {
   const parts = [linesText(item.lines_count), receiptsText(item.receipts_count)]
   if (item.quantity !== null) parts.push(formatQuantity(item.quantity, item.unit))
   const facts = `${parts.join(' · ')}.`
-  if (item.kind === 'unmatched' || item.kind === 'service' || item.kind === 'deposit') return `${specialNotes[item.kind]} ${facts}`
+  if (item.id === null) return `${specialNotes[item.kind]} ${facts}`
   return item.unassigned ? `${unassignedHint} ${facts}` : facts
 }
 

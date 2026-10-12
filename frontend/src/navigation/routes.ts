@@ -107,6 +107,9 @@ export type NavigableRoute = CatalogRoute
   | { kind: 'health' }
   | { kind: 'receipts'; query: ReceiptsQuery }
   | { kind: 'upload' }
+  /** «Добавить трату» — a spend without a receipt; `expense-edit` changes a manual spend with the same form. */
+  | { kind: 'expense-new' }
+  | { kind: 'expense-edit'; receiptId: number }
   | { kind: 'receipt'; receiptId: number }
   | { kind: 'jobs'; query: JobsQuery }
   | { kind: 'job'; jobId: number }
@@ -424,6 +427,8 @@ export function buildRoute(route: NavigableRoute): string {
     case 'health': return '/health'
     case 'receipts': return `/receipts${buildReceiptsQuery(route.query)}`
     case 'upload': return '/receipts/upload'
+    case 'expense-new': return '/receipts/new'
+    case 'expense-edit': return `/receipts/${buildId(route.receiptId)}/edit`
     case 'receipt': return `/receipts/${buildId(route.receiptId)}`
     case 'jobs': return `/recognition/jobs${buildJobsQuery(route.query)}`
     case 'job': return `/recognition/jobs/${buildId(route.jobId)}`
@@ -447,6 +452,13 @@ export function parseRoute(input: string | URL): Route {
   if (normalizedPath === '/health') return { kind: 'health' }
   if (normalizedPath === '/login') return { kind: 'login' }
   if (normalizedPath === '/receipts/upload') return { kind: 'upload' }
+  if (normalizedPath === '/receipts/new') return { kind: 'expense-new' }
+  const edit = /^\/receipts\/([^/]+)\/edit$/.exec(normalizedPath)
+  if (edit) {
+    let id: number | undefined
+    try { id = positiveInteger(decodeURIComponent(edit[1])) } catch { /* Invalid path encoding. */ }
+    return id === undefined ? { kind: 'not-found', path } : { kind: 'expense-edit', receiptId: id }
+  }
   if (normalizedPath === '/account') return { kind: 'account' }
   // Statistics never answer with invalid-query: a wrong value is dropped and the screen opens without it.
   if (normalizedPath === '/stats') return { kind: 'spending', query: parseSpendingQuery(url.searchParams).query }

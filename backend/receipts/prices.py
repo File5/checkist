@@ -27,7 +27,10 @@ def _price(expression):
 
 
 def observation_q(prefix=""):
-    """Условие «строка — наблюдение цены»: товар, положительное количество, чек продажи.
+    """Условие «строка — наблюдение цены»: товар, положительное количество, чек продажи с фото.
+
+    Трата, внесённая вручную (``source=manual``), наблюдением цены не бывает: у неё может
+    не быть магазина, а сумма — не цена с чека.
 
     ``prefix`` — путь до ``ReceiptLine`` от другой модели, например
     ``"receipt_lines__"`` для запросов от ``catalog.Product``.
@@ -36,6 +39,7 @@ def observation_q(prefix=""):
         f"{prefix}kind": ReceiptLine.Kind.PRODUCT,
         f"{prefix}quantity__gt": 0,
         f"{prefix}receipt__operation": Receipt.Operation.SALE,
+        f"{prefix}receipt__source": Receipt.Source.PHOTO,
     })
 
 

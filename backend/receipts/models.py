@@ -10,9 +10,16 @@ class Receipt(models.Model):
         SALE = "sale", "Продажа"
         REFUND = "refund", "Возврат"
 
+    class Source(models.TextChoices):
+        PHOTO = "photo", "Фото чека"
+        MANUAL = "manual", "Вручную"
+
     # Значения по умолчанию нет: забытый владелец — ошибка, а не тихий local.
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="receipts")
-    store = models.ForeignKey("stores.Store", on_delete=models.PROTECT, related_name="receipts")
+    # NULL — «Без места»: бывает только у траты, внесённой вручную.
+    store = models.ForeignKey("stores.Store", null=True, blank=True, on_delete=models.PROTECT, related_name="receipts")
+    # manual — трата без чека (receipts.manual): к ней не применяются три правила дедупликации.
+    source = models.CharField(max_length=8, choices=Source.choices, default=Source.PHOTO)
     currency = models.ForeignKey("stores.Currency", on_delete=models.PROTECT, related_name="receipts")
     operation = models.CharField(max_length=8, choices=Operation.choices)
     purchased_at = models.DateTimeField()  # момент покупки, хранится в UTC
@@ -30,26 +37,28 @@ class Receipt(models.Model):
     prices_include_tax = models.BooleanField(default=True)
     raw_text = models.TextField(blank=True, default="")
     extra = models.JSONField(default=dict, blank=True)  # кассир, способ оплаты, реклама
+    note = models.TextField(blank=True, default="")  # комментарий человека к трате
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         constraints = [
-            # Три уровня дедупликации, каждый в пределах владельца. Между уровнями ищет
+            # Три уровня дедупликации, каждый в пределах владельца и только у чеков с фото:
+            # две одинаковые ручные траты за день — две траты. Между уровнями ищет
             # receipts.dedup.find_duplicates.
             models.UniqueConstraint(
                 fields=["owner", "fiscal_key"],
-                condition=~Q(fiscal_key=""),
+                condition=~Q(fiscal_key="") & Q(source="photo"),
                 name="receipts_receipt_owner_fiscal_key_uniq",
             ),
             models.UniqueConstraint(
                 fields=["owner", "store", "purchased_on", "shift_number", "register_code", "receipt_number"],
-                condition=~Q(receipt_number=""),
+                condition=~Q(receipt_number="") & Q(source="photo"),
                 name="receipts_receipt_owner_store_number_uniq",
             ),
             models.UniqueConstraint(
                 fields=["owner", "store", "purchased_at", "total"],
-                condition=Q(receipt_number="", fiscal_key=""),
+                condition=Q(receipt_number="", fiscal_key="", source="photo"),
                 name="receipts_receipt_owner_store_time_total_uniq",
             ),
         ]
@@ -97,6 +106,10 @@ class ReceiptLine(models.Model):
     # Пусто, пока товар не сопоставлен.
     product = models.ForeignKey(
         "catalog.Product", null=True, blank=True, on_delete=models.SET_NULL, related_name="receipt_lines",
+    )
+    # Категория строки без товара (трата вручную); у строки с товаром категория — товара.
+    category = models.ForeignKey(
+        "catalog.Category", null=True, blank=True, on_delete=models.PROTECT, related_name="receipt_lines",
     )
     extra = models.JSONField(default=dict, blank=True)
 

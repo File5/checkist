@@ -185,7 +185,7 @@ describe('receipt screens (Vitest/SSR, not browser visual acceptance)', () => {
     expect(fallback).toContain('data-request-retry')
   })
   it('shows unknown text without losing zero money or local timezone/refund', () => {
-    const html = renderToStaticMarkup(<ReceiptHeader receipt={{ ...receipt, operation: 'refund', total: '-2.38', discount_total: '0.00', store: { ...receipt.store, name: '', address: '' } }} />)
+    const html = renderToStaticMarkup(<ReceiptHeader receipt={{ ...receipt, operation: 'refund', total: '-2.38', discount_total: '0.00', store: { ...receipt.store!, name: '', address: '' } }} />)
     expect(html.match(/Не распознано/g)).toHaveLength(2)
     expect(html).toContain('Возврат')
     expect(html).toContain('-2,38 EUR')

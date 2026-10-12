@@ -185,6 +185,15 @@ describe('signed-in shell (SSR only, no browser interaction)', () => {
     expect(render(reader, { kind: 'upload' }, '/receipts/upload')).not.toContain('data-quick-shot')
     expect(render(guest, { kind: 'health' }, '/health')).not.toContain('data-quick-shot')
   })
+  it('stacks «Добавить трату» with «Снять чек» and hides both on the forms with their own save bar', () => {
+    const catalog = render(reader, { kind: 'catalog', query: { page: 1 } }, '/catalog')
+    expect(catalog).toContain('<div class="ck-quick-actions"><a class="ck-quick-expense" href="/receipts/new">Добавить трату</a><pre data-quick-shot=""></pre></div>')
+    for (const [route, href] of [[{ kind: 'expense-new' }, '/receipts/new'], [{ kind: 'expense-edit', receiptId: 9 }, '/receipts/9/edit']] as const) {
+      const html = render(reader, route, href)
+      expect(html).not.toContain('ck-quick-actions')
+      expect(html).toContain(route.kind === 'expense-new' ? 'Добавить трату</h1>' : 'Изменить трату</h1>')
+    }
+  })
   it('shows the catalog subsections to a moderator on the catalog itself', () => {
     const html = render(moderator, { kind: 'catalog', query: { page: 1 } }, '/catalog')
     expect(html).toContain('<a href="/catalog/merges">Дубли</a>')

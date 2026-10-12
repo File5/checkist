@@ -508,7 +508,7 @@ class NoForeignReceiptIdTests(ProjectionMixin, TestCase):
             "/api/me/", "/api/auth/csrf/",
             "/api/countries/", "/api/countries/?all=1", "/api/stores/", "/api/brands/", "/api/categories/",
             "/api/generic-products/", "/api/products/", "/api/products/?ordering=-last_observed_at",
-            "/api/receipts/", "/api/receipts/?ordering=purchased_at",
+            "/api/receipts/", "/api/receipts/?ordering=purchased_at", "/api/receipts/manual/",
             "/api/recognition/csrf/", "/api/recognition/photos/", "/api/recognition/jobs/",
             "/api/recognition/receipt-images/",
             "/api/stats/spending/", "/api/stats/spending/?group_by=product", "/api/stats/spending/?group_by=store",
