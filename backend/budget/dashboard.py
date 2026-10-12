@@ -7,10 +7,10 @@
 строки без товара — своя ``ReceiptLine.category``, потомки сворачиваются в корень.
 Строки без категории, услуги и залоги в категории не попадают, но входят в «потрачено».
 
-Лимит можно задать категории любого уровня. Под корнем в ``children`` идут только
-подкатегории с лимитом и их предки (чтобы карточка оставалась короткой); их «потрачено» —
-свои строки и строки всех потомков, тем же расчётом ``receipts.spending`` с фильтром
-категории. В ``limit_total`` входят лимиты, у которых нет лимита у предка в той же валюте:
+Лимит можно задать категории любого уровня. Под корнем в ``children`` идут подкатегории
+с тратами месяца, подкатегории с лимитом и их предки (2026-10-12: прежде — только с
+лимитом; клиент открывает по строке траты категории); их «потрачено» — свои строки и
+строки всех потомков, тем же расчётом ``receipts.spending`` с фильтром категории. В ``limit_total`` входят лимиты, у которых нет лимита у предка в той же валюте:
 вложенный лимит — часть лимита родителя, а не добавка к нему.
 """
 import calendar
@@ -147,6 +147,12 @@ def currency_blocks(receipts, limits, month, tree, product_ref=None):
             row_of(currency, path[:-1]).children.append(row)
         by_category[key] = row
         return row
+
+    # Every sub-category with spends of the month gets its row under its root, so the card answers «на что»:
+    # a tap on the row opens the spends of that category (the client).
+    for currency, category_id in sorted(spending.spent_categories(data)):
+        if category_id in tree and tree.depth(category_id) > 0:
+            row_of(currency, tree.path_ids(category_id))
 
     for limit in limits:
         target = blocks.setdefault(limit.currency_id, CurrencyBlock(limit.currency_id))

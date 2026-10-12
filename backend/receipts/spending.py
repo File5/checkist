@@ -205,6 +205,19 @@ def fold(regular, special, limit):
     return items, other
 
 
+def spent_categories(data):
+    """``{(валюта, категория)}`` строк, которые разбивка по категориям кладёт в категорию; без БД."""
+    found = set()
+    for row in data.lines:
+        product = data.products.get(row.product_id) if row.kind == _KIND.PRODUCT else None
+        if _special(row, product):
+            continue
+        category_id = product.category_id if product is not None else row.category_id
+        if category_id is not None:
+            found.add((row.currency, category_id))
+    return found
+
+
 def summarize(data, *, group_by="category", limit=10, tree=None, category=None, generic=None, stores=None):
     """Блоки по валютам из ``Collected``; БД не используется.
 

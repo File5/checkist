@@ -82,8 +82,11 @@ def list_items(receipts):
     for receipt in receipts:
         roots = {tree.path_ids(pk)[0] for pk in receipt.line_category_ids or () if pk in tree}
         root = roots.pop() if len(roots) == 1 else None
+        # Every category of the lines, as precise as the lines name it (2026-10-12): the list answers «на что».
+        leaves = sorted((pk for pk in receipt.line_category_ids or () if pk in tree), key=lambda pk: (tree.name(pk), pk))
         items.append({**receipt_object(receipt), "first_line": receipt.first_line or None,
-                      "category": None if root is None else {"id": root, "name": tree.name(root)}})
+                      "category": None if root is None else {"id": root, "name": tree.name(root)},
+                      "categories": [{"id": pk, "name": tree.name(pk)} for pk in leaves]})
     return items
 
 

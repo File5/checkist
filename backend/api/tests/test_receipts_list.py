@@ -117,6 +117,17 @@ class ListFieldsTests(TestCase):
         self.assertIsNone(listed[empty.pk]["category"])
         self.assertIsNone(listed[empty.pk]["first_line"])
 
+    def test_every_category_of_the_lines_by_name(self):
+        mixed = self.receipt(1, {"product": self.milk}, {"category": self.home}, {"category": self.home}, {"raw_name": "X"})
+        bare = self.receipt(2, {"raw_name": "Ohne"})
+        listed = self.listed()
+        milk = self.milk.generic.category
+        self.assertEqual(listed[mixed.pk]["categories"],
+                         sorted([{"id": milk.pk, "name": milk.name}, {"id": self.home.pk, "name": "Демо-дом"}],
+                                key=lambda entry: (entry["name"], entry["id"])))
+        self.assertEqual(listed[bare.pk]["categories"], [])
+        self.assertNotIn("categories", self.client.get(f"/api/receipts/{mixed.pk}/").json())
+
     def test_first_line_follows_position_not_creation(self):
         receipt = make_receipt(self.store, "EUR", date(2026, 10, 4), total=D("10.00"))
         make_line(receipt, position=2, raw_name="Zweite", category=self.home)
