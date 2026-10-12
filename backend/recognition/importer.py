@@ -19,6 +19,7 @@ from django.db import IntegrityError, connection, transaction
 
 from receipts.decimal_math import price_context
 from receipts.dedup import build_fiscal_key, find_duplicates, name_key
+from receipts import service_charges
 from receipts.models import Receipt, ReceiptDiscount, ReceiptLine, ReceiptTax
 from receipts.validation import validate_receipt
 
@@ -267,6 +268,7 @@ def _create_graph(header, observation, country, derived, confirmed=None):
         # prepare_observation already requires observed kind/rate, and may
         # discard tax rows. Their new indexes need not match original evidence.
         return resolve_tax_rate(rate, country, field, confirmed=True)
+    service_category = service_charges.CategoryLookup()
     # Parents may occur after their child in the printed order. Create all rows
     # first, then connect only the already validated references.
     for i, observed in enumerate(observation.lines):
@@ -279,6 +281,9 @@ def _create_graph(header, observation, country, derived, confirmed=None):
             "discount_amount", "tax_amount", "is_excise", "is_marked",
         )}
         values.update({k: getattr(observed, k) or "" for k in ("store_item_code", "barcode", "tax_code")})
+        if product is None and service_charges.applies(observed.kind, observed.raw_name):
+            # Service charge or tip: no catalogue product, its own category (None if it is missing).
+            values["category_id"] = service_category()
         lines[observed.position] = clean_save(ReceiptLine(receipt=receipt, product=product, tax_rate=rate, **values))
     for observed in observation.lines:
         if observed.parent_position is not None:
