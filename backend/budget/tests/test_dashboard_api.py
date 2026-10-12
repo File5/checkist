@@ -105,11 +105,12 @@ class DashboardNumbersTests(FixtureMixin, TestCase):
         body = self.get()
         self.assertEqual((body["month"], body["previous_month"], body["days_left"]), ("2026-10", "2026-09", 0))
         self.assertEqual(body["members"], ["local"])
+        self.assertEqual(body["people"], [{"username": "local", "display_name": "local"}])
         eur, kzt = body["currencies"]  # по коду валюты
         self.assertEqual(eur, {
             "currency": "EUR", "spent": "12.50", "previous_spent": "0.00", "limit_total": "100.00",
             "categories": [{"category_id": self.food.pk, "name": "Демо-продукты", "spent": "12.50",
-                            "limit": "100.00", "limit_id": self.limits["euro"].pk}],
+                            "limit": "100.00", "limit_id": self.limits["euro"].pk, "children": []}],
         })
         self.assertEqual(
             {key: kzt[key] for key in ("currency", "spent", "previous_spent", "limit_total")},
@@ -121,6 +122,7 @@ class DashboardNumbersTests(FixtureMixin, TestCase):
             ("Демо-транспорт", "0.00", "30000.00", self.limits["transport"].pk),
         ])
         self.assertEqual(kzt["categories"][0]["category_id"], self.food.pk)
+        self.assertEqual([row["children"] for row in kzt["categories"]], [[], [], [], []])
 
     def test_previous_month_and_empty_month(self):
         september = self.get("?month=2026-09")
@@ -142,7 +144,7 @@ class DashboardNumbersTests(FixtureMixin, TestCase):
         photo = next(row for row in recent if row["id"] == self.photo.pk)
         self.assertEqual(photo, {
             "id": self.photo.pk, "source": "photo", "title": common.store_name(self.store),
-            "category_name": "Демо-продукты", "owner": "local", "purchased_on": "2026-10-05",
+            "category_name": "Демо-продукты", "owner": "local", "owner_name": "local", "purchased_on": "2026-10-05",
             "total": "1000.00", "currency": "KZT", "lines_count": 4,
         })
         coffee = next(row for row in recent if row["id"] == self.coffee_spend.pk)
@@ -219,8 +221,14 @@ class DashboardFamilyTests(FixtureMixin, TwoUsers, TestCase):
 
     def test_family_member_sees_family_month(self):
         spend(self.first, self.cafe, "50", date(2026, 10, 11))
+        self.first.first_name = "Андрей"
+        self.first.save(update_fields=["first_name"])
         body = self.get(self.first)
         self.assertEqual(body["members"], ["synthetic-user-one", "synthetic-user-three"])
+        self.assertEqual(body["people"], [{"username": "synthetic-user-one", "display_name": "Андрей"},
+                                          {"username": "synthetic-user-three", "display_name": "synthetic-user-three"}])
+        self.assertEqual({(row["owner"], row["owner_name"]) for row in body["recent"]},
+                         {("synthetic-user-one", "Андрей"), ("synthetic-user-three", "synthetic-user-three")})
         kzt = body["currencies"][1]
         self.assertEqual((kzt["spent"], kzt["limit_total"]), ("1500.00", "150000.00"))
         self.assertEqual({row["owner"] for row in body["recent"]}, {"synthetic-user-one", "synthetic-user-three"})
@@ -233,6 +241,73 @@ class DashboardFamilyTests(FixtureMixin, TwoUsers, TestCase):
         self.assertEqual(body["currencies"], [{
             "currency": "KZT", "spent": "70.00", "previous_spent": "0.00", "limit_total": "500.00",
             "categories": [{"category_id": self.cafe.pk, "name": "Демо-кафе", "spent": "70.00", "limit": "500.00",
-                            "limit_id": BudgetLimit.objects.get(user=self.second).pk}],
+                            "limit_id": BudgetLimit.objects.get(user=self.second).pk, "children": []}],
         }])
         self.assertEqual([row["owner"] for row in body["recent"]], ["synthetic-user-two"])
+
+
+@tag("integration")
+@local_single_mode()
+class DashboardSubLimitsTests(FixtureMixin, TestCase):
+    """Лимиты подкатегорий: строки в ``children`` корня, траты потомков входят в предка."""
+
+    @classmethod
+    def fixture_owner(cls):
+        return local_user()
+
+    @classmethod
+    def fixture_limits(cls, owner, **holder):
+        limits = super().fixture_limits(owner, **holder)
+        cls.cheese = Category.objects.create(name="Демо-сыр", parent=cls.dairy)
+        cls.bakery = Category.objects.create(name="Демо-выпечка", parent=cls.food)
+        spend(owner, cls.cheese, "70", date(2026, 10, 7))
+        spend(owner, cls.bakery, "30", date(2026, 10, 8))
+        limits["cheese"] = BudgetLimit.objects.create(user=owner, category=cls.cheese, currency_id="KZT", amount=D("50"))
+        limits["coffee"] = BudgetLimit.objects.create(user=owner, category=cls.coffee, currency_id="KZT", amount=D("400"))
+        limits["coffee_eur"] = BudgetLimit.objects.create(
+            user=owner, category=cls.coffee, currency_id="EUR", amount=D("5"))
+        return limits
+
+    def get(self):
+        with mock.patch("api.views.budget.timezone.localdate", return_value=date(2027, 1, 15)):
+            response = APIClient().get(DASHBOARD + "?month=2026-10")
+        self.assertEqual(response.status_code, 200, response.content)
+        return response.json()
+
+    def test_nested_children_roll_up_descendants(self):
+        eur, kzt = self.get()["currencies"]
+        # Вложенный лимит — часть лимита предка: «Демо-сыр» под лимитом «Демо-продукты» в сумму не входит,
+        # «Демо-кофейни» без лимита у предка — входит.
+        self.assertEqual(kzt["limit_total"], "150400.00")
+        food, cafe, unassigned, transport = kzt["categories"]
+        self.assertEqual((food["name"], food["spent"], food["limit"]), ("Демо-продукты", "650.00", "120000.00"))
+        # «Демо-выпечка» без лимита и без лимитов внутри в карточку не попадает; «Демо-молочное» — предок лимита.
+        self.assertEqual(food["children"], [{
+            "category_id": self.dairy.pk, "name": "Демо-молочное", "spent": "620.00", "limit": None, "limit_id": None,
+            "children": [{"category_id": self.cheese.pk, "name": "Демо-сыр", "spent": "70.00", "limit": "50.00",
+                          "limit_id": self.limits["cheese"].pk, "children": []}],
+        }])
+        self.assertEqual((cafe["name"], cafe["spent"], cafe["limit"]), ("Демо-кафе", "450.00", None))
+        self.assertEqual(cafe["children"], [{
+            "category_id": self.coffee.pk, "name": "Демо-кофейни", "spent": "450.00", "limit": "400.00",
+            "limit_id": self.limits["coffee"].pk, "children": []}])
+        self.assertEqual((unassigned["children"], transport["children"]), ([], []))
+        # Корень без трат в валюте появляется ради лимита подкатегории — с нулём.
+        self.assertEqual(eur["limit_total"], "105.00")
+        self.assertEqual([(row["name"], row["spent"], row["limit"]) for row in eur["categories"]],
+                         [("Демо-продукты", "12.50", "100.00"), ("Демо-кафе", "0.00", None)])
+        self.assertEqual(eur["categories"][1]["children"], [{
+            "category_id": self.coffee.pk, "name": "Демо-кофейни", "spent": "0.00", "limit": "5.00",
+            "limit_id": self.limits["coffee_eur"].pk, "children": []}])
+
+    def test_query_count_does_not_depend_on_sub_limits(self):
+        with CaptureQueriesContext(connection) as before:
+            self.get()
+        extra = Category.objects.create(name="Демо-латте", parent=self.coffee)
+        BudgetLimit.objects.create(user=local_user(), category=extra, currency_id="KZT", amount=D("10"))
+        BudgetLimit.objects.create(user=local_user(), category=self.bakery, currency_id="KZT", amount=D("10"))
+        with CaptureQueriesContext(connection) as after:
+            body = self.get()
+        self.assertEqual(len(after), len(before))
+        cafe = body["currencies"][1]["categories"][1]
+        self.assertEqual([row["name"] for row in cafe["children"][0]["children"]], ["Демо-латте"])

@@ -32,6 +32,9 @@ const schemas: Record<string, (value: unknown) => boolean> = {
   'receipt.json': isReceipt, 'receipts.json': page(isReceipt), 'lines.json': page(isLine), 'discounts.json': page(isDiscount), 'taxes.json': page(isTax),
 }
 
+/** Root fields added after the first contract: their absence is still a valid answer. */
+const LATER_FIELDS = new Set(['owner_name'])
+
 describe('public recognition/receipts contract fixtures', () => {
   it('covers every JSON supplied by backend, including future additions', () => {
     const files = readdirSync(new URL('../../../backend/recognition/tests/fixtures/public/', import.meta.url)).filter((name) => name.endsWith('.json')).sort()
@@ -43,7 +46,8 @@ describe('public recognition/receipts contract fixtures', () => {
     for (const key of Object.keys(body)) {
       const missing = { ...body }
       delete missing[key]
-      expect(validate(missing), `${name} missing ${key}`).toBe(false)
+      // A field added later is optional: an older server (or an answer cached before it) leaves it out.
+      expect(validate(missing), `${name} missing ${key}`).toBe(LATER_FIELDS.has(key))
     }
     for (const invalid of [null, [], true, 'body', 1, {}]) expect(validate(invalid)).toBe(false)
   })

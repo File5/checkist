@@ -6,6 +6,12 @@
 разбивка ``receipts.spending`` по корням дерева: категория строки — категория товара, у
 строки без товара — своя ``ReceiptLine.category``, потомки сворачиваются в корень.
 Строки без категории, услуги и залоги в категории не попадают, но входят в «потрачено».
+
+Лимит можно задать категории любого уровня. Под корнем в ``children`` идут только
+подкатегории с лимитом и их предки (чтобы карточка оставалась короткой); их «потрачено» —
+свои строки и строки всех потомков, тем же расчётом ``receipts.spending`` с фильтром
+категории. В ``limit_total`` входят лимиты, у которых нет лимита у предка в той же валюте:
+вложенный лимит — часть лимита родителя, а не добавка к нему.
 """
 import calendar
 from dataclasses import dataclass, field
@@ -62,6 +68,8 @@ class CategoryRow:
     spent: Decimal = _ZERO
     limit: Decimal | None = None
     limit_id: int | None = None
+    # Подкатегории с лимитом и их предки; у каждой — свои ``children``.
+    children: list = field(default_factory=list)
 
 
 @dataclass
@@ -79,17 +87,34 @@ def _totals(receipts, month):
     return dict(rows)
 
 
+def _sort_rows(rows):
+    rows.sort(key=lambda row: (-row.spent, row.name, row.category_id))
+    for row in rows:
+        _sort_rows(row.children)
+
+
+def _subtree_spent(data, tree, category_id):
+    """``{валюта: Σ строк категории и её потомков}``; без БД, тем же расчётом, что корни."""
+    result = {}
+    for block in spending.summarize(data, group_by="category", limit=_ALL, tree=tree, category=category_id):
+        result[block.currency] = sum((item.amount for item in block.items), _ZERO)
+    return result
+
+
 def currency_blocks(receipts, limits, month, tree, product_ref=None):
     """Блоки по валютам в порядке кода валюты.
 
     ``receipts`` — видимые запросу чеки, ``limits`` — видимые лимиты (queryset
     ``BudgetLimit``), ``tree`` — ``api.common.CategoryTree``. Валюта попадает в ответ,
-    если в ней есть чеки этого или прошлого месяца либо лимит.
+    если в ней есть чеки этого или прошлого месяца либо лимит. Лимит подкатегории даёт
+    строку в ``children`` её корня (и строки промежуточных предков); корень без трат и
+    своего лимита появляется ради неё с нулём.
     """
     in_month = receipts.filter(purchased_on__gte=month.first, purchased_on__lte=month.last)
+    data = spending.collect(in_month, product_ref)
     blocks = {}
     by_category = {}
-    for block in spending.summarize(spending.collect(in_month, product_ref), group_by="category", limit=_ALL, tree=tree):
+    for block in spending.summarize(data, group_by="category", limit=_ALL, tree=tree):
         target = blocks[block.currency] = CurrencyBlock(block.currency, spent=block.receipts_total)
         for item in block.items:
             if item.kind == "category":
@@ -98,19 +123,50 @@ def currency_blocks(receipts, limits, month, tree, product_ref=None):
                 by_category[(block.currency, item.id)] = row
     for currency, total in _totals(receipts, month.previous()).items():
         blocks.setdefault(currency, CurrencyBlock(currency)).previous_spent = total
-    for limit in limits.order_by("pk"):
-        target = blocks.setdefault(limit.currency_id, CurrencyBlock(limit.currency_id))
-        target.limit_total = (target.limit_total or _ZERO) + limit.amount
-        row = by_category.get((limit.currency_id, limit.category_id))
-        if row is None:
-            name = tree.name(limit.category_id) if limit.category_id in tree else limit.category.name
-            row = by_category[(limit.currency_id, limit.category_id)] = CategoryRow(limit.category_id, name)
+    limits = list(limits.order_by("pk"))
+    limited = {(limit.currency_id, limit.category_id) for limit in limits}
+    subtree = {}  # category_id -> {валюта: потрачено}; считается один раз на узел
+
+    def spent_of(category_id, currency):
+        if category_id not in subtree:
+            subtree[category_id] = _subtree_spent(data, tree, category_id)
+        return subtree[category_id].get(currency, _ZERO)
+
+    def row_of(currency, path):
+        """Строка узла ``path[-1]``: корень — в ``categories`` блока, потомок — в ``children`` родителя."""
+        key = (currency, path[-1])
+        row = by_category.get(key)
+        if row is not None:
+            return row
+        target = blocks.setdefault(currency, CurrencyBlock(currency))
+        if len(path) == 1:
+            row = CategoryRow(path[0], tree.name(path[0]))
             target.categories.append(row)
+        else:
+            row = CategoryRow(path[-1], tree.name(path[-1]), spent=spent_of(path[-1], currency))
+            row_of(currency, path[:-1]).children.append(row)
+        by_category[key] = row
+        return row
+
+    for limit in limits:
+        target = blocks.setdefault(limit.currency_id, CurrencyBlock(limit.currency_id))
+        if limit.category_id in tree:
+            path = tree.path_ids(limit.category_id)
+            row = row_of(limit.currency_id, path)
+        else:
+            path = [limit.category_id]
+            row = by_category.get((limit.currency_id, limit.category_id))
+            if row is None:
+                row = by_category[(limit.currency_id, limit.category_id)] = CategoryRow(
+                    limit.category_id, limit.category.name)
+                target.categories.append(row)
+        if not any((limit.currency_id, ancestor) in limited for ancestor in path[:-1]):
+            target.limit_total = (target.limit_total or _ZERO) + limit.amount
         row.limit, row.limit_id = limit.amount, limit.pk
     result = []
     for currency in sorted(blocks):
         block = blocks[currency]
-        block.categories.sort(key=lambda row: (-row.spent, row.name, row.category_id))
+        _sort_rows(block.categories)
         result.append(block)
     return result
 

@@ -63,6 +63,36 @@ describe('«Главная» markup (Vitest/SSR, not browser visual acceptance)'
     expect(between(limits, 'Дом', '</li>')).toContain('aria-valuenow="0"')
     expect(limits.indexOf('Продукты')).toBeLessThan(limits.indexOf('Кафе'))
   })
+  it('nests the limited sub-categories under their top-level row, a thinner bar each', () => {
+    const data = dashboardFixture()
+    const home = { category_id: 10, name: 'Жильё', spent: '250000.00', limit: null, limit_id: null, children: [
+      { category_id: 17, name: 'Аренда', spent: '200000.00', limit: '200000.00', limit_id: 31, children: [] },
+      { category_id: 21, name: 'Коммунальные услуги', spent: '50000.00', limit: null, limit_id: null, children: [
+        { category_id: 22, name: 'Электричество', spent: '18000.00', limit: '15000.00', limit_id: 32, children: [] },
+      ] },
+    ] }
+    const html = view({ ...data, currencies: [{ ...data.currencies[0], categories: [home, ...data.currencies[0].categories] }] })
+    const row = between(html, 'dash-cat-4', 'dash-cat-3')
+    // The top-level row without its own limit: what was spent, no bar.
+    expect(row).toContain(`<span class="dash-limit-name">Жильё</span><span class="dash-limit-value">${nb('250 000 KZT')}</span></div><ul class="dash-sublimit-list" aria-label="Жильё: подкатегории с лимитами">`)
+    expect(row).not.toContain('aria-label="Жильё: потрачено')
+    expect(row).toContain(`<li class="dash-sublimit"><div class="dash-limit-head"><span class="dash-sublimit-name">Аренда</span><span class="dash-limit-value dash-sublimit-value">${nb('200 000')} / ${nb('200 000 KZT')}</span></div><div class="dash-bar dash-bar-small" role="progressbar" aria-label="Аренда: потрачено 100% лимита"`)
+    // An ancestor of a limited one: its spends, no bar, its own nested list.
+    expect(row).toContain(`<span class="dash-sublimit-name">Коммунальные услуги</span><span class="dash-limit-value dash-sublimit-value">${nb('50 000 KZT')}</span></div><ul class="dash-sublimit-list" aria-label="Коммунальные услуги: подкатегории с лимитами">`)
+    expect(row).toContain('<div class="dash-bar dash-bar-small dash-bar-over" role="progressbar" aria-label="Электричество: потрачено 100% лимита"')
+    expect(row).toContain(`<p class="dash-over dash-sublimit-over">Сверх лимита на <span class="dash-value">${nb('3 000 KZT')}</span></p>`)
+    // An older server sends no `children`: the row is as before.
+    expect(between(view(), 'dash-cat-3', '</li>')).not.toContain('dash-sublimit')
+  })
+  it('shows the names of the family and of who added a spend, the usernames without them', () => {
+    const data = { ...dashboardFixture(), people: [{ username: 'andrey', display_name: 'Андрей' }, { username: 'liza', display_name: 'Лиза' }] }
+    data.recent = data.recent.map((item) => ({ ...item, owner_name: item.owner === 'liza' ? 'Лиза' : 'Андрей' }))
+    const html = view(data)
+    expect(html).toContain('<li class="dash-avatar dash-cat-1" title="Андрей"><span aria-hidden="true">А</span><span class="dash-visually-hidden">Андрей</span></li>')
+    expect(html).toContain('<li class="dash-avatar dash-cat-2" title="Лиза"><span aria-hidden="true">Л</span><span class="dash-visually-hidden">Лиза</span></li>')
+    expect(html).toContain(`<span class="dash-recent-meta">Лиза · ${nb('12 октября')} · ${nb('23 позиции')}</span>`)
+    expect(html).not.toContain('liza')
+  })
   it('lists recent spends linked to their receipts with a tinted badge', () => {
     const recent = between(view(), 'dash-recent', '</section>')
     expect(recent).toContain('<h2 id="dash-recent-heading">Последние траты</h2>')
@@ -109,6 +139,43 @@ const noop = () => {}
 const limits = (extra: Partial<LimitsViewProps> = {}) => renderToStaticMarkup(<LimitsView categories={[category(3, 'Продукты'), category(8, 'Кафе')]}
   limits={[limitFixture()]} currencies={['KZT', 'USD']} currency="KZT" family drafts={{}} statuses={{}}
   onCurrency={noop} onAddCurrency={() => undefined} onDraft={noop} onSave={noop} onDelete={noop} {...extra} />)
+
+describe('«Лимиты» as a tree of categories', () => {
+  const sub = (id: number, name: string, parent: Category): Category => ({
+    ...category(id, name), path: [...parent.path, { id, name }], parent_id: parent.id, depth: parent.depth + 1,
+  })
+  const home = category(10, 'Жильё')
+  const rent = sub(17, 'Аренда', home)
+  const utilities = sub(21, 'Коммунальные услуги', home)
+  const power = sub(22, 'Электричество', utilities)
+  const tree = [home, rent, utilities, power, category(8, 'Кафе')]
+  const view = (extra: Partial<LimitsViewProps> = {}) => limits({ categories: tree, limits: [], ...extra })
+
+  it('hides sub-categories behind a toggle until one of them has a limit', () => {
+    const html = view()
+    expect(html).toContain('<button type="button" class="limits-toggle" aria-expanded="false" aria-label="Показать подкатегории «Жильё»">Показать 3\u00a0подкатегории</button>')
+    expect(html).not.toContain('limit-17')
+    expect(html).toContain('<label class="limits-name" for="limit-10">Жильё</label>')
+    // «Кафе» has no sub-categories: no toggle.
+    expect(html.match(/limits-toggle/g)).toHaveLength(1)
+  })
+  it('shows every level with an amount field, indented, the colour of its top-level category', () => {
+    const html = view({ limits: [limitFixture({ id: 30, category_id: 22, category_name: 'Электричество', amount: '15000.00' })] })
+    expect(html).toContain('aria-expanded="true" aria-label="Скрыть подкатегории «Жильё»">Скрыть 3\u00a0подкатегории</button>')
+    expect(html).toContain('<li class="dash-card limits-row limits-row-sub dash-cat-4" style="--limits-depth:1">')
+    expect(html).toContain('<li class="dash-card limits-row limits-row-sub dash-cat-4" style="--limits-depth:2">')
+    // The path is read out before the name: «Жильё › Коммунальные услуги › Электричество».
+    expect(html).toContain('<label class="limits-name" for="limit-22"><span class="dash-visually-hidden">Жильё › Коммунальные услуги › </span>Электричество</label>')
+    expect(html).toContain('<input id="limit-22" inputMode="decimal" autoComplete="off" enterKeyHint="done" placeholder="Сумма в месяц" aria-invalid="false" value="15000"/>')
+    expect(html).toContain('<input id="limit-17" inputMode="decimal"')
+    expect(html).toContain('aria-label="Удалить лимит «Электричество»"')
+  })
+  it('follows the person who closed or opened a top-level category', () => {
+    const limited = [limitFixture({ id: 30, category_id: 22 })]
+    expect(view({ limits: limited, toggled: { 10: false } })).not.toContain('limit-22')
+    expect(view({ toggled: { 10: true } })).toContain('limit-22')
+  })
+})
 
 describe('«Лимиты» markup (Vitest/SSR, not browser visual acceptance)', () => {
   it('lists top-level categories with an amount field per row', () => {

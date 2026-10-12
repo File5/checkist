@@ -11,7 +11,7 @@ import type { Session } from './session'
  */
 export function menuKey(view: ShellView, session: Session, route: Route): string {
   if (view === 'login') return 'no-menu'
-  const name = session.kind === 'user' ? session.user.username : ''
+  const name = session.kind === 'user' ? `${session.user.username}/${session.user.display_name ?? ''}` : ''
   return `${pageKey(session)}:${name}:${route.kind}`
 }
 

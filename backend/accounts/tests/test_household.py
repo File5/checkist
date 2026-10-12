@@ -241,11 +241,17 @@ class FamilyProjectionTests(FamilyMixin, TestCase):
 class FamilyMeTests(FamilyMixin, TestCase):
     @accounts_mode()
     def test_me_names_the_household_and_its_members(self):
+        # «Имя» из админки (first_name) — имя для показа; без него — логин.
+        self.third.first_name = "  Лиза "
+        self.third.save(update_fields=["first_name"])
         body = self.client_of(self.third).get("/api/me/").json()
+        people = sorted([(self.first.username, self.first.username), (self.third.username, "Лиза")])
         self.assertEqual(body["household"], {
             "id": self.family.pk, "name": "Демо-семья",
-            "members": sorted([self.first.username, self.third.username]),
+            "members": [username for username, _ in people],
+            "people": [{"username": username, "display_name": name} for username, name in people],
         })
+        self.assertEqual((body["user"]["username"], body["user"]["display_name"]), (self.third.username, "Лиза"))
         self.assertIsNone(self.client_of(self.second).get("/api/me/").json()["household"])
 
     @local_single_mode()

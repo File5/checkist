@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
 import { getDashboard } from '../../api/budget'
-import type { Dashboard, DashboardCategory, DashboardCurrency, DashboardRecent } from '../../api/budget'
+import type { Dashboard, DashboardCategory, DashboardCurrency, DashboardRecent, DashboardSubCategory } from '../../api/budget'
 import RequestState from '../../components/RequestState'
 import { Link } from '../../navigation'
 import { QuickShot } from '../recognition'
 import {
-  badgeLetter, capitalize, categoryIds, categoryTone, cents, compareMonths, daysLeftText, dashboardErrorMessage, deviceMonth, formatMoney,
+  badgeLetter, capitalize, categoryIds, categoryTone, cents, compareMonths, daysLeftText, dashboardErrorMessage, dashboardPeople, deviceMonth, formatMoney,
   formatNumber, initials,
-  inMonth, monthIsEmpty, monthTitle, progress, recentMeta, shiftMonth,
+  inMonth, monthIsEmpty, monthTitle, progress, recentMeta, shiftMonth, subCategories,
 } from './dashboard-state'
 import type { Progress } from './dashboard-state'
 import './Dashboard.css'
@@ -15,8 +15,8 @@ import './Dashboard.css'
 const monthHref = (month: string) => `/?month=${month}`
 
 /** The filled part of a bar; the numbers next to it say the same in words. */
-function Bar({ value, label }: { value: Progress; label: string }) {
-  return <div className={`dash-bar${value.over ? ' dash-bar-over' : ''}`} role="progressbar" aria-label={label}
+function Bar({ value, label, small = false }: { value: Progress; label: string; small?: boolean }) {
+  return <div className={`dash-bar${small ? ' dash-bar-small' : ''}${value.over ? ' dash-bar-over' : ''}`} role="progressbar" aria-label={label}
     aria-valuemin={0} aria-valuemax={100} aria-valuenow={value.percent}>
     <span className="dash-bar-fill" style={{ width: `${value.percent}%` }} />
   </div>
@@ -41,8 +41,34 @@ function SpentCard({ block, data, family, current }: { block: DashboardCurrency;
   </section>
 }
 
+/** «Аренда» under «Жильё»: indented, a thinner bar, the colour of its top-level row. Only limited sub-categories
+ * and their ancestors come here; one without its own limit shows what was spent, without a bar. */
+function SubLimitRow({ row, currency }: { row: DashboardSubCategory; currency: string }) {
+  const bar = progress(row.spent, row.limit)
+  const children = subCategories(row)
+  return <li className="dash-sublimit">
+    <div className="dash-limit-head">
+      <span className="dash-sublimit-name">{row.name}</span>
+      <span className="dash-limit-value dash-sublimit-value">
+        {row.limit === null ? formatMoney(row.spent, currency)
+          : <>{formatNumber(row.spent)} / {formatMoney(row.limit, currency)}</>}
+      </span>
+    </div>
+    {bar && <Bar small value={bar} label={`${row.name}: потрачено ${bar.percent}% лимита`} />}
+    {bar?.over && <p className="dash-over dash-sublimit-over">Сверх лимита на <span className="dash-value">{formatMoney(bar.overBy, currency)}</span></p>}
+    {children.length > 0 && <SubLimitList rows={children} currency={currency} label={row.name} />}
+  </li>
+}
+
+function SubLimitList({ rows, currency, label }: { rows: DashboardSubCategory[]; currency: string; label: string }) {
+  return <ul className="dash-sublimit-list" aria-label={`${label}: подкатегории с лимитами`}>
+    {rows.map((row) => <SubLimitRow key={row.category_id} row={row} currency={currency} />)}
+  </ul>
+}
+
 function LimitRow({ category, currency }: { category: DashboardCategory; currency: string }) {
   const bar = progress(category.spent, category.limit)
+  const children = subCategories(category)
   return <li className={`dash-limit dash-cat-${categoryTone(category.category_id)}`}>
     <div className="dash-limit-head">
       <span className="dash-dot" aria-hidden="true" />
@@ -54,6 +80,7 @@ function LimitRow({ category, currency }: { category: DashboardCategory; currenc
     </div>
     {bar && <Bar value={bar} label={`${category.name}: потрачено ${bar.percent}% лимита`} />}
     {bar?.over && <p className="dash-over">Сверх лимита на <span className="dash-value">{formatMoney(bar.overBy, currency)}</span></p>}
+    {children.length > 0 && <SubLimitList rows={children} currency={currency} label={category.name} />}
   </li>
 }
 
@@ -98,6 +125,7 @@ export function DashboardView({ data, today = deviceMonth(), family = data.membe
   const empty = monthIsEmpty(data)
   const ids = categoryIds(data)
   const several = data.currencies.length > 1
+  const people = dashboardPeople(data)
   return <div className="dash">
     <div className="dash-head">
       <nav className="dash-month" aria-label="Месяц">
@@ -108,8 +136,8 @@ export function DashboardView({ data, today = deviceMonth(), family = data.membe
           : <span className="dash-month-step dash-month-step-off" aria-hidden="true">›</span>}
       </nav>
       <ul className="dash-family" aria-label={family ? 'Семья' : 'Кто тратит'}>
-        {data.members.map((member, index) => <li key={member} className={`dash-avatar dash-cat-${(index % 6) + 1}`} title={member}>
-          <span aria-hidden="true">{initials(member)}</span><span className="dash-visually-hidden">{member}</span>
+        {people.map((person, index) => <li key={person.username} className={`dash-avatar dash-cat-${(index % 6) + 1}`} title={person.display_name}>
+          <span aria-hidden="true">{initials(person.display_name)}</span><span className="dash-visually-hidden">{person.display_name}</span>
         </li>)}
       </ul>
     </div>

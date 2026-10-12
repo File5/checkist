@@ -269,11 +269,17 @@ describe('receipt screens (Vitest/SSR, not browser visual acceptance)', () => {
 })
 
 describe('who added the receipt (family)', () => {
-  const page = { ...emptyPage<Receipt>(), count: 1, pages: 1, results: [{ ...receipt, owner: 'synthetic-two' }] }
+  const page = { ...emptyPage<Receipt>(), count: 1, pages: 1, results: [{ ...receipt, owner: 'synthetic-two', owner_name: 'Лиза' }] }
   it('names who added it in the list and on the receipt page of a family member', () => {
     expect(receipt.owner).toBe('local')
     const list = renderToStaticMarkup(<ReceiptsView query={{ page: 1 }} state={{ kind: 'ok', data: page }} retry={noop} showOwner />)
-    expect(list).toContain('<dt>Добавил</dt><dd class="receipt-owner">synthetic-two</dd>')
+    // The name from «Имя» of the admin, not the username.
+    expect(list).toContain('<dt>Добавил</dt><dd class="receipt-owner">Лиза</dd>')
+    expect(list).not.toContain('synthetic-two')
+    // An older server without `owner_name`: the username.
+    const { owner_name: _name, ...older } = page.results[0]
+    expect(_name).toBe('Лиза')
+    expect(renderToStaticMarkup(<ReceiptList receipts={[older]} showOwner />)).toContain('<dd class="receipt-owner">synthetic-two</dd>')
     const detail = renderToStaticMarkup(<ReceiptView {...view} showOwner />)
     expect(detail).toContain('<dt>Добавил</dt><dd class="receipt-owner">local</dd>')
   })
@@ -283,7 +289,7 @@ describe('who added the receipt (family)', () => {
     expect(renderToStaticMarkup(<ReceiptHeader receipt={receipt} />)).not.toContain('Добавил')
   })
   it('escapes the name as text', () => {
-    const html = renderToStaticMarkup(<ReceiptList receipts={[{ ...receipt, owner: '<i>x</i>' }]} showOwner />)
+    const html = renderToStaticMarkup(<ReceiptList receipts={[{ ...receipt, owner: 'x', owner_name: '<i>x</i>' }]} showOwner />)
     expect(html).toContain('&lt;i&gt;x&lt;/i&gt;')
     expect(html).not.toContain('<i>x</i>')
   })

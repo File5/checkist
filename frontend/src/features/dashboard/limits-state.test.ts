@@ -2,19 +2,45 @@ import { describe, expect, it } from 'vitest'
 import { limitFixture } from '../../api/budget-test-support'
 import type { Category } from '../../api/types'
 import {
-  amountInput, isDuplicateCreate, limitCurrencies, limitFailureMessage, limitFor, limitMessages, parseCurrency, parseLimitAmount, rowAction, topLevelCategories,
-  withLimit, withoutLimit,
+  amountInput, isDuplicateCreate, limitCurrencies, limitFailureMessage, limitFor, limitMessages, limitTree, openByDefault, parseCurrency, parseLimitAmount,
+  rowAction, subCategoriesText, visibleRows, withLimit, withoutLimit,
 } from './limits-state'
 
-const category = (id: number, name: string, parent: number | null = null): Category => ({
-  id, name, path: [{ id, name }], parent_id: parent, depth: parent === null ? 0 : 1,
-  children_count: 0, generic_products_count: 0, products_count: 0, products_total: 0,
-})
+const category = (id: number, name: string, parent: Category | null = null): Category => {
+  const path = [...(parent?.path ?? []), { id, name }]
+  return {
+    id, name, path, parent_id: parent?.id ?? null, depth: path.length - 1,
+    children_count: 0, generic_products_count: 0, products_count: 0, products_total: 0,
+  }
+}
+/** The prod example: «Жильё» → «Аренда», «Коммунальные услуги» → «Электричество», «Вода»; then «Кафе». */
+const home = category(10, 'Жильё')
+const rent = category(17, 'Аренда', home)
+const utilities = category(21, 'Коммунальные услуги', home)
+const power = category(22, 'Электричество', utilities)
+const water = category(23, 'Вода', utilities)
+const cafe = category(8, 'Кафе')
+const tree = limitTree([home, rent, utilities, power, water, cafe])
 
 describe('limits screen state', () => {
-  it('keeps top-level categories in the server order', () => {
-    const categories = [category(3, 'Продукты'), category(4, 'Молочные', 3), category(8, 'Кафе'), category(1, 'Не разобрано')]
-    expect(topLevelCategories(categories).map((item) => item.id)).toEqual([3, 8, 1])
+  it('keeps every category of the server order as a tree row under its top-level category', () => {
+    expect(tree.map((row) => [row.category.id, row.depth, row.rootId, row.descendants])).toEqual([
+      [10, 0, 10, 4], [17, 1, 10, 0], [21, 1, 10, 0], [22, 2, 10, 0], [23, 2, 10, 0], [8, 0, 8, 0],
+    ])
+  })
+  it('opens a top-level category with a limit or an unsaved amount below it, and lists the open ones only', () => {
+    expect([...openByDefault(tree, [], 'KZT')]).toEqual([])
+    // A limit of the category itself does not open it; a limit of a sub-category at any depth does, in its currency.
+    expect([...openByDefault(tree, [limitFixture({ category_id: 10 })], 'KZT')]).toEqual([])
+    expect([...openByDefault(tree, [limitFixture({ category_id: 22 })], 'KZT')]).toEqual([10])
+    expect([...openByDefault(tree, [limitFixture({ category_id: 22 })], 'USD')]).toEqual([])
+    expect([...openByDefault(tree, [], 'KZT', { '17:KZT': '5' })]).toEqual([10])
+    expect(visibleRows(tree, () => false).map((row) => row.category.id)).toEqual([10, 8])
+    expect(visibleRows(tree, (root) => root === 10).map((row) => row.category.id)).toEqual([10, 17, 21, 22, 23, 8])
+  })
+  it('counts sub-categories in Russian', () => {
+    expect([1, 2, 4, 5, 11, 21].map(subCategoriesText)).toEqual(
+      ['1 подкатегория', '2 подкатегории', '4 подкатегории', '5 подкатегорий', '11 подкатегорий', '21 подкатегория'].map((text) => text.replace(' ', '\u00a0')))
   })
   it.each([
     ['120000', '120000.00'], ['120 000', '120000.00'], ['120\u00a0000,5', '120000.50'], ['1500,50', '1500.50'], ['0.01', '0.01'],
@@ -63,7 +89,7 @@ describe('limits screen state', () => {
   })
   it('explains refusals by field names with local texts', () => {
     expect(limitFailureMessage({ reason: 'invalid_parameter', fields: ['amount'] })).toContain('сумму')
-    expect(limitFailureMessage({ reason: 'invalid_parameter', fields: ['category_id'] })).toContain('верхнего уровня')
+    expect(limitFailureMessage({ reason: 'invalid_parameter', fields: ['category_id'] })).toBe('Этой категории уже нет. Обновите страницу.')
     expect(limitFailureMessage({ reason: 'invalid_parameter', fields: ['non_field_errors'] })).toContain('уже есть')
     // The server reports a taken «category and currency» pair at category_id: on a create it is the duplicate.
     expect(limitFailureMessage({ reason: 'invalid_parameter', fields: ['category_id'] }, true)).toContain('уже есть')

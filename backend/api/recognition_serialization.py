@@ -9,6 +9,7 @@ from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from accounts.access import owner_q
+from accounts.people import display_name
 from api.common import amount, iso_date, percent, price, quantity, store_object, utc_datetime
 from receipts.decimal_math import price_context
 from receipts.models import Receipt, ReceiptLine
@@ -393,7 +394,8 @@ def receipts_queryset(request):
 def receipt_object(receipt):
     base = f"/api/receipts/{receipt.pk}"
     return {
-        "id": receipt.pk, "owner": receipt.owner.get_username(), "source": receipt.source,
+        "id": receipt.pk, "owner": receipt.owner.get_username(), "owner_name": display_name(receipt.owner),
+        "source": receipt.source,
         # null — «Без места»: только у траты, внесённой вручную.
         "store": None if receipt.store_id is None else store_object(receipt.store), "currency": receipt.currency_id,
         "operation": receipt.operation, "purchased_on": iso_date(receipt.purchased_on),

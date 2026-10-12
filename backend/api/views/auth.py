@@ -13,6 +13,7 @@ from rest_framework.permissions import SAFE_METHODS, AllowAny, BasePermission
 from rest_framework.response import Response
 
 from accounts.access import LOCAL_SINGLE, LocalOrSignedIn, SignedIn, household, is_moderator, mode, request_user
+from accounts.people import display_name, household_people
 from config.exceptions import AuthApiError, InvalidParameter, InvalidRequest, ObjectNotFound, PasswordRejected
 from recognition.auth import enforce_csrf
 
@@ -32,12 +33,16 @@ PASSWORD_REJECTED = "Пароль не подходит."
 
 
 def household_object(request):
-    """Семья пользователя запроса: ``{"id", "name", "members": [логины по алфавиту]}`` либо ``None``."""
+    """Семья пользователя запроса либо ``None``.
+
+    ``{"id", "name", "members": [логины по алфавиту], "people": [{"username", "display_name"}]}``:
+    ``people`` — те же люди в том же порядке с именем для показа (``accounts.people``).
+    """
     family = household(request)
     if family is None:
         return None
-    members = family.memberships.order_by("user__username").values_list("user__username", flat=True)
-    return {"id": family.pk, "name": family.name, "members": list(members)}
+    people = household_people(family)
+    return {"id": family.pk, "name": family.name, "members": [item["username"] for item in people], "people": people}
 
 
 def me_object(request):
@@ -45,7 +50,8 @@ def me_object(request):
     user = request_user(request)
     return {
         "mode": mode(),
-        "user": {"id": user.pk, "username": user.get_username(), "is_staff": user.is_staff},
+        "user": {"id": user.pk, "username": user.get_username(), "display_name": display_name(user),
+                 "is_staff": user.is_staff},
         "household": household_object(request),
         "permissions": {"moderate_catalog": is_moderator(request)},
         "csrf_token": get_token(request._request),

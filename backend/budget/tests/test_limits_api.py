@@ -74,14 +74,26 @@ class LimitsLocalTests(CategoriesMixin, TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["error"]["code"], "invalid_parameter")
         self.assertEqual(set(fields(response)), {"extra", "category_id", "currency", "amount"})
-        self.assertEqual(fields(self.create(category_id=self.dairy.pk)), {"category_id": ["Категория верхнего уровня не найдена."]})
-        self.assertIn("category_id", fields(self.create(category_id=999999999)))
+        self.assertEqual(fields(self.create(category_id=999999999)), {"category_id": ["Категория не найдена."]})
         self.assertIn("category_id", fields(self.create(category_id=str(self.food.pk))))
         self.assertIn("category_id", fields(self.create(category_id=True)))
         self.assertEqual(fields(self.create(currency="XXQ")), {"currency": ["Валюта не найдена."]})
         for amount in ("0", "-5", "1.234", "", "abc", 0, True, None, "1e5", "1000000000000"):
             self.assertIn("amount", fields(self.create(amount=amount)), amount)
         self.assertEqual(BudgetLimit.objects.count(), 0)
+
+    def test_limit_on_a_sub_category(self):
+        parent = self.create(amount="1000")
+        child = self.create(category_id=self.dairy.pk, amount="300")
+        self.assertEqual(child.status_code, 201, child.content)
+        self.assertEqual({key: child.json()[key] for key in ("category_id", "category_name", "amount")},
+                         {"category_id": self.dairy.pk, "category_name": "Демо-молочное", "amount": "300.00"})
+        self.assertEqual(self.client.get(LIMITS).json()["count"], 2)
+        duplicate = self.create(category_id=self.dairy.pk, amount="5")
+        self.assertEqual(fields(duplicate), {"category_id": ["Лимит для этой категории и валюты уже есть."]})
+        moved = self.client.patch(f"{LIMITS}{parent.json()['id']}/", {"category_id": self.dairy.pk}, format="json")
+        self.assertEqual(fields(moved), {"category_id": ["Лимит для этой категории и валюты уже есть."]})
+        self.assertEqual(self.create(category_id=self.dairy.pk, currency="EUR").status_code, 201)
 
     def test_duplicate_category_currency(self):
         self.assertEqual(self.create().status_code, 201)
@@ -143,6 +155,11 @@ class LimitsFamilyTests(CategoriesMixin, TwoUsers, TestCase):
             f"{LIMITS}{limit.pk}/", {"amount": "2000"}, format="json")
         self.assertEqual(patched.json()["amount"], "2000.00")
         self.assertEqual(fields(self.create(self.third)), {"category_id": ["Лимит для этой категории и валюты уже есть."]})
+        child = self.create(self.third, category_id=self.dairy.pk)
+        self.assertEqual(child.status_code, 201, child.content)
+        self.assertEqual(BudgetLimit.objects.get(pk=child.json()["id"]).household, self.family)
+        self.assertEqual(self.client_of(self.first).get(LIMITS).json()["count"], 2)
+        self.assertEqual(self.client_of(self.second).get(LIMITS).json()["count"], 0)
 
     def test_outsider_sees_nothing_and_gets_404(self):
         limit = self.create(self.first).json()

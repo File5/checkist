@@ -3,6 +3,7 @@
   "user": {
     "id": 1,
     "username": "synthetic-reader",
+    "display_name": "synthetic-reader",
     "is_staff": false
   },
   "household": null,

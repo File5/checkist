@@ -105,7 +105,7 @@ Probes запускаются параллельно, поэтому их обы
 | Право модератора каталога | `catalog.moderate_catalog` у пользователя либо его группы; у суперпользователя есть всегда | Есть всегда |
 | `/media/…` | Только владельцу фото и членам его семьи, [ниже](#media) | Любой файл под `MEDIA_ROOT` при `DEBUG` |
 
-**Семья** (`accounts.Household`, `accounts.Membership`; у пользователя не больше одной, заводит администратор в `/admin/`). В `accounts` «свои» строки — строки пользователя и всех членов его семьи: чеки, фото, задания, вырезки, статистика, `own` в точках цен, `stores.receipts_count`, `products.last_observed_at`, покупки группы слияния у не модератора; чтение и запись (подтверждение вырезки, cancel / retry) — одинаково, правило одно — `accounts.access.owner_q`. Без семьи — только свои строки, как раньше; `local_single` не меняется. `owner` по-прежнему значит «кто добавил»: новый чек и фото пишутся на того, кто загрузил фото; дедупликация чеков и `sha256` фото — в пределах владельца. Имя добавившего — поле `owner` (логин) у Receipt и Job.
+**Семья** (`accounts.Household`, `accounts.Membership`; у пользователя не больше одной, заводит администратор в `/admin/`). В `accounts` «свои» строки — строки пользователя и всех членов его семьи: чеки, фото, задания, вырезки, статистика, `own` в точках цен, `stores.receipts_count`, `products.last_observed_at`, покупки группы слияния у не модератора; чтение и запись (подтверждение вырезки, cancel / retry) — одинаково, правило одно — `accounts.access.owner_q`. Без семьи — только свои строки, как раньше; `local_single` не меняется. `owner` по-прежнему значит «кто добавил»: новый чек и фото пишутся на того, кто загрузил фото; дедупликация чеков и `sha256` фото — в пределах владельца. Кто добавил — поле `owner` (логин) у Receipt и Job; у Receipt рядом `owner_name` — имя для показа («Имя» из админки, без него — логин).
 
 Анонимны в обоих режимах: `GET /api/health/`, `GET /api/auth/csrf/` и запасной `404 not_found` неизвестного пути под `/api/`. Выключенный пользователь (`is_active=False`) считается не вошедшим: его открытые сессии отвечают `401`.
 
@@ -125,13 +125,13 @@ Probes запускаются параллельно, поэтому их обы
 
 ```json
 {"mode": "accounts",
- "user": {"id": 1, "username": "synthetic-reader", "is_staff": false},
+ "user": {"id": 1, "username": "synthetic-reader", "display_name": "synthetic-reader", "is_staff": false},
  "household": null,
  "permissions": {"moderate_catalog": false},
  "csrf_token": "…"}
 ```
 
-`mode` — `accounts` либо `local_single`; `household` — семья пользователя `{"id", "name", "members": [логины по алфавиту]}` либо `null` (без семьи и всегда в `local_single`); `permissions.moderate_catalog` — можно ли менять общий каталог (в `local_single` всегда `true`); `csrf_token` — токен текущей сессии. Вход меняет ключ сессии и токен CSRF: дальше клиент берёт токен из ответа входа.
+`mode` — `accounts` либо `local_single`; `user.display_name` — имя для показа: поле «Имя» (`first_name`) пользователя в админке (`/admin/auth/user/{id}/change/`) без пробелов по краям, пустое — логин; `household` — семья пользователя `{"id", "name", "members": [логины по алфавиту], "people": [{"username", "display_name"}]}` либо `null` (без семьи и всегда в `local_single`); `people` — те же люди в том же порядке с именем для показа, `members` сохранён для прежних клиентов и фильтров (ключ — логин; имя только показывается, `accounts/people.py`); `permissions.moderate_catalog` — можно ли менять общий каталог (в `local_single` всегда `true`); `csrf_token` — токен текущей сессии. Вход меняет ключ сессии и токен CSRF: дальше клиент берёт токен из ответа входа.
 
 Правила трёх POST:
 
@@ -920,7 +920,7 @@ List и detail `/api/recognition/receipt-images/` отдают у **каждог
 
 ### Receipt, Line, Discount, Tax
 
-Receipt содержит ровно `id,owner,source,store,currency,operation,purchased_on,purchased_at,total,discount_total,prices_include_tax,origin,review_required,lines_count,unmatched_products_count,receipt_images_count,note,preview_image_url,created_at,updated_at,lines_url,discounts_url,taxes_url,images_url`. `owner` — логин того, кто добавил чек (владельца фото). Store — прежний `api.common.store_object`, без вложенного Merchant; `null` — «Без места», бывает только у `source=manual` ([трата без чека](#реализовано-трата-без-чека)). `source` — `photo` (чек с фото и всё прежнее) либо `manual`; `note` — комментарий человека, у чеков с фото пустая строка. `origin="recognized"` при наличии связанной вырезки, иначе `"legacy/manual"`: это вычисляемый индикатор связи, без новой provenance-модели. Preview — последняя связанная вырезка по created_at/id, при отсутствии null. `review_required` — несопоставленный товар, связанная вырезка needs_review или issues у неуспешной вырезки; замечания успешных вырезок сами по себе review не требуют. Несопоставленный товар может требовать проверки Receipt, хотя импорт и Job уже succeeded. Canonical Receipt не содержит непринятый результат: его смотрят через ReceiptImage.
+Receipt содержит ровно `id,owner,owner_name,source,store,currency,operation,purchased_on,purchased_at,total,discount_total,prices_include_tax,origin,review_required,lines_count,unmatched_products_count,receipt_images_count,note,preview_image_url,created_at,updated_at,lines_url,discounts_url,taxes_url,images_url`. `owner` — логин того, кто добавил чек (владельца фото), ключ фильтра `?owner=`; `owner_name` (рядом с `owner`, добавлено 2026-10-12) — его имя для показа по тому же правилу, что `display_name` в [«Я»](#вход-выход-смена-пароля-кто-я). Store — прежний `api.common.store_object`, без вложенного Merchant; `null` — «Без места», бывает только у `source=manual` ([трата без чека](#реализовано-трата-без-чека)). `source` — `photo` (чек с фото и всё прежнее) либо `manual`; `note` — комментарий человека, у чеков с фото пустая строка. `origin="recognized"` при наличии связанной вырезки, иначе `"legacy/manual"`: это вычисляемый индикатор связи, без новой provenance-модели. Preview — последняя связанная вырезка по created_at/id, при отсутствии null. `review_required` — несопоставленный товар, связанная вырезка needs_review или issues у неуспешной вырезки; замечания успешных вырезок сами по себе review не требуют. Несопоставленный товар может требовать проверки Receipt, хотя импорт и Job уже succeeded. Canonical Receipt не содержит непринятый результат: его смотрят через ReceiptImage.
 
 #### Список «Траты»: фильтр owner и поля строки
 
@@ -1678,7 +1678,7 @@ Line несёт ещё `category` (`{"id","name"}` либо `null`, после `
 
 ## Реализовано: лимиты бюджета и дашборд месяца
 
-Шаг 4 [семейного бюджета](plans/2026-10-12-family-budget-design.md): месячные лимиты по категориям верхнего уровня и сводка месяца для главного экрана. Модель — [data-model](data-model.md#бюджет-лимиты-по-категориям) (`budget.BudgetLimit`), расчёт — `backend/budget/dashboard.py`, правило доступа к лимитам — `backend/budget/access.py`, представления — `backend/api/views/budget.py`.
+Шаг 4 [семейного бюджета](plans/2026-10-12-family-budget-design.md): месячные лимиты по категориям (с 2026-10-12 — любого уровня, например «Аренда» и «Коммунальные услуги» внутри «Жилья») и сводка месяца для главного экрана. Модель — [data-model](data-model.md#бюджет-лимиты-по-категориям) (`budget.BudgetLimit`), расчёт — `backend/budget/dashboard.py`, правило доступа к лимитам — `backend/budget/access.py`, представления — `backend/api/views/budget.py`.
 
 Доступ, CSRF и `Cache-Control: no-store` — как у трат без чека: `local_single` — `DEBUG` + `ALLOW_LOCAL_RECOGNITION_API=1` + loopback (запись — с CSRF), `accounts` — вход (без него `401 not_authenticated`) и CSRF для записи. Тело записи — объект JSON до 4 КБ, `Content-Type: application/json` (иначе `415`; пустое или не объект — `400 invalid_request`).
 
@@ -1698,9 +1698,9 @@ Line несёт ещё `category` (`{"id","name"}` либо `null`, после `
 {"id": 7, "category_id": 3, "category_name": "Продукты", "currency": "KZT", "amount": "120000.00"}
 ```
 
-- `category_id` — целое, id существующей категории **верхнего уровня**; `currency` — существующий код из трёх букв (регистр не важен); `amount` — сумма в месяц > 0, строка или число JSON, не больше 12 целых и 2 дробных знаков (запятая допустима), как `total` траты.
+- `category_id` — целое, id существующей категории **любого уровня**; трата подкатегории входит и в её лимит, и в лимит каждого предка; `currency` — существующий код из трёх букв (регистр не важен); `amount` — сумма в месяц > 0, строка или число JSON, не больше 12 целых и 2 дробных знаков (запятая допустима), как `total` траты.
 - Пара «категория и валюта» уникальна у владельца (семьи либо пользователя): повтор, в том числе `PATCH` на занятую пару, — `400 invalid_parameter`, `fields.category_id`: `Лимит для этой категории и валюты уже есть.`
-- Прочие ошибки — `400 invalid_parameter` с `fields`: `category_id` (`Категория верхнего уровня не найдена.`), `currency` (`Валюта не найдена.`), `amount` (`Сумма больше нуля, не больше двух знаков после запятой.`), отсутствующее поле `POST` — `Обязательное поле.`, неизвестный ключ — `Неизвестное поле.`, пустой `PATCH` — `fields.body`: `Укажите хотя бы одно поле.` При отказе ничего не сохраняется.
+- Прочие ошибки — `400 invalid_parameter` с `fields`: `category_id` (`Категория не найдена.`), `currency` (`Валюта не найдена.`), `amount` (`Сумма больше нуля, не больше двух знаков после запятой.`), отсутствующее поле `POST` — `Обязательное поле.`, неизвестный ключ — `Неизвестное поле.`, пустой `PATCH` — `fields.body`: `Укажите хотя бы одно поле.` При отказе ничего не сохраняется.
 
 ### `GET /api/dashboard/?month=ГГГГ-ММ`
 
@@ -1708,16 +1708,22 @@ Line несёт ещё `category` (`{"id","name"}` либо `null`, после `
 
 ```json
 {"month": "2026-10", "previous_month": "2026-09", "days_left": 19, "members": ["andrey", "liza"],
+ "people": [{"username": "andrey", "display_name": "Андрей"}, {"username": "liza", "display_name": "Лиза"}],
  "currencies": [{"currency": "KZT", "spent": "287450.00", "previous_spent": "326100.00", "limit_total": "400000.00",
-   "categories": [{"category_id": 3, "name": "Продукты", "spent": "92300.00", "limit": "120000.00", "limit_id": 7}]}],
- "recent": [{"id": 12, "source": "photo", "title": "Magnum", "category_name": "Продукты", "owner": "liza",
+   "categories": [
+     {"category_id": 3, "name": "Продукты", "spent": "92300.00", "limit": "120000.00", "limit_id": 7, "children": []},
+     {"category_id": 10, "name": "Жильё", "spent": "250000.00", "limit": null, "limit_id": null, "children": [
+       {"category_id": 17, "name": "Аренда", "spent": "200000.00", "limit": "200000.00", "limit_id": 31, "children": []},
+       {"category_id": 21, "name": "Коммунальные услуги", "spent": "50000.00", "limit": "40000.00", "limit_id": 32, "children": []}]}]}],
+ "recent": [{"id": 12, "source": "photo", "title": "Magnum", "category_name": "Продукты", "owner": "liza", "owner_name": "Лиза",
    "purchased_on": "2026-10-12", "total": "18940.00", "currency": "KZT", "lines_count": 23}]}
 ```
 
-- Месяц — по локальной дате чека `purchased_on`, прошлый месяц — так же. `days_left` — дней до конца месяца, включая сегодня, если месяц текущий; иначе `0`. `members` — логины членов семьи по алфавиту, без семьи — `[свой]` (`local_single` — `["local"]`).
-- `currencies` — по коду валюты; валюты не складываются. Блок есть, если в валюте есть чеки этого или прошлого месяца либо лимит. `spent` / `previous_spent` — `Σ Receipt.total` месяца (заплачено, со скидкой на весь чек; возврат — со своим знаком), как `totals.receipts_total` в [`/api/stats/spending/`](#get-apistatsspending); нет чеков — `"0.00"`. `limit_total` — сумма лимитов валюты либо `null`.
-- `categories` — категории верхнего уровня: категория строки — категория товара, у строки без товара — `ReceiptLine.category` (ручная трата); потомки сворачиваются в корень, «Не разобрано» — как есть. `spent` — `Σ (amount − discount_amount)` строк. Строки без категории, услуги и залоги в категории не попадают (они только в `spent` блока), поэтому сумма категорий может быть меньше `spent`. Категория с лимитом есть и без трат (`"0.00"`). `limit` / `limit_id` — лимит этой категории и валюты либо `null`. Порядок — `spent` по убыванию, затем имя и id.
-- `recent` — последние 10 чеков и трат по `purchased_at` (затем `-id`) за всё время, не только за месяц. `title` — вывеска магазина; без магазина — комментарий траты, иначе `category_name`, иначе `Без места`. `category_name` — корень с наибольшей суммой строк чека либо `null`. `owner` — логин того, кто добавил; `lines_count` — все строки чека.
+- Месяц — по локальной дате чека `purchased_on`, прошлый месяц — так же. `days_left` — дней до конца месяца, включая сегодня, если месяц текущий; иначе `0`. `members` — логины членов семьи по алфавиту, без семьи — `[свой]` (`local_single` — `["local"]`); `people` — те же люди в том же порядке `{"username", "display_name"}` (имя — как в [«Я»](#вход-выход-смена-пароля-кто-я)).
+- `currencies` — по коду валюты; валюты не складываются. Блок есть, если в валюте есть чеки этого или прошлого месяца либо лимит. `spent` / `previous_spent` — `Σ Receipt.total` месяца (заплачено, со скидкой на весь чек; возврат — со своим знаком), как `totals.receipts_total` в [`/api/stats/spending/`](#get-apistatsspending); нет чеков — `"0.00"`. `limit_total` — сумма лимитов валюты, у которых нет лимита у предка в той же валюте (лимит подкатегории — часть лимита родителя, а не добавка к нему; лимиты подкатегорий без лимита у предка — складываются), либо `null`.
+- `categories` — категории верхнего уровня: категория строки — категория товара, у строки без товара — `ReceiptLine.category` (ручная трата); потомки сворачиваются в корень, «Не разобрано» — как есть. `spent` — `Σ (amount − discount_amount)` строк. Строки без категории, услуги и залоги в категории не попадают (они только в `spent` блока), поэтому сумма категорий может быть меньше `spent`. Категория с лимитом есть и без трат (`"0.00"`). `limit` / `limit_id` — лимит этой категории и валюты либо `null`. Порядок — `spent` по убыванию, затем имя и id. Корень без трат и без своего лимита появляется с `"0.00"`, если лимит есть у его подкатегории.
+- `children` (у каждой строки, добавлено 2026-10-12) — подкатегории **только** с лимитом в этой валюте либо с таким лимитом у потомка (чтобы карточка оставалась короткой), рекурсивно, той же формы `{"category_id", "name", "spent", "limit", "limit_id", "children"}` и в том же порядке; у строки без таких подкатегорий — `[]`. `spent` подкатегории — её строки и строки всех потомков, тем же расчётом, что у корня (`receipts.spending` с фильтром категории). Промежуточный предок без своего лимита — с `limit: null`.
+- `recent` — последние 10 чеков и трат по `purchased_at` (затем `-id`) за всё время, не только за месяц. `title` — вывеска магазина; без магазина — комментарий траты, иначе `category_name`, иначе `Без места`. `category_name` — корень с наибольшей суммой строк чека либо `null`. `owner` — логин того, кто добавил, `owner_name` — его имя для показа; `lines_count` — все строки чека.
 - Число запросов не зависит от объёма данных. Слитые товары относятся к оставляемому, как в статистике.
 
 ## Планируется
