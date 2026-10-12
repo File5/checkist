@@ -73,7 +73,9 @@ class HouseholdMigrationTests(TransactionTestCase):
             self.assertFalse(names & self.tables())
             self.assertIn("accounts_loginfailure", self.tables())
         finally:
-            self.migrate(("accounts", "0002_household_membership"))
+            # The latest state of every app: the rollback also removed what depends on 0002 (budget).
+            executor = MigrationExecutor(connection)
+            executor.migrate(executor.loader.graph.leaf_nodes())
         self.assertLessEqual(names, self.tables())
 
 
