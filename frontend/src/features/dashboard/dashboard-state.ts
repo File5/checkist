@@ -1,0 +1,165 @@
+import type { Dashboard, DashboardRecent, MonthCode } from '../../api/budget-types'
+import type { Decimal, LocalApiFailure } from '../../api/types'
+import { NBSP, glue } from '../../lib/text'
+
+/** Money is counted in cents with BigInt: a Decimal never becomes a Number. A malformed value counts as zero. */
+export function cents(value: Decimal | null | undefined): bigint {
+  const match = value ? /^(-?)(\d+)(?:\.(\d{1,2}))?$/.exec(value) : null
+  if (!match) return 0n
+  const result = BigInt(match[2]) * 100n + BigInt((match[3] ?? '').padEnd(2, '0'))
+  return match[1] ? -result : result
+}
+
+const groupDigits = (digits: string) => digits.replace(/\B(?=(\d{3})+(?!\d))/g, NBSP)
+
+/** «287 450», «1 500,50»: kopecks only when there are any. */
+export function formatNumber(value: Decimal | bigint): string {
+  const amount = typeof value === 'bigint' ? value : cents(value)
+  const negative = amount < 0n
+  const absolute = negative ? -amount : amount
+  const whole = groupDigits((absolute / 100n).toString())
+  const fraction = absolute % 100n
+  return `${negative ? '-' : ''}${whole}${fraction ? `,${fraction.toString().padStart(2, '0')}` : ''}`
+}
+
+/** «287 450 KZT»: the whole value never breaks. */
+export function formatMoney(value: Decimal | bigint, currency: string): string {
+  return glue(formatNumber(value), currency)
+}
+
+/** «В октябре» at the start of a sentence. */
+export function capitalize(text: string): string {
+  return text ? `${text[0].toUpperCase()}${text.slice(1)}` : text
+}
+
+const nominative = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
+const prepositional = ['январе', 'феврале', 'марте', 'апреле', 'мае', 'июне', 'июле', 'августе', 'сентябре', 'октябре', 'ноябре', 'декабре']
+const genitive = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря']
+
+const monthIndex = (month: MonthCode) => Number(month.slice(5, 7)) - 1
+
+/** «Октябрь 2026». */
+export function monthTitle(month: MonthCode): string {
+  return glue(nominative[monthIndex(month)], month.slice(0, 4))
+}
+/** «в сентябре». */
+export function inMonth(month: MonthCode): string {
+  return glue('в', prepositional[monthIndex(month)])
+}
+/** «12 октября»: a calendar date without a timezone conversion. */
+export function dayAndMonth(date: string): string {
+  return glue(String(Number(date.slice(8, 10))), genitive[Number(date.slice(5, 7)) - 1])
+}
+
+/** The month `delta` months away: `shiftMonth('2026-01', -1)` → `2025-12`. */
+export function shiftMonth(month: MonthCode, delta: number): MonthCode {
+  const total = Number(month.slice(0, 4)) * 12 + monthIndex(month) + delta
+  return `${String(Math.floor(total / 12)).padStart(4, '0')}-${String((total % 12) + 1).padStart(2, '0')}`
+}
+
+/** The month of the device; the dashboard does not offer a month after it. */
+export function deviceMonth(now: Date = new Date()): MonthCode {
+  return `${String(now.getFullYear()).padStart(4, '0')}-${String(now.getMonth() + 1).padStart(2, '0')}`
+}
+
+/** «1 день», «2 дня», «5 дней». */
+export function plural(count: number | bigint, one: string, few: string, many: string): string {
+  const n = BigInt(count) < 0n ? -BigInt(count) : BigInt(count)
+  const lastTwo = n % 100n
+  const last = n % 10n
+  if (lastTwo >= 11n && lastTwo <= 14n) return many
+  if (last === 1n) return one
+  if (last >= 2n && last <= 4n) return few
+  return many
+}
+
+export type Comparison = { tone: 'less' | 'more' | 'same' | 'new'; text: string }
+
+/** «на 12% меньше, чем в сентябре». Percent of the previous month, rounded half up; no comparison without the previous spends. */
+export function compareMonths(spent: Decimal, previous: Decimal, previousMonth: MonthCode): Comparison | null {
+  const now = cents(spent)
+  const before = cents(previous)
+  if (before <= 0n) return now > 0n ? { tone: 'new', text: `${inMonth(previousMonth)} трат не было` } : null
+  const difference = now - before
+  if (difference === 0n) return { tone: 'same', text: `столько же, сколько ${inMonth(previousMonth)}` }
+  const absolute = difference < 0n ? -difference : difference
+  const percent = (absolute * 200n + before) / (before * 2n)
+  if (percent === 0n) return { tone: 'same', text: `почти столько же, сколько ${inMonth(previousMonth)}` }
+  const less = difference < 0n
+  return { tone: less ? 'less' : 'more', text: `на${NBSP}${groupDigits(percent.toString())}${NBSP}% ${less ? 'меньше' : 'больше'}, чем ${inMonth(previousMonth)}` }
+}
+
+export type Progress = {
+  /** Width of the filled part, 0–100: an overspent bar is full. */
+  percent: number
+  over: boolean
+  remaining: bigint
+  overBy: bigint
+}
+
+/** Spent against a limit; no bar for a missing or non-positive limit. */
+export function progress(spent: Decimal, limit: Decimal | null): Progress | null {
+  if (limit === null) return null
+  const total = cents(limit)
+  if (total <= 0n) return null
+  const used = cents(spent)
+  const over = used > total
+  const filled = used <= 0n ? 0n : over ? 100n : (used * 100n) / total
+  return { percent: Number(filled), over, remaining: over ? 0n : total - used, overBy: over ? used - total : 0n }
+}
+
+/** Colour of a category: a stable number 1–6 by its id (`--ck-cat-N`); 0 — no category, the neutral colour. */
+export function categoryTone(id: number | null | undefined): number {
+  return id ? (id % 6) + 1 : 0
+}
+
+/** «А» for «andrey», «АМ» for «anna_maria»: up to two letters of the name's parts. */
+export function initials(username: string): string {
+  const parts = username.split(/[^\p{L}\p{N}]+/u).filter(Boolean)
+  const letters = (parts.length ? parts : [username]).slice(0, 2).map((part) => [...part][0] ?? '')
+  return letters.join('').toUpperCase() || '?'
+}
+
+/** First letter of a category for its badge. */
+export function badgeLetter(name: string | null, title: string): string {
+  return ([...(name ?? title).trim()][0] ?? '•').toUpperCase()
+}
+
+/** «liza · 12 октября · 23 позиции», «вручную» for a spend without a receipt. */
+export function recentMeta(item: DashboardRecent): string {
+  const what = item.source === 'manual' ? 'вручную'
+    : glue(String(item.lines_count), plural(item.lines_count, 'позиция', 'позиции', 'позиций'))
+  return [item.owner, dayAndMonth(item.purchased_on), what].join(' · ')
+}
+
+/** «ещё 19 дней» до конца месяца. */
+export function daysLeftText(days: number): string {
+  return glue('ещё', String(days), plural(days, 'день', 'дня', 'дней'))
+}
+
+/** A month with nothing spent in any currency: limits may still be there with zeros. */
+export function monthIsEmpty(data: Dashboard): boolean {
+  return data.currencies.every((block) => cents(block.spent) === 0n)
+}
+
+/** The id of a category by its name, for the colour of a recent spend's badge: the dashboard sends the name only. */
+export function categoryIds(data: Dashboard): Map<string, number> {
+  const ids = new Map<string, number>()
+  for (const block of data.currencies) for (const category of block.categories) {
+    if (category.category_id !== null && !ids.has(category.name)) ids.set(category.name, category.category_id)
+  }
+  return ids
+}
+
+/** Local texts only: a server message never reaches the screen. */
+export function dashboardErrorMessage(failure: Pick<LocalApiFailure, 'reason'>): string {
+  switch (failure.reason) {
+    case 'timeout': return 'Сервер не ответил вовремя. Повторите попытку.'
+    case 'network': return 'Не удалось связаться с сервером. Проверьте соединение и повторите попытку.'
+    case 'database_unavailable': return 'Данные временно недоступны. Повторите попытку позже.'
+    case 'invalid_parameter': case 'invalid_request': return 'Не удалось открыть этот месяц. Вернитесь к текущему.'
+    case 'permission_denied': return 'Нет доступа к тратам. Войдите под своей учётной записью.'
+    case 'invalid_response': return 'Сервер вернул неожиданный ответ. Повторите попытку.'
+    default: return 'Не удалось загрузить траты месяца. Повторите попытку.'
+  }
+}

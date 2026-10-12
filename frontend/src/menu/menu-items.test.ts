@@ -77,7 +77,9 @@ describe('items of the main menu and their split for the bottom bar of a phone',
     expect(current(guest, { kind: 'login' })).toEqual([])
   })
 
-  it('marks «Главная» on the dashboard and its limits (route kinds of the dashboard branch)', () => {
-    for (const kind of ['dashboard', 'limits']) expect(current(reader, { kind } as unknown as Route)).toEqual(['home'])
+  it('marks «Главная» on the dashboard and its limits', () => {
+    const routes: Route[] = [{ kind: 'dashboard' }, { kind: 'dashboard', month: '2026-09' }, { kind: 'limits' }]
+    for (const route of routes) expect(current(reader, route)).toEqual(['home'])
+    expect(current(reader, { kind: 'catalog', query: {} } as Route)).not.toContain('home')
   })
 })

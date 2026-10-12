@@ -22,6 +22,7 @@ vi.mock('../features/recognition', () => ({
 vi.mock('../features/receipts', () => ({ ReceiptsPage: () => <pre data-screen="receipts" />, ReceiptPage: () => <pre data-screen="receipt" /> }))
 vi.mock('../features/merges', () => ({ MergesPage: () => <pre data-screen="merges" />, MergePage: () => <pre data-screen="merge" /> }))
 vi.mock('../features/classification', () => ({ ClassificationPage: () => <pre data-screen="classification" /> }))
+vi.mock('../features/dashboard', () => ({ DashboardPage: () => <pre data-screen="dashboard" />, LimitsPage: () => <pre data-screen="limits" /> }))
 vi.mock('../features/stats', () => ({ SpendingPage: () => <pre data-screen="spending" />, ReceiptsStatsPage: () => <pre data-screen="receipts-stats" /> }))
 
 const guest: Session = { kind: 'guest', expired: false }
@@ -31,6 +32,9 @@ const local: Session = { kind: 'user', mode: 'local_single', user: { id: 1, user
 
 /** Every data route with the address a person could open directly. */
 const pages: [Route, string][] = [
+  [{ kind: 'dashboard' }, '/'],
+  [{ kind: 'dashboard', month: '2026-09' }, '/?month=2026-09'],
+  [{ kind: 'limits' }, '/budget/limits'],
   [{ kind: 'catalog', query: { q: 'молоко', page: 2 } }, '/catalog?q=%D0%BC%D0%BE%D0%BB%D0%BE%D0%BA%D0%BE&page=2'],
   [{ kind: 'category', categoryId: 3, query: { page: 1 } }, '/catalog/categories/3'],
   [{ kind: 'product', productId: 5, query: { currency: 'EUR', page: 1 } }, '/catalog/products/5?currency=EUR'],
@@ -217,7 +221,7 @@ describe('signed-in shell (SSR only, no browser interaction)', () => {
       expect(screens(html)).toEqual([])
     }
   })
-  it('mounts nothing at /login for a signed-in person: the shell sends them to the home page', () => {
+  it('mounts nothing at /login for a signed-in person: the shell sends them to «Главная»', () => {
     // The transition itself is a layout effect and is not run here; the person checks it by hand.
     for (const session of [reader, moderator]) {
       const html = render(session, { kind: 'login' }, '/login')

@@ -25,10 +25,8 @@ export const BAR_SLOTS = 4
 /** How many links stand before «＋» in the bar: «Главная · Траты · ＋ · Статистика · Ещё». */
 export const ADD_AFTER = 2
 
-/** The month dashboard at '/' and its limits at '/budget/limits'. Compared as strings: the route kinds `dashboard` and
- * `limits` come with the dashboard branch. NOTE for the integrator: once they are in `Route`, write
- * `homeKinds.includes(route.kind)` with `homeKinds: Route['kind'][]`. */
-const homeKinds: string[] = ['dashboard', 'limits']
+/** The month dashboard at '/' and its limits at '/budget/limits'. */
+const homeKinds: Route['kind'][] = ['dashboard', 'limits']
 const catalogKinds: Route['kind'][] = ['catalog', 'category', 'product', 'merges', 'merge', 'classification']
 const receiptKinds: Route['kind'][] = ['receipts', 'upload', 'expense-new', 'expense-edit', 'receipt']
 const statsKinds: Route['kind'][] = ['spending', 'receipts-stats']

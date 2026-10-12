@@ -103,6 +103,10 @@ export type CatalogRoute =
   | { kind: 'category'; categoryId: number; query: CatalogQuery }
 
 export type NavigableRoute = CatalogRoute
+  /** «Главная»: the month of the family budget; no `month` — the server's current month. */
+  | { kind: 'dashboard'; month?: string }
+  /** Monthly limits of top-level categories. */
+  | { kind: 'limits' }
   | { kind: 'product'; productId: number; query: ProductQuery }
   | { kind: 'spending'; query: SpendingQuery }
   | { kind: 'receipts-stats'; query: ReceiptsStatsQuery }
@@ -420,6 +424,12 @@ export function buildClassificationQuery(query: ClassificationQuery): string {
   return buildQuery(query, ['status', 'product', 'page'], parseClassificationQuery)
 }
 
+/** `YYYY-MM` of a real month; anything else is dropped like a wrong statistics filter. */
+export function parseMonthParam(value: string | null | undefined): string | undefined {
+  const month = value?.trim()
+  return month && /^\d{4}-(0[1-9]|1[0-2])$/.test(month) && !month.startsWith('0000') ? month : undefined
+}
+
 function buildId(id: number): string {
   if (!Number.isSafeInteger(id) || id <= 0) throw new RangeError('Invalid route ID')
   return String(id)
@@ -427,6 +437,11 @@ function buildId(id: number): string {
 
 export function buildRoute(route: NavigableRoute): string {
   switch (route.kind) {
+    case 'dashboard': {
+      const month = parseMonthParam(route.month)
+      return month ? `/?month=${month}` : '/'
+    }
+    case 'limits': return '/budget/limits'
     case 'catalog': return `/catalog${buildCatalogQuery(route.query)}`
     case 'category': return `/catalog/categories/${buildId(route.categoryId)}${buildCatalogQuery(route.query)}`
     case 'product': return `/catalog/products/${buildId(route.productId)}${buildProductQuery(route.query)}`
@@ -458,6 +473,12 @@ export function parseRoute(input: string | URL): Route {
   const path = url.pathname
   const normalizedPath = path === '/' ? path : path.replace(/\/$/, '')
   if (normalizedPath === '/health') return { kind: 'health' }
+  // The dashboard never answers with invalid-query: a wrong month is dropped and the current one opens.
+  if (normalizedPath === '/') {
+    const month = parseMonthParam(url.searchParams.getAll('month').at(-1))
+    return month ? { kind: 'dashboard', month } : { kind: 'dashboard' }
+  }
+  if (normalizedPath === '/budget/limits') return { kind: 'limits' }
   if (normalizedPath === '/login') return { kind: 'login' }
   if (normalizedPath === '/receipts/upload') return { kind: 'upload' }
   if (normalizedPath === '/receipts/new') return { kind: 'expense-new' }
@@ -498,7 +519,7 @@ export function parseRoute(input: string | URL): Route {
 
   let route: NavigableRoute
   let invalidFields: string[]
-  if (normalizedPath === '/' || normalizedPath === '/catalog') {
+  if (normalizedPath === '/catalog') {
     const parsed = parseCatalogQuery(url.searchParams)
     invalidFields = parsed.invalidFields
     route = { kind: 'catalog', query: parsed.query }
