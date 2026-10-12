@@ -33,7 +33,7 @@ describe('«Траты» on a phone (Vitest/SSR, not browser visual acceptance)'
     expect(html.match(/<a class="spends-row" href="\/receipts\/\d+">/g)).toHaveLength(3)
     // One strip of receipt tape per day.
     expect(html.match(/<ul class="spends-rows ck-tape">/g)).toHaveLength(2)
-    expect(html).toContain(`<span class="spends-row-title">Magnum</span><span class="spends-row-meta">Продукты · Лиза · 23${NBSP}позиции</span>`)
+    expect(html).toContain(`<span class="spends-row-title">Magnum</span><span class="spends-row-meta">Продукты · Лиза · по чеку · 23${NBSP}позиции</span>`)
     expect(html).toContain(`<span class="spends-row-amount ck-figures">18${NBSP}940${NBSP}KZT</span>`)
     // A spend without a place is titled by its first line and says it has no receipt only to a screen reader.
     expect(html).toContain('<span class="spends-row-title">Такси<span class="spends-hidden"> (трата без чека)</span></span>')

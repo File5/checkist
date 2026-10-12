@@ -38,6 +38,26 @@ export type Dashboard = {
   currencies: DashboardCurrency[]; recent: DashboardRecent[]
 }
 
+/** A line of a receipt or spend that belongs to the category (or a descendant): its name, paid amount and category. */
+export type CategorySpendLine = { id: number; name: string; amount: Decimal; category_id: number; category_name: string }
+/** A receipt or spend with lines in the category: `category_amount` — their sum, `receipt_total` — the whole receipt. */
+export type CategorySpendItem = {
+  receipt_id: number; source: ReceiptSource; purchased_on: ISODate; store: { id: number; name: string } | null; note: string
+  owner: string; owner_name: string; receipt_total: Decimal; category_amount: Decimal; lines: CategorySpendLine[]
+}
+/** A direct sub-category with its descendants, or the category itself (`direct`). */
+export type CategorySpendPart = { id: number; name: string; direct: boolean; children_count: number; amount: Decimal; lines_count: number }
+export type CategorySpendCurrency = {
+  currency: CurrencyCode; total: Decimal; receipts_count: number; parts: CategorySpendPart[]; items: CategorySpendItem[]
+}
+/** `GET /api/stats/category-spends/?category=ID&month=YYYY-MM`: what the money of a category went on in a month. */
+export type CategorySpends = {
+  month: MonthCode; previous_month: MonthCode
+  category: { id: number; name: string; path: { id: number; name: string }[] }
+  children: { id: number; name: string }[]
+  currencies: CategorySpendCurrency[]
+}
+
 /** A monthly limit of a category (any level) in one currency, shared by the family (or one's own without a family). */
 export type BudgetLimit = { id: number; category_id: number; category_name: string; currency: CurrencyCode; amount: Decimal }
 /** Body of `POST /api/budget/limits/`. */

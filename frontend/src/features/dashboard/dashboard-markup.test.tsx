@@ -53,7 +53,7 @@ describe('«Главная» markup (Vitest/SSR, not browser visual acceptance)'
   it('lists the limits by category colour with bars, overspend and categories without a limit', () => {
     const limits = between(view(), 'dash-limits', '</section>')
     expect(limits).toContain('<a class="dash-link" href="/budget/limits">Изменить</a>')
-    expect(limits).toContain(`<li class="dash-limit dash-cat-3"><div class="dash-limit-head"><span class="dash-dot" aria-hidden="true"></span><span class="dash-limit-name">Продукты</span><span class="dash-limit-value ck-figures">${nb('92 300')} / ${nb('120 000 KZT')}</span></div>`)
+    expect(limits).toContain(`<li class="dash-limit dash-cat-3"><a class="dash-limit-head dash-limit-link" href="/spends/category/3?month=2026-10"><span class="dash-dot" aria-hidden="true"></span><span class="dash-limit-name">Продукты</span><span class="dash-limit-value ck-figures">${nb('92 300')} / ${nb('120 000 KZT')}</span></a>`)
     expect(limits).toContain('aria-label="Продукты: потрачено 76% лимита"')
     const cafe = between(limits, 'dash-cat-2', '</li>')
     expect(cafe).toContain('dash-bar dash-bar-over')
@@ -76,11 +76,11 @@ describe('«Главная» markup (Vitest/SSR, not browser visual acceptance)'
     const html = view({ ...data, currencies: [{ ...data.currencies[0], categories: [home, ...data.currencies[0].categories] }] })
     const row = between(html, 'dash-cat-4', 'dash-cat-3')
     // The top-level row without its own limit: what was spent, no bar.
-    expect(row).toContain(`<span class="dash-limit-name">Жильё</span><span class="dash-limit-value ck-figures">${nb('250 000 KZT')}</span></div><ul class="dash-sublimit-list" aria-label="Жильё: подкатегории с лимитами">`)
+    expect(row).toContain(`<span class="dash-limit-name">Жильё</span><span class="dash-limit-value ck-figures">${nb('250 000 KZT')}</span></a><ul class="dash-sublimit-list" aria-label="Жильё: подкатегории">`)
     expect(row).not.toContain('aria-label="Жильё: потрачено')
-    expect(row).toContain(`<li class="dash-sublimit"><div class="dash-limit-head"><span class="dash-sublimit-name">Аренда</span><span class="dash-limit-value dash-sublimit-value ck-figures">${nb('200 000')} / ${nb('200 000 KZT')}</span></div><div class="dash-bar dash-bar-small" role="progressbar" aria-label="Аренда: потрачено 100% лимита"`)
+    expect(row).toContain(`<li class="dash-sublimit"><a class="dash-limit-head dash-limit-link" href="/spends/category/17?month=2026-10"><span class="dash-sublimit-name">Аренда</span><span class="dash-limit-value dash-sublimit-value ck-figures">${nb('200 000')} / ${nb('200 000 KZT')}</span></a><div class="dash-bar dash-bar-small" role="progressbar" aria-label="Аренда: потрачено 100% лимита"`)
     // An ancestor of a limited one: its spends, no bar, its own nested list.
-    expect(row).toContain(`<span class="dash-sublimit-name">Коммунальные услуги</span><span class="dash-limit-value dash-sublimit-value ck-figures">${nb('50 000 KZT')}</span></div><ul class="dash-sublimit-list" aria-label="Коммунальные услуги: подкатегории с лимитами">`)
+    expect(row).toContain(`<span class="dash-sublimit-name">Коммунальные услуги</span><span class="dash-limit-value dash-sublimit-value ck-figures">${nb('50 000 KZT')}</span></a><ul class="dash-sublimit-list" aria-label="Коммунальные услуги: подкатегории">`)
     expect(row).toContain('<div class="dash-bar dash-bar-small dash-bar-over" role="progressbar" aria-label="Электричество: потрачено 100% лимита"')
     expect(row).toContain(`<p class="dash-over dash-sublimit-over">Сверх лимита на <span class="dash-value">${nb('3 000 KZT')}</span></p>`)
     // An older server sends no `children`: the row is as before.

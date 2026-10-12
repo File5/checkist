@@ -1,7 +1,7 @@
 import { invalidIds } from './http.ts'
 import { getLocalJson, mutate } from './local.ts'
-import { isBudgetLimit, isBudgetLimitList, isDashboard, isMonthCode } from './budget-schema.ts'
-import type { BudgetLimit, BudgetLimitInput, Dashboard, MonthCode } from './budget-types.ts'
+import { isBudgetLimit, isBudgetLimitList, isCategorySpends, isDashboard, isMonthCode } from './budget-schema.ts'
+import type { BudgetLimit, BudgetLimitInput, CategorySpends, Dashboard, MonthCode } from './budget-types.ts'
 import type { LocalApiResult, RequestOptions } from './types.ts'
 
 export type * from './budget-types.ts'
@@ -11,6 +11,14 @@ export async function getDashboard(month?: MonthCode, options: RequestOptions = 
   if (options.signal?.aborted) return { kind: 'aborted' }
   if (month !== undefined && !isMonthCode(month)) return { kind: 'error', reason: 'invalid_parameter', fields: ['month'] }
   return getLocalJson('dashboard/', { month }, isDashboard, options)
+}
+
+/** What the money of a category (with its descendants) went on in a month: receipts and spends with their lines. */
+export async function getCategorySpends(category: number, month?: MonthCode, options: RequestOptions = {}): Promise<LocalApiResult<CategorySpends>> {
+  if (options.signal?.aborted) return { kind: 'aborted' }
+  if (!Number.isSafeInteger(category) || category < 1) return { kind: 'error', reason: 'invalid_parameter', fields: ['category'] }
+  if (month !== undefined && !isMonthCode(month)) return { kind: 'error', reason: 'invalid_parameter', fields: ['month'] }
+  return getLocalJson('stats/category-spends/', { category, month }, isCategorySpends, options)
 }
 
 /** Every limit the person may change: the family's, or one's own without a family. */

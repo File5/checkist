@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { getDashboard } from '../../api/budget'
 import type { Dashboard, DashboardCategory, DashboardCurrency, DashboardRecent, DashboardSubCategory } from '../../api/budget'
 import RequestState from '../../components/RequestState'
@@ -10,6 +11,7 @@ import {
   inMonth, monthIsEmpty, monthSlide, monthTitle, progress, recentMeta, shiftMonth, subCategories,
 } from './dashboard-state'
 import type { MonthSlide, Progress } from './dashboard-state'
+import { categorySpendsHref } from './category-spends-state'
 import './Dashboard.css'
 
 const monthHref = (month: string) => `/?month=${month}`
@@ -44,50 +46,57 @@ function SpentCard({ block, data, family, current, hero }: { block: DashboardCur
   </section>
 }
 
-/** «Аренда» under «Жильё»: indented, a thinner bar, the colour of its top-level row. Only limited sub-categories
- * and their ancestors come here; one without its own limit shows what was spent, without a bar. */
-function SubLimitRow({ row, currency }: { row: DashboardSubCategory; currency: string }) {
+/** The heading of a category row: a link to what its money went on this month («Траты категории»); a row without
+ * a category id (an older server) stays plain text. */
+function RowHead({ categoryId, month, children }: { categoryId: number | null; month: string; children: ReactNode }) {
+  return categoryId === null ? <div className="dash-limit-head">{children}</div>
+    : <Link className="dash-limit-head dash-limit-link" to={categorySpendsHref(categoryId, month)}>{children}</Link>
+}
+
+/** «Аренда» under «Жильё»: indented, a thinner bar, the colour of its top-level row. Every sub-category with spends
+ * of the month comes here, and a limited one with its ancestors; one without its own limit shows what was spent. */
+function SubLimitRow({ row, currency, month }: { row: DashboardSubCategory; currency: string; month: string }) {
   const bar = progress(row.spent, row.limit)
   const children = subCategories(row)
   return <li className="dash-sublimit">
-    <div className="dash-limit-head">
+    <RowHead categoryId={row.category_id} month={month}>
       <span className="dash-sublimit-name">{row.name}</span>
       <span className="dash-limit-value dash-sublimit-value ck-figures">
         {row.limit === null ? formatMoney(row.spent, currency)
           : <>{formatNumber(row.spent)} / {formatMoney(row.limit, currency)}</>}
       </span>
-    </div>
+    </RowHead>
     {bar && <Bar small value={bar} label={`${row.name}: потрачено ${bar.percent}% лимита`} />}
     {bar?.over && <p className="dash-over dash-sublimit-over">Сверх лимита на <span className="dash-value">{formatMoney(bar.overBy, currency)}</span></p>}
-    {children.length > 0 && <SubLimitList rows={children} currency={currency} label={row.name} />}
+    {children.length > 0 && <SubLimitList rows={children} currency={currency} label={row.name} month={month} />}
   </li>
 }
 
-function SubLimitList({ rows, currency, label }: { rows: DashboardSubCategory[]; currency: string; label: string }) {
-  return <ul className="dash-sublimit-list" aria-label={`${label}: подкатегории с лимитами`}>
-    {rows.map((row) => <SubLimitRow key={row.category_id} row={row} currency={currency} />)}
+function SubLimitList({ rows, currency, label, month }: { rows: DashboardSubCategory[]; currency: string; label: string; month: string }) {
+  return <ul className="dash-sublimit-list" aria-label={`${label}: подкатегории`}>
+    {rows.map((row) => <SubLimitRow key={row.category_id} row={row} currency={currency} month={month} />)}
   </ul>
 }
 
-function LimitRow({ category, currency }: { category: DashboardCategory; currency: string }) {
+function LimitRow({ category, currency, month }: { category: DashboardCategory; currency: string; month: string }) {
   const bar = progress(category.spent, category.limit)
   const children = subCategories(category)
   return <li className={`dash-limit dash-cat-${categoryTone(category.category_id)}`}>
-    <div className="dash-limit-head">
+    <RowHead categoryId={category.category_id} month={month}>
       <span className="dash-dot" aria-hidden="true" />
       <span className="dash-limit-name">{category.name}</span>
       <span className="dash-limit-value ck-figures">
         {category.limit === null ? formatMoney(category.spent, currency)
           : <>{formatNumber(category.spent)} / {formatMoney(category.limit, currency)}</>}
       </span>
-    </div>
+    </RowHead>
     {bar && <Bar value={bar} label={`${category.name}: потрачено ${bar.percent}% лимита`} />}
     {bar?.over && <p className="dash-over">Сверх лимита на <span className="dash-value">{formatMoney(bar.overBy, currency)}</span></p>}
-    {children.length > 0 && <SubLimitList rows={children} currency={currency} label={category.name} />}
+    {children.length > 0 && <SubLimitList rows={children} currency={currency} label={category.name} month={month} />}
   </li>
 }
 
-function LimitsCard({ block, several }: { block: DashboardCurrency; several: boolean }) {
+function LimitsCard({ block, several, month }: { block: DashboardCurrency; several: boolean; month: string }) {
   const headingId = `dash-limits-${block.currency}`
   return <section className="dash-card dash-limits" aria-labelledby={headingId}>
     <div className="dash-card-head">
@@ -95,7 +104,7 @@ function LimitsCard({ block, several }: { block: DashboardCurrency; several: boo
       <Link className="dash-link" to="/budget/limits">Изменить</Link>
     </div>
     {block.categories.length
-      ? <ul className="dash-limit-list">{block.categories.map((category) => <LimitRow key={category.category_id ?? `none-${category.name}`} category={category} currency={block.currency} />)}</ul>
+      ? <ul className="dash-limit-list">{block.categories.map((category) => <LimitRow key={category.category_id ?? `none-${category.name}`} category={category} currency={block.currency} month={month} />)}</ul>
       : <p className="dash-note">Трат по категориям нет.</p>}
     {block.limit_total === null && <p className="dash-note">Лимиты не заданы. <Link className="dash-link" to="/budget/limits">Задать лимиты</Link></p>}
   </section>
@@ -165,7 +174,7 @@ export function DashboardView({ data, today = deviceMonth(), family = data.membe
     </div>
 
     {data.currencies.filter((block) => block.categories.length || block.limit_total !== null)
-      .map((block) => <LimitsCard key={block.currency} block={block} several={several} />)}
+      .map((block) => <LimitsCard key={block.currency} block={block} several={several} month={data.month} />)}
     {!data.currencies.length && <section className="dash-card dash-limits" aria-label="Лимиты">
       <div className="dash-card-head"><h2>Лимиты</h2><Link className="dash-link" to="/budget/limits">Изменить</Link></div>
       <p className="dash-note">Лимиты на месяц помогают видеть, сколько ещё можно потратить.</p>

@@ -101,6 +101,42 @@
 .dash-recent-meta { color: var(--ck-text-muted); font-size: var(--ck-text-xs); }
 .dash-recent-amount { font-size: var(--ck-text-base); white-space: nowrap; font-variant-numeric: tabular-nums; }
 
+/* Строка категории на «Главной» — ссылка на её траты месяца: вся голова строки, не меньше 44 px. */
+.dash-limit-link { min-height: 44px; color: var(--ck-text); text-decoration: none; }
+.dash-limit-link:hover .dash-limit-name, .dash-limit-link:hover .dash-sublimit-name { text-decoration: underline; text-underline-offset: 3px; }
+.dash-limit-link .dash-limit-value::after { content: "›"; margin-left: 8px; color: var(--ck-text-muted); }
+
+/* «Траты категории»: путь, месяц, итог-герой, из чего сложилось (части — ссылки глубже), траты и чеки. */
+.cat-spends-title { display: grid; gap: 2px; min-width: 0; }
+.cat-spends-name { white-space: normal; overflow-wrap: anywhere; }
+.cat-crumbs { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: var(--ck-text-sm); }
+.cat-crumbs a { display: inline-flex; align-items: center; min-height: 44px; color: var(--ck-link); }
+.cat-crumbs a::after { content: "›"; margin-left: 10px; color: var(--ck-text-muted); }
+.cat-spends-month { font-weight: 700; white-space: nowrap; }
+.cat-parts { display: grid; gap: 10px; margin: 4px 0 0; padding: 0; list-style: none; }
+.cat-part { display: grid; gap: 6px; min-height: 44px; color: var(--ck-text); text-decoration: none; }
+.cat-part-link:hover .cat-part-name { text-decoration: underline; text-underline-offset: 3px; }
+.cat-part-head { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; min-width: 0; }
+.cat-part-name { flex: 1 1 auto; min-width: 0; font-weight: 600; }
+.cat-part-amount { margin-left: auto; white-space: nowrap; }
+.cat-part-link .cat-part-amount::after { content: "›"; margin-left: 8px; color: var(--ck-text-muted); }
+.cat-spends-items h2 { font-size: var(--ck-text-lg); }
+.cat-spend-list { display: grid; margin: 0; padding: 0; list-style: none; }
+.cat-spend + .cat-spend { border-top: 1px solid var(--ck-divider); }
+.cat-spend-row { display: flex; align-items: flex-start; gap: 12px; min-height: 56px; padding: 10px 0; color: var(--ck-text); text-decoration: none; }
+.cat-spend-row:hover .cat-spend-title { text-decoration: underline; text-underline-offset: 3px; }
+.cat-spend-main { display: grid; flex: 1 1 auto; gap: 2px; min-width: 0; }
+.cat-spend-title { font-weight: 700; overflow-wrap: anywhere; }
+.cat-spend-note { color: var(--ck-text); font-size: var(--ck-text-sm); overflow-wrap: anywhere; }
+.cat-spend-meta { color: var(--ck-text-muted); font-size: var(--ck-text-sm); }
+.cat-spend-amount { display: grid; flex: none; justify-items: end; gap: 2px; font-size: var(--ck-text-base); white-space: nowrap; }
+.cat-spend-whole { color: var(--ck-text-muted); font-size: var(--ck-text-xs); white-space: nowrap; }
+.cat-spend-lines { padding: 0 0 10px; }
+.cat-spend-lines summary { display: flex; align-items: center; min-height: 44px; color: var(--ck-link); font-weight: 600; cursor: pointer; }
+.cat-spend-lines ul { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.cat-spend-line-name { overflow-wrap: anywhere; }
+.cat-spend-line-category { color: var(--ck-text-muted); font-size: var(--ck-text-sm); }
+
 /* Пустой месяц: с действием */
 .dash-empty-title { margin: 0; font-size: var(--ck-text-lg); font-weight: 700; }
 .dash-empty-action { display: flex; align-items: center; justify-content: center; min-height: 52px; padding: 0 20px; border: 1px solid var(--ck-brand); border-radius: var(--ck-radius-button); background: var(--ck-brand); color: var(--ck-on-brand); font-weight: 700; text-decoration: none; white-space: nowrap; }

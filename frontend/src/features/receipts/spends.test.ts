@@ -3,7 +3,7 @@ import type { ReceiptListItem } from '../../api/receipts'
 import { publicFixture } from '../../api/recognition-test-support'
 import type { Session } from '../../session'
 import {
-  categoryTone, dayLabel, groupByDay, localToday, ownerChips, positions, previousDay, reviewText, rowMeta, rowTitle,
+  categoriesText, categoryTone, dayLabel, sourceMark, withoutSourceMark, groupByDay, localToday, ownerChips, positions, previousDay, reviewText, rowMeta, rowTitle,
   shortDate, sumAmounts, withOwner,
 } from './spends'
 
@@ -82,15 +82,29 @@ describe('rows of «Траты»', () => {
     expect(rowTitle({ ...manual({}), first_line: undefined, category: undefined })).toBe('Без места')
   })
 
-  it('says category, owner in a family and the count of positions', () => {
+  it('says category, owner in a family, where it came from and the count of positions', () => {
     const row = receipt({ category: { id: 3, name: 'Продукты' }, owner: 'liza', owner_name: 'Лиза', lines_count: 23 })
-    expect(rowMeta(row, true)).toEqual(['Продукты', 'Лиза', `23${NBSP}позиции`])
+    expect(rowMeta(row, true)).toEqual(['Продукты', 'Лиза', 'по чеку', `23${NBSP}позиции`])
     // A blank name or none at all (an older server): the username.
     expect(rowMeta({ ...row, owner_name: '  ' }, true)[1]).toBe('liza')
     expect(rowMeta({ ...row, owner_name: undefined }, true)[1]).toBe('liza')
-    expect(rowMeta(row, false)).toEqual(['Продукты', `23${NBSP}позиции`])
-    expect(rowMeta(receipt({ category: null, lines_count: 1, operation: 'refund' }), false)).toEqual([`1${NBSP}позиция`, 'Возврат'])
-    expect(rowMeta(receipt({ category: null, lines_count: 0 }), false)).toEqual([`0${NBSP}позиций`])
+    expect(rowMeta(row, false)).toEqual(['Продукты', 'по чеку', `23${NBSP}позиции`])
+    expect(rowMeta(receipt({ category: null, lines_count: 1, operation: 'refund' }), false)).toEqual(['по чеку', `1${NBSP}позиция`, 'Возврат'])
+    expect(rowMeta(receipt({ category: null, lines_count: 0 }), false)).toEqual(['по чеку', `0${NBSP}позиций`])
+  })
+
+  it('names every category of the lines and the bank statement a spend came from', () => {
+    const categories = [{ id: 1, name: 'Интернет' }, { id: 2, name: 'Кафе' }, { id: 3, name: 'Связь' }, { id: 4, name: 'Такси' }]
+    expect(categoriesText({ categories: categories.slice(0, 2), category: null })).toBe('Интернет, Кафе')
+    expect(categoriesText({ categories, category: null })).toBe('Интернет, Кафе +2')
+    expect(categoriesText({ categories: [], category: { id: 9, name: 'Жильё' } })).toBe('Жильё')
+    expect(categoriesText({ category: null })).toBeUndefined()
+    const steam = receipt({ source: 'manual', note: 'Steam purchase · Выписка Kaspi Gold', categories: [{ id: 7, name: 'Игры' }], lines_count: 1 })
+    expect(rowMeta(steam, false)).toEqual(['Игры', 'Выписка Kaspi Gold'])
+    expect(rowMeta(receipt({ source: 'manual', note: 'кофе', category: null, lines_count: 1 }), false)).toEqual(['вручную'])
+    expect(sourceMark('manual', 'Такси · Выписка ForteBank ')).toBe('Выписка ForteBank')
+    expect(withoutSourceMark('Такси · Выписка ForteBank')).toBe('Такси')
+    expect(withoutSourceMark(null)).toBe('')
   })
 
   it('declines positions in Russian', () => {
