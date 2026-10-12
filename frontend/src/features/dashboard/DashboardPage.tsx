@@ -8,10 +8,13 @@ import { QuickShot } from '../recognition'
 import {
   badgeLetter, capitalize, categoryIds, categoryTone, cents, compareMonths, daysLeftText, dashboardErrorMessage, dashboardPeople, deviceMonth, formatMoney,
   formatNumber, initials,
-  inMonth, monthIsEmpty, monthSlide, monthTitle, progress, recentMeta, shiftMonth, subCategories,
+  inMonth, monthIsEmpty, monthSlide, monthTitle, progress, recentMeta, shiftMonth,
 } from './dashboard-state'
 import type { MonthSlide, Progress } from './dashboard-state'
 import { categorySpendsHref } from './category-spends-state'
+import { collapsedHint, isExpanded, readExpanded, rowChildren, subListId, withChoice, writeExpanded } from './limit-collapse-state'
+import type { ExpandedChoices } from './limit-collapse-state'
+import { subCategoriesText } from './limits-state'
 import './Dashboard.css'
 
 const monthHref = (month: string) => `/?month=${month}`
@@ -55,11 +58,42 @@ function RowHead({ categoryId, month, children }: { categoryId: number | null; m
     : <Link className="dash-limit-head dash-limit-link" to={categorySpendsHref(categoryId, month)}>{children}</Link>
 }
 
+/** Folds and unfolds the direct sub-categories of a row: a button of its own, beside the link of the row, so a tap on
+ * the row still opens «Траты категории». Folded, it says how many there are and, when it fits one line, their limits. */
+function SubToggle({ row, listId, expanded, onToggle, count }: { row: DashboardCategory | DashboardSubCategory; listId: string; expanded: boolean; onToggle: Toggle; count: number }) {
+  const hint = expanded ? null : collapsedHint(row)
+  return <button type="button" className="dash-sub-toggle" aria-expanded={expanded} aria-controls={listId}
+    onClick={() => row.category_id !== null && onToggle(row.category_id, !expanded)}>
+    <span className="dash-sub-chevron" aria-hidden="true">▸</span>
+    <span className="dash-sub-text">
+      <span className="dash-visually-hidden">{row.name}: </span>
+      <span className="dash-sub-count">{subCategoriesText(count)}</span>
+      {hint && <span className="dash-sub-hint ck-figures">{hint}</span>}
+    </span>
+  </button>
+}
+
+type Toggle = (categoryId: number, open: boolean) => void
+type Fold = { choices: ExpandedChoices; onToggle: Toggle }
+
+/** The sub-categories of a row with their button; a row without a category id (an older server) has none. */
+function SubLimits({ row, currency, month, fold }: { row: DashboardCategory | DashboardSubCategory; currency: string; month: string; fold: Fold }) {
+  const children = rowChildren(row)
+  if (!children.length || row.category_id === null) return null
+  const listId = subListId(currency, row.category_id)
+  const expanded = isExpanded(row, fold.choices)
+  return <>
+    <SubToggle row={row} listId={listId} expanded={expanded} onToggle={fold.onToggle} count={children.length} />
+    <ul className="dash-sublimit-list" id={listId} aria-label={`${row.name}: подкатегории`} hidden={!expanded}>
+      {children.map((child) => <SubLimitRow key={child.category_id} row={child} currency={currency} month={month} fold={fold} />)}
+    </ul>
+  </>
+}
+
 /** «Аренда» under «Жильё»: indented, a thinner bar, the colour of its top-level row. Every sub-category with spends
  * of the month comes here, and a limited one with its ancestors; one without its own limit shows what was spent. */
-function SubLimitRow({ row, currency, month }: { row: DashboardSubCategory; currency: string; month: string }) {
+function SubLimitRow({ row, currency, month, fold }: { row: DashboardSubCategory; currency: string; month: string; fold: Fold }) {
   const bar = progress(row.spent, row.limit)
-  const children = subCategories(row)
   return <li className="dash-sublimit">
     <RowHead categoryId={row.category_id} month={month}>
       <span className="dash-sublimit-name">{row.name}</span>
@@ -70,19 +104,12 @@ function SubLimitRow({ row, currency, month }: { row: DashboardSubCategory; curr
     </RowHead>
     {bar && <Bar small value={bar} label={`${row.name}: потрачено ${bar.percent}% лимита`} />}
     {bar?.over && <p className="dash-over dash-sublimit-over">Сверх лимита на <span className="dash-value">{formatMoney(bar.overBy, currency)}</span></p>}
-    {children.length > 0 && <SubLimitList rows={children} currency={currency} label={row.name} month={month} />}
+    <SubLimits row={row} currency={currency} month={month} fold={fold} />
   </li>
 }
 
-function SubLimitList({ rows, currency, label, month }: { rows: DashboardSubCategory[]; currency: string; label: string; month: string }) {
-  return <ul className="dash-sublimit-list" aria-label={`${label}: подкатегории`}>
-    {rows.map((row) => <SubLimitRow key={row.category_id} row={row} currency={currency} month={month} />)}
-  </ul>
-}
-
-function LimitRow({ category, currency, month }: { category: DashboardCategory; currency: string; month: string }) {
+function LimitRow({ category, currency, month, fold }: { category: DashboardCategory; currency: string; month: string; fold: Fold }) {
   const bar = progress(category.spent, category.limit)
-  const children = subCategories(category)
   return <li className={`dash-limit dash-cat-${categoryTone(category.category_id)}`}>
     <RowHead categoryId={category.category_id} month={month}>
       <span className="dash-dot" aria-hidden="true" />
@@ -94,11 +121,11 @@ function LimitRow({ category, currency, month }: { category: DashboardCategory; 
     </RowHead>
     {bar && <Bar value={bar} label={`${category.name}: потрачено ${bar.percent}% лимита`} />}
     {bar?.over && <p className="dash-over">Сверх лимита на <span className="dash-value">{formatMoney(bar.overBy, currency)}</span></p>}
-    {children.length > 0 && <SubLimitList rows={children} currency={currency} label={category.name} month={month} />}
+    <SubLimits row={category} currency={currency} month={month} fold={fold} />
   </li>
 }
 
-function LimitsCard({ block, several, month }: { block: DashboardCurrency; several: boolean; month: string }) {
+function LimitsCard({ block, several, month, fold }: { block: DashboardCurrency; several: boolean; month: string; fold: Fold }) {
   const headingId = `dash-limits-${block.currency}`
   return <section className="dash-card dash-limits" aria-labelledby={headingId}>
     <div className="dash-card-head">
@@ -106,7 +133,7 @@ function LimitsCard({ block, several, month }: { block: DashboardCurrency; sever
       <Link className="dash-link" to="/budget/limits">Изменить</Link>
     </div>
     {block.categories.length
-      ? <ul className="dash-limit-list">{block.categories.map((category) => <LimitRow key={category.category_id ?? `none-${category.name}`} category={category} currency={block.currency} month={month} />)}</ul>
+      ? <ul className="dash-limit-list">{block.categories.map((category) => <LimitRow key={category.category_id ?? `none-${category.name}`} category={category} currency={block.currency} month={month} fold={fold} />)}</ul>
       : <p className="dash-note">Трат по категориям нет.</p>}
     {block.limit_total === null && <p className="dash-note">Лимиты не заданы. <Link className="dash-link" to="/budget/limits">Задать лимиты</Link></p>}
   </section>
@@ -134,14 +161,25 @@ export type DashboardViewProps = {
   family?: boolean
   /** The month came after another one: it slides in from that side (not under reduced motion). */
   slide?: MonthSlide
+  /** Opened and closed rows of «Лимиты» to start with; the saved ones of this browser by default. */
+  expanded?: ExpandedChoices
 }
 
 /** The dashboard itself, without loading: the markup tests render it directly. */
-export function DashboardView({ data, today = deviceMonth(), family = data.members.length > 1, slide }: DashboardViewProps) {
+export function DashboardView({ data, today = deviceMonth(), family = data.members.length > 1, slide, expanded }: DashboardViewProps) {
   const current = data.month === today
   const empty = monthIsEmpty(data)
   const ids = categoryIds(data)
   const several = data.currencies.length > 1
+  const [choices, setChoices] = useState<ExpandedChoices>(() => expanded ?? readExpanded())
+  const fold: Fold = {
+    choices,
+    onToggle: (categoryId, open) => setChoices((before) => {
+      const next = withChoice(before, categoryId, open)
+      writeExpanded(next)
+      return next
+    }),
+  }
   const people = dashboardPeople(data)
   const spent = data.currencies.filter((block) => cents(block.spent) !== 0n || block.limit_total !== null)
   return <div className={`dash${slide ? ` dash-slide-${slide}` : ''}`}>
@@ -176,7 +214,7 @@ export function DashboardView({ data, today = deviceMonth(), family = data.membe
     </div>
 
     {data.currencies.filter((block) => block.categories.length || block.limit_total !== null)
-      .map((block) => <LimitsCard key={block.currency} block={block} several={several} month={data.month} />)}
+      .map((block) => <LimitsCard key={block.currency} block={block} several={several} month={data.month} fold={fold} />)}
     {!data.currencies.length && <section className="dash-card dash-limits" aria-label="Лимиты">
       <div className="dash-card-head"><h2>Лимиты</h2><Link className="dash-link" to="/budget/limits">Изменить</Link></div>
       <p className="dash-note">Лимиты на месяц помогают видеть, сколько ещё можно потратить.</p>

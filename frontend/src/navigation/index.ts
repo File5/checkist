@@ -15,5 +15,5 @@ export type { ProductQuery, PriceMode, PriceInterval } from './routes'
 export { buildSpendingQuery, parseSpendingQuery, spendingHref, buildReceiptsStatsQuery, parseReceiptsStatsQuery, receiptsStatsHref,
   spendingGroupings, receiptsStatsIntervals, maxStatsStores } from './routes'
 export type { StatsScopeQuery, SpendingQuery, SpendingGroupBy, ReceiptsStatsQuery, ReceiptsStatsInterval } from './routes'
-export { buildTrendsQuery, parseTrendsQuery, trendsHref, trendsMonthChoices } from './routes'
+export { buildTrendsQuery, parseTrendsQuery, trendsHref, trendsMonthChoices, trendsSpan, maxTrendsPeriodMonths } from './routes'
 export type { TrendsQuery, TrendsMonths } from './routes'

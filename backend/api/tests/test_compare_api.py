@@ -381,7 +381,7 @@ class ComparisonBodyTests(CompareTestCase):
             ("RUB:NaN", pairs),
             ("RUB", pairs),
             (eleven, "Не больше 10 курсов."),
-            ("USD:0.9", "Неизвестный код валюты."),
+            ("JPY:0.9", "Неизвестный код валюты."),
             ("RUB:0.0098,XXX:1", "Неизвестный код валюты."),
             ("RUB:0.0098,RUB:0.01", "Валюта указана больше одного раза."),
             ("EUR:1", "Курс целевой валюты не задаётся: он равен 1."),
@@ -399,7 +399,7 @@ class ComparisonBodyTests(CompareTestCase):
 
     def test_invalid_target_currency(self):
         url = comparison_url(self.data.milk)
-        self.assertInvalid(url, {"target_currency": "USD"}, {"target_currency": ["Неизвестный код валюты."]})
+        self.assertInvalid(url, {"target_currency": "JPY"}, {"target_currency": ["Неизвестный код валюты."]})
         self.assertInvalid(
             url, {"target_currency": "euro", "rates": "RUB:0.0098"},
             {"target_currency": ["Ожидается код валюты из трёх букв."]},

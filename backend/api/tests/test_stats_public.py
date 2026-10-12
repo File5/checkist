@@ -7,6 +7,7 @@
 его товары — 1, 2, 3, магазины — 1, 2, 3.
 """
 import json
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
@@ -37,6 +38,9 @@ MILK, OTHER_MILK, KZ_MILK, APPLES, COOKIES = 1, 2, 3, 6, 11
 NORD, SUED, KZ = 1, 2, 3
 # Счётчик интервалов уменьшен: на демо 1000 интервалов не набрать.
 SMALL_RANGE = "error-range-too-large.json"
+# Текущий месяц сервера в ответе диапазона — подменённый «сегодня» (TRENDS_TODAY).
+TRENDS_RANGE = "trends-range.json"
+TRENDS_TODAY = date(2026, 9, 30)
 FORBIDDEN = "error-permission-denied.json"
 
 # Имя эталона: (запрос, HTTP-статус).
@@ -89,6 +93,9 @@ EXAMPLES = {
     "trends-prices.json": (f"{TRENDS}prices/?month=2026-09&months=12", 200),
     # Лимиты демо (DEMO_LIMITS) и их исполнение по месяцам.
     "trends-limits.json": (f"{TRENDS}limits/?month=2026-09&months=6", 200),
+    # Свой период: from … to включительно, через Новый год; диапазон чеков для готовых периодов.
+    "trends-monthly-period.json": (f"{TRENDS}monthly/?from=2025-11&to=2026-03", 200),
+    TRENDS_RANGE: (f"{TRENDS}range/", 200),
     # Ошибки.
     "error-invalid-parameter.json": (
         f"{SPENDING}?date_from=2026-13-01&country=de1&currency=E&store=99&group_by=brand&category=x&limit=0", 400,
@@ -98,6 +105,7 @@ EXAMPLES = {
         f"{COMPARE}?base_from=2020-01-01&base_to=2026-01-01&current_from=2026-01-01&current_to=2026-09-30", 400,
     ),
     SMALL_RANGE: (f"{SERIES}?interval=week", 400),
+    "error-trends-period.json": (f"{TRENDS}monthly/?from=2026-09&to=2026-06", 400),
     FORBIDDEN: (SPENDING, 403),
     "error-not-found.json": (PRICES.format(999999), 404),
 }
@@ -238,6 +246,12 @@ class PublicExampleFilesTests(SimpleTestCase):
         self.assertTrue(min(percents) < 100 < max(percents))
         self.assertEqual((expected("trends-category-suggested.json")["suggested"], expected("trends-category.json")["suggested"]),
                          (True, False))
+        period = expected("trends-monthly-period.json")
+        self.assertEqual((period["months"], period["month_from"], period["month_to"]), (5, "2025-11", "2026-03"))
+        self.assertTrue(all(len(block["months"]) == 5 for block in period["currencies"]))
+        span = expected(TRENDS_RANGE)
+        self.assertEqual((span["current_month"], span["max_months"]), ("2026-09", 60))
+        self.assertLess(span["first_month"], span["last_month"])
         codes = {name: expected(name)["error"]["code"] for name in EXAMPLES if name.startswith("error-")}
         self.assertEqual(
             set(codes.values()), {"invalid_parameter", "range_too_large", "permission_denied", "not_found"},
@@ -262,6 +276,9 @@ class PublicExamplesTests(TestCase):
         path, status = EXAMPLES[name]
         if name == FORBIDDEN:
             with self.settings(ALLOW_LOCAL_RECOGNITION_API=False):
+                response = self.client.get(path)
+        elif name == TRENDS_RANGE:
+            with patch("api.views.stats_trends.timezone.localdate", return_value=TRENDS_TODAY):
                 response = self.client.get(path)
         elif name == SMALL_RANGE:
             with patch.object(basket, "MAX_BUCKETS", 5):

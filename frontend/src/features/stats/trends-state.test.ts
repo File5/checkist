@@ -4,7 +4,7 @@ import { sparkline } from '../../lib/charts/sparkline'
 import {
   categoryChart, categoryParams, changeBadge, closeMonthHref, indexChart, indexSummary, inMonth, lastMonthChange, limitRows, loadingOf,
   monthBreakdown, monthHref, monthlyChart, monthName, monthRowHeadings, monthRows, moverCounts, moverRows, optionLabel, partsChart,
-  sinceMonth, spendSummary, uncategorizedKey, windowChoices, windowParams,
+  sinceMonth, spendSummary, uncategorizedKey, windowParams,
 } from './trends-state'
 import { categoryFixture, limitsFixture, monthlyFixture, pricesFixture, utilitiesFixture } from './trends-test-support'
 
@@ -16,13 +16,8 @@ describe('address and requests', () => {
     expect(windowParams({ months: 24, month: '2026-08', category: 3 })).toEqual({ months: 24 })
     expect(categoryParams({ months: 6, category: 3, month: '2026-08' })).toEqual({ months: 6, category: 3 })
     expect(categoryParams({})).toEqual({ months: 12 })
-  })
-  it('offers 6, 12 and 24 months, keeps the category and closes the opened month', () => {
-    expect(windowChoices({ category: 4, month: '2026-08' }).map((choice) => [nb(choice.label), choice.href, choice.active])).toEqual([
-      ['6 месяцев', '/stats/trends?months=6&category=4', false],
-      ['12 месяцев', '/stats/trends?category=4', true],
-      ['24 месяца', '/stats/trends?months=24&category=4', false],
-    ])
+    expect(windowParams({ from: '2026-05', to: '2026-10', month: '2026-08' })).toEqual({ from: '2026-05', to: '2026-10' })
+    expect(categoryParams({ from: '2026-05', to: '2026-10', category: 3 })).toEqual({ from: '2026-05', to: '2026-10', category: 3 })
   })
   it('opens a month and closes it with the same column', () => {
     expect(monthHref({ months: 6 }, '2026-08')).toBe('/stats/trends?months=6&month=2026-08')

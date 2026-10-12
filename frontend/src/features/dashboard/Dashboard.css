@@ -86,6 +86,16 @@
 .dash-sublimit-name { flex: 1 1 auto; min-width: 0; overflow-wrap: normal; font-size: var(--ck-text-sm); font-weight: 600; }
 .dash-sublimit-value { font-size: var(--ck-text-xs); white-space: nowrap; }
 .dash-sublimit-over { font-size: var(--ck-text-sm); }
+/* Подкатегории свёрнуты: своя кнопка под строкой (ссылка строки ведёт в «Траты категории»), 44 px по высоте.
+   Шеврон поворачивается без анимации; подсказка с лимитами — одна строка, иначе только число. */
+.dash-sub-toggle { display: flex; align-items: center; gap: 8px; justify-self: start; max-width: 100%; min-height: 44px; margin: -6px 0 0; padding: 0 8px 0 0; border: 0; background: none; color: var(--ck-text-muted); font: inherit; font-size: var(--ck-text-sm); text-align: left; cursor: pointer; }
+.dash-sub-toggle:hover .dash-sub-count { text-decoration: underline; text-underline-offset: 3px; }
+.dash-sub-chevron { flex: 0 0 auto; width: 12px; text-align: center; }
+.dash-sub-toggle[aria-expanded="true"] .dash-sub-chevron { transform: rotate(90deg); }
+.dash-sub-text { display: grid; min-width: 0; }
+.dash-sub-count { white-space: nowrap; }
+.dash-sub-hint { overflow: hidden; font-size: var(--ck-text-xs); white-space: nowrap; text-overflow: ellipsis; }
+.dash-sublimit-list[hidden] { display: none; }
 .dash-bar-small { height: 6px; border-radius: 3px; }
 .dash-bar-small .dash-bar-fill { border-radius: 3px; }
 

@@ -119,6 +119,10 @@ class HiddenEverywhereTests(HeadFamilyMixin, TestCase):
         "/api/stats/receipts/compare/?base_from=2026-02-01&base_to=2026-02-28&current_from=2026-03-01&current_to=2026-03-31",
         "/api/stats/trends/monthly/?month=2026-03",
         "/api/stats/trends/prices/?month=2026-03",
+        "/api/stats/trends/range/",
+        "/api/stats/trends/monthly/?from=2026-01&to=2026-03",
+        "/api/stats/trends/prices/?from=2026-01&to=2026-03",
+        "/api/export/?include=receipts,lines,media,stores,summary",
         "/api/export/",
         "/api/receipts/manual/",
         "/api/stores/",
@@ -129,6 +133,7 @@ class HiddenEverywhereTests(HeadFamilyMixin, TestCase):
         urls = list(self.READS) + [
             f"/api/stats/category-spends/?month=2026-03&category={self.product.generic.category_id}",
             f"/api/stats/trends/category/?month=2026-03&category={self.product.generic.category_id}",
+            f"/api/stats/trends/category/?from=2026-01&to=2026-03&category={self.product.generic.category_id}",
             f"/api/products/{self.product.pk}/prices/",
             f"/api/products/{self.product.pk}/",
         ]
@@ -148,6 +153,8 @@ class HiddenEverywhereTests(HeadFamilyMixin, TestCase):
         self.assertIn(VISIBLE_MARK, client.get("/api/export/").content.decode())
         for path in ("", "lines/", "discounts/", "taxes/"):
             self.assertEqual(client.get(f"/api/receipts/{self.secret.pk}/{path}").status_code, 404)
+        # Границы данных трендов — только по видимым платежам (скрытый — 6 марта).
+        self.assertNotIn("2026-03-06", client.get("/api/stats/trends/range/").content.decode())
         listed = client.get("/api/receipts/?hidden=1").json()["results"]
         self.assertEqual([item["id"] for item in listed], [self.visible.pk])
 

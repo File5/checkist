@@ -34,7 +34,7 @@ from receipts.decimal_math import price_context, round_decimal
 from receipts.models import Receipt, ReceiptLine
 from receipts.spending import UNASSIGNED_NAME
 
-MAX_MONTHS = 36
+MAX_MONTHS = 60
 DEFAULT_MONTHS = 12
 MOVERS_LIMIT = 5
 
@@ -53,6 +53,11 @@ def shift(first, months):
     """Первое число месяца через ``months`` месяцев от ``first`` (может быть отрицательным)."""
     index = first.year * 12 + first.month - 1 + months
     return date(index // 12, index % 12 + 1, 1)
+
+
+def months_between(first, last):
+    """Число месяцев от месяца ``first`` до месяца ``last`` включительно (0 и меньше, если ``last`` раньше)."""
+    return (last.year - first.year) * 12 + last.month - first.month + 1
 
 
 def window(end, months):
@@ -174,6 +179,16 @@ class NodeRow:
     def change_percent(self):
         """Последний месяц окна к предыдущему."""
         return change_percent(self.amounts[-2], self.amounts[-1]) if len(self.amounts) > 1 else None
+
+    @property
+    def change_percents(self):
+        """Каждый месяц окна к предыдущему; у первого — ``None``."""
+        return [None] + [change_percent(previous, current) for previous, current in zip(self.amounts, self.amounts[1:])]
+
+    @property
+    def average(self):
+        """Среднее за месяц окна, 2 знака."""
+        return round_decimal(_average(self.total, len(self.amounts)), 2)
 
 
 @dataclass

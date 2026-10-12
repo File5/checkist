@@ -15,6 +15,8 @@ schema_editor = SimpleNamespace(connection=connection)
 
 SEED_COUNTRIES = {"KZ", "RU", "DE"}
 SEED_CURRENCIES = {"KZT", "RUB", "EUR"}
+# Added later by stores.0004 and left alone by the reverse of 0002.
+LATER_CURRENCIES = {"USD", "GBP", "CNY", "TRY", "UZS", "KGS", "AED"}
 SEED_TAX_RATES = {
     ("DE", "vat", Decimal("7.00")),
     ("DE", "vat", Decimal("19.00")),
@@ -33,7 +35,7 @@ class SeedReferenceTests(TestCase):
 
     def test_migrate_creates_reference_rows(self):
         self.assertEqual(set(Country.objects.values_list("code", flat=True)), SEED_COUNTRIES)
-        self.assertEqual(set(Currency.objects.values_list("code", flat=True)), SEED_CURRENCIES)
+        self.assertEqual(set(Currency.objects.values_list("code", flat=True)), SEED_CURRENCIES | LATER_CURRENCIES)
         self.assertEqual(TaxRate.objects.count(), 4)
         self.assertEqual(tax_rates(), SEED_TAX_RATES)
         self.assertEqual(
@@ -51,7 +53,7 @@ class SeedReferenceTests(TestCase):
         seed_migration.seed(apps, schema_editor)
         seed_migration.seed(apps, schema_editor)
         self.assertEqual(Country.objects.count(), 3)
-        self.assertEqual(Currency.objects.count(), 3)
+        self.assertEqual(Currency.objects.count(), len(SEED_CURRENCIES | LATER_CURRENCIES))
         self.assertEqual(set(TaxRate.objects.values_list("pk", flat=True)), ids)
         self.assertEqual(tax_rates(), SEED_TAX_RATES)
         self.assertEqual(TaxRate.objects.get(country_id="KZ").name, "НДС 16%")
@@ -63,7 +65,7 @@ class SeedReferenceTests(TestCase):
         TaxRate.objects.create(country_id="XA", kind="exempt", rate=None, name="Без налога")
         seed_migration.unseed(apps, schema_editor)
         self.assertEqual(set(Country.objects.values_list("code", flat=True)), {"XA"})
-        self.assertEqual(set(Currency.objects.values_list("code", flat=True)), {"XTS"})
+        self.assertEqual(set(Currency.objects.values_list("code", flat=True)), {"XTS"} | LATER_CURRENCIES)
         self.assertEqual(tax_rates(), {("XA", "vat", Decimal("16.00")), ("XA", "exempt", None)})
 
     def test_seed_after_reverse_restores_rows(self):
@@ -72,7 +74,7 @@ class SeedReferenceTests(TestCase):
         self.assertFalse(TaxRate.objects.exists())
         seed_migration.seed(apps, schema_editor)
         self.assertEqual(set(Country.objects.values_list("code", flat=True)), SEED_COUNTRIES)
-        self.assertEqual(set(Currency.objects.values_list("code", flat=True)), SEED_CURRENCIES)
+        self.assertEqual(set(Currency.objects.values_list("code", flat=True)), SEED_CURRENCIES | LATER_CURRENCIES)
         self.assertEqual(tax_rates(), SEED_TAX_RATES)
 
     def test_reverse_is_stopped_by_references(self):

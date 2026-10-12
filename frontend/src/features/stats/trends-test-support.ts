@@ -18,6 +18,7 @@ export const limitsFixture = () => checked<TrendsLimits>('trends-limits.json', i
 const months = ['2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10']
 const part = (id: number, name: string, amounts: string[], total: string, direct = false) => ({
   id, name, parent_id: 21, depth: 2, direct, total, amounts, change_percent: null,
+  average: (Number(total) / amounts.length).toFixed(2), change_percents: amounts.map(() => null),
 })
 /** Six months of utilities paid as manual spends by sub-category (May — October 2026), like the production data. */
 export function utilitiesFixture(): TrendsCategory {

@@ -104,15 +104,34 @@ export interface ReceiptsStatsQuery extends StatsScopeQuery {
   interval?: ReceiptsStatsInterval
 }
 
-/** Window lengths of «Динамика», in months; 12 is the default and never stands in a parsed query. */
+/** Window lengths of the older «Динамика» addresses (`months`), in months; 12 is the default and never stands in a parsed query. */
 export const trendsMonthChoices = [6, 12, 24] as const
 export type TrendsMonths = typeof trendsMonthChoices[number]
+/** The widest period of «Динамика», as on the server (`MAX_MONTHS`). */
+export const maxTrendsPeriodMonths = 60
 
-/** `/stats/trends`. `month` — the column opened in «Траты по месяцам»; `category` — the category of «Категория во времени». */
+/**
+ * `/stats/trends`. `from` … `to` — the period, both inclusive (`ГГГГ-ММ`, at most 60 months; they come and go together and
+ * replace `months`); `months` — the window of older links, ending at the server's current month; `month` — the column
+ * opened in «Траты по месяцам»; `category` — the category of «Категория во времени».
+ */
 export interface TrendsQuery {
+  from?: string
+  to?: string
   months?: Exclude<TrendsMonths, 12>
   category?: number
   month?: string
+}
+
+/** Months from `from` to `to` inclusive (`ГГГГ-ММ`); zero or less when `to` is earlier. */
+export function trendsSpan(from: string, to: string): number {
+  const index = (month: string) => Number(month.slice(0, 4)) * 12 + Number(month.slice(5, 7))
+  return index(to) - index(from) + 1
+}
+/** A month the server accepts in a period: `ГГГГ-ММ` from 1901. */
+const periodMonth = (value: string | undefined) => {
+  const month = parseMonthParam(value)
+  return month && month >= '1901-01' ? month : undefined
 }
 
 export type CatalogRoute =
@@ -339,14 +358,30 @@ export function parseReceiptsStatsQuery(search: string | URLSearchParams): Parse
 /** Like the other statistics screens, a wrong value is dropped instead of refusing the address. */
 export function parseTrendsQuery(search: string | URLSearchParams): ParsedQuery<TrendsQuery> {
   const reader = queryReader(search)
+  const rawFrom = reader.read('from')
+  const rawTo = reader.read('to')
   const months = reader.choice('months', trendsMonthChoices.map(String))
   const category = reader.integer('category')
   const raw = reader.read('month')
   const month = parseMonthParam(raw)
   if (raw !== undefined && month === undefined) reader.invalid('month')
+  // A period is the pair, in order and not longer than the server allows; it wins over the older `months`.
+  let period: { from: string; to: string } | undefined
+  if (rawFrom !== undefined || rawTo !== undefined) {
+    const from = periodMonth(rawFrom)
+    const to = periodMonth(rawTo)
+    if (from === undefined) reader.invalid('from')
+    if (to === undefined) reader.invalid('to')
+    if (from !== undefined && to !== undefined) {
+      const span = trendsSpan(from, to)
+      if (span >= 1 && span <= maxTrendsPeriodMonths) period = { from, to }
+      else reader.invalid(span < 1 ? 'to' : 'from')
+    }
+  }
   return {
     query: {
-      ...(months && months !== '12' && { months: Number(months) as Exclude<TrendsMonths, 12> }), ...(category && { category }),
+      ...period,
+      ...(!period && months && months !== '12' && { months: Number(months) as Exclude<TrendsMonths, 12> }), ...(category && { category }),
       ...(month && { month }),
     },
     invalidFields: reader.invalidFields,
@@ -454,7 +489,7 @@ export function receiptsStatsHref(query: ReceiptsStatsQuery = {}): string {
 }
 
 export function buildTrendsQuery(query: TrendsQuery): string {
-  return buildQuery(query, ['months', 'category', 'month'], parseTrendsQuery, false)
+  return buildQuery(query, ['from', 'to', 'months', 'category', 'month'], parseTrendsQuery, false)
 }
 
 export function trendsHref(query: TrendsQuery = {}): string {

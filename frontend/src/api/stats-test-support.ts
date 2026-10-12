@@ -22,4 +22,5 @@ export const statsErrorFixtures: Record<string, { status: number; reason: string
   'error-range-too-large.json': { status: 400, reason: 'range_too_large' },
   'error-permission-denied.json': { status: 403, reason: 'permission_denied' },
   'error-not-found.json': { status: 404, reason: 'not_found' },
+  'error-trends-period.json': { status: 400, reason: 'invalid_parameter', fields: ['to'] },
 }
