@@ -54,7 +54,7 @@ export function ReceiptView({ receiptId, returnTo, header, images, lines, discou
   return <div className="receipts-page">
     {notice && <p className="expense-notice" role="status">{notice}</p>}
     <div className="receipt-actions">
-      <Link className="action-link" to={returnTo ?? '/receipts'}>{returnTo?.startsWith('/recognition/jobs/') ? 'К заданию' : 'К чекам'}</Link>
+      <Link className="action-link" to={returnTo ?? '/receipts'}>{returnTo?.startsWith('/recognition/jobs/') ? 'К заданию' : returnTo === '/' || returnTo?.startsWith('/?') ? 'На главную' : 'К чекам'}</Link>
       <Link className="action-link" to="/receipts/upload">Загрузить фото</Link>
       <Link className="action-link" to="/recognition/jobs">Обработка</Link>
     </div>

@@ -30,7 +30,7 @@ function listContext(value: unknown, origin: string, detail: Route): string | un
     if (url.origin !== origin) return undefined
     const route = parseRoute(url)
     const compatible = detail.kind === 'product' ? ['catalog', 'category', 'receipt', 'classification'].includes(route.kind)
-      : detail.kind === 'receipt' ? ['receipts', 'job'].includes(route.kind)
+      : detail.kind === 'receipt' ? ['receipts', 'job', 'dashboard'].includes(route.kind)
         : detail.kind === 'merge' ? route.kind === 'merges'
           : detail.kind === 'job' && ['jobs', 'receipt'].includes(route.kind)
     return compatible && route.kind !== 'not-found' && route.kind !== 'invalid-query' ? buildRoute(route) : undefined

@@ -3,7 +3,7 @@ import { buildCatalogQuery, buildHistoryQuery, buildRoute, parseCatalogQuery, pa
 import type { NavigableRoute } from './routes'
 
 describe('route parsing', () => {
-  it.each(['/', '/catalog', '/catalog/'])('opens the catalog at %s', (href) => {
+  it.each(['/catalog', '/catalog/'])('opens the catalog at %s', (href) => {
     expect(parseRoute(href)).toEqual({ kind: 'catalog', query: { page: 1 } })
   })
 
@@ -28,7 +28,7 @@ describe('route parsing', () => {
     expect(parseRoute('http://localhost/login?next=%2Freceipts#form')).toEqual({ kind: 'login' })
     expect(buildRoute({ kind: 'login' })).toBe('/login')
     for (const href of ['/Login', '/login/reset', '/logins', '/catalog/login']) expect(parseRoute(href)).toEqual({ kind: 'not-found', path: href })
-    expect(parseRoute('/')).toEqual({ kind: 'catalog', query: { page: 1 } })
+    expect(parseRoute('/')).toEqual({ kind: 'dashboard' })
     expect(parseRoute('/catalog')).toEqual({ kind: 'catalog', query: { page: 1 } })
   })
 

@@ -10,6 +10,7 @@ import RequestState from './components/RequestState'
 import { UploadPage, JobsPage, JobPage, QuickShot } from './features/recognition'
 import { ReceiptsPage, ReceiptPage } from './features/receipts'
 import { ExpensePage, QuickExpense } from './features/expense'
+import { DashboardPage, LimitsPage } from './features/dashboard'
 import { MergesPage, MergePage } from './features/merges'
 import { ClassificationPage } from './features/classification'
 import { SpendingPage, ReceiptsStatsPage } from './features/stats'
@@ -26,6 +27,8 @@ import emblem2x from './assets/brand/emblem-192.webp'
 
 function pageTitle(route: Route) {
   switch (route.kind) {
+    case 'dashboard': return 'Главная'
+    case 'limits': return 'Лимиты на месяц'
     case 'catalog': return 'Каталог продуктов'
     case 'category': return 'Категория продуктов'
     case 'product': return 'Товар и история цен'
@@ -61,13 +64,15 @@ function shellTitle(view: ShellView, route: Route) {
   }
 }
 
-/** Screens whose own bar sits where the floating actions would be. */
-const floatingHidden: Route['kind'][] = ['upload', 'expense-new', 'expense-edit']
+/** Screens whose own bar sits where the floating actions would be; «Главная» has the same two actions as big buttons. */
+const floatingHidden: Route['kind'][] = ['upload', 'expense-new', 'expense-edit', 'dashboard']
 
 const notFound = <RequestState kind="empty" message="Такой страницы нет. Перейдите в каталог продуктов." action={<><p className="request-state-note">Наружное наблюдение результатов не дало.</p><Link className="action-link" to="/catalog">В каталог</Link></>} />
 
 function pageContent({ route, returnTo }: NavigationSnapshot, username: string) {
   switch (route.kind) {
+    case 'dashboard': return <DashboardPage month={route.month} />
+    case 'limits': return <LimitsPage />
     case 'catalog': return <CatalogPage query={route.query} />
     case 'category': return <CategoryPage categoryId={route.categoryId} query={route.query} />
     case 'product': return <ProductPage productId={route.productId} query={route.query} returnTo={returnTo} />
@@ -84,7 +89,7 @@ function pageContent({ route, returnTo }: NavigationSnapshot, username: string) 
     case 'merges': return <MergesPage query={route.query} />
     case 'merge': return <MergePage groupId={route.groupId} returnTo={returnTo} />
     case 'classification': return <ClassificationPage query={route.query} />
-    // A signed-in person has nothing to do at the sign-in address: the shell sends them to the catalog.
+    // A signed-in person has nothing to do at the sign-in address: the shell sends them to «Главная».
     case 'login': return null
     case 'account': return <AccountPage username={username} />
     case 'invalid-query': return <RequestState kind="empty" message="В адресе указаны некорректные фильтры или номер страницы. Сбросьте параметры и попробуйте снова." action={<Link className="action-link" to={route.resetTo} replace>Сбросить параметры</Link>} />
@@ -146,8 +151,8 @@ export default function App() {
 
   const leaveLogin = route.kind === 'login' && view === 'page'
   useLayoutEffect(() => {
-    // After the sign-in on /login, and for a signed-in person who opens it: the catalog, without a history entry.
-    if (leaveLogin) navigate('/catalog', { replace: true })
+    // After the sign-in on /login, and for a signed-in person who opens it: «Главная», without a history entry.
+    if (leaveLogin) navigate('/', { replace: true })
   }, [leaveLogin])
 
   useEffect(() => {
@@ -180,7 +185,7 @@ export default function App() {
     <>
       <a className="skip-link" href="#page-heading">К содержимому</a>
       <header className="brand-bar">
-        <Link className="brand" to="/catalog" aria-label="Чекист — каталог">
+        <Link className="brand" to="/" aria-label="Чекист — главная">
           <img className="brand-mark" src={emblem} srcSet={`${emblem} 1x, ${emblem2x} 2x`} width={44} height={44} alt="" />
           <span>Чекист</span>
         </Link>

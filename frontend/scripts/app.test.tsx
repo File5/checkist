@@ -53,6 +53,22 @@ describe('App feature connections (Node server markup, not browser behavior)', (
     expect(renderToStaticMarkup(<App />)).toContain('href="/catalog"')
   })
 
+  it('connects «Главная» at the root with the month of the address and hides the floating actions there', () => {
+    navigation.snapshot = { href: '/?month=2026-09', route: { kind: 'dashboard', month: '2026-09' } }
+    const html = renderToStaticMarkup(<App />)
+    expect(html).toContain('<h1 id="page-heading" tabindex="-1">Главная</h1>')
+    expect(html).toContain('Загружаем траты месяца…')
+    expect(html).not.toContain('ck-quick-actions')
+    expect(html.match(/<h1\b/g)).toHaveLength(1)
+  })
+
+  it('connects the limits screen', () => {
+    navigation.snapshot = { href: '/budget/limits', route: { kind: 'limits' } }
+    const html = renderToStaticMarkup(<App />)
+    expect(html).toContain('<h1 id="page-heading" tabindex="-1">Лимиты на месяц</h1>')
+    expect(html).toContain('Загружаем лимиты…')
+  })
+
   it('keeps health available independently', () => {
     navigation.snapshot = { href: '/health', route: { kind: 'health' } }
     const html = renderToStaticMarkup(<App />)
@@ -68,7 +84,7 @@ describe('App feature connections (Node server markup, not browser behavior)', (
     expect(header).toContain('<span>Чекист</span>')
     expect(header).toMatch(/<img class="brand-mark" src="[^"]*emblem-96[^"]*" srcSet="[^"]*emblem-96[^"]* 1x, [^"]*emblem-192[^"]* 2x" width="44" height="44" alt=""\/>/)
     expect(header.match(/<a\b[^>]*href="[^"]*"/g)).toEqual([
-      '<a class="brand" aria-label="Чекист — каталог" href="/catalog"', '<a aria-current="page" href="/catalog"',
+      '<a class="brand" aria-label="Чекист — главная" href="/"', '<a aria-current="page" href="/catalog"',
       '<a href="/receipts"', '<a href="/stats"', '<a href="/recognition/jobs"', '<a href="/health"',
     ])
     expect(html).not.toContain('href="/login"')

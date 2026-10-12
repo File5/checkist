@@ -312,6 +312,30 @@
   --ck-series-special: #6b6157;
   --ck-plot-grid: #332b26;
   --ck-plot-axis: #5a4d44;
+
+  /* family-budget tokens (контракт параллельных задач; интегратор оставляет одну копию)
+     --ck-cat-1 … -6       цвет категории (точка, полоса, буква значка); номер —
+                           category_id по модулю 6, плюс 1
+     --ck-cat-N-tint       подложка значка категории
+     --ck-over-text        текст «сверх лимита»
+     --ck-over-bar         полоса сверх лимита
+     --ck-track            дорожка полосы прогресса */
+  --ck-cat-1: #3db8a8;
+  --ck-cat-2: #e58a4e;
+  --ck-cat-3: #6e9be0;
+  --ck-cat-4: #a58bd8;
+  --ck-cat-5: #e07aab;
+  --ck-cat-6: #6fbf68;
+  --ck-cat-1-tint: #173a36;
+  --ck-cat-2-tint: #3e2717;
+  --ck-cat-3-tint: #1c2b44;
+  --ck-cat-4-tint: #2c2440;
+  --ck-cat-5-tint: #3e1f2e;
+  --ck-cat-6-tint: #1d3320;
+  --ck-over-text: #f4a36c;
+  --ck-over-bar: #e07a3a;
+  --ck-track: #26313a;
+  /* end family-budget tokens */
 }
 
 :root[data-theme="light"] {
@@ -377,4 +401,22 @@
   --ck-series-special: #bdb3a0;
   --ck-plot-grid: #ece3cf;
   --ck-plot-axis: #cdbfa3;
+
+  /* family-budget tokens */
+  --ck-cat-1: #0e6b63;
+  --ck-cat-2: #c2581b;
+  --ck-cat-3: #2f5faf;
+  --ck-cat-4: #6b4fa3;
+  --ck-cat-5: #b03a6e;
+  --ck-cat-6: #3f7d3a;
+  --ck-cat-1-tint: #d7ece9;
+  --ck-cat-2-tint: #f6e1d3;
+  --ck-cat-3-tint: #dce5f4;
+  --ck-cat-4-tint: #e6dff1;
+  --ck-cat-5-tint: #f3dce7;
+  --ck-cat-6-tint: #ddebdb;
+  --ck-over-text: #9a3a0b;
+  --ck-over-bar: #c2581b;
+  --ck-track: #e7ecef;
+  /* end family-budget tokens */
 }
