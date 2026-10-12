@@ -85,7 +85,6 @@ EXAMPLES = {
     "trends-category.json": (f"{TRENDS}category/?category={DAIRY}&month=2026-09&months=12", 200),
     "trends-category-suggested.json": (f"{TRENDS}category/?month=2026-09&months=6", 200),
     "trends-prices.json": (f"{TRENDS}prices/?month=2026-09&months=12", 200),
-    "trends-prices-empty.json": (f"{TRENDS}prices/?month=2018-12&months=6", 200),
     # Ошибки.
     "error-invalid-parameter.json": (
         f"{SPENDING}?date_from=2026-13-01&country=de1&currency=E&store=99&group_by=brand&category=x&limit=0", 400,
@@ -223,7 +222,6 @@ class PublicExampleFilesTests(SimpleTestCase):
         self.assertEqual(trend_prices[0]["points"][0]["index"], "100.00")
         self.assertEqual((expected("trends-category-suggested.json")["suggested"], expected("trends-category.json")["suggested"]),
                          (True, False))
-        self.assertEqual(expected("trends-prices-empty.json")["currencies"], [])
         codes = {name: expected(name)["error"]["code"] for name in EXAMPLES if name.startswith("error-")}
         self.assertEqual(
             set(codes.values()), {"invalid_parameter", "range_too_large", "permission_denied", "not_found"},

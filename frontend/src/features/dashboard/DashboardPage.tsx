@@ -29,6 +29,7 @@ function SpentCard({ block, data, family, current }: { block: DashboardCurrency;
     <p className="dash-label">{family ? 'Потрачено семьёй' : 'Потрачено'}</p>
     <p className="dash-total">{formatMoney(block.spent, block.currency)}</p>
     {comparison && <p className={`dash-compare dash-compare-${comparison.tone}`}>{comparison.text}</p>}
+    <Link className="dash-link" to="/stats/trends">Динамика →</Link>
     {total && block.limit_total && <>
       <Bar value={total} label={`Потрачено ${total.percent}% общего лимита`} />
       <p className="dash-left">

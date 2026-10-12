@@ -13,7 +13,7 @@ import { ExpensePage } from './features/expense'
 import { DashboardPage, LimitsPage } from './features/dashboard'
 import { MergesPage, MergePage } from './features/merges'
 import { ClassificationPage } from './features/classification'
-import { SpendingPage, ReceiptsStatsPage } from './features/stats'
+import { SpendingPage, ReceiptsStatsPage, TrendsPage } from './features/stats'
 import { LoginPage, AccountPage } from './features/auth'
 import { pageKey, shellView, watchSession } from './features/auth/auth-state'
 import type { ShellView } from './features/auth/auth-state'
@@ -36,6 +36,7 @@ function pageTitle(route: Route) {
     case 'product': return 'Товар и история цен'
     case 'spending': return 'Траты за период'
     case 'receipts-stats': return 'Средний чек'
+    case 'trends': return 'Динамика'
     case 'health': return 'Состояние сервисов'
     case 'receipts': return 'Траты'
     case 'upload': return 'Загрузка фото чеков'
@@ -77,6 +78,7 @@ function pageContent({ route, returnTo }: NavigationSnapshot, username: string) 
     case 'product': return <ProductPage productId={route.productId} query={route.query} returnTo={returnTo} />
     case 'spending': return <SpendingPage query={route.query} />
     case 'receipts-stats': return <ReceiptsStatsPage query={route.query} />
+    case 'trends': return <TrendsPage query={route.query} />
     case 'health': return <HealthPage />
     case 'receipts': return <ReceiptsPage query={route.query} />
     case 'upload': return <UploadPage />
@@ -165,7 +167,7 @@ export default function App() {
   const mergesActive = route.kind === 'merges' || route.kind === 'merge'
   const classificationActive = route.kind === 'classification'
   const catalogActive = route.kind === 'catalog' || route.kind === 'category' || route.kind === 'product' || mergesActive || classificationActive
-  const statsActive = route.kind === 'spending' || route.kind === 'receipts-stats'
+  const statsActive = route.kind === 'spending' || route.kind === 'receipts-stats' || route.kind === 'trends'
   const signedIn = session.kind === 'user'
   const username = signedIn ? session.user.username : ''
   // The sign-in is drawn alone, on the address the person opened: no header, menu or footer.
@@ -211,6 +213,7 @@ export default function App() {
           {statsActive && view === 'page' && <nav className="main-navigation section-navigation" aria-label="Раздел статистики">
             <Link to="/stats" aria-current={route.kind === 'spending' ? 'page' : undefined}>Траты</Link>
             <Link to="/stats/receipts" aria-current={route.kind === 'receipts-stats' ? 'page' : undefined}>Средний чек</Link>
+            <Link to="/stats/trends" aria-current={route.kind === 'trends' ? 'page' : undefined}>Динамика</Link>
           </nav>}
           {body}
         </main>
