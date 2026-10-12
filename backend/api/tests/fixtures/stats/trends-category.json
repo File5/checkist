@@ -1,0 +1,209 @@
+{
+  "months": 12,
+  "month_from": "2025-10",
+  "month_to": "2026-09",
+  "category": {
+    "id": 2,
+    "name": "Молочные продукты",
+    "path": [
+      {
+        "id": 1,
+        "name": "Продукты питания"
+      },
+      {
+        "id": 2,
+        "name": "Молочные продукты"
+      }
+    ]
+  },
+  "suggested": false,
+  "options": [
+    {
+      "id": 5,
+      "name": "Бытовая химия",
+      "path": [
+        "Бытовая химия"
+      ],
+      "depth": 0
+    },
+    {
+      "id": 6,
+      "name": "Не разобрано",
+      "path": [
+        "Не разобрано"
+      ],
+      "depth": 0
+    },
+    {
+      "id": 1,
+      "name": "Продукты питания",
+      "path": [
+        "Продукты питания"
+      ],
+      "depth": 0
+    },
+    {
+      "id": 2,
+      "name": "Молочные продукты",
+      "path": [
+        "Продукты питания",
+        "Молочные продукты"
+      ],
+      "depth": 1
+    },
+    {
+      "id": 4,
+      "name": "Овощи и фрукты",
+      "path": [
+        "Продукты питания",
+        "Овощи и фрукты"
+      ],
+      "depth": 1
+    },
+    {
+      "id": 3,
+      "name": "Хлеб",
+      "path": [
+        "Продукты питания",
+        "Хлеб"
+      ],
+      "depth": 1
+    }
+  ],
+  "currencies": [
+    {
+      "currency": "EUR",
+      "total": "369.44",
+      "average": "30.79",
+      "months": [
+        {
+          "month": "2025-10",
+          "amount": "31.37",
+          "lines_count": 13
+        },
+        {
+          "month": "2025-11",
+          "amount": "39.21",
+          "lines_count": 14
+        },
+        {
+          "month": "2025-12",
+          "amount": "20.51",
+          "lines_count": 9
+        },
+        {
+          "month": "2026-01",
+          "amount": "33.66",
+          "lines_count": 13
+        },
+        {
+          "month": "2026-02",
+          "amount": "25.25",
+          "lines_count": 11
+        },
+        {
+          "month": "2026-03",
+          "amount": "36.49",
+          "lines_count": 14
+        },
+        {
+          "month": "2026-04",
+          "amount": "26.55",
+          "lines_count": 11
+        },
+        {
+          "month": "2026-05",
+          "amount": "26.42",
+          "lines_count": 11
+        },
+        {
+          "month": "2026-06",
+          "amount": "29.42",
+          "lines_count": 13
+        },
+        {
+          "month": "2026-07",
+          "amount": "33.27",
+          "lines_count": 12
+        },
+        {
+          "month": "2026-08",
+          "amount": "34.46",
+          "lines_count": 14
+        },
+        {
+          "month": "2026-09",
+          "amount": "32.83",
+          "lines_count": 12
+        }
+      ]
+    },
+    {
+      "currency": "KZT",
+      "total": "16926.00",
+      "average": "1410.50",
+      "months": [
+        {
+          "month": "2025-10",
+          "amount": "639.00",
+          "lines_count": 1
+        },
+        {
+          "month": "2025-11",
+          "amount": "1861.00",
+          "lines_count": 2
+        },
+        {
+          "month": "2025-12",
+          "amount": "1222.00",
+          "lines_count": 2
+        },
+        {
+          "month": "2026-01",
+          "amount": "1338.00",
+          "lines_count": 1
+        },
+        {
+          "month": "2026-02",
+          "amount": "669.00",
+          "lines_count": 1
+        },
+        {
+          "month": "2026-03",
+          "amount": "1948.00",
+          "lines_count": 2
+        },
+        {
+          "month": "2026-04",
+          "amount": "1279.00",
+          "lines_count": 2
+        },
+        {
+          "month": "2026-05",
+          "amount": "1338.00",
+          "lines_count": 1
+        },
+        {
+          "month": "2026-06",
+          "amount": "1889.00",
+          "lines_count": 2
+        },
+        {
+          "month": "2026-07",
+          "amount": "2024.00",
+          "lines_count": 2
+        },
+        {
+          "month": "2026-08",
+          "amount": "695.00",
+          "lines_count": 1
+        },
+        {
+          "month": "2026-09",
+          "amount": "2024.00",
+          "lines_count": 2
+        }
+      ]
+    }
+  ]
+}

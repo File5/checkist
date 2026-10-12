@@ -27,6 +27,7 @@ SPENDING = "/api/stats/spending/"
 SERIES = "/api/stats/receipts/series/"
 COMPARE = "/api/stats/receipts/compare/"
 PRICES = "/api/products/{}/prices/series/"
+TRENDS = "/api/stats/trends/"
 # Главный вопрос демо: 2020 год против января — сентября 2026.
 PERIODS = "base_from=2020-01-01&base_to=2020-12-31&current_from=2026-01-01&current_to=2026-09-30"
 FOOD, DAIRY, MILK_GENERIC = 1, 2, 1
@@ -79,6 +80,12 @@ EXAMPLES = {
         f"{PRICES.format(MILK)}?similar=none&interval=week&date_from=2026-09-01", 200,
     ),
     "price-series-empty.json": (f"{PRICES.format(MILK)}?date_to=2018-12-31", 200),
+    # «Динамика»: окно из 12 месяцев до сентября 2026; месяцы без трат — нули, без индекса — null.
+    "trends-monthly.json": (f"{TRENDS}monthly/?month=2026-09&months=12", 200),
+    "trends-category.json": (f"{TRENDS}category/?category={DAIRY}&month=2026-09&months=12", 200),
+    "trends-category-suggested.json": (f"{TRENDS}category/?month=2026-09&months=6", 200),
+    "trends-prices.json": (f"{TRENDS}prices/?month=2026-09&months=12", 200),
+    "trends-prices-empty.json": (f"{TRENDS}prices/?month=2018-12&months=6", 200),
     # Ошибки.
     "error-invalid-parameter.json": (
         f"{SPENDING}?date_from=2026-13-01&country=de1&currency=E&store=99&group_by=brand&category=x&limit=0", 400,
@@ -208,6 +215,15 @@ class PublicExampleFilesTests(SimpleTestCase):
         for name in ("spending-empty.json", "series-empty.json", "compare-empty.json"):
             self.assertEqual(expected(name)["currencies"], [], name)
         self.assertEqual(expected("price-series-empty.json")["series"], [])
+        monthly = expected("trends-monthly.json")
+        self.assertEqual([block["currency"] for block in monthly["currencies"]], ["EUR", "KZT"])
+        self.assertTrue(all(len(block["months"]) == monthly["months"] for block in monthly["currencies"]))
+        trend_prices = expected("trends-prices.json")["currencies"]
+        self.assertTrue(trend_prices[0]["risers"] and trend_prices[0]["fallers"])
+        self.assertEqual(trend_prices[0]["points"][0]["index"], "100.00")
+        self.assertEqual((expected("trends-category-suggested.json")["suggested"], expected("trends-category.json")["suggested"]),
+                         (True, False))
+        self.assertEqual(expected("trends-prices-empty.json")["currencies"], [])
         codes = {name: expected(name)["error"]["code"] for name in EXAMPLES if name.startswith("error-")}
         self.assertEqual(
             set(codes.values()), {"invalid_parameter", "range_too_large", "permission_denied", "not_found"},

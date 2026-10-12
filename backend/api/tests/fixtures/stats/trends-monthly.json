@@ -1,0 +1,463 @@
+{
+  "months": 12,
+  "month_from": "2025-10",
+  "month_to": "2026-09",
+  "currencies": [
+    {
+      "currency": "EUR",
+      "total": "2156.75",
+      "average": "179.73",
+      "categories": [
+        {
+          "id": 6,
+          "name": "Не разобрано",
+          "unassigned": true,
+          "total": "929.50"
+        },
+        {
+          "id": 1,
+          "name": "Продукты питания",
+          "unassigned": false,
+          "total": "899.19"
+        },
+        {
+          "id": 5,
+          "name": "Бытовая химия",
+          "unassigned": false,
+          "total": "255.25"
+        }
+      ],
+      "months": [
+        {
+          "month": "2025-10",
+          "total": "171.12",
+          "categories": [
+            {
+              "id": 6,
+              "amount": "80.04"
+            },
+            {
+              "id": 1,
+              "amount": "74.23"
+            },
+            {
+              "id": 5,
+              "amount": "10.60"
+            }
+          ],
+          "uncategorized": "6.25"
+        },
+        {
+          "month": "2025-11",
+          "total": "185.64",
+          "categories": [
+            {
+              "id": 6,
+              "amount": "75.45"
+            },
+            {
+              "id": 1,
+              "amount": "74.91"
+            },
+            {
+              "id": 5,
+              "amount": "27.04"
+            }
+          ],
+          "uncategorized": "8.24"
+        },
+        {
+          "month": "2025-12",
+          "total": "161.05",
+          "categories": [
+            {
+              "id": 6,
+              "amount": "63.07"
+            },
+            {
+              "id": 1,
+              "amount": "69.94"
+            },
+            {
+              "id": 5,
+              "amount": "26.43"
+            }
+          ],
+          "uncategorized": "1.61"
+        },
+        {
+          "month": "2026-01",
+          "total": "180.49",
+          "categories": [
+            {
+              "id": 6,
+              "amount": "76.17"
+            },
+            {
+              "id": 1,
+              "amount": "75.18"
+            },
+            {
+              "id": 5,
+              "amount": "21.39"
+            }
+          ],
+          "uncategorized": "7.75"
+        },
+        {
+          "month": "2026-02",
+          "total": "179.17",
+          "categories": [
+            {
+              "id": 6,
+              "amount": "91.60"
+            },
+            {
+              "id": 1,
+              "amount": "67.26"
+            },
+            {
+              "id": 5,
+              "amount": "15.20"
+            }
+          ],
+          "uncategorized": "5.11"
+        },
+        {
+          "month": "2026-03",
+          "total": "179.32",
+          "categories": [
+            {
+              "id": 6,
+              "amount": "70.04"
+            },
+            {
+              "id": 1,
+              "amount": "77.71"
+            },
+            {
+              "id": 5,
+              "amount": "21.83"
+            }
+          ],
+          "uncategorized": "9.74"
+        },
+        {
+          "month": "2026-04",
+          "total": "174.19",
+          "categories": [
+            {
+              "id": 6,
+              "amount": "72.36"
+            },
+            {
+              "id": 1,
+              "amount": "68.93"
+            },
+            {
+              "id": 5,
+              "amount": "29.65"
+            }
+          ],
+          "uncategorized": "3.25"
+        },
+        {
+          "month": "2026-05",
+          "total": "185.42",
+          "categories": [
+            {
+              "id": 6,
+              "amount": "73.26"
+            },
+            {
+              "id": 1,
+              "amount": "82.94"
+            },
+            {
+              "id": 5,
+              "amount": "21.20"
+            }
+          ],
+          "uncategorized": "8.02"
+        },
+        {
+          "month": "2026-06",
+          "total": "180.04",
+          "categories": [
+            {
+              "id": 6,
+              "amount": "86.00"
+            },
+            {
+              "id": 1,
+              "amount": "70.90"
+            },
+            {
+              "id": 5,
+              "amount": "18.03"
+            }
+          ],
+          "uncategorized": "5.11"
+        },
+        {
+          "month": "2026-07",
+          "total": "180.24",
+          "categories": [
+            {
+              "id": 6,
+              "amount": "73.11"
+            },
+            {
+              "id": 1,
+              "amount": "74.33"
+            },
+            {
+              "id": 5,
+              "amount": "23.35"
+            }
+          ],
+          "uncategorized": "9.45"
+        },
+        {
+          "month": "2026-08",
+          "total": "189.83",
+          "categories": [
+            {
+              "id": 6,
+              "amount": "83.35"
+            },
+            {
+              "id": 1,
+              "amount": "76.75"
+            },
+            {
+              "id": 5,
+              "amount": "26.59"
+            }
+          ],
+          "uncategorized": "3.14"
+        },
+        {
+          "month": "2026-09",
+          "total": "190.24",
+          "categories": [
+            {
+              "id": 6,
+              "amount": "85.05"
+            },
+            {
+              "id": 1,
+              "amount": "86.11"
+            },
+            {
+              "id": 5,
+              "amount": "13.94"
+            }
+          ],
+          "uncategorized": "5.14"
+        }
+      ]
+    },
+    {
+      "currency": "KZT",
+      "total": "86987.01",
+      "average": "7248.92",
+      "categories": [
+        {
+          "id": 1,
+          "name": "Продукты питания",
+          "unassigned": false,
+          "total": "55519.01"
+        },
+        {
+          "id": 6,
+          "name": "Не разобрано",
+          "unassigned": true,
+          "total": "28989.00"
+        }
+      ],
+      "months": [
+        {
+          "month": "2025-10",
+          "total": "7063.00",
+          "categories": [
+            {
+              "id": 1,
+              "amount": "4259.00"
+            },
+            {
+              "id": 6,
+              "amount": "2174.00"
+            }
+          ],
+          "uncategorized": "630.00"
+        },
+        {
+          "month": "2025-11",
+          "total": "7371.00",
+          "categories": [
+            {
+              "id": 1,
+              "amount": "5873.00"
+            },
+            {
+              "id": 6,
+              "amount": "1498.00"
+            }
+          ],
+          "uncategorized": "0.00"
+        },
+        {
+          "month": "2025-12",
+          "total": "5240.08",
+          "categories": [
+            {
+              "id": 1,
+              "amount": "2549.08"
+            },
+            {
+              "id": 6,
+              "amount": "2691.00"
+            }
+          ],
+          "uncategorized": "0.00"
+        },
+        {
+          "month": "2026-01",
+          "total": "5647.80",
+          "categories": [
+            {
+              "id": 1,
+              "amount": "2451.80"
+            },
+            {
+              "id": 6,
+              "amount": "2538.00"
+            }
+          ],
+          "uncategorized": "658.00"
+        },
+        {
+          "month": "2026-02",
+          "total": "7611.00",
+          "categories": [
+            {
+              "id": 1,
+              "amount": "4902.00"
+            },
+            {
+              "id": 6,
+              "amount": "2859.00"
+            }
+          ],
+          "uncategorized": "-150.00"
+        },
+        {
+          "month": "2026-03",
+          "total": "8532.50",
+          "categories": [
+            {
+              "id": 1,
+              "amount": "6958.50"
+            },
+            {
+              "id": 6,
+              "amount": "1574.00"
+            }
+          ],
+          "uncategorized": "0.00"
+        },
+        {
+          "month": "2026-04",
+          "total": "5854.20",
+          "categories": [
+            {
+              "id": 1,
+              "amount": "2230.20"
+            },
+            {
+              "id": 6,
+              "amount": "2966.00"
+            }
+          ],
+          "uncategorized": "658.00"
+        },
+        {
+          "month": "2026-05",
+          "total": "7873.00",
+          "categories": [
+            {
+              "id": 1,
+              "amount": "5335.00"
+            },
+            {
+              "id": 6,
+              "amount": "2538.00"
+            }
+          ],
+          "uncategorized": "0.00"
+        },
+        {
+          "month": "2026-06",
+          "total": "8251.00",
+          "categories": [
+            {
+              "id": 1,
+              "amount": "5650.00"
+            },
+            {
+              "id": 6,
+              "amount": "2601.00"
+            }
+          ],
+          "uncategorized": "0.00"
+        },
+        {
+          "month": "2026-07",
+          "total": "6761.68",
+          "categories": [
+            {
+              "id": 1,
+              "amount": "3784.68"
+            },
+            {
+              "id": 6,
+              "amount": "2294.00"
+            }
+          ],
+          "uncategorized": "683.00"
+        },
+        {
+          "month": "2026-08",
+          "total": "8945.75",
+          "categories": [
+            {
+              "id": 1,
+              "amount": "5591.75"
+            },
+            {
+              "id": 6,
+              "amount": "3354.00"
+            }
+          ],
+          "uncategorized": "0.00"
+        },
+        {
+          "month": "2026-09",
+          "total": "7836.00",
+          "categories": [
+            {
+              "id": 1,
+              "amount": "5934.00"
+            },
+            {
+              "id": 6,
+              "amount": "1902.00"
+            }
+          ],
+          "uncategorized": "0.00"
+        }
+      ]
+    }
+  ]
+}

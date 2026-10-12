@@ -1,0 +1,420 @@
+{
+  "months": 12,
+  "month_from": "2025-10",
+  "month_to": "2026-09",
+  "currencies": [
+    {
+      "currency": "EUR",
+      "first_month": "2025-10",
+      "points": [
+        {
+          "month": "2025-10",
+          "index": "100.00",
+          "base_month": null,
+          "link_percent": null,
+          "matched_products": 0
+        },
+        {
+          "month": "2025-11",
+          "index": "99.23",
+          "base_month": "2025-10",
+          "link_percent": "-0.77",
+          "matched_products": 28
+        },
+        {
+          "month": "2025-12",
+          "index": "99.83",
+          "base_month": "2025-11",
+          "link_percent": "0.60",
+          "matched_products": 28
+        },
+        {
+          "month": "2026-01",
+          "index": "99.98",
+          "base_month": "2025-12",
+          "link_percent": "0.15",
+          "matched_products": 28
+        },
+        {
+          "month": "2026-02",
+          "index": "99.87",
+          "base_month": "2026-01",
+          "link_percent": "-0.11",
+          "matched_products": 28
+        },
+        {
+          "month": "2026-03",
+          "index": "100.00",
+          "base_month": "2026-02",
+          "link_percent": "0.13",
+          "matched_products": 28
+        },
+        {
+          "month": "2026-04",
+          "index": "99.83",
+          "base_month": "2026-03",
+          "link_percent": "-0.17",
+          "matched_products": 28
+        },
+        {
+          "month": "2026-05",
+          "index": "100.10",
+          "base_month": "2026-04",
+          "link_percent": "0.27",
+          "matched_products": 28
+        },
+        {
+          "month": "2026-06",
+          "index": "99.81",
+          "base_month": "2026-05",
+          "link_percent": "-0.28",
+          "matched_products": 28
+        },
+        {
+          "month": "2026-07",
+          "index": "100.62",
+          "base_month": "2026-06",
+          "link_percent": "0.81",
+          "matched_products": 28
+        },
+        {
+          "month": "2026-08",
+          "index": "100.76",
+          "base_month": "2026-07",
+          "link_percent": "0.14",
+          "matched_products": 28
+        },
+        {
+          "month": "2026-09",
+          "index": "100.89",
+          "base_month": "2026-08",
+          "link_percent": "0.12",
+          "matched_products": 28
+        }
+      ],
+      "products_total": 28,
+      "risers": [
+        {
+          "product": {
+            "id": 11,
+            "name": "Demo Butterkeks"
+          },
+          "unit": "pcs",
+          "old": {
+            "month": "2025-10",
+            "price": "1.5500"
+          },
+          "new": {
+            "month": "2026-09",
+            "price": "1.6200"
+          },
+          "change_percent": "4.52"
+        },
+        {
+          "product": {
+            "id": 24,
+            "name": "Demo Hähnchenbrust 600g"
+          },
+          "unit": "pcs",
+          "old": {
+            "month": "2025-10",
+            "price": "7.7100"
+          },
+          "new": {
+            "month": "2026-09",
+            "price": "7.9367"
+          },
+          "change_percent": "2.94"
+        },
+        {
+          "product": {
+            "id": 8,
+            "name": "Demo Naturjoghurt 500g"
+          },
+          "unit": "pcs",
+          "old": {
+            "month": "2025-10",
+            "price": "1.1800"
+          },
+          "new": {
+            "month": "2026-09",
+            "price": "1.2067"
+          },
+          "change_percent": "2.26"
+        },
+        {
+          "product": {
+            "id": 6,
+            "name": "Demo Äpfel lose"
+          },
+          "unit": "kg",
+          "old": {
+            "month": "2025-10",
+            "price": "3.2074"
+          },
+          "new": {
+            "month": "2026-09",
+            "price": "3.2780"
+          },
+          "change_percent": "2.20"
+        },
+        {
+          "product": {
+            "id": 7,
+            "name": "Demo Bohnenkaffee gemahlen"
+          },
+          "unit": "pcs",
+          "old": {
+            "month": "2025-10",
+            "price": "7.2833"
+          },
+          "new": {
+            "month": "2026-09",
+            "price": "7.4200"
+          },
+          "change_percent": "1.88"
+        }
+      ],
+      "fallers": [
+        {
+          "product": {
+            "id": 20,
+            "name": "Demo Spaghetti 500g"
+          },
+          "unit": "pcs",
+          "old": {
+            "month": "2025-10",
+            "price": "1.0300"
+          },
+          "new": {
+            "month": "2026-09",
+            "price": "0.9900"
+          },
+          "change_percent": "-3.88"
+        },
+        {
+          "product": {
+            "id": 25,
+            "name": "Demo Zahncreme"
+          },
+          "unit": "pcs",
+          "old": {
+            "month": "2025-10",
+            "price": "1.9567"
+          },
+          "new": {
+            "month": "2026-09",
+            "price": "1.8850"
+          },
+          "change_percent": "-3.66"
+        },
+        {
+          "product": {
+            "id": 28,
+            "name": "Demo Olivenöl nativ"
+          },
+          "unit": "pcs",
+          "old": {
+            "month": "2025-10",
+            "price": "4.8800"
+          },
+          "new": {
+            "month": "2026-09",
+            "price": "4.8733"
+          },
+          "change_percent": "-0.14"
+        },
+        {
+          "product": {
+            "id": 27,
+            "name": "Demo Lachsfilet"
+          },
+          "unit": "pcs",
+          "old": {
+            "month": "2025-10",
+            "price": "4.4900"
+          },
+          "new": {
+            "month": "2026-09",
+            "price": "4.4867"
+          },
+          "change_percent": "-0.07"
+        }
+      ]
+    },
+    {
+      "currency": "KZT",
+      "first_month": "2025-10",
+      "points": [
+        {
+          "month": "2025-10",
+          "index": "100.00",
+          "base_month": null,
+          "link_percent": null,
+          "matched_products": 0
+        },
+        {
+          "month": "2025-11",
+          "index": "100.00",
+          "base_month": "2025-10",
+          "link_percent": "0.00",
+          "matched_products": 4
+        },
+        {
+          "month": "2025-12",
+          "index": "102.21",
+          "base_month": "2025-11",
+          "link_percent": "2.21",
+          "matched_products": 4
+        },
+        {
+          "month": "2026-01",
+          "index": "106.76",
+          "base_month": "2025-12",
+          "link_percent": "4.45",
+          "matched_products": 3
+        },
+        {
+          "month": "2026-02",
+          "index": "106.76",
+          "base_month": "2026-01",
+          "link_percent": "0.00",
+          "matched_products": 5
+        },
+        {
+          "month": "2026-03",
+          "index": "106.76",
+          "base_month": "2026-02",
+          "link_percent": "0.00",
+          "matched_products": 4
+        },
+        {
+          "month": "2026-04",
+          "index": "106.76",
+          "base_month": "2026-03",
+          "link_percent": "0.00",
+          "matched_products": 4
+        },
+        {
+          "month": "2026-05",
+          "index": "107.57",
+          "base_month": "2026-04",
+          "link_percent": "0.76",
+          "matched_products": 4
+        },
+        {
+          "month": "2026-06",
+          "index": "107.57",
+          "base_month": "2026-05",
+          "link_percent": "0.00",
+          "matched_products": 5
+        },
+        {
+          "month": "2026-07",
+          "index": "111.69",
+          "base_month": "2026-06",
+          "link_percent": "3.83",
+          "matched_products": 3
+        },
+        {
+          "month": "2026-08",
+          "index": "111.69",
+          "base_month": "2026-07",
+          "link_percent": "-0.00",
+          "matched_products": 5
+        },
+        {
+          "month": "2026-09",
+          "index": "111.69",
+          "base_month": "2026-08",
+          "link_percent": "0.00",
+          "matched_products": 4
+        }
+      ],
+      "products_total": 11,
+      "risers": [
+        {
+          "product": {
+            "id": 35,
+            "name": "Демо Сахар 1 кг"
+          },
+          "unit": "pcs",
+          "old": {
+            "month": "2025-11",
+            "price": "511.0000"
+          },
+          "new": {
+            "month": "2026-09",
+            "price": "559.0000"
+          },
+          "change_percent": "9.39"
+        },
+        {
+          "product": {
+            "id": 37,
+            "name": "Демо Курица охлаждённая 1 кг"
+          },
+          "unit": "pcs",
+          "old": {
+            "month": "2025-10",
+            "price": "3168.0000"
+          },
+          "new": {
+            "month": "2026-09",
+            "price": "3453.0000"
+          },
+          "change_percent": "9.00"
+        },
+        {
+          "product": {
+            "id": 3,
+            "name": "Демо Молоко 2,5% 1 л"
+          },
+          "unit": "pcs",
+          "old": {
+            "month": "2025-10",
+            "price": "639.0000"
+          },
+          "new": {
+            "month": "2026-09",
+            "price": "695.0000"
+          },
+          "change_percent": "8.76"
+        },
+        {
+          "product": {
+            "id": 34,
+            "name": "Демо Кефир 1 л"
+          },
+          "unit": "pcs",
+          "old": {
+            "month": "2025-11",
+            "price": "583.0000"
+          },
+          "new": {
+            "month": "2026-09",
+            "price": "634.0000"
+          },
+          "change_percent": "8.75"
+        },
+        {
+          "product": {
+            "id": 32,
+            "name": "Демо Яблоки весовые"
+          },
+          "unit": "kg",
+          "old": {
+            "month": "2025-12",
+            "price": "883.0049"
+          },
+          "new": {
+            "month": "2026-08",
+            "price": "959.0000"
+          },
+          "change_percent": "8.61"
+        }
+      ],
+      "fallers": []
+    }
+  ]
+}
