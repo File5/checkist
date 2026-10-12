@@ -1,6 +1,7 @@
 /** «Добавить трату»: the draft of the form and its pure rules. No network, no React. */
 import type { Line, ManualSpendInput, Receipt } from '../../api/receipts'
 import type { Category } from '../../api/types'
+import { formatMoney } from '../../lib/money'
 
 export type LineDraft = { key: number; name: string; amount: string; category: number | null }
 export type ExpenseDraft = {
@@ -186,6 +187,66 @@ export function visibleChips(chips: Category[], selected: number | null, expande
   const shown = chips.slice(0, CHIPS_SHOWN)
   const chosen = chips.find((category) => category.id === selected)
   return chosen && !shown.includes(chosen) ? [...shown, chosen] : shown
+}
+
+/** «Сохранить · 4 501 KZT»: the amount that will be saved, rounded up to whole units like every amount on screen
+ * (`lib/money.ts`); just «Сохранить» while there is no valid amount yet. */
+export function saveLabel(draft: ExpenseDraft): string {
+  const itemized = filledLines(draft.lines).length > 0
+  const amount = itemized ? linesTotal(draft.lines) : normalizeAmount(draft.amount)
+  const currency = draft.currency.trim().toUpperCase()
+  return amount ? `Сохранить · ${formatMoney(amount, /^[A-Z]{3}$/.test(currency) ? currency : '')}` : 'Сохранить'
+}
+
+/** The day before a calendar date, counted on the calendar (no time zone, no daylight saving). */
+export function dayBefore(day: string): string {
+  const [year, month, date] = day.split('-').map(Number)
+  return new Date(Date.UTC(year, month - 1, date - 1)).toISOString().slice(0, 10)
+}
+
+/** Which date chip is chosen: «Сегодня», «Вчера» or the calendar. */
+export function dateChoice(date: string, today: string): 'today' | 'yesterday' | 'other' {
+  if (date === today) return 'today'
+  return date === dayBefore(today) ? 'yesterday' : 'other'
+}
+
+/** Names from the root to the category itself. */
+function pathNames(category: Category): string[] {
+  const names = category.path.map((step) => step.name)
+  if (!names.length || names[names.length - 1] !== category.name) names.push(category.name)
+  return names
+}
+
+const fold = (text: string) => text.toLocaleLowerCase('ru-RU').replaceAll('ё', 'е').trim()
+
+export type CategoryTreeRow = { category: Category; depth: number; label: string }
+
+/**
+ * «Все категории» in a sheet: the tree in the order of its paths, each row indented by its depth. With a search —
+ * only the categories whose path has the words, flat, each named by its whole path («Еда › Кафе»).
+ */
+export function categoryTree(categories: Category[], search = ''): CategoryTreeRow[] {
+  const rows = categories.map((category) => ({ category, names: pathNames(category) }))
+    .sort((a, b) => {
+      for (let index = 0; index < Math.min(a.names.length, b.names.length); index += 1) {
+        const order = a.names[index].localeCompare(b.names[index], 'ru')
+        if (order) return order
+      }
+      return a.names.length - b.names.length
+    })
+  const words = fold(search).split(/\s+/).filter(Boolean)
+  if (!words.length) return rows.map(({ category, names }) => ({ category, depth: names.length - 1, label: category.name }))
+  return rows.filter(({ names }) => { const text = fold(names.join(' ')); return words.every((word) => text.includes(word)) })
+    .map(({ category, names }) => ({ category, depth: 0, label: names.join(' › ') }))
+}
+
+/**
+ * How far to scroll so that a focused field stays above the save bar and the keyboard: `bottom` — the bottom of the
+ * field, `visible` — the bottom of the visible part of the window, `reserved` — the height of the bar. 0 — in view.
+ */
+export function fieldScrollDelta(bottom: number, visible: number, reserved: number, margin = 12): number {
+  const limit = visible - reserved - margin
+  return bottom > limit ? Math.ceil(bottom - limit) : 0
 }
 
 /** Notice for the receipt page after a save, on the page of that spend. The page reads it into its state and clears it. */
