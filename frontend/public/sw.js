@@ -158,15 +158,23 @@ async function handleAsset(event) {
   return response
 }
 
+// Bumped by every clear: an answer that was still on its way when the session changed is not saved
+// afterwards (it would put the previous person's data back on the phone).
+let apiGeneration = 0
+
 async function clearApi() {
+  apiGeneration += 1
   await caches.delete(API_CACHE)
 }
 
 function handleApi(event) {
+  const generation = apiGeneration
   const network = fetch(event.request).then((response) => {
-    if (response.status === 200) {
+    if (response.status === 200 && generation === apiGeneration) {
       const copy = response.clone()
-      event.waitUntil(caches.open(API_CACHE).then((cache) => cache.put(event.request, copy)).catch(() => undefined))
+      event.waitUntil(caches.open(API_CACHE)
+        .then((cache) => generation === apiGeneration ? cache.put(event.request, copy) : undefined)
+        .catch(() => undefined))
     } else if (response.status === 401) {
       // The session ended: nothing of the previous person stays on this phone.
       event.waitUntil(clearApi().catch(() => undefined))

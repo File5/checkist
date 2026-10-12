@@ -302,6 +302,20 @@ describe('sw.js strategies', () => {
     expect(caches.stores.has(API_CACHE)).toBe(false)
   })
 
+  it('an answer still on its way at sign-out is not kept for the next person', async () => {
+    let answer: (response: Response) => void = () => {}
+    const { listeners, caches } = loadSw((input) => String(input).includes('/api/receipts/')
+      ? new Promise<Response>((resolve) => { answer = resolve })
+      : Promise.resolve(json({ ok: true })))
+    const read = new FakeEvent(request('/api/receipts/'))
+    listeners.fetch(read)
+    const logout = new FakeEvent(request('/api/auth/logout/', { method: 'POST' }))
+    listeners.fetch(logout)
+    await Promise.all(logout.waits)
+    answer(json({ results: ['previous person'] }))
+    await read.settled()
+    expect((await caches.open(API_CACHE)).entries.size).toBe(0)
+  })
   it('photos and writes are left to the browser', () => {
     const { listeners } = loadSw(async () => new Response(''))
     for (const event of [new FakeEvent(request('/media/a.jpg')), new FakeEvent(request('/api/receipts/manual/', { method: 'POST' }))]) {
