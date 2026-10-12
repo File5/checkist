@@ -3,7 +3,7 @@ import { buildReceiptsQuery, parseReceiptsQuery } from '../../navigation'
 import type { ReceiptsQuery } from '../../navigation'
 import { applyMe } from '../../session'
 import { resetSession } from '../../session/store'
-import { applyFilters, errorMessage, filterDraft, hasFilters, money, price, receiptParams, recognizedText } from './state'
+import { activeFilterCount, applyFilters, errorMessage, filterDraft, hasFilters, money, price, receiptParams, recognizedText } from './state'
 
 describe('receipt URL filters and display values', () => {
   it('uses newest purchases first while honouring an explicit sort', () => {
@@ -69,5 +69,14 @@ describe('receipt URL filters and display values', () => {
   it('uses local messages for inaccessible local API and stale pages', () => {
     expect(errorMessage({ kind: 'error', reason: 'permission_denied' })).toContain('локальном режиме')
     expect(errorMessage({ kind: 'error', reason: 'page_out_of_range' })).toContain('первую страницу')
+  })
+})
+
+describe('«Фильтры (N)» of a phone', () => {
+  it('counts the conditions of the form and of the link, not the family chip, the page or the default order', () => {
+    expect(activeFilterCount({ page: 3 })).toBe(0)
+    expect(activeFilterCount({ page: 1, owner: 'liza', ordering: '-purchased_at' })).toBe(0)
+    expect(activeFilterCount({ page: 1, q: 'MILCH', date_from: '2026-10-01', date_to: '2026-10-31', operation: 'refund' })).toBe(4)
+    expect(activeFilterCount({ page: 1, store: 7, currency: 'KZT', ordering: 'purchased_at' })).toBe(3)
   })
 })

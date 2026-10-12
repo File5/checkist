@@ -23,7 +23,8 @@ import type { ReceiptRequestState } from './request'
 import { OwnerChips, SpendDays } from './SpendDays'
 import { localToday, ownerChips, reviewJobsQuery, reviewText } from './spends'
 import type { OwnerChip } from './spends'
-import { hasFilters, money, ownerShown, receiptParams, receiptPlace, recognizedText, recognizedValue } from './state'
+import { activeFilterCount, hasFilters, money, ownerShown, receiptParams, receiptPlace, recognizedText, recognizedValue } from './state'
+import { ResponsiveFilters } from './_tmp-foundation' /* mobile-foundation: temporary, integrator removes */
 import { ManualMark } from './ManualMark'
 import { useReceiptRequest } from './useReceiptRequest'
 import '../expense/Expense.css'
@@ -86,7 +87,11 @@ export function ReceiptsView({ query, state, retry, showOwner = false, narrow = 
       <Link className="action-link receipt-primary" to="/receipts/new">Добавить трату</Link>
       <Link className="action-link" to="/recognition/jobs">Обработка</Link>
     </div>
-    <ReceiptFilters query={query} failure={state.kind === 'error' ? state : undefined} />
+    {/* On a phone behind «Фильтры (N)» in a sheet; a new address closes the sheet (the key). A wide screen keeps the
+        form mounted, so the focus stays on its button after «Применить». */}
+    <ResponsiveFilters key={narrow ? buildReceiptsQuery(query) : 'wide'} count={activeFilterCount(query)} narrow={narrow}>
+      <ReceiptFilters query={query} failure={state.kind === 'error' ? state : undefined} />
+    </ResponsiveFilters>
     <ReceiptBlock title="Список чеков" state={state} retry={retry} recovery={recovery}>
       {state.kind === 'ok' && (state.data.results.length ? <>
         <p className="receipt-note" role="status">Чеков: {state.data.count.toLocaleString('ru-RU')} · Страница {state.data.page.toLocaleString('ru-RU')} из {state.data.pages.toLocaleString('ru-RU')}</p>
