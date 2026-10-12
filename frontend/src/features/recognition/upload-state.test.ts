@@ -23,8 +23,12 @@ describe('upload and object URL lifecycle', () => {
     expect(validateFile({ name: 'Фото.JPEG', size: limits.max_bytes }, limits)).toBeUndefined()
     expect(validateFile({ name: 'photo.png', size: limits.max_bytes + 1 }, limits)).toContain('слишком большой')
     expect(validateFile({ name: 'photo.png', size: 0 }, limits)).toContain('пуст')
-    for (const name of ['photo.gif', 'photo.pdf', 'photo', 'photo.avif']) expect(validateFile({ name, size: 2 }, limits)).toBe('Формат не поддерживается. Выберите фото в JPEG, PNG, WebP или HEIC.')
-    for (const name of ['photo.HEIC', 'photo.heif']) expect(validateFile({ name, size: 2 }, limits)).toBeUndefined()
+    for (const name of ['photo.gif', 'photo.tiff', 'photo', 'photo.avif']) expect(validateFile({ name, size: 2 }, limits)).toBe('Формат не поддерживается. Выберите фото в JPEG, PNG, WebP или HEIC либо PDF.')
+    for (const name of ['photo.HEIC', 'photo.heif', 'Квитанция.PDF']) expect(validateFile({ name, size: 2 }, limits)).toBeUndefined()
+    // A PDF over the bytes is refused like a photo: it is never reduced.
+    expect(validateFile({ name: 'bill.pdf', size: limits.max_bytes + 1 }, limits)).toContain('слишком большой')
+    // An older server without PDF in its formats: refused before sending.
+    expect(validateFile({ name: 'bill.pdf', size: 2 }, { ...limits, formats: ['image/jpeg', 'image/png'] })).toContain('не поддерживается')
     // An older server without HEIC in its formats: refused before sending.
     expect(validateFile({ name: 'photo.heic', size: 2 }, { ...limits, formats: ['image/jpeg', 'image/png', 'image/webp'] })).toContain('не поддерживается')
     expect(validateFile({ name: 'photo.webp', size: 2 }, { ...limits, formats: ['image/png'] })).toContain('не поддерживается')
@@ -35,8 +39,9 @@ describe('upload and object URL lifecycle', () => {
     for (const [name, type] of [['image', 'image/jpeg'], ['IMG_0001', 'IMAGE/PNG'], ['photo.tmp', 'image/webp'], ['12345.jfif', 'image/jpeg'], ['IMG_0001.HEIC', 'image/heic'], ['image', 'image/heif']]) {
       expect(validateFile({ name, type, size: 2 }, limits), `${name} ${type}`).toBeUndefined()
     }
-    for (const [name, type] of [['image', ''], ['scan', 'application/pdf'], ['clip', 'image/gif'], ['image', 'image/avif']]) {
-      expect(validateFile({ name, type, size: 2 }, limits), `${name} ${type}`).toBe('Формат не поддерживается. Выберите фото в JPEG, PNG, WebP или HEIC.')
+    expect(validateFile({ name: 'scan', type: 'application/pdf', size: 2 }, limits)).toBeUndefined()
+    for (const [name, type] of [['image', ''], ['scan', 'application/zip'], ['clip', 'image/gif'], ['image', 'image/avif']]) {
+      expect(validateFile({ name, type, size: 2 }, limits), `${name} ${type}`).toBe('Формат не поддерживается. Выберите фото в JPEG, PNG, WebP или HEIC либо PDF.')
     }
     // A known extension wins: the server checks the bytes anyway.
     expect(validateFile({ name: 'photo.jpg', type: 'image/heic', size: 2 }, limits)).toBeUndefined()
@@ -44,7 +49,7 @@ describe('upload and object URL lifecycle', () => {
     expect(fileFormat({ name: 'photo', type: 'image/webp' })).toBe('image/webp')
     expect(fileFormat({ name: 'IMG_0001.HEIC', type: '' })).toBe('image/heic')
     expect([isHeif({ name: 'a.heif' }), isHeif({ name: 'a', type: 'image/heic' }), isHeif({ name: 'a.jpg', type: 'image/heic' })]).toEqual([true, true, false])
-    expect(pickAccept).toBe('image/jpeg,image/png,image/webp,image/heic,image/heif,.jpg,.jpeg,.png,.webp,.heic,.heif')
+    expect(pickAccept).toBe('image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf,.jpg,.jpeg,.png,.webp,.heic,.heif,.pdf')
     // The type is still held against the formats of the server.
     expect(validateFile({ name: 'image', type: 'image/webp', size: 2 }, { ...limits, formats: ['image/png'] })).toContain('не поддерживается')
     expect(validateFile({ name: 'image', type: 'image/jpeg', size: 0 }, limits)).toContain('пуст')

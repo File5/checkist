@@ -9,7 +9,7 @@ import { glue, numbered } from '../../lib/text'
 import { Link } from '../../navigation'
 import { imageLabels } from './labels'
 import { reviewCropAttribute } from './review-crop'
-import MediaImage from './MediaImage'
+import MediaImage, { DownloadOriginal } from './MediaImage'
 import ReviewResult from './ReviewResult'
 import { rememberConfirmed } from './review-actions'
 import type { ConfirmedCrops } from './review-actions'
@@ -39,7 +39,8 @@ function ImageCard({ item, confirmed, finished, busy, review, remember, result }
   }, [shown.status, addressed])
   return <li className="ck-rec-card" ref={card} {...{ [focusOwnerAttribute]: '' }} {...(shown.status === 'needs_review' ? { [reviewCropAttribute]: '', tabIndex: -1 } : {})}>
     <h3><span className="ck-rec-pair">{glue('Чек', shown.position)}</span> · {imageLabels[shown.status]}</h3>
-    <MediaImage url={shown.image_url} alt={`Вырезка чека ${shown.position}`} />
+    <MediaImage url={shown.image_url} display={shown.display_url} size={shown} alt={`Вырезка чека ${shown.position}`} />
+    <DownloadOriginal url={shown.download_url} />
     {shown.clipped && <p className="ck-rec-warning">Часть чека обрезана.</p>}
     <p ref={addressed ? result : undefined} tabIndex={-1} role="status" className={`ck-rec-result${message && action.kind === 'failed' ? ' ck-rec-result-failed' : ''}`}>{message}</p>
     {shown.confirmed_at !== null && <p className="ck-rec-confirmed">Подтверждено вручную: <time dateTime={shown.confirmed_at}>{formatObservedAt(shown.confirmed_at)}</time></p>}

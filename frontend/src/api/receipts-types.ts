@@ -13,6 +13,8 @@ export type Receipt = {
   id: number; owner: string; source: ReceiptSource; store: Store | null; note: string; currency: CurrencyCode; operation: ReceiptOperation; purchased_on: ISODate; purchased_at: ISODateTime
   total: Decimal; discount_total: Decimal; prices_include_tax: boolean; origin: 'recognized' | 'legacy/manual'; review_required: boolean
   lines_count: number; unmatched_products_count: number; receipt_images_count: number; preview_image_url: string | null
+  /** WebP thumbnail (400 px) of the same crop, made on first request. */
+  preview_thumb_url: string | null
   created_at: ISODateTime; updated_at: ISODateTime; lines_url: string; discounts_url: string; taxes_url: string; images_url: string
 }
 export type Line = {

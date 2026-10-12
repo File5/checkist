@@ -7,7 +7,7 @@ import { Link, navigate } from '../../navigation'
 import type { JobPageProps } from '../../pages/types'
 import ActionButtons from './ActionButtons'
 import JobSummary from './JobSummary'
-import MediaImage from './MediaImage'
+import MediaImage, { DownloadOriginal } from './MediaImage'
 import ReceiptImages from './ReceiptImages'
 import { toReviewCrop } from './review-crop'
 import RequestBlock from './RequestBlock'
@@ -50,7 +50,9 @@ function JobImages({ job, busy, review, register }: { job: JobDetail; busy: bool
   }, [job.stage, photo.request])
   return <>
     <RequestBlock title="Исходное фото" id="recognition-photo-title" state={photo.state} retry={photo.request.refresh}>
-      {(data) => <><MediaImage url={data.preview_url ?? data.original_url} alt={`Исходное фото №${data.id}`} /><p><span className="ck-rec-pair">{glue(data.width, '×', data.height, 'пикселей')}</span> · {data.content_type.replace('image/', '').toUpperCase()}</p></>}
+      {(data) => <><MediaImage url={data.preview_url ?? data.original_url} display={data.display_url} size={data} alt={`Исходное фото №${data.id}`} />
+        <p className="ck-media-meta"><span className="ck-rec-pair">{glue(data.width, '×', data.height, 'пикселей')}</span> · {data.content_type.replace('image/', '').toUpperCase()}{data.document && <> · <span className="ck-rec-pair">{glue('из PDF,', data.document.pages, 'стр.')}</span></>}</p>
+        <DownloadOriginal url={data.download_url} /></>}
     </RequestBlock>
     <RequestBlock title={`Вырезки чеков (${job.items_count})`} id="recognition-images-title" state={images.state} retry={images.request.refresh}>
       {(data) => <ReceiptImages images={data.results} finished={!isActive(job)} busy={busy} review={review} />}

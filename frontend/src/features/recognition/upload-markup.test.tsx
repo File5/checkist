@@ -20,12 +20,17 @@ const tags = (html: string, name: string) => html.match(new RegExp(`<${name}\\b[
 const button = (html: string, label: string) => new RegExp(`<button\\b[^>]*>${label}</button>`).exec(html)?.[0] ?? ''
 
 describe('upload screen markup (SSR)', () => {
+  it('lists PDF among the formats and says how many pages it may have', () => {
+    const html = ready()
+    expect(html).toContain('Форматы: JPEG, PNG, WEBP, HEIC, HEIF, PDF.')
+    expect(html).toContain('PDF — до 3 страниц')
+  })
   it('has two file fields: the camera one with capture, the file one with types and extensions, one photo each', () => {
     const fields = tags(ready(), 'input')
     expect(fields).toHaveLength(2)
     const [camera, file] = fields
-    expect(camera).toContain('id="recognition-camera"'); expect(camera).toContain('accept="image/*"'); expect(camera).toContain('capture="environment"')
-    expect(file).toContain('id="recognition-file"'); expect(file).toContain('accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.jpg,.jpeg,.png,.webp,.heic,.heif"')
+    expect(camera).toContain('id="recognition-camera"'); expect(camera).toContain('accept="image/*"'); expect(camera).not.toContain('pdf'); expect(camera).toContain('capture="environment"')
+    expect(file).toContain('id="recognition-file"'); expect(file).toContain('accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf,.jpg,.jpeg,.png,.webp,.heic,.heif,.pdf"')
     expect(file).not.toContain('capture')
     for (const field of fields) {
       expect(field).toContain('type="file"'); expect(field).not.toContain('multiple')

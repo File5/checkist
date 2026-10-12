@@ -8,7 +8,7 @@ import { Link, navigate } from '../../navigation'
 import { reduceImage, reductionPlan } from './image-reduce'
 import type { ImageSize } from './image-reduce'
 import { errorText, isExecutorAbsent, sizeText, uploadExecutorNote, uploadLabels } from './labels'
-import { autoSendStep, createUpload, fileFormat, formatBytes, pickAccept, progressValue, setJobNotice, uploadMessage, validateFormat } from './upload-state'
+import { autoSendStep, createUpload, fileFormat, formatBytes, formatName, isPdf, pdfPageCount, pdfSummary, pickAccept, progressValue, setJobNotice, uploadMessage, validateFormat } from './upload-state'
 import { useRequest } from './useRequest'
 import { createPreview } from './preview'
 import { clearQuickShot, peekQuickShot } from './quick-shot'
@@ -29,6 +29,21 @@ function PreviewImage({ url, name, onMeasure }: { url: string; name: string; onM
     : <img src={url} alt={`Предпросмотр выбранного фото: ${name}`}
         onLoad={(event) => onMeasure({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })}
         onError={() => { setFailed(true); onMeasure(null) }} />
+}
+/** A PDF has no picture here: its pages, read from the file, and what the server will do with them. */
+function PdfPreview({ file, maxPages }: { file: File; maxPages?: number }) {
+  const [pages, setPages] = useState<number | null | undefined>()
+  useEffect(() => {
+    let live = true
+    file.text().then((text) => { if (live) setPages(pdfPageCount(text)) }, () => { if (live) setPages(null) })
+    return () => { live = false }
+  }, [file])
+  const over = maxPages !== undefined && typeof pages === 'number' && pages > maxPages
+  return <div className="ck-rec-image ck-upload-pdf">
+    <p><strong>{pages === undefined ? 'PDF' : pdfSummary(pages)}</strong></p>
+    <p className="ck-rec-note">Сервер превратит {maxPages ? glue('до', maxPages, 'страниц') : 'страницы'} в одно изображение и распознает его как чек.</p>
+    {over && <p className="ck-rec-warning">Похоже, в файле больше {glue(maxPages, 'страниц')}: сервер такой PDF не примет.</p>}
+  </div>
 }
 /** A number with its unit or «N × M»: never split. */
 const Value = ({ children }: { children: string }) => <span className="ck-upload-value">{children}</span>
@@ -80,10 +95,12 @@ export default function UploadPage() {
   const executorNote = config.kind === 'ok' && !config.refreshError ? uploadExecutorNote(config.data.executor.state) : undefined
   // A photo over a limit is not refused here: it is reduced before sending.
   const invalid = file ? validateFormat(file, limits) : undefined
+  const pdf = Boolean(file && isPdf(file))
   const sending = state.kind === 'sending'
   const reducing = sending && state.stage === 'reducing'
-  const measuring = Boolean(file) && !invalid && measured === undefined
-  const plan = file && limits && !invalid && !measuring ? reductionPlan({ ...measured, bytes: file.size }, limits) : undefined
+  // A PDF has no pixel size in the browser: nothing to measure, nothing to reduce.
+  const measuring = Boolean(file) && !invalid && !pdf && measured === undefined
+  const plan = file && limits && !invalid && !measuring && !pdf ? reductionPlan({ ...measured, bytes: file.size }, limits) : undefined
   const outgoing = state.reduced?.file ?? file
   const repeat = state.kind === 'error' || state.kind === 'cancelled'
   const refreshing = manualRefresh && config.kind === 'ok' && config.refreshing
@@ -122,7 +139,9 @@ export default function UploadPage() {
         <input ref={fileInput} id="recognition-file" className="ck-upload-input" type="file" accept={pickAccept} tabIndex={-1} aria-hidden="true" disabled={pickDisabled} onChange={(event) => pick(event, false)} />
       </div>
       {!limits && <p id="recognition-pick-wait" className="ck-rec-note">{config.kind === 'error' ? uploadLabels.conditionsFailed : uploadLabels.conditionsLoading}</p>}
-      {file && <><p className="ck-upload-file">{file.name} · {fileFormat(file)?.replace('image/', '').toUpperCase() ?? 'Неподдерживаемый формат'} · {formatBytes(file.size)}{measured && <> · <Value>{sizeText(measured)}</Value></>}</p>{!invalid && <FilePreview key={`${file.name}:${file.lastModified}:${file.size}`} file={file} onMeasure={setMeasured} />}</>}
+      {file && <><p className="ck-upload-file">{file.name} · {formatName(fileFormat(file) ?? '') || 'Неподдерживаемый формат'} · {formatBytes(file.size)}{measured && <> · <Value>{sizeText(measured)}</Value></>}</p>{!invalid && (pdf
+        ? <PdfPreview key={`${file.name}:${file.lastModified}:${file.size}`} file={file} maxPages={limits?.max_pdf_pages} />
+        : <FilePreview key={`${file.name}:${file.lastModified}:${file.size}`} file={file} onMeasure={setMeasured} />)}</>}
       {invalid && <p id="recognition-file-error" role="status" className="ck-rec-error">{invalid}</p>}
       {state.reduced
         ? <p className="ck-upload-reduced">Фото больше лимита сервера, перед отправкой уменьшено до <Value>{sizeText(state.reduced)}</Value>. Отправляется уменьшенная копия: {formatBytes(state.reduced.file.size)}.</p>
@@ -142,7 +161,7 @@ export default function UploadPage() {
       {config.kind === 'loading' && <RequestState kind="loading" message="Получаем лимиты и токен безопасности…" />}
       {config.kind === 'error' && <RequestState kind="error" message={errorText(config.error)} onRetry={request.refresh} />}
       {config.kind === 'ok' && <>
-        <p>Форматы: {config.data.limits.formats.map((format) => format.replace('image/', '').toUpperCase()).join(', ')}. Максимальный размер: {formatBytes(config.data.limits.max_bytes)}. До {glue(config.data.limits.max_pixels.toLocaleString('ru-RU'), 'пикселей')} и {glue(config.data.limits.max_receipts.toLocaleString('ru-RU'), 'чеков')} на фото.</p>
+        <p>Форматы: {config.data.limits.formats.map(formatName).join(', ')}. Максимальный размер: {formatBytes(config.data.limits.max_bytes)}. До {glue(config.data.limits.max_pixels.toLocaleString('ru-RU'), 'пикселей')} и {glue(config.data.limits.max_receipts.toLocaleString('ru-RU'), 'чеков')} на фото.{config.data.limits.max_pdf_pages !== undefined && <> PDF — до {glue(config.data.limits.max_pdf_pages.toLocaleString('ru-RU'), 'страниц')}: счёт или электронный чек, страницы станут одним изображением.</>}</p>
         {executorNote && <p className={executorNote.warning ? 'ck-rec-warning' : undefined}>{executorNote.text}</p>}
         <button type="button" disabled={sending || refreshing} onClick={refreshConfig}>Обновить условия загрузки</button>
         {config.refreshError && <p role="status" className="ck-rec-error">Не удалось обновить условия. {errorText(config.refreshError)}</p>}

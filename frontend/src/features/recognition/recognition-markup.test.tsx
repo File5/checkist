@@ -68,13 +68,15 @@ describe('recognition SSR markup (interactive UI remains manual)', () => {
   it.each(Object.keys(imageLabels) as (keyof typeof imageLabels)[])('displays crop %s with safe media', (status) => {
     const data = { ...image(), status, normalized_result: status === 'needs_review' ? image().normalized_result : null }
     const html = renderToStaticMarkup(<ReceiptImages images={[data]} />)
-    expect(html).toContain(imageLabels[status]); expect(html).toContain('src="/media/crops/test/crop.png"')
+    expect(html).toContain(imageLabels[status]); expect(html).toContain('src="/media/crops/test/preview-1600-v1.webp"')
+    expect(html).toContain('width="8" height="16"')
+    expect(html).toContain('href="/media/originals/test/source.png?download=1" download="">Скачать оригинал</a>')
   })
   it('renders empty cuts, absent media and deleted receipt separately', () => {
     expect(renderToStaticMarkup(<ReceiptImages images={[]} />)).toContain('Вырезок пока нет')
     expect(renderToStaticMarkup(<ReceiptImages images={[]} finished />)).toContain('Обработка закончена без вырезок')
     expect(renderToStaticMarkup(<MediaImage url="https://external.test/photo.png" alt="Фото" />)).not.toContain('<img')
-    const data = { ...image(), image_url: null, receipt_deleted: true }
+    const data = { ...image(), image_url: null, display_url: null, thumb_url: null, receipt_deleted: true }
     const html = renderToStaticMarkup(<ReceiptImages images={[data]} />)
     expect(html).toContain('Изображение пока недоступно'); expect(html).toContain('чек удалён')
   })

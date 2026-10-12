@@ -38,10 +38,13 @@ export function isExecutorAbsent(data: { executor: { state: ExecutorState } }) {
 const accountsSession = () => { const session = getSession(); return session.kind === 'user' && session.mode === 'accounts' }
 export function errorText(error: LocalApiFailure, mutation = false): string {
   switch (error.reason) {
-    case 'unsupported_format': case 'unsupported_media_type': return 'Формат не поддерживается. Выберите фото в JPEG, PNG, WebP или HEIC.'
+    case 'unsupported_format': case 'unsupported_media_type': return 'Формат не поддерживается. Выберите фото в JPEG, PNG, WebP или HEIC либо PDF.'
     case 'upload_too_large': return 'Файл слишком большой. Уменьшите его размер до лимита сервера.'
     case 'image_too_large': return 'Разрешение фото превышает лимит сервера. Уменьшите изображение.'
     case 'invalid_image': return 'Изображение повреждено, пусто или содержит несколько кадров. Сохраните одно фото в JPEG или PNG.'
+    case 'invalid_pdf': return 'PDF не удалось прочитать: файл повреждён или пуст. Сохраните документ заново и загрузите ещё раз.'
+    case 'pdf_encrypted': return 'PDF защищён паролем. Сохраните его без пароля и загрузите снова.'
+    case 'pdf_too_many_pages': return 'В PDF больше 3 страниц. Загрузите счёт или чек не длиннее 3 страниц.'
     case 'csrf_failed': return 'Токен безопасности устарел. Обновите токен и повторите действие.'
     case 'permission_denied': return accountsSession() ? permissionDeniedText(getSession())
       : 'Локальный сервис недоступен с этого адреса или выключен. Проверьте запуск QA API и разрешение локального доступа.'

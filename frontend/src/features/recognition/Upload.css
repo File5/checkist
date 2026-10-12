@@ -18,6 +18,9 @@
 /* The name of the file is free text and wraps anywhere; a size never splits. */
 .ck-upload-file { min-width: 0; overflow-wrap: anywhere; }
 .ck-upload-value { white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* A chosen PDF: no picture, its pages and what the server will do. */
+.ck-upload-pdf { flex-direction: column; gap: 8px; padding: 24px; text-align: center; }
+.ck-upload-pdf p { margin: 0; }
 .ck-upload-reduced { padding: 14px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius-sm); background: var(--ck-neutral-bg); color: var(--ck-text); }
 
 .ck-upload-progress { display: grid; gap: 8px; min-width: 0; }

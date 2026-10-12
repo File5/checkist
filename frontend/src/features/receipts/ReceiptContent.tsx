@@ -8,6 +8,7 @@ import { glue, numbered } from '../../lib/text'
 import { Link } from '../../navigation'
 import ReceiptLineCards from './ReceiptLineCards'
 import type { LineColumns } from './ReceiptLineCards'
+import { DownloadOriginal } from '../recognition/MediaImage'
 import ReceiptMedia from './ReceiptMedia'
 import { ManualMark } from './ManualMark'
 import { money, price, receiptPlace, recognizedText, recognizedValue, unknown } from './state'
@@ -46,7 +47,8 @@ export function ReceiptHeader({ receipt, showOwner = false }: { receipt: Receipt
 export function ReceiptImages({ images, receiptId }: { images: ReceiptImage[]; receiptId: number }) {
   return <ul className="receipt-images">{images.map((image) => <li className="receipt-image-card" key={image.id}>
     <h3>{numbered('Фото', image.photo_id)} · {glue('вырезка', image.position)}</h3>
-    <ReceiptMedia url={image.image_url} alt={`Вырезка ${image.position} с фото №${image.photo_id}, чек №${receiptId}`} />
+    <ReceiptMedia url={image.image_url} display={image.display_url} size={image} alt={`Вырезка ${image.position} с фото №${image.photo_id}, чек №${receiptId}`} />
+    <DownloadOriginal url={image.download_url} />
     <p>{imageLabels[image.status]}</p>
     {image.confirmed_at !== null && <p className="receipt-note">Подтверждено вручную: <time dateTime={image.confirmed_at}>{formatObservedAt(image.confirmed_at)}</time></p>}
     <RecognitionIssues issues={image.issues} status={image.status} />
