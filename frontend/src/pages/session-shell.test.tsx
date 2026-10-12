@@ -17,7 +17,7 @@ vi.mock('../features/catalog/CatalogPage', () => ({ default: () => <pre data-scr
 vi.mock('../features/catalog/CategoryPage', () => ({ default: () => <pre data-screen="category" /> }))
 vi.mock('../features/product/ProductPage', () => ({ default: () => <pre data-screen="product" /> }))
 vi.mock('../features/recognition', () => ({
-  UploadPage: () => <pre data-screen="upload" />, JobsPage: () => <pre data-screen="jobs" />, JobPage: () => <pre data-screen="job" />,
+  UploadPage: () => <pre data-screen="upload" />, JobsPage: () => <pre data-screen="jobs" />, JobPage: () => <pre data-screen="job" />, QuickShot: () => <pre data-quick-shot="" />,
 }))
 vi.mock('../features/receipts', () => ({ ReceiptsPage: () => <pre data-screen="receipts" />, ReceiptPage: () => <pre data-screen="receipt" /> }))
 vi.mock('../features/merges', () => ({ MergesPage: () => <pre data-screen="merges" />, MergePage: () => <pre data-screen="merge" /> }))
@@ -179,6 +179,11 @@ describe('signed-in shell (SSR only, no browser interaction)', () => {
     expect(screens(html)).toEqual([route.kind])
     expect(html).toContain('aria-label="Раздел каталога"')
     expect(html).not.toContain('Раздел доступен модератору каталога')
+  })
+  it('offers «Снять чек» on every page of a signed-in person except the upload itself', () => {
+    expect(render(reader, { kind: 'catalog', query: { page: 1 } }, '/catalog')).toContain('data-quick-shot')
+    expect(render(reader, { kind: 'upload' }, '/receipts/upload')).not.toContain('data-quick-shot')
+    expect(render(guest, { kind: 'health' }, '/health')).not.toContain('data-quick-shot')
   })
   it('shows the catalog subsections to a moderator on the catalog itself', () => {
     const html = render(moderator, { kind: 'catalog', query: { page: 1 } }, '/catalog')

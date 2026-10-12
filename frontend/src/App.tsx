@@ -7,7 +7,7 @@ import CatalogPage from './features/catalog/CatalogPage'
 import CategoryPage from './features/catalog/CategoryPage'
 import ProductPage from './features/product/ProductPage'
 import RequestState from './components/RequestState'
-import { UploadPage, JobsPage, JobPage } from './features/recognition'
+import { UploadPage, JobsPage, JobPage, QuickShot } from './features/recognition'
 import { ReceiptsPage, ReceiptPage } from './features/receipts'
 import { MergesPage, MergePage } from './features/merges'
 import { ClassificationPage } from './features/classification'
@@ -202,6 +202,7 @@ export default function App() {
         </main>
         <footer>Чекист · Продуктовая разведка · Совершенно несекретно</footer>
       </div>
+      {signedIn && view === 'page' && route.kind !== 'upload' && <QuickShot />}
     </>
   )
 }

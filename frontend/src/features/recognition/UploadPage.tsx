@@ -11,6 +11,7 @@ import { errorText, isExecutorAbsent, sizeText, uploadExecutorNote, uploadLabels
 import { autoSendStep, createUpload, fileFormat, formatBytes, pickAccept, progressValue, setJobNotice, uploadMessage, validateFormat } from './upload-state'
 import { useRequest } from './useRequest'
 import { createPreview } from './preview'
+import { clearQuickShot, peekQuickShot } from './quick-shot'
 import './Upload.css'
 
 /** `null` — the browser could not show the photo, so its pixel size stays unknown. */
@@ -43,13 +44,15 @@ export default function UploadPage() {
   const load = useCallback((signal: AbortSignal) => getRecognitionCsrf({ signal }), [])
   // Absent is polled so the warning disappears once the worker starts; any other state stops the polling.
   const { state: config, request } = useRequest(load, isExecutorAbsent)
-  const [file, setFile] = useState<File>()
+  // A shot taken with the floating «Снять чек» on another screen arrives here and is sent like one taken on this page.
+  const [file, setFile] = useState<File | undefined>(peekQuickShot)
   // Pixel size of the chosen photo, read from its preview; undefined until the preview has loaded or failed.
   const [measured, setMeasured] = useState<Measured>()
   const fileInput = useRef<HTMLInputElement>(null)
   const cameraInput = useRef<HTMLInputElement>(null)
   // The photo just taken with «Снять чек»: it is sent by itself once, as soon as it can be.
-  const autoSend = useRef<File>(undefined)
+  const autoSend = useRef<File | undefined>(file)
+  useEffect(clearQuickShot, [])
   const upload = useMemo(() => createUpload(
     (selected, signal, onProgress) => uploadPhoto(selected, { signal, onProgress }),
     (signal) => getRecognitionCsrf({ signal }),
