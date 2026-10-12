@@ -16,6 +16,14 @@
     <meta name="description" content="Чекист — учёт покупок по фото чеков: распознавание, каталог товаров, цены в магазинах и статистика трат." />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <!-- Installable app: «На экран Домой» on iPhone, «Установить приложение» on Android. No service worker:
+         the app needs the network anyway, and a cache would keep an old version after a deploy. -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Чекист" />
+    <!-- "default": the page starts below the status bar; the header has no top safe-area padding. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <title>Чекист</title>
   </head>
   <body>
