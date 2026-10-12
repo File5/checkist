@@ -1,5 +1,5 @@
 /* «Главная» и «Лимиты»: карточки на фоне страницы, крупные числа, цвета категорий.
-   Цвета — только токены (--ck-*), в обеих темах; цвет категории — класс dash-cat-N (N = category_id % 6 + 1, 0 — без категории),
+   Цвета — только токены (--ck-*), в обеих темах; цвет категории — класс dash-cat-N (N = ((category_id − 1) mod 6) + 1, как в «Тратах» — src/lib/category-tone.ts; 0 — без категории),
    который задаёт два своих свойства: --dash-cat (цвет) и --dash-cat-tint (подложка). */
 .dash-cat-0 { --dash-cat: var(--ck-text-muted); --dash-cat-tint: var(--ck-neutral-bg); }
 .dash-cat-1 { --dash-cat: var(--ck-cat-1); --dash-cat-tint: var(--ck-cat-1-tint); }

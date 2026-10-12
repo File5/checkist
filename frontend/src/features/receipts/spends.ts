@@ -108,13 +108,8 @@ export function rowMeta(receipt: ReceiptListItem, showOwner: boolean): string[] 
   ]
 }
 
-/** Number of category colours (`--ck-cat-1` … `--ck-cat-6`). */
-export const categoryTones = 6
-
-/** The colour of a category by its id: the same category has the same colour on every screen. */
-export function categoryTone(categoryId: number): number {
-  return ((categoryId - 1) % categoryTones + categoryTones) % categoryTones + 1
-}
+/** The colour of a category: one mapping for every screen (src/lib/category-tone.ts). */
+export { categoryTone, categoryTones } from '../../lib/category-tone'
 
 export type OwnerChip = { label: string; owner: string | undefined; current: boolean }
 

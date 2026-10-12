@@ -1,7 +1,6 @@
 import { useRef } from 'react'
 import type { ReactNode } from 'react'
 import { navigate } from '../../navigation'
-import { uploadLabels } from './labels'
 import { setQuickShot } from './quick-shot'
 import './QuickShot.css'
 
@@ -14,7 +13,7 @@ export type QuickShotControl = {
 
 /** «Снять чек» from any screen: the shot goes to the upload page and is sent there by itself.
  * The one camera mechanism of the app: the «＋» sheet of the main menu (src/menu/MainMenu.tsx) and the big
- * button of «Главная» (QuickShot below) both use this hook. */
+ * button of «Главная» (QuickShotButton.tsx) both use this hook. */
 export function useQuickShot(): QuickShotControl {
   const input = useRef<HTMLInputElement>(null)
   const field = (
@@ -29,17 +28,3 @@ export function useQuickShot(): QuickShotControl {
   )
   return { open: () => input.current?.click(), field }
 }
-
-/** A button for the same press in another place, such as the big button of «Главная»; the flow behind it is
- * useQuickShot, the same as in the «＋» sheet. */
-export function QuickShot({ className = 'ck-quick-shot', label = uploadLabels.camera }: {
-  className?: string; label?: string
-} = {}) {
-  const shot = useQuickShot()
-  return <>
-    <button type="button" className={className} onClick={shot.open}>{label}</button>
-    {shot.field}
-  </>
-}
-
-export default useQuickShot

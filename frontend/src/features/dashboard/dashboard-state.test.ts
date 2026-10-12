@@ -87,7 +87,7 @@ describe('progress against a limit', () => {
 
 describe('colours, avatars and recent spends', () => {
   it('gives a category a stable colour from 1 to 6', () => {
-    expect([1, 3, 5, 6, 7, 12, 13].map(categoryTone)).toEqual([2, 4, 6, 1, 2, 1, 2])
+    expect([1, 3, 5, 6, 7, 12, 13].map(categoryTone)).toEqual([1, 3, 5, 6, 1, 6, 1])
     expect(categoryTone(null)).toBe(0)
     expect(categoryTone(undefined)).toBe(0)
   })

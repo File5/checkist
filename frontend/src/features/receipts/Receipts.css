@@ -85,7 +85,7 @@
 .spends-chips ul { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; margin: 0; padding: 0; }
 .spends-chip { display: inline-flex; align-items: center; min-height: 44px; padding: 0 18px; border: 1px solid var(--ck-border); border-radius: 999px; background: var(--ck-surface); color: var(--ck-text); font-weight: 600; text-decoration: none; white-space: nowrap; }
 .spends-chip:hover { border-color: var(--ck-text-muted); }
-.spends-chip[aria-current="true"] { background: var(--ck-text); border-color: var(--ck-text); color: var(--ck-bg); }
+.spends-chip[aria-current="true"] { background: var(--ck-chip-selected-bg); border-color: var(--ck-chip-selected-bg); color: var(--ck-chip-selected-text); }
 .spends-review { margin: 0; border-radius: 16px; background: var(--ck-warning-bg); color: var(--ck-warning-text); }
 .spends-review a { display: flex; align-items: center; min-height: 44px; padding: 8px 16px; color: inherit; font-weight: 600; text-underline-offset: 3px; }
 .spends-days { display: grid; gap: 20px; }

@@ -113,7 +113,7 @@ describe('styles of «Траты» (text of the rules, not rendering)', () => {
     for (let tone = 1; tone <= 6; tone += 1) {
       expect(rule(`.spends-badge[data-tone="${tone}"]`)).toBe(`background: var(--ck-cat-${tone}-tint); color: var(--ck-cat-${tone});`)
     }
-    expect(rule('.spends-chip[aria-current="true"]')).toBe('background: var(--ck-text); border-color: var(--ck-text); color: var(--ck-bg);')
+    expect(rule('.spends-chip[aria-current="true"]')).toBe('background: var(--ck-chip-selected-bg); border-color: var(--ck-chip-selected-bg); color: var(--ck-chip-selected-text);')
   })
 
   it('defines the category tokens in both themes', () => {

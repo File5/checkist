@@ -108,10 +108,9 @@ export function progress(spent: Decimal, limit: Decimal | null): Progress | null
   return { percent: Number(filled), over, remaining: over ? 0n : total - used, overBy: over ? used - total : 0n }
 }
 
-/** Colour of a category: a stable number 1–6 by its id (`--ck-cat-N`); 0 — no category, the neutral colour. */
-export function categoryTone(id: number | null | undefined): number {
-  return id ? (id % 6) + 1 : 0
-}
+/** Colour of a category: a stable number 1–6 by its id (`--ck-cat-N`); 0 — no category, the neutral colour.
+ * The same mapping as «Траты» (src/lib/category-tone.ts). */
+export { categoryTone } from '../../lib/category-tone'
 
 /** «А» for «andrey», «АМ» for «anna_maria»: up to two letters of the name's parts. */
 export function initials(username: string): string {
