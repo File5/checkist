@@ -1,4 +1,4 @@
-"""«Динамика»: ``/api/stats/trends/monthly|category|prices/``."""
+"""«Динамика»: ``/api/stats/trends/monthly|category|prices|limits|range/``."""
 from datetime import date
 from decimal import Decimal
 from unittest import mock
@@ -24,6 +24,8 @@ MONTHLY = "/api/stats/trends/monthly/"
 CATEGORY = "/api/stats/trends/category/"
 PRICES = "/api/stats/trends/prices/"
 LIMITS = "/api/stats/trends/limits/"
+RANGE = "/api/stats/trends/range/"
+PERIOD = "from=2026-06&to=2026-09"
 WINDOW = "month=2026-09&months=4"
 MONTHS = ["2026-06", "2026-07", "2026-08", "2026-09"]
 
@@ -204,6 +206,10 @@ class TrendsAPITests(TrendsFixture, TestCase):
             "id": pk, "name": name, "parent_id": parent, "depth": depth, "direct": False, "total": total,
             "amounts": amounts, "change_percent": change,
         }
+        self.assertEqual(kzt["rows"][0]["average"], "24250.00")
+        self.assertEqual(kzt["rows"][0]["change_percents"], [None, "-100.00", None, "9.38"])
+        for entry in kzt["rows"]:
+            del entry["average"], entry["change_percents"]
         housing, food = self.housing.pk, self.food.pk
         self.assertEqual(kzt["rows"], [
             row(housing, "Демо-жильё", None, 0, ["30000.00", "0.00", "32000.00", "35000.00"], "97000.00", "9.38"),
@@ -350,26 +356,73 @@ class TrendsAPITests(TrendsFixture, TestCase):
 
     def test_invalid_parameters(self):
         for query, fields in (
-            ("months=0", {"months": ["Допустимо от 1 до 36."]}),
-            ("months=37&month=2026-13", {"months": ["Допустимо от 1 до 36."], "month": ["Месяц в формате ГГГГ-ММ."]}),
-            ("months=x", {"months": ["Допустимо от 1 до 36."]}),
+            ("months=0", {"months": ["Допустимо от 1 до 60."]}),
+            ("months=61&month=2026-13", {"months": ["Допустимо от 1 до 60."], "month": ["Месяц в формате ГГГГ-ММ."]}),
+            ("months=x", {"months": ["Допустимо от 1 до 60."]}),
+            ("from=2026-13&to=26-01", {"from": ["Месяц в формате ГГГГ-ММ."], "to": ["Месяц в формате ГГГГ-ММ."]}),
+            ("from=1900-12&to=2026-01", {"from": ["Месяц в формате ГГГГ-ММ."]}),
+            ("from=2026-06-01", {"from": ["Месяц в формате ГГГГ-ММ."]}),
+            ("from=2026-09&to=2026-06", {"to": ["Начало периода позже конца."]}),
+            ("from=2021-09&to=2026-09", {"from": ["Период — не больше 60 месяцев."]}),
+            ("from=2026-06&to=2026-09&months=4", {"from": ["Укажите либо from и to, либо months и month."]}),
+            ("to=2026-09&month=2026-09", {"from": ["Укажите либо from и to, либо months и month."]}),
         ):
-            for url in (MONTHLY, CATEGORY, PRICES):
+            for url in (MONTHLY, CATEGORY, PRICES, LIMITS):
                 with self.subTest(url=url, query=query):
                     error = self.get(url, query, status=400)["error"]
                     self.assertEqual((error["code"], error["fields"]), ("invalid_parameter", fields))
         error = self.get(CATEGORY, "category=0", status=400)["error"]
         self.assertEqual(list(error["fields"]), ["category"])
 
+    def test_period_from_to_is_the_same_window(self):
+        BudgetLimit.objects.create(user=local_user(), category=self.food, currency_id="EUR", amount=D("5"))
+        for url in (MONTHLY, CATEGORY, PRICES, LIMITS):
+            with self.subTest(url=url):
+                body = self.get(url, PERIOD)
+                self.assertEqual((body["months"], body["month_from"], body["month_to"]), (4, "2026-06", "2026-09"))
+                self.assertEqual(body, self.get(url, WINDOW))
+        self.assertEqual(self.get(CATEGORY, f"{PERIOD}&category={self.dairy.pk}"),
+                         self.get(CATEGORY, f"{WINDOW}&category={self.dairy.pk}"))
+
+    def test_period_bounds_and_defaults(self):
+        one = self.get(MONTHLY, "from=2026-09&to=2026-09")
+        self.assertEqual((one["months"], one["month_from"], one["month_to"]), (1, "2026-09", "2026-09"))
+        longest = self.get(MONTHLY, "from=2021-10&to=2026-09")
+        self.assertEqual((longest["months"], longest["month_from"]), (60, "2021-10"))
+        self.assertEqual([len(block["months"]) for block in longest["currencies"]], [60, 60])
+        self.assertEqual(self.get(MONTHLY, "months=60&month=2026-09"), longest)
+        across = self.get(MONTHLY, "from=2025-11&to=2026-02")
+        self.assertEqual(across["currencies"], [])  # через Новый год, чеков в окне нет
+        self.assertEqual((across["months"], across["month_from"], across["month_to"]), (4, "2025-11", "2026-02"))
+        with mock.patch("api.views.stats_trends.timezone.localdate", return_value=date(2026, 9, 14)):
+            only_from = self.get(MONTHLY, "from=2026-06")
+            only_to = self.get(MONTHLY, "to=2026-07")
+            empty_values = self.get(MONTHLY, "from=&to=&months=")
+            future = self.get(MONTHLY, "from=2026-10", status=400)["error"]["fields"]
+        self.assertEqual((only_from["months"], only_from["month_from"], only_from["month_to"]), (4, "2026-06", "2026-09"))
+        self.assertEqual((only_to["months"], only_to["month_from"], only_to["month_to"]), (12, "2025-08", "2026-07"))
+        self.assertEqual((empty_values["months"], empty_values["month_to"]), (12, "2026-09"))
+        self.assertEqual(future, {"from": ["Начало периода позже конца."]})
+
+    def test_range_of_the_receipts(self):
+        with mock.patch("api.views.stats_trends.timezone.localdate", return_value=date(2026, 10, 12)):
+            body = self.get(RANGE, "")
+        self.assertEqual(body, {"first_month": "2026-05", "last_month": "2026-10", "current_month": "2026-10", "max_months": 60})
+        Receipt.objects.all().delete()
+        with mock.patch("api.views.stats_trends.timezone.localdate", return_value=date(2027, 1, 2)):
+            self.assertEqual(self.get(RANGE, ""),
+                             {"first_month": None, "last_month": None, "current_month": "2027-01", "max_months": 60})
+
     def test_query_count_does_not_grow_with_data(self):
         # Категории, строки, итоги чеков, товары; у цен — покупки и имена.
         BudgetLimit.objects.create(user=local_user(), category=self.food, currency_id="EUR", amount=D("5"))
-        cases = ((MONTHLY, 4), (CATEGORY, 4), (PRICES, 2), (LIMITS, 6))
+        cases = ((MONTHLY, 4), (CATEGORY, 4), (PRICES, 2), (LIMITS, 6), (RANGE, 1))
 
         def measure():
             for url, expected in cases:
-                with self.subTest(url=url), self.assertNumQueries(expected):
-                    self.get(url, f"{WINDOW}&months=24")
+                for query in (f"{WINDOW}&months=24", "from=2021-10&to=2026-09"):
+                    with self.subTest(url=url, query=query), self.assertNumQueries(expected):
+                        self.get(url, query)
 
         measure()
         store = samples.lidl_store()
@@ -386,7 +439,7 @@ class TrendsAPITests(TrendsFixture, TestCase):
     def test_methods_and_access(self):
         self.assertEqual(APIClient().post(MONTHLY, {}, format="json").status_code, 405)
         with self.settings(ALLOW_LOCAL_RECOGNITION_API=False):
-            for url in (MONTHLY, CATEGORY, PRICES, LIMITS):
+            for url in (MONTHLY, CATEGORY, PRICES, LIMITS, RANGE):
                 self.assertEqual(APIClient().get(url).status_code, 403)
         self.assertEqual(APIClient().get("/api/stats/trends/").status_code, 404)
 
@@ -428,6 +481,9 @@ class TrendsFamilyTests(TrendsFixture, TwoUsers, TestCase):
         self.assertEqual(category["category"]["id"], self.housing.pk)
         self.assertEqual([option["id"] for option in category["options"]], [self.housing.pk, self.utilities.pk])
         self.assertNotIn("70.00", str(self.get(self.first, MONTHLY)))
+        own = self.get(self.second, RANGE, "")
+        self.assertEqual((own["first_month"], own["last_month"]), ("2026-08", "2026-08"))
+        self.assertEqual(self.get(self.first, RANGE, "")["first_month"], "2026-05")
 
     def test_family_limit_history_counts_family_spends(self):
         family = Household.objects.get(name="Демо-семья")
@@ -440,7 +496,7 @@ class TrendsFamilyTests(TrendsFixture, TwoUsers, TestCase):
         self.assertEqual([entry["percent"] for entry in own["months"]], ["0.00", "0.00", "70.00", "0.00"])
 
     def test_guest_is_not_authenticated(self):
-        for url in (MONTHLY, CATEGORY, PRICES):
+        for url in (MONTHLY, CATEGORY, PRICES, LIMITS, RANGE):
             self.assertEqual(APIClient().get(url).status_code, 401)
 
 
@@ -498,3 +554,45 @@ class UtilitiesShapeTests(TestCase):
         self.assertEqual([(row["name"], row["depth"], row["change_percent"]) for row in kzt["rows"]], [
             ("Демо-жильё", 0, "0.55"), ("Демо-аренда", 1, "0.00"), ("Демо-коммунальные услуги", 1, "3.25"),
         ])
+
+
+@tag("integration")
+@local_single_mode()
+class RealShapeMonthRowsTests(TestCase):
+    """Как у человека на iPhone: аренда 200 000 в июне и 220 000 с июля, коммуналка и ОСИ помесячно; окно 6 месяцев до октября."""
+
+    @classmethod
+    def setUpTestData(cls):
+        owner = local_user()
+        cls.housing = Category.objects.create(name="Демо-жильё")
+        cls.rent = Category.objects.create(name="Демо-аренда", parent=cls.housing)
+        cls.utilities = Category.objects.create(name="Демо-коммунальные услуги", parent=cls.housing)
+        cls.osi = Category.objects.create(name="Демо-ОСИ/КСК", parent=cls.housing)
+        spend(owner, cls.rent, "200000", date(2026, 6, 1))
+        for month_number in range(7, 11):
+            spend(owner, cls.rent, "220000", date(2026, month_number, 1))
+        for month_number, amount in ((5, "9800"), (6, "8100"), (7, "7900"), (8, "8300"), (9, "10732"), (10, "18923")):
+            spend(owner, cls.utilities, amount, date(2026, month_number, 10))
+        for month_number, amount in ((9, "9659"), (10, "9269")):
+            spend(owner, cls.osi, amount, date(2026, month_number, 12))
+
+    def rows(self, query):
+        response = APIClient().get(f"{MONTHLY}?{query}")
+        self.assertEqual(response.status_code, 200, response.content)
+        (kzt,) = response.json()["currencies"]
+        return {row["name"]: row for row in kzt["rows"]}
+
+    def test_every_row_has_every_month_of_the_window(self):
+        for query in ("month=2026-10&months=6", "from=2026-05&to=2026-10"):
+            with self.subTest(query=query):
+                rows = self.rows(query)
+                rent = rows["Демо-аренда"]
+                self.assertEqual(rent["amounts"], ["0.00", "200000.00", "220000.00", "220000.00", "220000.00", "220000.00"])
+                self.assertEqual(rent["change_percents"], [None, None, "10.00", "0.00", "0.00", "0.00"])
+                self.assertEqual((rent["total"], rent["average"]), ("1080000.00", "180000.00"))
+                utilities = rows["Демо-коммунальные услуги"]
+                self.assertEqual(utilities["amounts"][-2:], ["10732.00", "18923.00"])
+                self.assertEqual(utilities["change_percents"][-1], "76.32")
+                self.assertEqual(rows["Демо-ОСИ/КСК"]["amounts"], ["0.00"] * 4 + ["9659.00", "9269.00"])
+                self.assertTrue(all(len(row["amounts"]) == 6 and len(row["change_percents"]) == 6 for row in rows.values()))
+        self.assertEqual(len(self.rows("from=2026-09&to=2026-10")["Демо-аренда"]["amounts"]), 2)

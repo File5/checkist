@@ -4,12 +4,12 @@ import type {
   TrendsCategory, TrendsCategoryCurrency, TrendsCategoryMonth, TrendsCategoryOption, TrendsCategoryRow, TrendsIndexPoint, TrendsLegendCategory,
   TrendsLimit, TrendsLimitMonth, TrendsLimits, TrendsSummary,
   TrendsMonthly, TrendsMonthlyCurrency, TrendsMonthPart, TrendsMonthSpend, TrendsMover, TrendsPrice, TrendsPrices, TrendsPricesCurrency,
-  TrendsWindow,
+  TrendsRange, TrendsWindow,
 } from './trends-types.ts'
 import type { CategoryRef } from './types.ts'
 
 /** The server allows a window of at most this many months. */
-export const maxTrendsMonths = 36
+export const maxTrendsMonths = 60
 
 const percent = amount
 const month: Check = (value) => typeof value === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(value) && !value.startsWith('0000')
@@ -32,14 +32,15 @@ const monthPart = object<TrendsMonthPart>({ id: isId, amount })
 const monthSpend = object<TrendsMonthSpend>({ month, total: amount, categories: array(monthPart), uncategorized: amount })
 const categoryRow = object<TrendsCategoryRow>({
   id: isId, name: text, parent_id: nullable(isId), depth: nonNegativeInteger, direct: bool, total: amount, amounts: array(amount),
-  change_percent: nullable(percent),
+  change_percent: nullable(percent), average: amount, change_percents: array(nullable(percent)),
 })
 const summary = object<TrendsSummary>({
   month, spent: amount, previous_month: nullable(month), previous: nullable(amount), change_percent: nullable(percent),
   average_change_percent: nullable(percent),
 })
 /** Every row has an amount for every month of the window. */
-const rowsFit = (answer: TrendsWindow, rows: TrendsCategoryRow[]) => rows.every((row) => row.amounts.length === answer.months)
+const rowsFit = (answer: TrendsWindow, rows: TrendsCategoryRow[]) => rows.every((row) => row.amounts.length === answer.months
+  && row.change_percents.length === answer.months && row.change_percents[0] === null)
 const monthlyBlockShape = object<TrendsMonthlyCurrency>({
   currency, total: amount, average: amount, categories: array(legend), months: array(monthSpend), summary, rows: array(categoryRow),
 })
@@ -89,3 +90,9 @@ const limit = object<TrendsLimit>({ id: isId, category: nullable(categoryRef), c
 const limitsShape = object<TrendsLimits>({ ...windowFields, limits: array(limit) })
 export const isTrendsLimits: Guard<TrendsLimits> = (value): value is TrendsLimits => limitsShape(value)
   && fullWindow(value, value.limits.map((entry) => entry.months))
+
+const rangeShape = object<TrendsRange>({ first_month: nullable(month), last_month: nullable(month), current_month: month, max_months: isId })
+/** Both months or neither, in order. */
+export const isTrendsRange: Guard<TrendsRange> = (value): value is TrendsRange => rangeShape(value)
+  && (value.first_month === null) === (value.last_month === null)
+  && (value.first_month === null || value.last_month === null || value.first_month <= value.last_month)

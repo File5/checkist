@@ -94,3 +94,24 @@
 .trends-cell-over .trends-cell-percent, .trends-cell-word { color: var(--ck-over-text); }
 .trends-cell-over .trends-cell-bar span { background: var(--ck-over-bar); }
 .trends-cell-word { font-size: 0.8rem; font-weight: 600; }
+
+/* «Месяц к месяцу»: the sparkline with its first month, and on a phone every month of the period, newest first. */
+.trends-row-trend { display: inline-flex; align-items: center; gap: 6px; }
+.trends-spark-from { color: var(--ck-text-muted); font-size: var(--ck-text-xs); white-space: nowrap; }
+.trends-month-strip { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.trends-month-strip-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 4px 10px; min-height: 36px; border-top: 1px solid var(--ck-divider); }
+.trends-month-strip-row:first-child { border-top: 0; }
+.trends-month-strip-row time { white-space: nowrap; }
+.trends-month-strip-change { justify-self: end; white-space: nowrap; }
+
+/* The period: ready periods in one sideways row, the period in words, «Свой период» inline or in a sheet. */
+.trends-period { display: grid; gap: 8px; min-width: 0; }
+.trends-period-current { margin: 0; }
+.trends-period-current time { white-space: nowrap; }
+.trends-period-label { color: var(--ck-text-muted); }
+.trends-chip-off { opacity: 0.55; cursor: default; }
+.trends-period-open { justify-self: start; min-height: 48px; }
+.trends-period-custom { display: grid; gap: 8px; min-width: 0; }
+.trends-period-form { display: grid; gap: 12px; min-width: 0; max-width: 560px; }
+.trends-period-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.trends-period-form .stats-note { margin: 0; }

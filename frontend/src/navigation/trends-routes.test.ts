@@ -16,6 +16,21 @@ describe('trends route /stats/trends', () => {
     expect(parseTrendsQuery('months=7&category=0&month=2026-13')).toEqual({ query: {}, invalidFields: ['months', 'category', 'month'] })
     expect(parseRoute('/stats/trends?months=36&month=0000-01&category=x')).toEqual({ kind: 'trends', query: {} })
   })
+  it('reads a period from … to that wins over the older months, in order and at most 60 months long', () => {
+    expect(parseRoute('/stats/trends?from=2026-05&to=2026-10&months=24&category=3')).toEqual({
+      kind: 'trends', query: { from: '2026-05', to: '2026-10', category: 3 } })
+    expect(parseRoute('/stats/trends?from=2021-11&to=2026-10')).toEqual({ kind: 'trends', query: { from: '2021-11', to: '2026-10' } })
+    expect(parseRoute('/stats/trends?from=2026-10&to=2026-10')).toEqual({ kind: 'trends', query: { from: '2026-10', to: '2026-10' } })
+    expect(parseTrendsQuery('from=2021-10&to=2026-10')).toEqual({ query: {}, invalidFields: ['from'] })
+    expect(parseTrendsQuery('from=2026-10&to=2026-05&months=6')).toEqual({ query: { months: 6 }, invalidFields: ['to'] })
+    expect(parseTrendsQuery('from=2026-05')).toEqual({ query: {}, invalidFields: ['to'] })
+    expect(parseTrendsQuery('from=1900-12&to=05.2026')).toEqual({ query: {}, invalidFields: ['from', 'to'] })
+  })
+  it('builds the period first and drops half of it', () => {
+    expect(trendsHref({ category: 3, to: '2026-10', from: '2026-05', month: '2026-08' })).toBe('/stats/trends?from=2026-05&to=2026-10&category=3&month=2026-08')
+    expect(trendsHref({ from: '2026-05' })).toBe('/stats/trends')
+    expect(trendsHref({ from: '2026-05', to: '2026-10', months: 24 })).toBe('/stats/trends?from=2026-05&to=2026-10')
+  })
   it('builds one stable address', () => {
     const href = '/stats/trends?months=24&category=12&month=2026-08'
     expect(trendsHref({ month: '2026-08', category: 12, months: 24 })).toBe(href)

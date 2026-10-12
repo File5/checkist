@@ -16,8 +16,9 @@ const count = (markup: string, needle: string) => markup.split(needle).length - 
 
 describe('«Динамика» screen (Vitest/SSR, not browser acceptance)', () => {
   it('opens with the window choice and every block loading', () => {
-    const markup = html(<TrendsPage query={{ months: 24 }} />)
-    expect(markup).toContain('<a class="stats-chip" aria-current="true" href="/stats/trends?months=24">24 месяца</a>')
+    const markup = html(<TrendsPage query={{ from: '2024-11', to: '2026-10' }} />)
+    expect(markup).toMatch(/<a class="ck-chip" aria-current="true" href="\/stats\/trends\?from=2024-11&amp;to=2026-10">24 месяца<\/a>/)
+    expect(text(markup)).toContain('Период: ноябрь 2024 — октябрь 2026 , 24 месяца')
     for (const title of ['Траты по месяцам', 'Месяц к месяцу', 'Лимиты по месяцам', 'Категория во времени', 'Как менялись цены']) {
       expect(markup).toContain(`>${title}</h3>`)
     }
@@ -50,7 +51,10 @@ describe('«Динамика» screen (Vitest/SSR, not browser acceptance)', () 
     const markup = html(<MonthToMonthBlock state={ok(monthlyFixture())} query={{}} onRetry={noop} />)
     expect(count(markup, '<svg class="trends-spark"')).toBe(monthlyFixture().currencies.reduce((sum, block) => sum + block.rows.length, 0))
     expect(markup).toContain('<tr class="trends-sub-row"><th scope="row"><a href="/stats/trends?category=2">Молочные продукты</a></th>')
-    expect(markup).toContain('<th scope="col" class="trends-number">август 2026</th>')
+    expect(markup).toContain('<th scope="col" class="trends-number"><time dateTime="2026-08-01">авг 2026</time></th>')
+    expect(count(markup, '<th scope="col" class="trends-number"><time')).toBe(24)
+    expect(markup).toContain('<span class="trends-spark-from">с декабря 2025</span>')
+    expect(text(markup)).toContain('Итого за период')
     expect(markup).toContain('trends-badge trends-badge-up')
   })
 
