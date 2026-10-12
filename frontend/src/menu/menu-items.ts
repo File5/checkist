@@ -46,6 +46,7 @@ function allItems(session: Session, route: Route): MenuItem[] {
     { key: 'stats', to: '/stats', label: 'Статистика', current: statsKinds.includes(route.kind) },
     { key: 'catalog', to: '/catalog', label: 'Каталог', current: catalogKinds.includes(route.kind) },
     { key: 'jobs', to: '/recognition/jobs', label: 'Обработка', current: jobKinds.includes(route.kind) },
+    { key: 'export', to: '/export', label: 'Выгрузка', current: route.kind === 'export' },
     health,
   ]
   if (session.mode === 'accounts') {

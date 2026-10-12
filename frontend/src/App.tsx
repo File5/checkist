@@ -15,6 +15,7 @@ import { MergesPage, MergePage } from './features/merges'
 import { ClassificationPage } from './features/classification'
 import { SpendingPage, ReceiptsStatsPage, TrendsPage } from './features/stats'
 import { LoginPage, AccountPage } from './features/auth'
+import { ExportPage } from './features/export'
 import { pageKey, shellView, watchSession } from './features/auth/auth-state'
 import type { ShellView } from './features/auth/auth-state'
 import { moderatorOnlyText } from './features/auth/labels'
@@ -51,6 +52,7 @@ function pageTitle(route: Route) {
     case 'classification': return 'Категории товаров'
     case 'login': return 'Вход'
     case 'account': return 'Аккаунт'
+    case 'export': return 'Выгрузка'
     case 'invalid-query': return 'Некорректная ссылка'
     case 'not-found': return 'Страница не найдена'
   }
@@ -94,6 +96,7 @@ function pageContent({ route, returnTo }: NavigationSnapshot, username: string) 
     // A signed-in person has nothing to do at the sign-in address: the shell sends them to «Главная».
     case 'login': return null
     case 'account': return <AccountPage username={username} />
+    case 'export': return <ExportPage query={route.query} />
     case 'invalid-query': return <RequestState kind="empty" message="В адресе указаны некорректные фильтры или номер страницы. Сбросьте параметры и попробуйте снова." action={<Link className="action-link" to={route.resetTo} replace>Сбросить параметры</Link>} />
     case 'not-found': return notFound
   }

@@ -5,6 +5,8 @@ import { mergeStatuses } from '../api/product-merges-types'
 import type { MergeStatus } from '../api/product-merges-types'
 import { classificationStatuses } from '../api/product-classifications-types'
 import type { ClassificationStatus } from '../api/product-classifications-types'
+import { exportHref, parseExportQuery } from '../features/export/export-query'
+import type { ExportQuery } from '../features/export/export-query'
 
 export interface CatalogQuery {
   q?: string
@@ -140,6 +142,8 @@ export type NavigableRoute = CatalogRoute
   | { kind: 'login' }
   /** «Аккаунт»: password change and sign-out. The shell answers «not found» for it in local_single. */
   | { kind: 'account' }
+  /** «Выгрузка»: the family's data as one JSON document; the filters live in the address. */
+  | { kind: 'export'; query: ExportQuery }
 
 export type Route = NavigableRoute
   | { kind: 'not-found'; path: string }
@@ -502,6 +506,7 @@ export function buildRoute(route: NavigableRoute): string {
     case 'classification': return `/catalog/classification${buildClassificationQuery(route.query)}`
     case 'login': return '/login'
     case 'account': return '/account'
+    case 'export': return exportHref(route.query)
   }
 }
 
@@ -531,6 +536,8 @@ export function parseRoute(input: string | URL): Route {
     return id === undefined ? { kind: 'not-found', path } : { kind: 'expense-edit', receiptId: id }
   }
   if (normalizedPath === '/account') return { kind: 'account' }
+  // Like statistics, the export never answers with invalid-query: a wrong value is dropped.
+  if (normalizedPath === '/export') return { kind: 'export', query: parseExportQuery(url.searchParams) }
   // Statistics never answer with invalid-query: a wrong value is dropped and the screen opens without it.
   if (normalizedPath === '/stats') return { kind: 'spending', query: parseSpendingQuery(url.searchParams).query }
   if (normalizedPath === '/stats/receipts') return { kind: 'receipts-stats', query: parseReceiptsStatsQuery(url.searchParams).query }

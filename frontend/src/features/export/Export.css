@@ -1,0 +1,45 @@
+/* «Выгрузка» (`/export`): a phone-first form. Colours are tokens only (theme/tokens.css), sizes from the text scale. */
+.export { display: grid; gap: 16px; max-width: 720px; }
+.export-intro { color: var(--ck-text-muted); font-size: var(--ck-text-sm); }
+.export-block { display: grid; gap: 10px; min-width: 0; margin: 0; padding: 16px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius); background: var(--ck-surface); box-shadow: 0 1px 2px var(--ck-panel-shadow); }
+.export-heading { margin: 0; padding: 0; font-size: var(--ck-text-base); font-weight: 700; color: var(--ck-text); }
+.export-note { color: var(--ck-text-muted); font-size: var(--ck-text-sm); }
+.export-field { display: grid; gap: 6px; color: var(--ck-text-muted); font-size: var(--ck-text-sm); font-weight: 600; }
+.export-field input, .export-field select { width: 100%; min-height: 44px; padding: 8px 12px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-surface); color: var(--ck-text); font-size: var(--ck-text-base); }
+.export-dates { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.export-open { justify-self: start; }
+
+.export-removable { gap: 8px; }
+.export-removable-mark { font-size: var(--ck-text-lg); line-height: 1; color: var(--ck-text-muted); }
+
+.export-check { display: flex; align-items: center; gap: 12px; min-height: 44px; color: var(--ck-text); font-size: var(--ck-text-base); cursor: pointer; }
+.export-check input { flex: none; width: 22px; height: 22px; min-height: 0; margin: 0; accent-color: var(--ck-brand); }
+.export-sections { gap: 2px; }
+.export-sections .export-note { margin-bottom: 6px; }
+
+.export-tree { display: grid; gap: 0; margin: 12px 0 0; padding: 0; list-style: none; }
+.export-tree li { border-bottom: 1px solid var(--ck-divider); }
+
+.export-results { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.export-result { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; width: 100%; min-height: 48px; padding: 10px 14px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-surface); color: var(--ck-text); text-align: left; font-weight: 600; }
+.export-result:where(:hover:not(:disabled)) { border-color: var(--ck-text-muted); background: var(--ck-surface-raised); }
+.export-result[aria-pressed="true"], .export-result[aria-pressed="true"]:where(:hover:not(:disabled)) { border-color: var(--ck-chip-selected-bg); background: var(--ck-chip-selected-bg); color: var(--ck-chip-selected-text); }
+.export-result-name { min-width: 0; overflow-wrap: anywhere; }
+.export-result-city { flex: none; color: inherit; opacity: 0.8; font-weight: 400; font-size: var(--ck-text-sm); white-space: nowrap; }
+
+.export-actions { display: grid; gap: 10px; }
+.export-preview { color: var(--ck-text); font-size: var(--ck-text-sm); }
+.export-warning { padding: 10px 12px; border: 1px solid var(--ck-warning-border); border-radius: var(--ck-radius-sm); background: var(--ck-warning-bg); color: var(--ck-warning-text); font-size: var(--ck-text-sm); }
+.export-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+/* The filled main action: a link of its own class (not a modifier of `.action-link`), every state set here. */
+a.export-download { display: inline-flex; flex: 1 1 auto; align-items: center; justify-content: center; min-height: 52px; padding: 10px 16px; border: 1px solid var(--ck-brand); border-radius: var(--ck-radius-button); background: var(--ck-brand); color: var(--ck-on-brand); font-weight: 600; text-decoration: none; white-space: nowrap; }
+a.export-download:hover { border-color: var(--ck-brand-hover); background: var(--ck-brand-hover); color: var(--ck-on-brand); }
+a.export-download:active { border-color: var(--ck-brand-active); background: var(--ck-brand-active); color: var(--ck-on-brand); }
+button.export-download { flex: 1 1 auto; min-height: 52px; }
+.export-show { flex: none; min-height: 52px; background: var(--ck-surface); white-space: nowrap; }
+
+@media (max-width: 540px) {
+  .export-block { padding: 14px; }
+  .export-dates { grid-template-columns: 1fr; }
+  .export-open { justify-self: stretch; }
+}
