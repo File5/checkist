@@ -1,12 +1,14 @@
 from django.urls import re_path
 
 from .views.recognition import LocalNotFoundView
+from .views.stats_category import CategorySpendsView
 from .views.stats_receipts import ReceiptCompareView, ReceiptSeriesView
 from .views.stats_spending import SpendingView
 from .views.stats_trends import TrendsCategoryView, TrendsLimitsView, TrendsMonthlyView, TrendsPricesView
 
 urlpatterns = [
     re_path(r"^stats/spending/$", SpendingView.as_view(), name="stats-spending"),
+    re_path(r"^stats/category-spends/$", CategorySpendsView.as_view(), name="stats-category-spends"),
     re_path(r"^stats/receipts/series/$", ReceiptSeriesView.as_view(), name="stats-receipts-series"),
     re_path(r"^stats/receipts/compare/$", ReceiptCompareView.as_view(), name="stats-receipts-compare"),
     re_path(r"^stats/trends/monthly/$", TrendsMonthlyView.as_view(), name="stats-trends-monthly"),

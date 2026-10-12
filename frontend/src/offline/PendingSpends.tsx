@@ -28,9 +28,11 @@ export function PendingSpendsView({ state, onSend, onFix, onDelete }: PendingSpe
     <ul className="pending-spend-list">{state.items.map((spend) => {
       const amount = spendAmount(spend.body)
       return <li key={spend.id} className="pending-spend">
-        <span>{place(spend)}</span>
-        <time dateTime={spend.body.purchased_on}>{formatPurchasedOn(spend.body.purchased_on ?? null)}</time>
-        <span className="pending-spend-amount">{amount ? formatMoney(amount, spend.body.currency ?? '') : '—'}</span>
+        <span className="pending-spend-main">
+          <span className="pending-spend-place">{place(spend)}</span>
+          <time dateTime={spend.body.purchased_on}>{formatPurchasedOn(spend.body.purchased_on ?? null)}</time>
+        </span>
+        <span className="pending-spend-amount ck-figures">{amount ? formatMoney(amount, spend.body.currency ?? '') : '—'}</span>
         <span className="pending-spend-actions">
           <button type="button" className="receipt-secondary" onClick={() => onFix(spend)}>Исправить</button>
           <button type="button" className="receipt-secondary" onClick={() => onDelete(spend)}>Удалить</button>

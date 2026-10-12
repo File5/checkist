@@ -1,6 +1,9 @@
 import { amount, array, choice, currency, isId, isISODate, nonNegativeInteger, nullable, object, record, text } from './schema.ts'
 import type { Check, Guard } from './schema.ts'
-import type { BudgetLimit, Dashboard, DashboardCategory, DashboardCurrency, DashboardRecent, DashboardSubCategory } from './budget-types.ts'
+import type {
+  BudgetLimit, CategorySpendCurrency, CategorySpendItem, CategorySpendLine, CategorySpendPart, CategorySpends, Dashboard, DashboardCategory,
+  DashboardCurrency, DashboardRecent, DashboardSubCategory,
+} from './budget-types.ts'
 import { isPerson } from '../lib/people.ts'
 
 /** A month the calendar knows: `2026-10`, never `2026-13` or `0000-01`. */
@@ -35,6 +38,24 @@ const dashboardShape = object<Omit<Dashboard, 'people'>>({
 })
 export const isDashboard: Guard<Dashboard> = (value): value is Dashboard => dashboardShape(value)
   && optional(value, 'people', array(isPerson))
+
+const named = object<{ id: number; name: string }>({ id: isId, name: text })
+const categorySpendLine = object<CategorySpendLine>({ id: isId, name: text, amount, category_id: isId, category_name: text })
+const categorySpendItem = object<CategorySpendItem>({
+  receipt_id: isId, source: choice('photo', 'manual'), purchased_on: isISODate, store: nullable(named), note: (value) => typeof value === 'string',
+  owner: username, owner_name: text, receipt_total: amount, category_amount: amount, lines: array(categorySpendLine),
+})
+const categorySpendPart = object<CategorySpendPart>({
+  id: isId, name: text, direct: (value) => typeof value === 'boolean', children_count: nonNegativeInteger, amount, lines_count: nonNegativeInteger,
+})
+const categorySpendCurrency = object<CategorySpendCurrency>({
+  currency, total: amount, receipts_count: nonNegativeInteger, parts: array(categorySpendPart), items: array(categorySpendItem),
+})
+export const isCategorySpends = object<CategorySpends>({
+  month: isMonthCode, previous_month: isMonthCode,
+  category: object<CategorySpends['category']>({ id: isId, name: text, path: array(named) }),
+  children: array(named), currencies: array(categorySpendCurrency),
+}) as Guard<CategorySpends>
 
 export const isBudgetLimit = object<BudgetLimit>({ id: isId, category_id: isId, category_name: text, currency, amount })
 

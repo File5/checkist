@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { dashboardFixture } from '../../api/budget-test-support'
 import {
   badgeLetter, capitalize, categoryIds, categoryTone, cents, compareMonths, dayAndMonth, daysLeftText, dashboardErrorMessage, deviceMonth,
-  formatMoney, formatNumber, initials, inMonth, monthIsEmpty, monthTitle, plural, progress, recentMeta, shiftMonth,
+  formatMoney, formatNumber, initials, inMonth, monthIsEmpty, monthSlide, monthTitle, plural, progress, recentMeta, shiftMonth,
 } from './dashboard-state'
 
 const nb = (text: string) => text.replaceAll(' ', '\u00a0')
@@ -126,5 +126,14 @@ describe('colours, avatars and recent spends', () => {
     expect(dashboardErrorMessage({ reason: 'network' })).toContain('соединение')
     expect(dashboardErrorMessage({ reason: 'invalid_parameter' })).toContain('месяц')
     expect(dashboardErrorMessage({ reason: 'server' })).toBe('Не удалось загрузить траты месяца. Повторите попытку.')
+  })
+})
+
+describe('the slide of another month', () => {
+  it('comes from the side of the month it follows, not on the first month or a reload', () => {
+    expect(monthSlide(undefined, '2026-10')).toBeUndefined()
+    expect(monthSlide('2026-10', '2026-10')).toBeUndefined()
+    expect(monthSlide('2026-09', '2026-10')).toBe('forward')
+    expect(monthSlide('2026-01', '2025-12')).toBe('back')
   })
 })

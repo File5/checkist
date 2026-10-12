@@ -99,12 +99,38 @@ export function positions(count: number): string {
   return glue(count.toLocaleString('ru-RU'), plural(count, 'позиция', 'позиции', 'позиций'))
 }
 
-/** «Категория · Владелец · N позиций»; the owner only in a family, «Возврат» for a refund. */
+/** «· Выписка Kaspi Gold» at the end of the note of a spend imported from a bank statement. */
+const statementMark = /\s*·\s*(Выписка\s+[^·]+?)\s*$/u
+
+/** Where a spend came from: the bank statement named in its note, «по чеку» for a photo, «вручную» otherwise. */
+export function sourceMark(source: ReceiptListItem['source'], note: string | null | undefined): string {
+  const found = statementMark.exec(note ?? '')
+  if (found) return found[1]
+  return source === 'photo' ? 'по чеку' : 'вручную'
+}
+
+/** The note without the statement mark: what the person or the bank wrote about the spend. */
+export function withoutSourceMark(note: string | null | undefined): string {
+  return (note ?? '').replace(statementMark, '').trim()
+}
+
+/** «Кафе, Продукты +2»: the categories of the lines as precise as they are named; an older server — the root. */
+export function categoriesText(receipt: Pick<ReceiptListItem, 'categories' | 'category'>, shown = 2): string | undefined {
+  const names = receipt.categories?.map((entry) => entry.name) ?? []
+  if (!names.length) return receipt.category?.name
+  const rest = names.length - shown
+  return names.slice(0, shown).join(', ') + (rest > 0 ? ` +${rest}` : '')
+}
+
+/** «Категории · Владелец · откуда · N позиций»: the list answers «на что». The owner only in a family; positions only
+ * of a photo receipt; «Возврат» for a refund. */
 export function rowMeta(receipt: ReceiptListItem, showOwner: boolean): string[] {
+  const categories = categoriesText(receipt)
   return [
-    ...(receipt.category ? [receipt.category.name] : []),
+    ...(categories ? [categories] : []),
     ...(showOwner ? [ownerName(receipt)] : []),
-    positions(receipt.lines_count),
+    sourceMark(receipt.source, receipt.note),
+    ...(receipt.source === 'photo' ? [positions(receipt.lines_count)] : []),
     ...(receipt.operation === 'refund' ? ['Возврат'] : []),
   ]
 }

@@ -125,7 +125,9 @@ class DashboardNumbersTests(FixtureMixin, TestCase):
         # Общий лимит сравнивается только с категориями под лимитом: 550 + 0, а не все 1 450.
         self.assertEqual(kzt["limited_spent"], "550.00")
         self.assertEqual(kzt["categories"][0]["category_id"], self.food.pk)
-        self.assertEqual([row["children"] for row in kzt["categories"]], [[], [], [], []])
+        # Every sub-category with spends of the month has its row, with or without a limit (2026-10-12).
+        self.assertEqual([[(child["name"], child["spent"], child["limit"]) for child in row["children"]] for row in kzt["categories"]],
+                         [[("Демо-молочное", "550.00", None)], [("Демо-кофейни", "450.00", None)], [], []])
 
     def test_previous_month_and_empty_month(self):
         september = self.get("?month=2026-09")
@@ -287,11 +289,14 @@ class DashboardSubLimitsTests(FixtureMixin, TestCase):
         self.assertEqual(kzt["limited_spent"], "1100.00")
         food, cafe, unassigned, transport = kzt["categories"]
         self.assertEqual((food["name"], food["spent"], food["limit"]), ("Демо-продукты", "650.00", "120000.00"))
-        # «Демо-выпечка» без лимита и без лимитов внутри в карточку не попадает; «Демо-молочное» — предок лимита.
+        # «Демо-выпечка» без лимита тоже в карточке — у неё траты месяца; «Демо-молочное» — предок лимита.
         self.assertEqual(food["children"], [{
             "category_id": self.dairy.pk, "name": "Демо-молочное", "spent": "620.00", "limit": None, "limit_id": None,
             "children": [{"category_id": self.cheese.pk, "name": "Демо-сыр", "spent": "70.00", "limit": "50.00",
                           "limit_id": self.limits["cheese"].pk, "children": []}],
+        }, {
+            "category_id": self.bakery.pk, "name": "Демо-выпечка", "spent": "30.00", "limit": None, "limit_id": None,
+            "children": [],
         }])
         self.assertEqual((cafe["name"], cafe["spent"], cafe["limit"]), ("Демо-кафе", "450.00", None))
         self.assertEqual(cafe["children"], [{

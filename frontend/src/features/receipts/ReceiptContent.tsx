@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import type { Discount, Line, Receipt, Tax } from '../../api/receipts'
 import type { ReceiptImage } from '../../api/recognition'
 import RecognitionIssues from '../../components/RecognitionIssues'
@@ -7,8 +8,9 @@ import { formatObservedAt, formatPercent, formatPurchasedOn, formatQuantity } fr
 import { ownerName } from '../../lib/people'
 import { glue, numbered } from '../../lib/text'
 import { Link } from '../../navigation'
-import ReceiptLineCards from './ReceiptLineCards'
-import type { LineColumns } from './ReceiptLineCards'
+import ReceiptLineLeaders from './ReceiptLineLeaders'
+import type { LineColumns } from './ReceiptLineLeaders'
+import { categoryTone } from '../../lib/category-tone'
 import { DownloadOriginal } from '../recognition/MediaImage'
 import ReceiptMedia from './ReceiptMedia'
 import { ManualMark } from './ManualMark'
@@ -20,29 +22,41 @@ const lineKinds: Record<Line['kind'], string> = {
 /** One source of the headings for the table and for the cards of the phone view. */
 const lineColumns: LineColumns = ['Строка и товар каталога', 'Количество', 'Цена', 'Сумма', 'Скидка', 'Оплачено']
 const linesCaption = 'Строки в порядке печати на чеке'
-export function ReceiptHeader({ receipt, showOwner = false }: { receipt: Receipt; showOwner?: boolean }) {
+/**
+ * The header card of a receipt or a spend, a piece of receipt tape: the place, the date, who added it, the total as the
+ * hero figure of the page, then the other facts. `photo` — the thumbnail of the receipt photo on a phone.
+ */
+export function ReceiptHeader({ receipt, showOwner = false, photo }: { receipt: Receipt; showOwner?: boolean; photo?: ReactNode }) {
   const { store } = receipt
   const manual = receipt.source === 'manual'
-  return <>
-    <h3 className="receipt-store-name">{receiptPlace(receipt)}{manual && <> <ManualMark /></>}</h3>
+  return <div className="receipt-head ck-tape">
+    <div className="receipt-head-top">
+      <div className="receipt-head-main">
+        <h3 className="receipt-store-name">{receiptPlace(receipt)}{manual && <> <ManualMark /></>}</h3>
+        <dl className="receipt-head-meta">
+          {/* The time of a manual spend is the moment of entry, not of the purchase: only the date is shown. */}
+          {manual ? <div><dt>Дата покупки</dt><dd><time dateTime={receipt.purchased_on}>{recognizedValue(formatPurchasedOn(receipt.purchased_on))}</time></dd></div>
+            : <div><dt>Дата и время покупки</dt><dd><time dateTime={receipt.purchased_at}>{recognizedValue(formatObservedAt(receipt.purchased_at, store?.timezone))}</time></dd></div>}
+          {showOwner && <div><dt>Добавил</dt><dd className="receipt-owner">{ownerName(receipt)}</dd></div>}
+        </dl>
+      </div>
+      {photo}
+    </div>
+    <p className="receipt-head-total"><span className="receipt-head-label">Итог</span>
+      <span className="ck-hero-figure">{money(receipt.total, receipt.currency)}</span></p>
     <dl className="receipt-facts">
       {store && <div><dt>Адрес</dt><dd>{recognizedText(store.address)}</dd></div>}
       {store && <div><dt>Город и страна</dt><dd>{recognizedText(store.city)} · {store.country}</dd></div>}
-      {/* The time of a manual spend is the moment of entry, not of the purchase: only the date is shown. */}
-      {manual ? <div><dt>Дата покупки</dt><dd><time dateTime={receipt.purchased_on}>{recognizedValue(formatPurchasedOn(receipt.purchased_on))}</time></dd></div>
-        : <div><dt>Дата и время покупки</dt><dd><time dateTime={receipt.purchased_at}>{recognizedValue(formatObservedAt(receipt.purchased_at, store?.timezone))}</time></dd></div>}
       {receipt.note && <div><dt>Комментарий</dt><dd>{receipt.note}</dd></div>}
       {/* A manual spend is always a sale without discounts and taxes: those rows say nothing about it. */}
       {!manual && <div><dt>Операция</dt><dd>{receipt.operation === 'refund' ? 'Возврат' : 'Продажа'}</dd></div>}
-      <div><dt>Итог</dt><dd className="receipt-number receipt-total">{money(receipt.total, receipt.currency)}</dd></div>
-      {!manual && <div><dt>Сумма скидок</dt><dd className="receipt-number">{money(receipt.discount_total, receipt.currency)}</dd></div>}
+      {!manual && <div><dt>Сумма скидок</dt><dd className="receipt-number ck-figures">{money(receipt.discount_total, receipt.currency)}</dd></div>}
       <div><dt>Валюта</dt><dd>{receipt.currency}</dd></div>
       {!manual && <div><dt>Налог в ценах</dt><dd>{receipt.prices_include_tax ? 'Включён' : 'Не включён'}</dd></div>}
-      {showOwner && <div><dt>Добавил</dt><dd className="receipt-owner">{ownerName(receipt)}</dd></div>}
     </dl>
     {receipt.unmatched_products_count > 0 && <p className="receipt-warning">Товары не сопоставлены: {receipt.unmatched_products_count.toLocaleString('ru-RU')}</p>}
     {receipt.review_required && <p className="receipt-warning">Данные требуют проверки. Проверьте несопоставленные товары и замечания к изображениям.</p>}
-  </>
+  </div>
 }
 
 export function ReceiptImages({ images, receiptId }: { images: ReceiptImage[]; receiptId: number }) {
@@ -67,13 +81,18 @@ export function CurrencyNote({ currency }: { currency?: string }) {
   return !currency ? <p className="receipt-warning">Валюта: {unknown}. Загрузите сведения о чеке, чтобы увидеть валюту сумм.</p> : null
 }
 
-/** The content of the row heading: the same in the table and in the card of the phone view. */
-function LineHeading({ line, lines }: { line: Line; lines: Line[] }) {
+/** The content of the row heading: the same in the table and in the leader row of the phone view. A leader row starts
+ * with the printed name, so the dots meet its line, and shows the category as a chip under it. */
+function LineHeading({ line, lines, leader = false }: { line: Line; lines: Line[]; leader?: boolean }) {
+  const place = <span className="receipt-note">{glue('Строка', line.position)} · {lineKinds[line.kind]}</span>
   return <>
-    <span className="receipt-note">{glue('Строка', line.position)} · {lineKinds[line.kind]}</span>
+    {!leader && place}
     <span className="receipt-printed-name">{recognizedText(line.name)}</span>
+    {leader && line.category && <span className="receipt-line-chip" data-tone={categoryTone(line.category.id)}>
+      <span className="receipt-visually-hidden">Категория: </span>{line.category.name}</span>}
+    {leader && place}
     {line.product ? <Link className="receipt-product-link" to={`/catalog/products/${line.product.id}`}>Товар каталога: {recognizedText(line.product.name)}</Link>
-      : line.category ? <span className="receipt-note receipt-line-category">Категория: {line.category.name}</span>
+      : line.category ? !leader && <span className="receipt-note receipt-line-category">Категория: {line.category.name}</span>
         : <span className="receipt-warning">Товар не сопоставлен</span>}
     {line.parent_id !== null && <span className="receipt-line-relation">{line.kind === 'deposit' || line.kind === 'deposit_return' ? 'Залог к ' : 'Связь с '}<LineReference lineId={line.parent_id} lines={lines} /></span>}
     {lines.filter((child) => child.parent_id === line.id).map((child) => <span className="receipt-line-relation" key={child.id}>
@@ -87,8 +106,8 @@ export function ReceiptLines({ lines, currency }: { lines: Line[]; currency?: st
   return <>
     <CurrencyNote currency={currency} />
     <p className="receipt-note">«Оплачено» учитывает скидку строки. Скидка всего чека по строкам не распределяется.</p>
-    {narrow ? <ReceiptLineCards lines={lines} currency={currency} columns={lineColumns} caption={linesCaption}
-      heading={(line) => <LineHeading line={line} lines={lines} />} /> : <div className="receipt-table-scroll" role="region" aria-label="Таблица строк чека, прокручивается по горизонтали" tabIndex={0}>
+    {narrow ? <ReceiptLineLeaders lines={lines} currency={currency} columns={lineColumns} caption={linesCaption}
+      heading={(line) => <LineHeading line={line} lines={lines} leader />} /> : <div className="receipt-table-scroll" role="region" aria-label="Таблица строк чека, прокручивается по горизонтали" tabIndex={0}>
       <table className="receipt-lines-table">
         <caption>{linesCaption}</caption>
         <thead><tr>{lineColumns.map((label) => <th scope="col" key={label}>{label}</th>)}</tr></thead>

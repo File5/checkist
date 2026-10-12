@@ -26,7 +26,7 @@ export const isReceipt: Guard<Receipt> = (value): value is Receipt => isReceiptS
   && (value.store !== null || value.source === 'manual') && optional(value, 'owner_name', text)
 /** The list item: a receipt plus `first_line` and `category`, each optional or null. */
 export const isReceiptListItem: Guard<ReceiptListItem> = (value): value is ReceiptListItem => isReceipt(value)
-  && optional(value, 'first_line', text) && optional(value, 'category', named)
+  && optional(value, 'first_line', text) && optional(value, 'category', named) && optional(value, 'categories', array(named))
 export const isManualDefaults = object<ManualDefaults>({ currency, frequent_categories: array(isId) })
 const translations = (value: unknown) => record(value) && Object.entries(value).every(
   ([key, val]) => /^[a-z]{2,3}(?:-[A-Za-z]{2,4})?$/.test(key) && text(val),

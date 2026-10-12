@@ -32,10 +32,11 @@ const pageOf = <T,>(results: T[]): Page<T> => ({ count: results.length, page: 1,
 describe('«Добавить трату» form (Vitest/SSR, not browser visual acceptance)', () => {
   it('opens on a big decimal amount, chips, today and the save bar', () => {
     const html = form(emptyDraft('KZT', '2026-10-12'))
-    expect(html).toContain('id="expense-amount" class="expense-amount-input" inputMode="decimal"')
+    expect(html).toContain('id="expense-amount" class="expense-amount-input ck-hero-figure" inputMode="decimal"')
     expect(html).toContain('value="KZT"')
     expect(html).toMatch(/<input id="expense-date" type="date"[^>]* value="2026-10-12"\/>/)
-    expect(html.match(/class="expense-chip"/g)).toHaveLength(3)
+    // Three category chips and the two date chips.
+    expect(html.match(/class="expense-chip"/g)).toHaveLength(5)
     expect(html).toContain('aria-pressed="false"')
     expect(html).toContain('class="expense-actions ck-action-bar"')
     expect(html).toContain('<button type="submit" class="expense-save">Сохранить</button>')
@@ -61,7 +62,28 @@ describe('«Добавить трату» form (Vitest/SSR, not browser visual a
     expect(html.match(/expense-lines-1-amount-error/g)).toHaveLength(2)
     expect(html).toContain('aria-label="Убрать позицию 3"')
     // The exact sum stays in the field; the summary next to it shows whole units, rounded up.
-    expect(html).toMatch(/class="expense-sum receipt-number">351.KZT</)
+    expect(html).toContain('<button type="submit" class="expense-save">Сохранить · 351\u00a0KZT</button>')
+  })
+  it('names the rounded amount on the save button, chooses the date by chips and keeps the calendar', () => {
+    const html = form({ ...emptyDraft('KZT', '2026-10-11'), amount: '4500,40' }, { today: '2026-10-12' })
+    expect(html).toContain('<button type="submit" class="expense-save">Сохранить · 4\u00a0501\u00a0KZT</button>')
+    expect(html).toContain('<button type="button" class="expense-chip" aria-pressed="false">Сегодня</button>')
+    expect(html).toContain('<button type="button" class="expense-chip" aria-pressed="true">Вчера</button>')
+    expect(html).toContain('<label class="expense-date-chip"><span class="expense-visually-hidden">Дата покупки</span><input id="expense-date" type="date"')
+    const other = form(emptyDraft('KZT', '2026-09-01'), { today: '2026-10-12' })
+    expect(other).toContain('expense-date-chip expense-date-chip-chosen')
+    expect(other).not.toContain('aria-pressed="true">Сегодня')
+  })
+  it('puts the chips in one scrolling line and opens all categories with a search in a sheet', () => {
+    const html = form(emptyDraft('KZT', '2026-10-12'))
+    expect(html).toContain('<div class="ck-chip-scroller-track" role="region" aria-label="Частые категории" tabindex="0">')
+    expect(html).toContain('<button type="button" class="expense-chip expense-more" aria-haspopup="dialog" aria-expanded="false">Все категории</button>')
+    expect(html).not.toContain('ck-sheet')
+    const open = form({ ...emptyDraft('KZT', '2026-10-12'), category: 2 }, { initialSheet: true })
+    expect(open).toContain('Все категории</h2>')
+    expect(open).toContain('<input id="expense-category-search" type="search"')
+    expect(open).toContain('<button type="button" class="expense-tree-item" aria-pressed="true">Кафе</button>')
+    expect(open.match(/class="expense-tree-item"/g)).toHaveLength(3)
   })
   it('leads «Отмена» of an edit back to the spend', () => {
     expect(form(emptyDraft('KZT', '2026-10-12'), { receiptId: 90, saving: true })).toContain('href="/receipts/90"')
@@ -111,5 +133,12 @@ describe('a manual spend on the receipt screens', () => {
     expect(html).toContain('>Отмена</button>')
     expect(html).not.toContain('Изменить')
     expect(renderToStaticMarkup(<ManualSpendActions receiptId={90} initial={{ kind: 'failed', message: 'Сбой.' }} />)).toContain('role="alert">Сбой.</p>')
+  })
+  it('asks in a sheet over the bottom bar on a phone', () => {
+    const html = renderToStaticMarkup(<ManualSpendActions receiptId={90} narrow initial={{ kind: 'confirm' }} />)
+    expect(html.startsWith('<div class="receipt-actions expense-manual-actions ck-action-bar">')).toBe(true)
+    expect(html).toContain('Удалить трату?</h2>')
+    expect(html).toContain('Удалить эту трату? Отменить удаление нельзя.')
+    expect(renderToStaticMarkup(<ManualSpendActions receiptId={90} narrow />)).not.toContain('ck-sheet')
   })
 })

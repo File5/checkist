@@ -34,6 +34,8 @@ export function backTarget({ route, returnTo }: Pick<NavigationSnapshot, 'route'
     case 'category': return target('/catalog')
     case 'merge': return target(returnTo ?? '/catalog/merges')
     case 'limits': return target('/')
+    // Back to «Главная» of the same month; from a deeper category — still «Главная», the screen links its parents itself.
+    case 'category-spends': return target(returnTo ?? (route.month ? `/?month=${route.month}` : '/'))
     default: return undefined
   }
 }

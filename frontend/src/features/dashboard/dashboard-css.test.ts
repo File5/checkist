@@ -14,8 +14,9 @@ const body = (selector: string) => rules.filter((rule) => rule.selector === sele
 
 describe('«Главная» and «Лимиты» styles (text of the rules, not rendering)', () => {
   it('reads only theme tokens, each defined for the dark theme and, for colours, again for the light one', () => {
-    const dark = names(block(':root'))
-    const light = names(block(':root[data-theme="light"]'))
+    const dark = new Set(names(block(':root')))
+    // Sizes, fonts and the tooth of the tape are the same in both themes: only colours come again for the light one.
+    const light = new Set([...names(block(':root[data-theme="light"]')), ...[...dark].filter((name) => /^--ck-(text-(xs|sm|base|lg|xl|hero)|font-|tape-)/.test(name))])
     const used = [...new Set([...css.matchAll(/var\((--ck-[a-z0-9-]+)/g)].map((match) => match[1]))]
     expect(used.filter((name) => !dark.has(name))).toEqual([])
     expect(used.filter((name) => !light.has(name) && !name.startsWith('--ck-radius'))).toEqual([])
@@ -40,10 +41,12 @@ describe('«Главная» and «Лимиты» styles (text of the rules, not
       expect(body(selector)).toContain('white-space: nowrap')
     })
   it('keeps touch targets at 44 px and the overspend in its own colours', () => {
-    expect(body('.dash-month-step')).toContain('width: 44px; height: 44px;')
+    expect(body('.dash-month-step')).toContain('width: 48px; height: 48px;')
     expect(body('.dash-link')).toContain('min-height: 44px')
     expect(body('.dash-chip')).toContain('min-height: 44px')
-    expect(body('.dash-action')).toContain('min-height: 64px')
+    expect(body('.dash-action')).toContain('min-height: 52px')
+    expect(body('.dash-empty-action')).toContain('min-height: 52px')
+    expect(body('.limits-save')).toContain('min-height: 52px')
     expect(body('.dash-over')).toContain('color: var(--ck-over-text)')
     expect(body('.dash-bar-over .dash-bar-fill')).toContain('background: var(--ck-over-bar)')
     expect(body('.dash-bar')).toContain('background: var(--ck-track)')
@@ -62,7 +65,21 @@ describe('«Главная» and «Лимиты» styles (text of the rules, not
     expect(body('.dash-limit-value')).toContain('white-space: nowrap')
     expect(body('.dash-limit-name')).toContain('overflow-wrap: normal;')
   })
-  it('uses the single phone breakpoint of the project', () => {
-    expect([...css.matchAll(/@media[^{]+/g)].map((match) => match[0].trim())).toEqual(['@media (max-width: 540px)'])
+  it('uses the single phone breakpoint of the project and moves only without reduced motion', () => {
+    expect([...css.matchAll(/@media[^{]+/g)].map((match) => match[0].trim())).toEqual(['@media (prefers-reduced-motion: no-preference)', '@media (max-width: 540px)'])
+    const motion = css.slice(css.indexOf('@media (prefers-reduced-motion'), css.indexOf('@media (max-width'))
+    expect(css.replace(motion, '')).not.toMatch(/animation|@keyframes|transition/)
+    expect(motion).toContain('.dash-slide-forward { animation: dash-slide-forward 200ms ease-out; }')
+    expect(motion).toContain('.dash-slide-back { animation: dash-slide-back 200ms ease-out; }')
+  })
+  it('sizes text only by the tokens of the type scale, a field never under 16 px', () => {
+    const sizes = [...css.matchAll(/font-size:\s*([^;]+);/g)].map((match) => match[1].trim())
+    expect(sizes.filter((size) => !/^var\(--ck-text-(xs|sm|base|lg|xl|hero)\)$/.test(size))).toEqual([])
+    expect(body('.limits-input input')).toContain('font-size: var(--ck-text-lg)')
+    expect(body('.limits-add-row input')).toContain('font-size: var(--ck-text-base)')
+  })
+  it('keeps the focus ring of a recent spend inside its tape, above the teeth', () => {
+    expect(body('.dash-recent-tape')).toContain('padding-bottom: 8px;')
+    expect(body('.dash-recent-item:focus-visible')).toBe(' outline-offset: -3px; ')
   })
 })

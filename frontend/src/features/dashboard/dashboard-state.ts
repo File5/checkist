@@ -55,6 +55,14 @@ export function shiftMonth(month: MonthCode, delta: number): MonthCode {
   return `${String(Math.floor(total / 12)).padStart(4, '0')}-${String((total % 12) + 1).padStart(2, '0')}`
 }
 
+export type MonthSlide = 'forward' | 'back'
+
+/** Which way the month slides in when another month is shown: none on the first one or on a reload of the same month. */
+export function monthSlide(from: MonthCode | undefined, to: MonthCode): MonthSlide | undefined {
+  if (from === undefined || from === to) return undefined
+  return to > from ? 'forward' : 'back'
+}
+
 /** The month of the device; the dashboard does not offer a month after it. */
 export function deviceMonth(now: Date = new Date()): MonthCode {
   return `${String(now.getFullYear()).padStart(4, '0')}-${String(now.getMonth() + 1).padStart(2, '0')}`

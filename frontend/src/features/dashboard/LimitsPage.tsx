@@ -10,9 +10,10 @@ import { Link } from '../../navigation'
 import { useSession } from '../../session'
 import { categoryTone, dashboardErrorMessage, formatMoney } from './dashboard-state'
 import {
-  amountInput, isDuplicateCreate, limitCurrencies, limitFailureMessage, limitFor, limitTree, openByDefault, parseCurrency, rowAction,
-  subCategoriesText, visibleRows, withLimit, withoutLimit,
+  amountInput, changedRows, isDuplicateCreate, limitCurrencies, limitFailureMessage, limitFor, limitTree, openByDefault, parseCurrency, rowAction,
+  saveBarLabel, subCategoriesText, visibleRows, withLimit, withoutLimit,
 } from './limits-state'
+import ChipScroller from '../../components/ChipScroller'
 import './Dashboard.css'
 
 export type RowStatus = { kind: 'idle' } | { kind: 'busy' } | { kind: 'done'; text: string } | { kind: 'error'; text: string }
@@ -29,6 +30,8 @@ export type LimitsViewProps = {
   onAddCurrency: (input: string) => string | undefined
   onDraft: (key: string, value: string) => void
   onSave: (category: Category) => void
+  /** «Сохранить» of the bar: every changed row of this currency at once. */
+  onSaveAll?: (categories: Category[]) => void
   onDelete: (limit: BudgetLimit) => void
 }
 
@@ -55,11 +58,14 @@ function AddCurrency({ onAdd }: { onAdd: (input: string) => string | undefined }
 
 /** The limits screen without loading: the markup tests render it directly. */
 export function LimitsView({
-  categories, limits, currencies, currency, family, drafts, statuses, toggled = {}, onToggle = () => {}, onCurrency, onAddCurrency, onDraft, onSave, onDelete,
+  categories, limits, currencies, currency, family, drafts, statuses, toggled = {}, onToggle = () => {}, onCurrency, onAddCurrency, onDraft, onSave,
+  onSaveAll = (changed) => changed.forEach(onSave), onDelete,
 }: LimitsViewProps) {
   const tree = limitTree(categories)
   const opened = openByDefault(tree, limits, currency, drafts)
   const isOpen = (rootId: number) => toggled[rootId] ?? opened.has(rootId)
+  const changed = changedRows(categories, limits, currency, drafts)
+  const saving = Object.entries(statuses).some(([key, status]) => key.endsWith(`:${currency}`) && status.kind === 'busy')
   return <div className="limits">
     <p className="dash-note">{family
       ? 'Лимит — сколько семья готова потратить на категорию за месяц. Лимиты общие: их видят и меняют все члены семьи.'
@@ -67,10 +73,10 @@ export function LimitsView({
       и в её лимит, и в лимит категории выше.</p>
     <section className="dash-card limits-currencies" aria-labelledby="limits-currency-heading">
       <h2 id="limits-currency-heading" className="limits-small-heading">Валюта</h2>
-      <div className="dash-chips" role="group" aria-labelledby="limits-currency-heading">
+      <ChipScroller label="Валюта лимитов">
         {currencies.map((code) => <button key={code} type="button" className="dash-chip" aria-pressed={code === currency}
           onClick={() => onCurrency(code)}>{code}</button>)}
-      </div>
+      </ChipScroller>
       <AddCurrency onAdd={onAddCurrency} />
     </section>
     {categories.length ? <ul className="limits-list" aria-label={`Лимиты в ${currency}`}>
@@ -87,8 +93,10 @@ export function LimitsView({
         const open = isOpen(rootId)
         // The indent stops at four levels: deeper rows would leave no room for the amount on a phone.
         const indent = { '--limits-depth': Math.min(depth, 4) } as CSSProperties
+        // A full-width row of one list; Enter in its field saves this row alone, the bar below saves every changed one.
         return <li key={key}
-          className={`dash-card limits-row${depth ? ' limits-row-sub' : ''} dash-cat-${categoryTone(rootId)}`} style={depth ? indent : undefined}>
+          className={`limits-row${depth ? ' limits-row-sub' : ''}${action.kind === 'none' ? '' : ' limits-row-changed'} dash-cat-${categoryTone(rootId)}`}
+          style={depth ? indent : undefined}>
           <form className="limits-form" noValidate aria-busy={busy} onSubmit={(event) => { event.preventDefault(); onSave(category) }}>
             <div className="limits-row-head">
               <span className="dash-dot" aria-hidden="true" />
@@ -96,7 +104,7 @@ export function LimitsView({
                 {depth > 0 && <span className="dash-visually-hidden">{category.path.slice(0, -1).map((step) => step.name).join(' › ')} › </span>}
                 {category.name}
               </label>
-              <span className="limits-current">{limit ? formatMoney(limit.amount, currency) : 'без лимита'}</span>
+              <span className="limits-current ck-figures">{limit ? formatMoney(limit.amount, currency) : 'без лимита'}</span>
             </div>
             <div className="limits-controls">
               <span className="limits-input">
@@ -106,7 +114,6 @@ export function LimitsView({
                   onChange={(event) => onDraft(key, event.target.value)} />
                 <span className="limits-input-currency" aria-hidden="true">{currency}</span>
               </span>
-              <button type="submit" className="limits-save" disabled={busy || action.kind === 'none'}>{busy ? 'Сохраняем…' : 'Сохранить'}</button>
               {limit && <button type="button" className="receipt-secondary limits-delete" disabled={busy}
                 aria-label={`Удалить лимит «${category.name}»`} onClick={() => onDelete(limit)}>Удалить</button>}
             </div>
@@ -119,6 +126,10 @@ export function LimitsView({
         </li>
       })}
     </ul> : <RequestState kind="empty" message="Категорий пока нет: их заводят в каталоге." action={<Link className="action-link" to="/catalog">В каталог</Link>} />}
+    {categories.length > 0 && <div className="limits-savebar ck-action-bar">
+      <button type="button" className="limits-save" disabled={saving || !changed.length} onClick={() => onSaveAll(changed)}>
+        {saving ? 'Сохраняем…' : saveBarLabel(changed.length)}</button>
+    </div>}
     <p><Link className="dash-link" to="/">На главную</Link></p>
   </div>
 }

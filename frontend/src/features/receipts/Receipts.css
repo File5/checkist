@@ -84,18 +84,20 @@
 .receipt-line-category { display: block; margin-top: 8px; }
 /* «Траты»: the family filter, the review banner and, on a phone, days with rows (SpendDays.tsx). Colours — tokens only. */
 .spends-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.spends-chips ul { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; margin: 0; padding: 0; }
 .spends-chip { display: inline-flex; align-items: center; min-height: 44px; padding: 0 18px; border: 1px solid var(--ck-border); border-radius: 999px; background: var(--ck-surface); color: var(--ck-text); font-weight: 600; text-decoration: none; white-space: nowrap; }
 .spends-chip:hover { border-color: var(--ck-text-muted); }
 .spends-chip[aria-current="true"] { background: var(--ck-chip-selected-bg); border-color: var(--ck-chip-selected-bg); color: var(--ck-chip-selected-text); }
 .spends-review { margin: 0; border-radius: 16px; background: var(--ck-warning-bg); color: var(--ck-warning-text); }
 .spends-review a { display: flex; align-items: center; min-height: 44px; padding: 8px 16px; color: inherit; font-weight: 600; text-underline-offset: 3px; }
 .spends-days { display: grid; gap: 20px; }
-.spends-day-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; }
-.spends-day h3 { margin: 0; font-size: 1rem; }
-.spends-day-total { margin: 0; color: var(--ck-text-muted); font-size: 0.9rem; }
+/* The heading of a day stays at the top while its rows scroll under it: opaque, over the masked tape of the rows
+   (a mask makes its own stacking context, painted after the heading). */
+.spends-day-head { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; padding-block: 8px; background: var(--ck-bg); }
+.spends-day h3 { margin: 0; font-size: var(--ck-text-base); }
+.spends-day-total { margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-sm); }
 .spends-day-sum { font-variant-numeric: tabular-nums; white-space: nowrap; }
-.spends-rows { margin: 8px 0 0; padding: 0; list-style: none; border: 1px solid var(--ck-border); border-radius: 20px; background: var(--ck-surface); overflow: hidden; }
+/* One strip of receipt tape per day (.ck-tape): the teeth below the last row, never over it. */
+.spends-rows { margin: 0; padding: 0 0 8px; list-style: none; border: 1px solid var(--ck-border); border-radius: 20px 20px 0 0; background: var(--ck-surface); overflow: hidden; }
 .spends-rows > li + li { border-top: 1px solid var(--ck-divider); }
 .spends-row { display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 12px 16px; color: var(--ck-text); text-decoration: none; }
 .spends-row:hover .spends-row-title { text-decoration: underline; text-underline-offset: 3px; }
@@ -112,5 +114,43 @@
 .spends-badge[data-tone="6"] { background: var(--ck-cat-6-tint); color: var(--ck-cat-6); }
 .spends-row-main { display: grid; flex: 1; gap: 2px; min-width: 0; }
 .spends-row-title { font-weight: 700; overflow-wrap: anywhere; }
-.spends-row-meta { color: var(--ck-text-muted); font-size: 0.9rem; }
-.spends-row-amount { flex: none; font-variant-numeric: tabular-nums; font-weight: 700; white-space: nowrap; }
+.spends-row-meta { color: var(--ck-text-muted); font-size: var(--ck-text-sm); }
+.spends-row-amount { flex: none; font-size: var(--ck-text-base); font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* Страница чека или траты: шапка — кусочек ленты чека (.ck-tape) с местом, датой, кто добавил, итогом-героем. */
+.receipt-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.receipt-head { display: grid; gap: 14px; min-width: 0; padding: 16px 16px 24px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius-sm) var(--ck-radius-sm) 0 0; background: var(--ck-surface-raised); }
+.receipt-head-top { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
+.receipt-head-main { display: grid; flex: 1 1 auto; gap: 6px; min-width: 0; }
+.receipt-store-name { margin: 0; font-size: var(--ck-text-xl); overflow-wrap: anywhere; }
+.receipt-head-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-sm); }
+.receipt-head-meta dt { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.receipt-head-meta dd { margin: 0; }
+.receipt-head-total { display: grid; gap: 2px; margin: 0; }
+.receipt-head-label { color: var(--ck-text-muted); font-size: var(--ck-text-sm); font-weight: 600; }
+/* The photo of the receipt: a thumbnail, a tap opens the full preview in a sheet. */
+.receipt-photo-thumb { flex: none; width: 64px; height: 84px; min-height: 44px; padding: 0; overflow: hidden; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-bg); }
+.receipt-photo-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+/* Строки чека на телефоне: выноски «название ……… сумма», категория — чип под названием. */
+.receipt-leaders { display: grid; gap: 8px; min-width: 0; }
+.receipt-leader-list { display: grid; margin: 0; padding: 0; list-style: none; }
+.receipt-leader { padding: 12px 0; border-top: 1px solid var(--ck-divider); }
+.receipt-leader:target { background: var(--ck-accent-bg); }
+.receipt-leader:focus-visible { outline-offset: -3px; }
+.receipt-leader-main { display: grid; justify-items: start; gap: 4px; min-width: 0; }
+.receipt-leader-main > .receipt-printed-name { margin: 0; overflow-wrap: anywhere; }
+.receipt-leader-main > .receipt-product-link { min-height: 44px; padding-block: 10px; }
+.receipt-leader-amount { font-size: var(--ck-text-base); white-space: nowrap; }
+.receipt-leader-facts { display: flex; flex-wrap: wrap; gap: 2px 12px; margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-sm); }
+.receipt-leader-facts div { display: flex; gap: 4px; }
+.receipt-leader-facts dd { margin: 0; }
+.receipt-line-chip { display: inline-block; padding: 2px 10px; border-radius: var(--ck-radius-pill); background: var(--ck-neutral-bg); color: var(--ck-text); font-size: var(--ck-text-xs); font-weight: 600; white-space: nowrap; }
+.receipt-line-chip[data-tone="1"] { background: var(--ck-cat-1-tint); }
+.receipt-line-chip[data-tone="2"] { background: var(--ck-cat-2-tint); }
+.receipt-line-chip[data-tone="3"] { background: var(--ck-cat-3-tint); }
+.receipt-line-chip[data-tone="4"] { background: var(--ck-cat-4-tint); }
+.receipt-line-chip[data-tone="5"] { background: var(--ck-cat-5-tint); }
+.receipt-line-chip[data-tone="6"] { background: var(--ck-cat-6-tint); }
+/* A form in a sheet of a phone needs no frame of its own: the sheet is its card. */
+.ck-sheet .receipt-panel { padding: 0; border: 0; }
+/* Its action bar rests at the bottom of the sheet, not above the navigation of the page. */
+.ck-sheet .ck-action-bar { bottom: 0; }

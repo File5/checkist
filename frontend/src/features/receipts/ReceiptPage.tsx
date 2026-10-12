@@ -14,6 +14,8 @@ import { useSession } from '../../session'
 import type { ReceiptPageProps } from '../../pages/types'
 import { ReceiptBlock, ReceiptPagination } from './ReceiptBlock'
 import { ReceiptDeleteActions } from './ReceiptDeleteActions'
+import { ReceiptPhoto } from './ReceiptPhoto'
+import { useNarrow } from '../../lib/cards'
 import { ReceiptDiscounts, ReceiptHeader, ReceiptImages, ReceiptLines, ReceiptTaxes } from './ReceiptContent'
 import type { ReceiptRequestState } from './request'
 import { ownerShown } from './state'
@@ -30,6 +32,8 @@ export type ReceiptViewProps = ReceiptPageProps & {
   showOwner?: boolean
   /** Shown once after a manual spend was saved on its form. */
   notice?: string
+  /** A phone: the photo as a thumbnail in the header, «Изменить / Удалить» in the bottom bar, the deletion in a sheet. */
+  narrow?: boolean
 }
 
 function PagedBlock<T>({ title, request, empty, page, onPage, children, id }: {
@@ -47,11 +51,15 @@ function PagedBlock<T>({ title, request, empty, page, onPage, children, id }: {
   </ReceiptBlock>
 }
 
-export function ReceiptView({ receiptId, returnTo, header, images, lines, discounts, taxes, pages, onPage, notice, showOwner = false }: ReceiptViewProps) {
+export function ReceiptView({ receiptId, returnTo, header, images, lines, discounts, taxes, pages, onPage, notice, showOwner = false, narrow = false }: ReceiptViewProps) {
   const receipt = header.state.kind === 'ok' ? header.state.data : undefined
   const visibleLines = lines.state.kind === 'ok' ? lines.state.data.results : []
   // A spend entered by hand has no photo, discounts or taxes: only its lines are shown.
   const manual = receipt?.source === 'manual'
+  const actions = receipt && (manual ? <ManualSpendActions receiptId={receiptId} narrow={narrow} />
+    : <ReceiptDeleteActions receiptId={receiptId} narrow={narrow} />)
+  const photo = narrow && receipt && !manual ? <ReceiptPhoto receiptId={receiptId} thumb={receipt.preview_thumb_url} image={receipt.preview_image_url}
+    download={images.state.kind === 'ok' ? images.state.data.results[0]?.download_url : undefined} /> : undefined
   return <div className="receipts-page">
     {notice && <p className="expense-notice" role="status">{notice}</p>}
     <div className="receipt-actions">
@@ -60,9 +68,8 @@ export function ReceiptView({ receiptId, returnTo, header, images, lines, discou
       <Link className="action-link" to="/recognition/jobs">Обработка</Link>
     </div>
     <ReceiptBlock title={numbered(manual ? 'Трата' : 'Страница чека', receiptId)} state={header.state} retry={header.retry}>
-      {receipt && <ReceiptHeader receipt={receipt} showOwner={showOwner} />}
-      {manual && <ManualSpendActions receiptId={receiptId} />}
-      {receipt && !manual && <ReceiptDeleteActions receiptId={receiptId} />}
+      {receipt && <ReceiptHeader receipt={receipt} showOwner={showOwner} photo={photo} />}
+      {!narrow && actions}
     </ReceiptBlock>
     {!manual && <PagedBlock title="Изображения чека" id="receipt-images" request={images} empty="У этого чека нет изображений."
       page={pages.images} onPage={(page) => onPage('images', page)}>
@@ -80,6 +87,8 @@ export function ReceiptView({ receiptId, returnTo, header, images, lines, discou
       page={pages.taxes} onPage={(page) => onPage('taxes', page)}>
       {taxes.state.kind === 'ok' && <ReceiptTaxes taxes={taxes.state.data.results} currency={receipt?.currency} />}
     </PagedBlock>}
+    {/* Last on the page of a phone: pinned at the bottom above the navigation while the page is longer than the screen. */}
+    {narrow && actions}
   </div>
 }
 
@@ -96,10 +105,11 @@ function ReceiptScreen({ receiptId, returnTo }: ReceiptPageProps) {
   const discounts = useReceiptRequest(loadDiscounts)
   const taxes = useReceiptRequest(loadTaxes)
   const showOwner = ownerShown(useSession())
+  const narrow = useNarrow()
   // Read once into the state; the module copy is cleared so that a later visit shows no stale notice.
   const [notice] = useState(() => getExpenseNotice(receiptId))
   useEffect(clearExpenseNotice, [])
-  return <ReceiptView showOwner={showOwner} notice={notice} receiptId={receiptId} returnTo={returnTo} header={header} images={images} lines={lines} discounts={discounts} taxes={taxes}
+  return <ReceiptView narrow={narrow} showOwner={showOwner} notice={notice} receiptId={receiptId} returnTo={returnTo} header={header} images={images} lines={lines} discounts={discounts} taxes={taxes}
     pages={pages} onPage={(block, page) => setPages((previous) => ({ ...previous, [block]: page }))} />
 }
 

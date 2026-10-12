@@ -79,7 +79,8 @@ describe('text sizes go through the scale (mobile design 2026-10-12, text of the
 
   it('moves only in the sheet: no other stylesheet of the client has an animation', () => {
     const moving = files.filter((path) => path.endsWith('.css') && !/(^|[/-])preview\//.test(path) && /@keyframes/.test(strip(raw(path))))
-    expect(moving).toEqual(['components/Sheet.css'])
+    // The plan allows two motions: the sheet and the change of a month on «Главная» (both under reduced motion).
+    expect(moving).toEqual(['components/Sheet.css', 'features/dashboard/Dashboard.css'])
   })
 })
 
