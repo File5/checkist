@@ -300,7 +300,7 @@ describe('receipt screens (Vitest/SSR, not browser visual acceptance)', () => {
     const withPhoto = { ...receipt, preview_image_url: '/media/receipts/71.jpg', preview_thumb_url: '/media/receipts/71-thumb.jpg' }
     const phone = renderToStaticMarkup(<ReceiptView {...view} header={{ state: { kind: 'ok', data: withPhoto }, retry: noop }} narrow />)
     // The last thing of the header card, before the images; no pinned bar of its own above the navigation.
-    expect(phone).toContain('<div class="receipt-toolbar"><div class="receipt-actions receipt-delete-bar ck-action-bar"><button type="button" class="receipt-secondary" aria-label="Удалить чек">Удалить</button></div></div></section>')
+    expect(phone).toContain('<div class="receipt-toolbar"><div class="receipt-actions receipt-delete-bar ck-action-bar"><a class="action-link receipt-primary" href="/receipts/71/edit">Изменить</a><button type="button" class="receipt-secondary" aria-label="Удалить чек">Удалить</button></div></div></section>')
     expect(phone.indexOf('receipt-toolbar')).toBeLessThan(phone.indexOf('Изображения чека'))
     expect(phone).toContain('<button type="button" class="receipt-photo-thumb" aria-haspopup="dialog" aria-expanded="false"><img src="/media/receipts/71-thumb.jpg" alt=""')
     // A phone goes back with the top bar of the shell; a wide screen keeps its link.

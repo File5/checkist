@@ -4,7 +4,7 @@ import type { Category } from '../../api/types'
 import {
   CHIPS_SHOWN, amountText, categoryChips, chipLabel, clearExpenseNotice, draftBody, draftFromReceipt, emptyDraft,
   getExpenseNotice, linesTotal, sentIndexes, messages, newLine, normalizeAmount, serverErrors, setExpenseNotice, todayISO, visibleChips,
-  categoryTree, chipParent, chipToneId, dateChoice, dayBefore, fieldScrollDelta, saveLabel, shortDay, sumText,
+  categoryTree, chipParent, chipToneId, dateChoice, dayBefore, fieldScrollDelta, itemizedTotal, saveLabel, shortDay, sumText,
 } from './expense-form'
 import type { ExpenseDraft, LineDraft } from './expense-form'
 
@@ -63,9 +63,11 @@ describe('the body of a save', () => {
   })
   it('lets positions carry the total and keeps their own categories', () => {
     const result = draftBody(draft({ amount: '999', category: 1, lines: [line('Хлеб', '250'), line('', ''), line('Такси', '1200', 3)] }))
+    // Every position is a line of a receipt (2026-10-13): quantity, unit, sum before the discount, discount, category.
     expect(result).toEqual({ body: {
       currency: 'KZT', purchased_on: '2026-10-12', store_name: null, note: '', category: 1,
-      lines: [{ name: 'Хлеб', amount: '250' }, { name: 'Такси', amount: '1200', category: 3 }],
+      lines: [{ name: 'Хлеб', quantity: '1', unit: 'pcs', amount: '250', discount_amount: '0', category: null },
+        { name: 'Такси', quantity: '1', unit: 'pcs', amount: '1200', discount_amount: '0', category: 3 }],
     } })
   })
   it('marks the wrong position by its index among the typed ones', () => {
@@ -91,11 +93,14 @@ describe('the body of a save', () => {
 
 describe('a saved spend in the form', () => {
   const receipt = { id: 5, source: 'manual', store: null, note: 'кофе', currency: 'KZT', purchased_on: '2026-10-01', total: '450.00' } as Receipt
+  let ids = 0
   const saved = (name: string, amount: string, lineCategory: { id: number; name: string } | null,
-    product: { id: number; name: string } | null = null) => ({ name, amount, category: lineCategory, product }) as Line
+    product: { id: number; name: string } | null = null) => ({ id: ++ids, name, amount, category: lineCategory, product,
+    quantity: '1.000', unit: 'pcs', unit_price: `${amount}00`, discount_amount: '0.00', paid_amount: amount }) as Line
   it('opens one line named after its category as one amount', () => {
     expect(draftFromReceipt(receipt, [saved('Кафе', '450.00', { id: 2, name: 'Кафе' })])).toEqual({
       amount: '450', currency: 'KZT', category: 2, date: '2026-10-01', place: '', note: 'кофе', lines: [], method: '', item: '',
+      source: 'manual',
     })
     // The way of payment of the spend comes with it and goes back in the body; not said — not sent at all.
     const kaspi = draftFromReceipt({ ...receipt, payment_method: 'kaspi_gold' }, [saved('Кафе', '450.00', { id: 2, name: 'Кафе' })])
@@ -116,6 +121,23 @@ describe('a saved spend in the form', () => {
     expect(result.place).toBe('Рынок')
     expect(result.category).toBeNull()
     expect(result.lines.map(({ name, amount, category: own }) => [name, amount, own])).toEqual([['Хлеб', '250', 1], ['Такси', '200.50', null]])
+    // Saved lines go back with their ids: each keeps its product while its name stays.
+    expect(result.lines.every((row) => typeof row.id === 'number')).toBe(true)
+  })
+  it('opens a photo receipt as its lines, with the discount of the whole receipt and the place required', () => {
+    const photo = { ...receipt, source: 'photo', discount_total: '150.00', store: { id: 1, name: 'Магнум', city: '', country: 'KZ', address: '', timezone: 'Asia/Almaty' } } as Receipt
+    const milk = { ...saved('Молоко', '1000.00', null, { id: 7, name: 'Молоко' }), quantity: '2.000', unit_price: '500.0000', discount_amount: '100.00', paid_amount: '900.00' } as Line
+    const result = draftFromReceipt(photo, [milk])
+    expect([result.source, result.extraDiscount, result.lines.length, result.lines[0].discount, result.lines[0].amount]).toEqual(['photo', '50', 1, '100', '900'])
+    expect(itemizedTotal(result)).toBe('850.00')
+    expect(draftBody({ ...result, place: ' ' })).toEqual({ errors: { place: messages.placeRequired } })
+    expect(draftBody(result)).toMatchObject({ body: { store_name: 'Магнум', lines: [
+      { id: milk.id, name: 'Молоко', quantity: '2', unit: 'pcs', unit_price: '500', amount: '1000', discount_amount: '100', category: null }] } })
+  })
+  it('opens a spend from a statement with its note without the mark', () => {
+    const spend = { ...receipt, note: 'кофе · Выписка Kaspi Gold', payment_method: 'kaspi_gold', statement: { bank: 'kaspi_gold', label: 'Выписка Kaspi Gold' } } as Receipt
+    const result = draftFromReceipt(spend, [saved('Кафе', '450.00', { id: 2, name: 'Кафе' })])
+    expect([result.note, result.statement, result.method]).toEqual(['кофе', 'Выписка Kaspi Gold', 'kaspi_gold'])
   })
 })
 

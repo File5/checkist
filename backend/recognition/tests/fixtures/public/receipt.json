@@ -36,5 +36,6 @@
   "taxes_url": "/api/receipts/71/taxes/",
   "images_url": "/api/recognition/receipt-images/?receipt=71",
   "base_currency": "KZT",
-  "base_total": null
+  "base_total": null,
+  "statement": null
 }

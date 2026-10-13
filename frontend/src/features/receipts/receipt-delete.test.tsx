@@ -35,7 +35,8 @@ describe('deleting a photo receipt (Vitest/SSR, not browser visual acceptance)',
     const photo = renderToStaticMarkup(<ReceiptView {...view(receipt)} />)
     // The tile says «Удалить»; its name is the whole phrase.
     expect(photo).toContain('<button type="button" class="receipt-secondary" aria-label="Удалить чек">Удалить</button>')
-    expect(photo).not.toContain('>Изменить<')
+    // Единая форма траты (2026-10-13): чек с фото меняется той же формой.
+    expect(photo).toContain('<a class="action-link receipt-primary" href="/receipts/71/edit">Изменить</a>')
     const manual = renderToStaticMarkup(<ReceiptView {...view({ ...receipt, source: 'manual', store: null })} />)
     expect(manual).not.toContain('Удалить чек')
     expect(manual).toContain('>Изменить</a>')

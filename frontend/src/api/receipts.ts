@@ -41,7 +41,7 @@ export async function getManualSuggestions(q: string, options: RequestOptions = 
 export function createManualSpend(input: ManualSpendInput, options: RequestOptions = {}): Promise<LocalApiResult<Receipt>> {
   return mutate('receipts/manual/', JSON.stringify(input), isReceipt, options)
 }
-/** Only a manual spend: a photo receipt answers `409 receipt_read_only`. */
+/** Any visible spend — a photo receipt, a manual spend, a spend from a statement — by one path (2026-10-13). */
 export async function updateManualSpend(id: number, input: ManualSpendInput, options: RequestOptions = {}): Promise<LocalApiResult<Receipt>> {
   return invalidIds({ id }, options.signal) ?? mutate(`receipts/${id}/`, JSON.stringify(input), isReceipt, options, false, undefined, { method: 'PATCH' })
 }

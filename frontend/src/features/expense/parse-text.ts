@@ -4,7 +4,8 @@ import type { Category } from '../../api/types'
 import { aiRefusalText } from '../../lib/ai'
 import { errorMessage } from '../receipts/state'
 import type { Failure } from '../receipts/state'
-import { amountText, newLine } from './expense-form'
+import { amountText } from './expense-form'
+import { lineFromBody } from './line-draft'
 import type { ExpenseDraft } from './expense-form'
 
 export const PARSE_TEXT_MAX = 500
@@ -89,7 +90,8 @@ export function draftFromParse(parsed: ManualParseDraft, chips: Category[]): Exp
     date: parsed.purchased_on,
     place: parsed.store_name ?? '',
     note: parsed.note,
-    lines: parsed.lines.map((line) => ({ ...newLine(), name: line.name, amount: money(line.amount), category: known(line.category) })),
+    // A line of the draft is a line of a receipt, like a line of the form (quantity, unit, price, sum).
+    lines: parsed.lines.map((line) => lineFromBody({ ...line, quantity: line.quantity ?? undefined }, known(line.category))),
     // A text that does not say how it was paid leaves the choice of the form (ExpensePage).
     method: parsed.payment_method || undefined,
     item: parsed.lines.length ? '' : parsed.item_name ?? '',

@@ -25,10 +25,6 @@ from stores.models import Store
 
 D = Decimal
 MANUAL = "/api/receipts/manual/"
-READ_ONLY = {"error": {
-    "code": "receipt_read_only",
-    "message": "Чек с фото через API не правится: изменять можно только трату, внесённую вручную.",
-}}
 
 
 def fields(response):
@@ -161,7 +157,7 @@ class ManualCreateTests(ManualMixin, TestCase):
               "lines.1.amount": ["Сумма больше нуля, не больше двух знаков после запятой."],
               "lines.1.quantity": ["Количество больше нуля, не больше трёх знаков после запятой."],
               "lines.1.category": ["Значение не найдено."], "lines.1.price": ["Неизвестное поле."]}),
-            ({"lines": [{"name": "А", "amount": "1"}] * 101}, {"lines": ["Не больше 100 позиций."]}),
+            ({"lines": [{"name": "А", "amount": "1"}] * 301}, {"lines": ["Не больше 300 позиций."]}),
         ]
         for body, expected in cases:
             with self.subTest(body=str(body)[:80]):
@@ -246,15 +242,15 @@ class ManualChangeTests(ManualMixin, TestCase):
         self.assertFalse(ReceiptLine.objects.filter(receipt_id=self.spend["id"]).exists())
         self.assertEqual(self.client.delete(self.url).json(), NOT_FOUND)
 
-    def test_photo_receipt_stays_read_only(self):
+    def test_photo_receipt_is_changed_by_the_same_path(self):
+        # Единая форма траты (2026-10-13): правило v1 «чек с фото не правится» снято.
         photo = make_receipt(samples.lidl_store(), "EUR", date(2026, 9, 1), owner=local_user(), total=D("1.00"))
+        make_line(photo, raw_name="Brot", unit_price=D("1.0000"), amount=D("1.00"))
         url = f"/api/receipts/{photo.pk}/"
         response = self.patch({"total": "2"}, url)
-        self.assertEqual(response.status_code, 409)
-        self.assertEqual(response.json(), READ_ONLY)
-        self.assertTrue(Receipt.objects.filter(pk=photo.pk, total=D("1.00")).exists())
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual((response.json()["source"], response.json()["total"]), ("photo", "2.00"))
         self.assertEqual(self.client.put(url, {}, format="json").status_code, 405)
-        # A photo receipt can be deleted (test_receipt_delete_api), only not changed.
         self.assertEqual(self.client.delete(url).status_code, 204)
 
     def test_patch_validation_leaves_spend_unchanged(self):
@@ -274,12 +270,12 @@ class ManualChangeTests(ManualMixin, TestCase):
         wrong = self.patch({"payment_method": "visa"})
         self.assertEqual(fields(wrong), {"payment_method": ["Способ оплаты — kaspi_gold, forte, cash, crypto, card либо пусто."]})
         self.assertEqual(self.client.get("/api/receipts/").json()["results"][-1]["payment_method"], "")
-        # У чека с фото поле есть, но правка по-прежнему не принимается.
+        # У чека с фото способ правится тем же путём.
         photo = make_receipt(samples.lidl_store(), "EUR", date(2026, 9, 1), owner=local_user(), total=D("1.00"))
         url = f"/api/receipts/{photo.pk}/"
         self.assertEqual(self.client.get(url).json()["payment_method"], "")
-        self.assertEqual(self.patch({"payment_method": "cash"}, url).json(), READ_ONLY)
-        self.assertEqual(Receipt.objects.get(pk=photo.pk).payment_method, "")
+        self.assertEqual(self.patch({"payment_method": "cash"}, url).json()["payment_method"], "cash")
+        self.assertEqual(Receipt.objects.get(pk=photo.pk).payment_method, "cash")
 
 
 @tag("integration")

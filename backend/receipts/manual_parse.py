@@ -38,6 +38,7 @@ from django.utils import timezone
 from accounts.access import visible_receipts_q
 from catalog.models import Category
 from receipts import history, manual
+from receipts.decimal_math import round_decimal
 from receipts.models import ManualParseRequest, Receipt
 from recognition.providers.base import ProviderError, RunContext
 from recognition.queue import db_now
@@ -190,8 +191,11 @@ def draft_from_output(data, payload):
         raise ParseOutputError() from None
     if data["kind"] == "income":
         return _income_draft(data, payload)
-    lines = [{"name": line["name"].strip(), "amount": line["amount"], "quantity": line["quantity"],
-              "category": line["category"]} for line in data["lines"]]
+    # Строка черновика — того же вида, что строка формы и распознанного чека (единая форма траты): название,
+    # количество, единица, цена за единицу, сумма, скидка, категория; цена — сумма / количество после проверки.
+    lines = [{"name": line["name"].strip(), "quantity": line["quantity"] or "1", "unit": "pcs",
+              "amount": line["amount"], "discount_amount": "0", "category": line["category"]}
+             for line in data["lines"]]
     body = {
         "total": data["total"], "currency": data["currency"] or payload["default_currency"],
         "category": data["category"], "purchased_on": data["purchased_on"] or payload["today"],
@@ -206,6 +210,9 @@ def draft_from_output(data, payload):
         raise ParseOutputError() from None
     if lines:
         body["total"] = str(sum((Decimal(line["amount"]) for line in lines), Decimal("0.00")))
+        for line in lines:
+            line["unit_price"] = format(round_decimal(Decimal(line["amount"]) / Decimal(line["quantity"]), 4)
+                                        .normalize(), "f")
     return body
 
 

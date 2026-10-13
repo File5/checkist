@@ -19,10 +19,12 @@ import { draftFromSuggestion } from './suggestions'
 import TextHint from './TextHint'
 import { caretAfter, charsBefore, evaluateAmount, groupDigits, hasOperator, ungrouped } from './amount-calc'
 import {
-  categoryChips, categoryTree, chipParent, chipToneId, dateChoice, sumText, dayBefore, sentIndexes, draftBody, draftFromReceipt, emptyDraft, fieldScrollDelta,
-  linesTotal, filledLines, LINES_MAX, newLine, saveLabel, savedNotice, serverErrors, setExpenseNotice, shortDay, todayISO, updatedNotice, visibleChips,
-  draftFromIncome, incomeBody, incomeChip,
+  categoryChips, categoryTree, chipParent, chipToneId, dateChoice, sumText, dayBefore, draftBody, draftFromReceipt, emptyDraft, fieldScrollDelta,
+  itemizedTotal, filledLines, saveLabel, savedNotice, serverErrors, setExpenseNotice, shortDay, todayISO, updatedNotice, visibleChips,
+  draftFromIncome, incomeBody, incomeChip, withoutIds,
 } from './expense-form'
+import LineEditor from './LineEditor'
+import { methodLabels } from '../../lib/payment-methods'
 import { setIncomeNotice } from '../incomes/incomes-state'
 import Sheet from '../../components/Sheet'
 import { categoryTone } from '../../lib/category-tone'
@@ -32,13 +34,25 @@ import MethodChips from '../../components/MethodChips'
 import { lastMethod } from '../../lib/payment-methods'
 import { ownerName, personName } from '../../lib/people'
 import { DeleteSpend } from './ManualSpendActions'
-import type { ExpenseDraft, ExpenseErrors, LineDraft } from './expense-form'
+import type { ExpenseDraft, ExpenseErrors } from './expense-form'
 import './Expense.css'
 
-type Loaded = { draft: ExpenseDraft; chips: Category[]; incomeChips: Category[]; byline?: string }
+type Loaded = { draft: ExpenseDraft; chips: Category[]; incomeChips: Category[]; byline?: string; media?: ExpenseFormProps['media'] }
 /** «Трата / Доход»: what the form saves. */
 export type FormKind = 'spend' | 'income'
-type LoadState = { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'read-only' } | { kind: 'ok'; data: Loaded }
+type LoadState = { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'ok'; data: Loaded }
+
+/** Every line of a receipt — a long photo receipt has more than one page: the form sends them all back, and a saved
+ * line that is not sent is removed. */
+async function allReceiptLines(id: number, signal: AbortSignal): Promise<LocalApiResult<{ results: Line[] }>> {
+  const results: Line[] = []
+  for (let page = 1; ; page += 1) {
+    const result = await getReceiptLines(id, { page, page_size: 200 }, { signal })
+    if (result.kind !== 'ok') return result
+    results.push(...result.data.results)
+    if (page >= result.data.pages) return { kind: 'ok', data: { results } }
+  }
+}
 
 /** The keys of the amount calculator and their names for a screen reader. */
 const CALC_KEYS = [['+', 'Плюс'], ['−', 'Минус'], ['×', 'Умножить'], ['÷', 'Разделить']] as const
@@ -68,6 +82,8 @@ export type ExpenseFormProps = {
   kind?: FormKind
   /** The income being changed: the form ends with «Удалить доход». */
   incomeId?: number
+  /** The photo of a photo receipt being changed, kept beside the form to check the lines against. */
+  media?: { thumb: string | null; image: string | null }
 }
 
 /** A focused field of the form stays above the save bar and the keyboard of a phone: after the focus and whenever the
@@ -123,16 +139,15 @@ const openPicker = (input: HTMLInputElement) => {
 }
 
 /** The form itself, without loading and saving: the markup tests render it directly. */
-export function ExpenseForm({ draft, chips, errors, saving, failure, receiptId, onChange, onSubmit, today = todayISO(), initialSheet = false, byline, narrow = false, kind = 'spend', incomeId }: ExpenseFormProps) {
+export function ExpenseForm({ draft, chips, errors, saving, failure, receiptId, onChange, onSubmit, today = todayISO(), initialSheet = false, byline, narrow = false, kind = 'spend', incomeId, media }: ExpenseFormProps) {
   const [sheet, setSheet] = useState(initialSheet)
   const [search, setSearch] = useState('')
   const formRef = useRef<HTMLFormElement>(null)
-  const added = useRef<number | undefined>(undefined)
   const income = kind === 'income'
-  const itemized = filledLines(draft.lines).length > 0
-  const sum = linesTotal(draft.lines)
-  // Errors name a position by its place among the sent ones: an untouched empty row is not sent.
-  const sent = sentIndexes(draft.lines)
+  const photo = draft.source === 'photo'
+  // A photo receipt is its lines while it has any; with none left it becomes one amount, like any spend.
+  const itemized = (photo && draft.lines.length > 0) || filledLines(draft.lines).length > 0
+  const sum = itemizedTotal(draft)
   // The short list of income categories is shown whole.
   const shown = income ? chips : visibleChips(chips, draft.category, false)
   const choice = dateChoice(draft.date, today)
@@ -164,18 +179,23 @@ export function ExpenseForm({ draft, chips, errors, saving, failure, receiptId, 
     input.setSelectionRange(at, at)
     caret.current = undefined
   })
-  const setLine = (key: number, patch: Partial<LineDraft>) => set({ lines: draft.lines.map((line) => line.key === key ? { ...line, ...patch } : line) })
-  const addLine = () => { const line = newLine(); added.current = line.key; set({ lines: [...draft.lines, line] }) }
   const submit = (event: FormEvent) => { event.preventDefault(); onSubmit() }
   useKeyboardSafeFields(formRef)
   useFocusFirstError(formRef, errors)
-  // A new position is typed right away.
-  useEffect(() => {
-    if (added.current === undefined) return
-    document.getElementById(`expense-line-${added.current}-name`)?.focus()
-    added.current = undefined
-  }, [draft.lines])
   return <form ref={formRef} className="expense-form" onSubmit={submit} noValidate aria-busy={saving}>
+    {/* The source is only a mark (one form for every spend): the photo stays beside the lines to check them against. */}
+    {photo && receiptId !== undefined && <section className="expense-card expense-source" aria-label="Фото чека">
+      {media?.thumb || media?.image
+        ? <a className="expense-source-photo" href={media.image ?? media.thumb ?? undefined} target="_blank" rel="noreferrer">
+          <img src={media.thumb ?? media.image ?? undefined} alt="Фото чека" loading="lazy" /></a>
+        : <span className="expense-source-photo expense-source-empty" aria-hidden="true" />}
+      <div className="expense-source-text">
+        <p className="expense-source-title">Чек с фото</p>
+        <p className="expense-hint-note">Сверьте строки с фото: правка меняет итог, скидки и налог чека.</p>
+        <Link className="expense-source-link" to={`/receipts/${receiptId}`}>Открыть чек с фото</Link>
+      </div>
+    </section>}
+    {draft.statement && <p className="expense-source-mark" role="note">{`Из выписки: ${draft.statement.replace(/^Выписка /, '')}`}</p>}
     <section className="expense-card expense-amount">
       <label htmlFor="expense-amount" className="expense-label">{itemized ? 'Сумма позиций' : 'Сумма'}</label>
       <div className="expense-amount-row">
@@ -281,7 +301,9 @@ export function ExpenseForm({ draft, chips, errors, saving, failure, receiptId, 
       </div>}
       {!income && <div className="expense-row-block expense-method">
         <span id="expense-method-label" className="expense-row-label">Способ оплаты</span>
-        <MethodChips value={draft.method ?? ''} onChange={(method) => set({ method })} labelledBy="expense-method-label" />
+        {draft.statement
+          ? <p className="expense-method-fixed">{draft.method ? methodLabels[draft.method] : draft.statement} — банк выписки</p>
+          : <MethodChips value={draft.method ?? ''} onChange={(method) => set({ method })} labelledBy="expense-method-label" />}
         {fieldError(errors, 'payment_method')}
       </div>}
       <div className="expense-row-block">
@@ -292,32 +314,9 @@ export function ExpenseForm({ draft, chips, errors, saving, failure, receiptId, 
         </label>
         {fieldError(errors, 'note')}
       </div>
-      {!income && <div className="expense-row-block expense-lines" role="group" aria-labelledby="expense-lines-heading">
-        <div className="expense-row">
-          <span id="expense-lines-heading" className="expense-row-label">Позиции</span>
-          {draft.lines.length < LINES_MAX && <button type="button" className="expense-add-line" onClick={addLine}>
-            <span aria-hidden="true">+</span> Добавить<span className="expense-visually-hidden"> позицию</span></button>}
-        </div>
-        {draft.lines.length > 0 && <ol className="expense-line-list">{draft.lines.map((line, index) => <li key={line.key} className="expense-line">
-          <div className="expense-line-fields">
-            <label className="expense-visually-hidden" htmlFor={`expense-line-${line.key}-name`}>Позиция {index + 1}</label>
-            <input id={`expense-line-${line.key}-name`} className="expense-line-name" autoComplete="off" placeholder="Название" value={line.name}
-              aria-invalid={Boolean(errors[`lines.${sent[index]}.name`])} aria-describedby={describedBy(errors, `lines.${sent[index]}.name`)}
-              onChange={(event) => setLine(line.key, { name: event.target.value })} />
-            <label className="expense-visually-hidden" htmlFor={`expense-line-${line.key}-amount`}>Сумма позиции {index + 1}</label>
-            <input id={`expense-line-${line.key}-amount`} className="expense-line-amount" inputMode="decimal" autoComplete="off" placeholder="0" value={line.amount}
-              aria-invalid={Boolean(errors[`lines.${sent[index]}.amount`])} aria-describedby={describedBy(errors, `lines.${sent[index]}.amount`)}
-              onChange={(event) => setLine(line.key, { amount: event.target.value })} />
-            <button type="button" className="expense-line-remove" aria-label={`Убрать позицию ${index + 1}`}
-              onClick={() => set({ lines: draft.lines.filter((other) => other.key !== line.key) })}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18M6 6l12 12" /></svg>
-            </button>
-          </div>
-          {fieldError(errors, `lines.${sent[index]}.name`)}
-          {fieldError(errors, `lines.${sent[index]}.amount`)}
-        </li>)}</ol>}
-        {fieldError(errors, 'lines')}
-      </div>}
+      {!income && <LineEditor lines={draft.lines} errors={errors} chips={chips} currency={draft.currency} narrow={narrow}
+        onChange={(lines) => set({ lines })} extraDiscount={draft.extraDiscount}
+        defaultCategory={draft.category !== null ? 'Как у траты' : photo ? 'Как у товара' : 'Без категории'} />}
     </section>
 
     {byline && <p className="expense-byline">{byline}</p>}
@@ -386,7 +385,7 @@ export default function ExpensePage({ receiptId, repeat, income = false, incomeI
         : Promise.all([getReceipt(source, { signal }), getReceiptLines(source, { page_size: 200 }, { signal })])
       const loaded = receiptId === undefined
         ? Promise.all([categories, getManualDefaults({ signal })])
-        : Promise.all([categories, getReceipt(receiptId, { signal }), getReceiptLines(receiptId, { page_size: 200 }, { signal })])
+        : Promise.all([categories, getReceipt(receiptId, { signal }), allReceiptLines(receiptId, signal)])
       const [categoryResult, ...rest] = await loaded
       const [copiedReceipt, copiedLines] = receiptId === undefined && copied ? await copied : []
       const incomeResult = incomeCategories ? await incomeCategories : undefined
@@ -399,24 +398,26 @@ export default function ExpensePage({ receiptId, repeat, income = false, incomeI
       let next: ExpenseDraft
       let frequent: number[] = []
       let byline: string | undefined
+      let media: Loaded['media']
       if (receiptId === undefined) {
         const defaults = values[1] as ManualDefaults
         next = handed ? draftFromPending(handed.body, categoryData.results) : emptyDraft(defaults.currency)
         if (copiedReceipt?.kind === 'ok' && copiedLines?.kind === 'ok' && copiedReceipt.data.source === 'manual') {
-          next = { ...draftFromReceipt(copiedReceipt.data, copiedLines.data.results), date: todayISO() }
+          next = { ...withoutIds(draftFromReceipt(copiedReceipt.data, copiedLines.data.results)), date: todayISO() }
         }
         frequent = defaults.frequent_categories
         // The method chosen last on this device, unless the spend being repeated or sent later says its own.
         if (next.method === undefined) next = { ...next, method: lastMethod() }
       } else {
+        // Any source — a photo receipt, a manual spend, a spend from a statement — is changed by this one form.
         const receipt = values[1] as Receipt
-        if (receipt.source !== 'manual') { setLoad({ kind: 'read-only' }); return }
         next = draftFromReceipt(receipt, (values[2] as { results: Line[] }).results)
         byline = `Добавил: ${ownerName(receipt)} · ${receipt.hidden ? 'скрыта от семьи' : 'видна всей семье'}`
+        if (receipt.source === 'photo') media = { thumb: receipt.preview_thumb_url, image: receipt.preview_image_url }
       }
       setDraft(next)
       setLoad({ kind: 'ok', data: { draft: next, chips: categoryChips(categoryData.results, frequent),
-        incomeChips: incomeResult?.kind === 'ok' ? incomeResult.data.map(incomeChip) : [], byline } })
+        incomeChips: incomeResult?.kind === 'ok' ? incomeResult.data.map(incomeChip) : [], byline, media } })
     })()
     return () => controller.abort()
   }, [receiptId, incomeId, repeat, attempt, handed])
@@ -481,8 +482,6 @@ export default function ExpensePage({ receiptId, repeat, income = false, incomeI
   if (load.kind === 'loading') return <RequestState kind="loading" message="Загружаем форму…" />
   if (load.kind === 'error') return <RequestState kind="error" message={load.message}
     onRetry={() => { setLoad({ kind: 'loading' }); setAttempt((value) => value + 1) }} />
-  if (load.kind === 'read-only') return <RequestState kind="empty" message="Чек с фото не меняется: править можно только трату, внесённую вручную."
-    action={<Link className="action-link" to={`/receipts/${receiptId}`}>К чеку</Link>} />
   const { chips: spendChips, incomeChips } = load.data
   const chips = kind === 'income' ? incomeChips : spendChips
   const me = session.kind === 'user' ? personName(session.user.username, session.user.display_name) : undefined
@@ -509,6 +508,7 @@ export default function ExpensePage({ receiptId, repeat, income = false, incomeI
     {isNew && <TextHint income={kind === 'income'} onFill={(parsed) => parsed.kind === 'income' ? fill('income', draftFromParse(parsed, incomeChips)) : fill('spend', draftFromParse(parsed, spendChips))}
       onRepeat={(spend) => fill('spend', draftFromSuggestion(spend, spendChips, todayISO()))} />}
     <ExpenseForm kind={kind} draft={draft ?? load.data.draft} chips={chips} errors={errors} saving={saving} failure={failure}
-      receiptId={receiptId} incomeId={incomeId} onChange={setDraft} onSubmit={() => { void save() }} byline={byline} narrow={narrow} />
+      receiptId={receiptId} incomeId={incomeId} onChange={setDraft} onSubmit={() => { void save() }} byline={byline} narrow={narrow}
+      media={load.data.media} />
   </div>
 }

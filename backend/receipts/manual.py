@@ -1,18 +1,28 @@
-"""Трата без чека: ``Receipt(source=manual)`` — создание, правка и удаление.
+"""Трата: создание ручной траты и правка любой траты — с фото, ручной, из выписки — одним путём.
 
-Трата — обычный чек, чтобы списки и статистика оставались одной выборкой. Без
-позиций это одна строка на всю сумму: названная покупкой («Что купили», ``item_name``)
-либо, без названия, «<категория>»; с позициями — строки с названиями человека.
+Единая форма траты (2026-10-13): источник (``Receipt.source`` ``photo`` / ``manual``, выписка — ручная трата
+со строкой ``statements.StatementRow``) — только пометка; ``create`` и ``update`` применяют одни правила ко всем.
 
-Названная покупка — товар каталога (2026-10-13): строка «Что купили» и каждая позиция
-связываются с товаром по правилу импорта чеков (``find_or_create_products``), новый товар
-попадает в «Не разобрано». Строка «<категория>» (выписки, регулярные платежи, трата без
-названия) товаром не становится. Категорию строки хранит ``ReceiptLine.category``: она
-важнее категории товара, поэтому статистика по категориям от товара не зависит.
+Трата — обычный чек, чтобы списки и статистика оставались одной выборкой. Строка как в чеке: название,
+количество, единица (``catalog.units.Unit``), цена за единицу, сумма до скидки (``amount``), скидка
+(``discount_amount``) и категория строки. Итог траты — сумма строк за вычетом скидок (у чека с ценами без
+налога — плюс налог). Без позиций это одна строка на всю сумму: названная покупкой («Что купили»,
+``item_name``) либо, без названия, «<категория>».
 
-Три правила дедупликации к ручным тратам не применяются (условие ``source='photo'``
-у ограничений). Место — свободный текст: найденный по названию магазин либо новый
-продавец с магазином; пусто — «Без места» (``store`` NULL).
+Названная строка — товар каталога (``find_or_create_products``, правило ветки товаров: свой личный тёзка, общий
+товар по написанию места и названию, иначе новый личный товар владельца в «Не разобрано»). Правка сохраняет
+товарную связь строки (``id`` в теле), пока её название не менялось (``receipts.dedup.name_key``); строка
+«<категория>» (выписки, регулярные платежи, трата без названия) товаром не становится. Категорию строки хранит
+``ReceiptLine.category``: она важнее категории товара. Наблюдения цены считаются из строк при чтении
+(``receipts.prices``), поэтому следуют за правкой сами.
+
+Скидка строки — строки ``ReceiptDiscount`` этой позиции (их сумма равна ``discount_amount``), скидки на весь
+чек не меняются; ``discount_total`` — сумма всех скидок. Деньги строк поменялись — пересчитываются налог строки
+по её ставке, итоги по ставкам (``ReceiptTax``) и итог; иначе напечатанные значения остаются.
+
+Три правила дедупликации (у чеков с фото, в пределах владельца) не ломаются: правка, которая сделала бы чек
+копией другого своего чека, отказывает (``receipt: duplicate``). У чека с фото место обязательно, время покупки
+сохраняется (меняется только дата); у траты из выписки способ оплаты — банк, комментарий кончается « · Выписка …».
 
 Разбор тела — ``parse``: ошибки копятся и уходят одним ``ManualInvalid`` с полями
 ``{"имя": "причина"}``; тексты причин — у слоя API.
@@ -24,17 +34,17 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from django.db import IntegrityError, connection, transaction
-from django.db.models import Count, F, Q
+from django.db.models import Count, F, Max, Q, Sum
 from django.utils import timezone
 
 from catalog.models import Category, GenericProduct, Product
-from catalog.units import BaseUnit
+from catalog.units import BaseUnit, Unit
 from receipts.decimal_math import price_context, round_decimal
 from receipts.dedup import name_key
-from receipts.models import ProductAlias, Receipt, ReceiptLine
+from receipts.models import ProductAlias, Receipt, ReceiptDiscount, ReceiptLine
 from stores.models import Country, Currency, Merchant, Store
 
-MAX_LINES = 100
+MAX_LINES = 300
 NAME_MAX = 200
 NOTE_MAX = 1000
 STORE_NAME_MAX = 100
@@ -45,12 +55,29 @@ DEFAULT_COUNTRY = "KZ"
 COUNTRY_BY_CURRENCY = {"RUB": "RU", "KZT": "KZ", "EUR": "DE"}
 TIMEZONE_BY_COUNTRY = {"RU": "Europe/Moscow", "KZ": "Asia/Almaty", "DE": "Europe/Berlin"}
 UNASSIGNED = "Не разобрано"  # как у импорта (recognition.resolution.resolve_product)
+DISCOUNT_NAME = "Скидка"  # строка ReceiptDiscount скидки, введённой в форме
+# Позиции строк переставляются через временный диапазон: (receipt, position) уникальна.
+POSITION_SHIFT = 10000
+# |количество × цена − сумма| строки: копейка (как у receipts.validation) плюс округление цены до 4 знаков.
+PRICE_TOLERANCE = Decimal("0.01")
+PRICE_STEP = Decimal("0.00005")
+# Ограничения дедупликации чеков с фото (receipts.models.Receipt.Meta).
+DEDUP_CONSTRAINTS = (
+    "receipts_receipt_owner_fiscal_key_uniq", "receipts_receipt_owner_store_number_uniq",
+    "receipts_receipt_owner_store_time_total_uniq",
+)
+# Комментарий траты из выписки кончается « · Выписка …» (statements.drafts.note_for, api.export).
+STATEMENT_MARK = re.compile(r"\s*·\s*Выписка[^·]*$")
 
 FIELDS = ("total", "currency", "category", "purchased_on", "store_name", "note", "lines", "payment_method", "item_name")
-LINE_FIELDS = ("name", "amount", "quantity", "category")
+LINE_FIELDS = ("id", "name", "amount", "quantity", "unit", "unit_price", "discount_amount", "category")
 _MONEY = re.compile(r"[0-9]{1,12}(?:\.[0-9]{1,2})?")
+_SIGNED_MONEY = re.compile(r"-?[0-9]{1,12}(?:\.[0-9]{1,2})?")
 _QUANTITY = re.compile(r"[0-9]{1,9}(?:\.[0-9]{1,3})?")
+_SIGNED_QUANTITY = re.compile(r"-?[0-9]{1,9}(?:\.[0-9]{1,3})?")
+_PRICE = re.compile(r"[0-9]{1,10}(?:\.[0-9]{1,4})?")
 _ONE = Decimal(1)
+_ZERO = Decimal("0.00")
 
 
 class ManualInvalid(Exception):
@@ -63,24 +90,36 @@ class ManualInvalid(Exception):
 
 @dataclass
 class LineInput:
+    """Строка траты из тела. Необязательные поля (``None``) у сохранённой строки (``id``) остаются её,
+    у новой — значения по умолчанию: единица «шт», цена — сумма / количество, без скидки."""
+
     name: str
     amount: Decimal
-    quantity: Decimal = _ONE
+    quantity: Decimal | None = _ONE
     category: int | None = None
     named: bool = True  # покупка, названная человеком, — товар каталога; False — строка «<категория>»
+    id: int | None = None  # сохранённая строка этой траты: правится на месте
+    unit: str | None = None
+    unit_price: Decimal | None = None
+    discount: Decimal | None = None
 
 
 # --- разбор тела ---
 
 def _number(value, pattern):
     """``Decimal`` > 0 из строки или числа JSON; ``None`` — неверный формат или не больше нуля."""
+    number = _decimal(value, pattern)
+    return number if number is not None and number > 0 else None
+
+
+def _decimal(value, pattern):
+    """``Decimal`` любого знака из строки или числа JSON по шаблону ``pattern``; ``None`` — неверный формат."""
     if isinstance(value, bool) or not isinstance(value, (str, int, float)):
         return None
     text = str(value).strip().replace(",", ".") if not isinstance(value, float) else repr(value)
     if not pattern.fullmatch(text):
         return None
-    number = Decimal(text)
-    return number if number > 0 else None
+    return Decimal(text)
 
 
 def _text(errors, name, value, limit, *, required):
@@ -166,6 +205,8 @@ def parse(data):
 
 
 def _parse_lines(errors, raw, refs):
+    """Строки тела. Знак суммы и количества проверяет запись (``_check_lines``): минус и ноль допустимы только
+    у сохранённой строки, прочитанной с таким знаком (возврат тары, бесплатная позиция чека с фото)."""
     if raw is None:
         return []
     if not isinstance(raw, list):
@@ -174,7 +215,7 @@ def _parse_lines(errors, raw, refs):
     if len(raw) > MAX_LINES:
         errors["lines"] = "size"
         return []
-    lines = []
+    lines, seen = [], set()
     for index, item in enumerate(raw):
         prefix = f"lines.{index}."
         if not isinstance(item, dict):
@@ -183,18 +224,38 @@ def _parse_lines(errors, raw, refs):
         for key in item:
             if key not in LINE_FIELDS:
                 errors[prefix + key] = "unknown_field"
+        pk = _id(errors, prefix + "id", item.get("id"))
+        if pk is not None:
+            if pk in seen:
+                errors[prefix + "id"] = "unknown"
+            seen.add(pk)
         name = _text(errors, prefix + "name", item.get("name"), NAME_MAX, required=True)
-        amount = _number(item.get("amount"), _MONEY)
+        amount = _decimal(item.get("amount"), _SIGNED_MONEY)
         if amount is None:
             errors[prefix + "amount"] = "money" if "amount" in item else "required"
-        quantity = _ONE
+        quantity = _ONE if pk is None else None
         if item.get("quantity") is not None:
-            quantity = _number(item["quantity"], _QUANTITY)
-            if quantity is None:
+            quantity = _decimal(item["quantity"], _SIGNED_QUANTITY)
+            if quantity is None or quantity == 0:
                 errors[prefix + "quantity"] = "quantity"
+        if pk is None:  # новая строка — только больше нуля; сохранённую проверяет _check_lines
+            if amount is not None and amount <= 0:
+                errors[prefix + "amount"] = "money"
+            if quantity is not None and quantity < 0:
+                errors[prefix + "quantity"] = "quantity"
+        unit = item.get("unit")
+        if unit is not None and unit not in Unit.values:
+            errors[prefix + "unit"] = "unit"
+        price = None
+        if item.get("unit_price") is not None and (price := _decimal(item["unit_price"], _PRICE)) is None:
+            errors[prefix + "unit_price"] = "price"
+        discount = None
+        if item.get("discount_amount") is not None and (discount := _decimal(item["discount_amount"], _MONEY)) is None:
+            errors[prefix + "discount_amount"] = "discount"
         category = refs[prefix + "category"] = _id(errors, prefix + "category", item.get("category"))
-        if name is not None and amount is not None and quantity is not None:
-            lines.append(LineInput(name, amount, quantity, category))
+        if name is not None and amount is not None and not any(key.startswith(prefix) for key in errors):
+            lines.append(LineInput(name, amount, quantity, category, id=pk, unit=unit, unit_price=price,
+                                   discount=discount))
     return lines
 
 
@@ -365,31 +426,220 @@ def purchase_moment(purchased_on, store):
     return datetime.combine(purchased_on, time(12), tzinfo=zone)
 
 
+def same_wall_clock(purchased_at, purchased_on, store_before, store):
+    """Момент чека с фото после правки даты либо места: то же время на часах, новая дата в поясе нового места."""
+    local = purchased_at.astimezone(_zone(store_before))
+    return datetime.combine(purchased_on, time(local.hour, local.minute, local.second, local.microsecond),
+                            tzinfo=_zone(store))
+
+
+# --- трата из выписки ---
+
+def statement_bank(receipt):
+    """Банк выписки, из которой сохранена трата (``kaspi_gold`` / ``forte``), иначе ``None``: строка выписки
+    (``statements.StatementRow.receipt``) — пометка источника, по ней и правка оставляет трату «из выписки»."""
+    if receipt.source != Receipt.Source.MANUAL:
+        return None
+    from statements.models import StatementRow
+
+    return StatementRow.objects.filter(receipt_id=receipt.pk).values_list("statement__bank", flat=True).first()
+
+
+def statement_note(note, bank):
+    """Комментарий траты из выписки: текст человека и пометка « · Выписка …» в конце (как ``note_for``)."""
+    from statements.drafts import SOURCE_NOTE
+
+    body = STATEMENT_MARK.sub("", note or "").strip()
+    mark = SOURCE_NOTE.get(bank, "Выписка")
+    return f"{body} · {mark}" if body else f"· {mark}"
+
+
 # --- запись ---
 
 def _rows(lines, total, category, names, item_name=""):
-    """Строки траты: позиции человека либо одна строка на всю сумму — «Что купили» или «<категория>»."""
+    """Строки траты: позиции человека (без своей категории — категория траты) либо одна строка на всю сумму —
+    «Что купили» или «<категория>»."""
     if not lines:
         if item_name:
             return [LineInput(item_name, total, _ONE, category)]
         return [LineInput(names[category], total, _ONE, category, named=False)]
-    return [LineInput(line.name, line.amount, line.quantity, line.category or category) for line in lines]
+    for line in lines:
+        line.category = line.category or category
+    return lines
 
 
-def _write_lines(receipt, rows):
-    """Строки заново; названные — с товаром каталога (``find_or_create_products``)."""
-    receipt.lines.all().delete()
-    products = find_or_create_products([row.name for row in rows if row.named], receipt.owner, receipt.store)
+def _check_lines(errors, rows, current):
+    """Дополняет строки значениями по умолчанию и проверяет знак, цену и скидку.
+
+    ``rows`` — строки по порядку тела, ``current`` — сохранённые строки траты по ``id``. Новая строка — с суммой
+    и количеством больше нуля (это проверяет ``parse``); сохранённая может сохранить ноль либо минус, с которыми
+    она прочитана (возврат тары, бесплатная позиция), знаки суммы и количества совпадают. Цена за единицу:
+    переданная обязана дать сумму (``количество × цена``, допуск — копейка и округление цены), без неё — прежняя,
+    если сумма и количество строки те же, иначе ``сумма / количество``. Скидка — от нуля до суммы строки.
+    """
+    for index, row in enumerate(rows):
+        prefix = f"lines.{index}."
+        saved = None
+        if row.id is not None:
+            saved = current.get(row.id)
+            if saved is None:
+                errors[prefix + "id"] = "unknown"
+                continue
+        if row.quantity is None:
+            row.quantity = saved.quantity
+        if row.unit is None:
+            row.unit = saved.unit if saved is not None else Unit.PCS
+        if row.discount is None:
+            row.discount = saved.discount_amount if saved is not None else _ZERO
+        signed = saved is not None and saved.amount <= 0
+        returned = saved is not None and saved.kind == ReceiptLine.Kind.DEPOSIT_RETURN
+        if row.amount <= 0 and not signed or returned and row.amount > 0:
+            errors[prefix + "amount"] = "money"
+        if row.amount > 0 > row.quantity or row.amount < 0 < row.quantity:
+            errors[prefix + "quantity"] = "quantity"
+        with price_context():
+            if row.unit_price is None:
+                if saved is not None and (row.amount, row.quantity) == (saved.amount, saved.quantity):
+                    row.unit_price = saved.unit_price
+                else:
+                    row.unit_price = round_decimal(row.amount / row.quantity, 4)
+                if row.unit_price >= 10 ** 10:
+                    errors[prefix + "unit_price"] = "price"
+            elif abs(row.quantity * row.unit_price - row.amount) > PRICE_TOLERANCE + abs(row.quantity) * PRICE_STEP:
+                errors[prefix + "unit_price"] = "price_mismatch"
+        if row.discount > abs(row.amount):
+            errors[prefix + "discount_amount"] = "discount"
+
+
+def _paid(rows):
+    """Сумма строк за вычетом их скидок."""
     with price_context():
-        ReceiptLine.objects.bulk_create([
-            ReceiptLine(
-                receipt=receipt, position=position, kind=ReceiptLine.Kind.PRODUCT, raw_name=row.name,
-                quantity=row.quantity, unit_price=round_decimal(row.amount / row.quantity, 4),
-                amount=row.amount, category_id=row.category,
-                product=products.get(name_key(row.name)) if row.named else None,
-            )
-            for position, row in enumerate(rows, start=1)
-        ])
+        return sum((row.amount - row.discount for row in rows), _ZERO)
+
+
+def _apply_lines(receipt, rows, current):
+    """Строки траты по ``rows``: строка с ``id`` правится на месте, без — создаётся, не названная в теле —
+    удаляется. Возвращает ``True``, если поменялись деньги строк (состав, сумма либо скидка).
+
+    Товарная связь сохранённой строки остаётся, пока её название то же (``name_key``); новая и переименованная
+    названная строка связывается с товаром по правилу трат (``find_or_create_products``), строка «<категория>» —
+    без товара. Скидка строки — одна строка ``ReceiptDiscount`` на её сумму; не менялась — прежние строки скидок
+    остаются. Поменялись деньги строки со ставкой налога — налог строки считается заново.
+    """
+    by_id = {line.pk: line for line in current}
+    kept = {row.id for row in rows if row.id is not None}
+    renamed = [row.name for row in rows if row.named
+               and (row.id is None or name_key(row.name) != name_key(by_id[row.id].raw_name))]
+    products = find_or_create_products(renamed, receipt.owner, receipt.store) if renamed else {}
+    removed = {pk for pk in by_id if pk not in kept}
+    changed = bool(removed) or len(kept) != len(rows)
+    if removed:
+        # Залог удалённой строки остаётся строкой без родителя: каскад его не заберёт.
+        ReceiptLine.objects.filter(pk__in=kept, parent_id__in=removed).update(parent=None)
+        ReceiptLine.objects.filter(pk__in=removed).delete()
+    if kept:
+        ReceiptLine.objects.filter(pk__in=kept).update(position=F("position") + POSITION_SHIFT)
+    next_discount = (receipt.discounts.aggregate(top=Max("position"))["top"] or 0) + 1
+    with price_context():
+        for position, row in enumerate(rows, start=1):
+            fresh = row.id is None
+            line = ReceiptLine(receipt=receipt, kind=ReceiptLine.Kind.PRODUCT) if fresh else by_id[row.id]
+            before = None if fresh else (line.amount, line.discount_amount)
+            if line.parent_id in removed:
+                line.parent = None
+            if fresh or name_key(row.name) != name_key(line.raw_name):
+                line.product = products.get(name_key(row.name)) if row.named else None
+                line.name_i18n = {}
+            line.raw_name = row.name
+            line.position = position
+            line.quantity, line.unit, line.unit_price = row.quantity, row.unit, row.unit_price
+            line.amount, line.discount_amount, line.category_id = row.amount, row.discount, row.category
+            if not fresh and before != (line.amount, line.discount_amount):
+                changed = True
+                if line.tax_amount is not None:
+                    line.tax_amount = _line_tax(line, receipt.prices_include_tax)
+            line.save()
+            if fresh or before[1] != line.discount_amount:
+                if not fresh:
+                    line.discounts.all().delete()
+                if line.discount_amount:
+                    ReceiptDiscount.objects.create(receipt=receipt, line=line, position=next_discount,
+                                                   name=DISCOUNT_NAME, amount=line.discount_amount)
+                    next_discount += 1
+    return changed
+
+
+def _line_tax(line, include):
+    """Налог строки по её ставке: из оплаченной суммы (цены с налогом) либо сверху (цены без налога)."""
+    if line.tax_rate_id is None:
+        return None
+    rate = line.tax_rate.rate
+    if rate is None:  # без НДС
+        return _ZERO
+    with price_context():
+        paid = line.amount - line.discount_amount
+        return round_decimal(paid * rate / (100 + rate) if include else paid * rate / 100, 2)
+
+
+def _recount(receipt):
+    """Скидки, итоги по ставкам и итог траты из её строк — после правки денег строк.
+
+    Итог — сумма строк за вычетом их скидок и скидок на весь чек; у чека с ценами без налога — плюс налог.
+    """
+    lines = list(receipt.lines.select_related("tax_rate"))
+    with price_context():
+        whole = receipt.discounts.filter(line__isnull=True).aggregate(total=Sum("amount"))["total"] or _ZERO
+        paid = sum((line.amount - line.discount_amount for line in lines), _ZERO) - whole
+        receipt.discount_total = sum((line.discount_amount for line in lines), _ZERO) + whole
+        taxes = list(receipt.taxes.select_related("tax_rate").order_by("pk"))
+        if taxes:
+            taxes = _retax(receipt, lines, taxes, paid, whole)
+        receipt.total = paid if receipt.prices_include_tax else paid + sum((tax.tax for tax in taxes), _ZERO)
+
+
+def _retax(receipt, lines, taxes, paid, whole):
+    """Итоги по ставкам (``ReceiptTax``) заново из оплаченной суммы ``paid`` (за вычетом скидок на чек ``whole``);
+    возвращает оставшиеся итоги.
+
+    Одна ставка — вся сумма. Несколько — по ставкам строк, если ставка есть у каждой оплачиваемой строки, все
+    они среди итогов и скидок на весь чек нет (итог ставки без строк удаляется); иначе прежние доли итогов,
+    остаток округления — последнему. Налог итога — по ставке (цены с налогом — изнутри, без — сверху).
+    """
+    include = receipt.prices_include_tax
+    rated = {tax.tax_rate_id for tax in taxes}
+    paying = [line for line in lines if line.amount - line.discount_amount]
+    if len(taxes) == 1:
+        bases = {taxes[0].tax_rate_id: paid}
+    elif not whole and all(line.tax_rate_id in rated for line in paying):
+        bases = dict.fromkeys(rated, _ZERO)
+        for line in paying:
+            bases[line.tax_rate_id] += line.amount - line.discount_amount
+    else:
+        old = [tax.gross if include else tax.net for tax in taxes]
+        weight = sum(old, _ZERO)
+        if not weight:
+            return taxes
+        bases, left = {}, paid
+        for tax, share in zip(taxes[:-1], old[:-1]):
+            bases[tax.tax_rate_id] = round_decimal(paid * share / weight, 2)
+            left -= bases[tax.tax_rate_id]
+        bases[taxes[-1].tax_rate_id] = left
+    kept = []
+    for tax in taxes:
+        base = bases.get(tax.tax_rate_id, _ZERO)
+        if not base and len(taxes) > 1:
+            tax.delete()
+            continue
+        rate = tax.tax_rate.rate or _ZERO
+        if include:
+            tax.gross, tax.tax = base, round_decimal(base * rate / (100 + rate), 2)
+            tax.net = base - tax.tax
+        else:
+            tax.net, tax.tax = base, round_decimal(base * rate / 100, 2)
+            tax.gross = base + tax.tax
+        tax.save()
+        kept.append(tax)
+    return kept
 
 
 def _category_names(*ids):
@@ -397,17 +647,19 @@ def _category_names(*ids):
     return dict(Category.objects.filter(pk__in=ids).values_list("pk", "name"))
 
 
-def _total(errors, lines, total):
-    """Итог траты с позициями: сумма позиций; переданный итог обязан с ней совпасть."""
-    with price_context():
-        computed = sum((line.amount for line in lines), Decimal("0.00"))
-    if total is not None and total != computed:
-        errors["total"] = "mismatch"
-    return computed
+def _save(receipt):
+    """Сохраняет шапку траты; копия другого своего чека с фото (три правила дедупликации) — ``receipt: duplicate``."""
+    try:
+        with transaction.atomic():
+            receipt.save()
+    except IntegrityError as error:
+        if any(name in str(error) for name in DEDUP_CONSTRAINTS):
+            raise ManualInvalid({"receipt": "duplicate"}) from None
+        raise
 
 
 def create(owner, data):
-    """Новая трата владельца ``owner`` по телу ``data``; ``ManualInvalid`` — тело не подошло."""
+    """Новая ручная трата владельца ``owner`` по телу ``data``; ``ManualInvalid`` — тело не подошло."""
     values = parse(data)
     errors = {}
     lines = values.get("lines") or []
@@ -415,9 +667,15 @@ def create(owner, data):
     total = values.get("total")
     item_name = values.get("item_name", "")
     if lines:
-        total = _total(errors, lines, total)
         if item_name:
             errors["item_name"] = "item_itemized"
+        rows = _rows(lines, total, category, {}, item_name)
+        _check_lines(errors, rows, {})
+        if not errors:
+            computed = _paid(rows)
+            if total is not None and total != computed:
+                errors["total"] = "mismatch"
+            total = computed
     else:
         if total is None:
             errors["total"] = "required"
@@ -425,6 +683,9 @@ def create(owner, data):
             errors["category"] = "required"
     if errors:
         raise ManualInvalid(errors)
+    if not lines:
+        rows = _rows([], total, category, _category_names(category), item_name)
+        _check_lines(errors, rows, {})
     currency = values.get("currency") or default_currency(Receipt.objects.filter(owner=owner))
     if not Currency.objects.filter(pk=currency).exists():
         raise ManualInvalid({"currency": "required"})
@@ -437,24 +698,31 @@ def create(owner, data):
             purchased_at=purchase_moment(purchased_on, store), total=total, note=values.get("note", ""),
             payment_method=values.get("payment_method", ""),
         )
-        _write_lines(receipt, _rows(lines, total, category, _category_names(category), item_name))
+        _apply_lines(receipt, rows, [])
+        _recount(receipt)
+        receipt.save(update_fields=["total", "discount_total"])
     return receipt
 
 
 def update(receipt_id, data):
-    """Правка ручной траты: переданные поля меняются, остальные остаются.
+    """Правка любой траты — с фото, ручной, из выписки: переданные поля меняются, остальные остаются.
 
-    ``lines`` в теле заменяет все строки (пустой список — трата без позиций на ``total``
-    в ``category``, названная ``item_name``; без него — «<категория>»). Без ``lines``: у траты
-    из одной строки ``total``, ``category`` и ``item_name`` меняют её (пустой ``item_name`` —
-    снова «<категория>» без товара); у траты с позициями ``total`` должен совпасть с их суммой,
-    а ``category`` и ``item_name`` — отказ ``itemized``. Названная строка заново связывается
-    с товаром по своему названию; прежний товар остаётся в каталоге.
+    ``lines`` в теле — все строки траты по порядку: с ``id`` правится сохранённая строка, без — новая, не
+    названная — удаляется (пустой список — трата без позиций на ``total`` в ``category``, названная ``item_name``;
+    без него — «<категория>»). Без ``lines``: у траты из одной строки ``total``, ``category`` и ``item_name``
+    меняют её (пустой ``item_name`` — снова «<категория>» без товара); у траты с позициями ``total`` должен
+    совпасть с их суммой, а ``category`` и ``item_name`` — отказ ``itemized``.
+
+    Чек с фото: место обязательно, правка даты либо места сохраняет время на часах. Трата из выписки: способ
+    оплаты — банк выписки, комментарий кончается « · Выписка …». Копия другого своего чека — ``receipt: duplicate``.
     """
     values = parse(data)
     with transaction.atomic():
-        receipt = Receipt.objects.select_for_update().get(pk=receipt_id)
-        current = list(receipt.lines.order_by("position", "pk"))
+        receipt = Receipt.objects.select_for_update(of=("self",)).select_related("store").get(pk=receipt_id)
+        current = list(receipt.lines.select_related("tax_rate").order_by("position", "pk"))
+        by_id = {line.pk: line for line in current}
+        photo = receipt.source == Receipt.Source.PHOTO
+        bank = statement_bank(receipt)
         errors = {}
         category = values.get("category")
         total = values.get("total")
@@ -463,7 +731,6 @@ def update(receipt_id, data):
         if "lines" in values:
             lines = values["lines"]
             if lines:
-                total = _total(errors, lines, total)
                 if item_name:
                     errors["item_name"] = "item_itemized"
             else:
@@ -479,7 +746,7 @@ def update(receipt_id, data):
                 errors["total"] = "required"
             elif len(current) == 1:
                 line = current[0]
-                total = total if total is not None else line.amount
+                amount = line.amount if total is None else total + line.discount_amount
                 new_category = category if category is not None else line.category_id
                 names = _category_names(line.category_id, new_category)
                 # Строка «<категория>» следует за категорией; названная покупка остаётся собой.
@@ -489,33 +756,46 @@ def update(receipt_id, data):
                     errors["category"] = "required"
                 elif "item_name" in values:
                     named, name = bool(item_name), item_name or names[new_category]
-                rows = [LineInput(name, total, line.quantity, new_category, named)]
+                rows = [LineInput(name, amount, None, new_category, named, id=line.pk)]
             else:
                 if "category" in values:
                     errors["category"] = "itemized"
                 if item_name:
                     errors["item_name"] = "item_itemized"
-                if total is not None:
-                    _total(errors, current, total)
+        if rows is not None:
+            _check_lines(errors, rows, by_id)
+        if photo and "store_name" in values and not values["store_name"]:
+            errors["store_name"] = "required"
+        if bank and values.get("payment_method") not in (None, "", bank):
+            errors["payment_method"] = "statement"
         if errors:
             raise ManualInvalid(errors)
+        store_before, date_before = receipt.store, receipt.purchased_on
         if "currency" in values:
             receipt.currency_id = values["currency"]
         if "store_name" in values:
             name = values["store_name"]
             receipt.store = find_or_create_store(name, receipt.currency_id) if name else None
         if "note" in values:
-            receipt.note = values["note"]
+            receipt.note = statement_note(values["note"], bank) if bank else values["note"]
         if "payment_method" in values:
             receipt.payment_method = values["payment_method"]
-        if "purchased_on" in values and values["purchased_on"] != receipt.purchased_on:
+        if bank:
+            receipt.payment_method = bank
+        if "purchased_on" in values:
             receipt.purchased_on = values["purchased_on"]
+        if photo and (receipt.purchased_on != date_before or receipt.store_id != getattr(store_before, "pk", None)):
+            receipt.purchased_at = same_wall_clock(receipt.purchased_at, receipt.purchased_on, store_before, receipt.store)
+        elif not photo and receipt.purchased_on != date_before:
             receipt.purchased_at = purchase_moment(receipt.purchased_on, receipt.store)
-        if rows is not None:
-            _write_lines(receipt, rows)
-            with price_context():
-                receipt.total = sum((row.amount for row in rows), Decimal("0.00"))
-        receipt.save()
+        if "lines" in values and not values["lines"]:
+            # Одной суммой: итог — эта сумма, скидок на весь чек больше нет.
+            receipt.discounts.filter(line__isnull=True).delete()
+        if rows is not None and _apply_lines(receipt, rows, current):
+            _recount(receipt)
+        if total is not None and receipt.total != total:
+            raise ManualInvalid({"total": "mismatch"})
+        _save(receipt)
     return receipt
 
 

@@ -78,14 +78,15 @@ const toCents = (value: string): number | undefined => {
   return match ? Number(match[1]) * 100 + Number((match[2] ?? '').padEnd(2, '0')) : undefined
 }
 
-/** The total the server will store for this body, in cents: the sum of lines, or `total` without them. */
+/** The total the server will store for this body, in cents: the sum of lines less their discounts, or `total` without them. */
 export function spendCents(body: ManualSpendInput): number | undefined {
   if (body.lines?.length) {
     let sum = 0
     for (const line of body.lines) {
       const cents = toCents(line.amount)
-      if (cents === undefined) return undefined
-      sum += cents
+      const discount = line.discount_amount === undefined ? 0 : toCents(line.discount_amount)
+      if (cents === undefined || discount === undefined) return undefined
+      sum += cents - discount
     }
     return sum
   }

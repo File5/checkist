@@ -33,7 +33,7 @@ const schemas: Record<string, (value: unknown) => boolean> = {
 }
 
 /** Root fields added after the first contract: their absence is still a valid answer. */
-const LATER_FIELDS = new Set(['owner_name', 'hidden', 'hidden_at', 'base_currency', 'base_total', 'payment_method'])
+const LATER_FIELDS = new Set(['owner_name', 'hidden', 'hidden_at', 'base_currency', 'base_total', 'payment_method', 'statement'])
 
 describe('public recognition/receipts contract fixtures', () => {
   it('covers every JSON supplied by backend, including future additions', () => {

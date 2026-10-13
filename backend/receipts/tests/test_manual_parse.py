@@ -65,7 +65,13 @@ class DraftValidationTests(ParseFixture, TestCase):
             ]), self.payload())
         self.assertEqual((draft["total"], draft["currency"], draft["purchased_on"], draft["store_name"]),
                          ("680.50", "RUB", "2026-10-11", "Магнит"))
-        self.assertEqual(draft["lines"][1], {"name": "Хлеб", "amount": "230.50", "quantity": "2", "category": None})
+        # Строка черновика — того же вида, что строка формы и распознанного чека (единая форма траты, 2026-10-13).
+        self.assertEqual(draft["lines"][1], {"name": "Хлеб", "quantity": "2", "unit": "pcs", "unit_price": "115.25",
+                                             "amount": "230.50", "discount_amount": "0", "category": None})
+        self.assertEqual(draft["lines"][0], {"name": "Молоко", "quantity": "1", "unit": "pcs", "unit_price": "450",
+                                             "amount": "450", "discount_amount": "0", "category": self.food.pk})
+        # Черновик — готовое тело формы: та же проверка, что у POST /api/receipts/manual/.
+        manual.parse({key: value for key, value in draft.items() if value is not None})
 
     def test_bad_answers_are_invalid_output(self):
         bad = [

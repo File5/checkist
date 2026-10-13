@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { deleteReceipt } from '../../api/receipts'
-import { navigate } from '../../navigation'
+import { Link, navigate } from '../../navigation'
 import {
   askDelete, deletedNotice, deleteFailureMessage, deleteQuestion, setReceiptsNotice, toggleWithPhoto, withPhotoHint,
   withPhotoLabel,
@@ -21,7 +21,9 @@ export function ReceiptDeleteActions({ receiptId, initial = { kind: 'idle' }, na
   const asking = step.kind === 'confirm'
   useEffect(() => { if (asking) confirmButton.current?.focus() }, [asking])
 
+  // «Изменить» — та же форма траты, что у траты вручную (единая форма, 2026-10-13); фото остаётся рядом для сверки.
   const bar = <div className="receipt-actions receipt-delete-bar ck-action-bar">
+    <Link className="action-link receipt-primary" to={`/receipts/${receiptId}/edit`}>Изменить</Link>
     <button type="button" className="receipt-secondary" aria-label="Удалить чек" onClick={() => setStep(askDelete())}>Удалить</button>
   </div>
   if (step.kind === 'idle') return bar

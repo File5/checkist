@@ -25,6 +25,9 @@ export type Receipt = {
   base_currency?: CurrencyCode; base_total?: Decimal | null
   /** How it was paid, `''` — not said (2026-10-13); missing from an older server. */
   payment_method?: PaymentMethodValue
+  /** The bank statement the spend was saved from (only the detail and `PATCH` send it; null — not from a statement,
+   * missing from an older server). Its method stays the bank, its note ends with the mark. */
+  statement?: { bank: string; label: string } | null
 }
 /** An item of `GET /api/receipts/` (the list only): the first line's name and the one top-level category of the lines.
  * Optional for an older server: a missing field reads as null. */
@@ -67,7 +70,13 @@ export type ManualSuggestion = {
   total: Decimal; note: string; purchased_on: ISODate; lines: ManualSuggestionLine[]; uses: number
   item_name?: string | null
 }
-export type ManualLineInput = { name: string; amount: Decimal; quantity?: Decimal; category?: number | null }
+/** A line of a spend, like a line of a receipt (one form for every spend, 2026-10-13). `amount` — before the discount;
+ * `id` — a saved line of this spend, changed in place (it keeps its product while its name stays); without it — a new one.
+ * A saved line not sent is removed. `unit_price` — not sent: the server counts amount / quantity. */
+export type ManualLineInput = {
+  id?: number; name: string; amount: Decimal; quantity?: Decimal; unit?: Unit; unit_price?: Decimal
+  discount_amount?: Decimal; category?: number | null
+}
 /** Body of `POST /api/receipts/manual/` and of `PATCH /api/receipts/{id}/`. Without lines `total` and `category` are required. */
 export type ManualSpendInput = {
   total?: Decimal; currency?: CurrencyCode; category?: number | null; purchased_on?: ISODate
@@ -81,7 +90,12 @@ export type ManualSpendInput = {
 
 /** «Трата словами»: the text waits for the worker; `draft` is a body of `POST /api/receipts/manual/` once `succeeded`. */
 export type ManualParseStatus = 'queued' | 'running' | 'succeeded' | 'failed'
-export type ManualParseLine = { name: string; amount: Decimal; quantity: Decimal | null; category: number | null }
+/** A line of the draft: the same kind as a line of the form (2026-10-13); `unit`, `unit_price` and `discount_amount` are
+ * missing from an older server. */
+export type ManualParseLine = {
+  name: string; amount: Decimal; quantity: Decimal | null; category: number | null
+  unit?: Unit; unit_price?: Decimal; discount_amount?: Decimal
+}
 export type ManualParseDraft = {
   total: Decimal | null; currency: CurrencyCode; category: number | null; purchased_on: ISODate
   store_name: string | null; note: string; lines: ManualParseLine[]

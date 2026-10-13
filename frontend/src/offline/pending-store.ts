@@ -6,7 +6,8 @@ import type { ManualSpendInput, Receipt } from '../api/receipts'
 import { isReceipt } from '../api/receipts-schema'
 import { page } from '../api/schema'
 import type { Category, LocalApiResult, Page } from '../api/types'
-import { amountText, newLine } from '../features/expense/expense-form'
+import { amountText } from '../features/expense/expense-form'
+import { lineFromBody } from '../features/expense/line-draft'
 import type { ExpenseDraft } from '../features/expense/expense-form'
 import { saveMessage } from '../features/expense/labels'
 import { pendingStore } from './idb'
@@ -131,7 +132,7 @@ export function draftFromPending(body: ManualSpendInput, categories: Pick<Catego
     date: body.purchased_on ?? '',
     place: body.store_name ?? '',
     note: body.note ?? '',
-    lines: lines.map((line) => ({ ...newLine(), name: line.name, amount: amountText(line.amount), category: category(line.category) })),
+    lines: lines.map((line) => lineFromBody(line, category(line.category))),
     method: body.payment_method,
     item: lines.length ? '' : body.item_name ?? '',
   }

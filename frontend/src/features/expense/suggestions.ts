@@ -4,7 +4,8 @@ import type { ManualSuggestion } from '../../api/receipts'
 import type { Category } from '../../api/types'
 import { formatMoney } from '../../lib/money'
 import { plural } from '../../lib/recognition-issues'
-import { amountText, newLine, shortDay } from './expense-form'
+import { amountText, shortDay } from './expense-form'
+import { lineFromBody } from './line-draft'
 import type { ExpenseDraft } from './expense-form'
 
 /** Wait after the last key before asking the server: one request per pause, not per letter. */
@@ -43,7 +44,7 @@ export function draftFromSuggestion(spend: ManualSuggestion, chips: Category[], 
     date: today,
     place: spend.store_name ?? '',
     note: spend.note,
-    lines: spend.lines.map((line) => ({ ...newLine(), name: line.name, amount: amountText(line.amount), category: known(line.category) })),
+    lines: spend.lines.map((line) => lineFromBody(line, known(line.category))),
     item: spend.lines.length ? '' : spend.item_name ?? '',
   }
 }

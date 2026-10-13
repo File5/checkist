@@ -85,14 +85,43 @@ describe('«Добавить трату» form (Vitest/SSR, not browser visual a
     expect(html).toContain('Категория позиций без своей')
     expect(html.match(/expense-lines-1-amount-error/g)).toHaveLength(2)
     expect(html).toContain('aria-label="Убрать позицию 3"')
-    expect(html).toContain('>Позиция 3</label>')
-    expect(html).toContain('>Сумма позиции 3</label>')
+    expect(html).toContain('<span class="expense-line-label">Позиция 3</span>')
+    // A position is a line of a receipt (2026-10-13): quantity, unit, price, discount, sum and category, all labelled.
+    for (const label of ['Кол-во', 'Ед.', 'Цена', 'Скидка', 'Сумма', 'Категория']) {
+      expect(html).toContain(`<span class="expense-line-label">${label}</span>`)
+    }
+    expect(html).toContain('<option value="kg">кг</option>')
     // The exact sum stays in the field; the summary next to it shows whole units, rounded up.
-    expect(html).toContain('<button type="submit" class="expense-save">Сохранить · 351 ₸</button>')
+    expect(html).toContain('<button type="submit" class="expense-save">Сохранить · 351\u00a0₸</button>')
+  })
+  it('folds every line into a card on a phone and unfolds a line with a message', () => {
+    const panini = { ...newLine(), name: 'Панини', quantity: '2', price: '1790', amount: '3580' }
+    const draft = { ...emptyDraft('KZT', '2026-10-12'), lines: [panini, { ...newLine(), name: 'Сок', amount: 'x' }] }
+    const html = form(draft, { narrow: true, errors: { 'lines.1.amount': messages.lineAmount } }).replace(/[\u00a0\u202f]/g, ' ')
+    expect(html).toContain('<span class="expense-line-title">Панини</span><span class="expense-line-detail">2 шт × 1 790,00 ₸</span></span><span class="expense-line-sum">3 580 ₸</span>')
+    expect(html).toMatch(/<button type="button" class="expense-line-summary" aria-expanded="false" aria-controls="expense-line-\d+-fields">/)
+    expect(html).not.toContain(`id="expense-line-${panini.key}-name"`)
+    // The line with a message is open, its field marked.
+    expect(html).toMatch(/aria-expanded="true"/)
+    expect(html).toMatch(/class="expense-line-input expense-line-amount"[^>]*aria-invalid="true"/)
+  })
+  it('keeps the photo beside a photo receipt and locks the method of a spend from a statement', () => {
+    const photo = { ...emptyDraft('KZT', '2026-10-12'), source: 'photo' as const, place: 'Магнум',
+      lines: [{ ...newLine(), id: 5, name: 'Молоко', amount: '900' }], extraDiscount: '50' }
+    const html = form(photo, { receiptId: 7, media: { thumb: '/media/crops/7/thumb-400-v1.webp', image: '/media/crops/7/crop.png' } })
+      .replace(/[\u00a0\u202f]/g, ' ')
+    expect(html).toContain('<a class="expense-source-photo" href="/media/crops/7/crop.png" target="_blank" rel="noreferrer"><img src="/media/crops/7/thumb-400-v1.webp" alt="Фото чека"')
+    expect(html).toContain('href="/receipts/7">Открыть чек с фото</a>')
+    expect(html).toContain('Скидка на весь чек: −50 ₸, уже вычтена из итога.')
+    expect(html).toMatch(/<option value=""[^>]*>Как у товара<\/option>/)
+    expect(html).toContain('Сохранить · 850 ₸')
+    const statement = form({ ...emptyDraft('KZT', '2026-10-12'), amount: '1800', category: 1, method: 'kaspi_gold', statement: 'Выписка Kaspi Gold' })
+    expect(statement).toContain('<p class="expense-source-mark" role="note">Из выписки: Kaspi Gold</p>')
+    expect(statement).toContain('<p class="expense-method-fixed">Kaspi Gold — банк выписки</p>')
   })
   it('names the rounded amount on the save button, chooses the date by chips and keeps the calendar', () => {
     const html = form({ ...emptyDraft('KZT', '2026-10-11'), amount: '4500,40' }, { today: '2026-10-12' })
-    expect(html).toContain('<button type="submit" class="expense-save">Сохранить · 4 501 ₸</button>')
+    expect(html).toContain('<button type="submit" class="expense-save">Сохранить · 4\u00a0501\u00a0₸</button>')
     expect(html).toContain('<button type="button" class="expense-chip expense-day" aria-pressed="false">Сегодня</button>')
     expect(html).toContain('<button type="button" class="expense-chip expense-day" aria-pressed="true">Вчера</button>')
     expect(html).toContain('<div class="expense-row" role="group" aria-labelledby="expense-when-label"><span id="expense-when-label" class="expense-row-label">Когда</span>')

@@ -42,11 +42,17 @@ MANUAL_MESSAGES = {
     "itemized": "У траты с позициями категорию задают позициям.",
     "item_itemized": "У траты с позициями покупки называют позициями.",
     "choice": "Способ оплаты — kaspi_gold, forte, cash, crypto, card либо пусто.",
+    "unit": "Единица — pcs, g, kg, ml, l или m.",
+    "price": "Цена за единицу не меньше нуля, не больше четырёх знаков после запятой.",
+    "price_mismatch": "Сумма позиции не равна количеству × цене.",
+    "discount": "Скидка не меньше нуля и не больше суммы позиции, не больше двух знаков после запятой.",
+    "duplicate": "Такой чек у вас уже есть: то же место и дата с тем же номером либо временем и суммой.",
+    "statement": "У траты из выписки способ оплаты — банк выписки.",
 }
 
 
 class ManualBodyParser(JsonObjectParser):
-    limit = 64 * 1024  # 100 позиций с запасом
+    limit = 256 * 1024  # 300 позиций чека с длинными названиями, с запасом
 
 
 def manual_body(request):
@@ -289,8 +295,20 @@ class ManualParseDetailView(LocalAPIView):
         return Response(parse_object(get_or_404(ManualParseRequest.objects.filter(owner_q(request)), path_id(pk))))
 
 
+def statement_object(receipt):
+    """Пометка «из выписки» карточки чека: ``{"bank", "label"}`` либо ``None`` (одним запросом)."""
+    from statements.drafts import SOURCE_NOTE
+
+    bank = manual.statement_bank(receipt)
+    return None if bank is None else {"bank": bank, "label": SOURCE_NOTE.get(bank, "Выписка")}
+
+
 class ReceiptView(LocalAPIView):
-    """Чек; ``PATCH`` — только у траты, внесённой вручную (иначе ``409 receipt_read_only``).
+    """Чек; ``PATCH`` — правка любой видимой траты (с фото, ручной, из выписки) одним путём ``receipts.manual.update``.
+
+    Единая форма траты (2026-10-13): правило v1 «чек с фото не правится» (``409 receipt_read_only``) снято.
+    Доступ — как у удаления: свой чек либо члена семьи (``visible_receipts_q``, «видит с»), скрытый — только главному.
+    Карточка несёт ``statement`` — банк выписки, из которой сохранена трата, либо null.
 
     ``DELETE`` — любой видимый чек (свой либо члена семьи). Чек с фото удаляется со строками, его вырезки
     остаются без связи; ``?with_photo=1`` удаляет и исходное фото со всеми заданиями, вырезками, попытками и
@@ -302,22 +320,18 @@ class ReceiptView(LocalAPIView):
 
     def get(self, request, pk):
         receipt = get_or_404(receipts_queryset(request, include_hidden=True), path_id(pk))
-        return Response({**receipt_object(receipt), **base_total(receipt, receipt_converter(request, [receipt]))})
-
-    def manual_receipt(self, request, pk):
-        receipt = own_receipt(request, pk)
-        if receipt.source != Receipt.Source.MANUAL:
-            raise RecognitionApiError("receipt_read_only")
-        return receipt
+        return Response({**receipt_object(receipt), **base_total(receipt, receipt_converter(request, [receipt])),
+                         "statement": statement_object(receipt)})
 
     def patch(self, request, pk):
-        receipt = self.manual_receipt(request, pk)
+        receipt = own_receipt(request, pk)
         data = manual_body(request)
         try:
             manual.update(receipt.pk, data)
         except manual.ManualInvalid as error:
             raise manual_invalid(error) from None
-        return Response(receipt_object(get_or_404(receipts_queryset(request, include_hidden=True), receipt.pk)))
+        receipt = get_or_404(receipts_queryset(request, include_hidden=True), receipt.pk)
+        return Response({**receipt_object(receipt), "statement": statement_object(receipt)})
 
     def delete(self, request, pk):
         receipt = own_receipt(request, pk)

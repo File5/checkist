@@ -180,10 +180,11 @@ class PhotoReceiptDeleteTests(MediaMixin, TestCase):
         with self.captureOnCommitCallbacks(execute=True):
             self.assertEqual(self.client.delete(f"{self.url}?with_photo=1").status_code, 204)
 
-    def test_patch_of_a_photo_receipt_is_still_read_only(self):
-        response = self.client.patch(self.url, {"total": "1"}, format="json")
-        self.assertEqual(response.status_code, 409)
-        self.assertEqual(response.json()["error"]["code"], "receipt_read_only")
+    def test_patch_of_a_photo_receipt_takes_the_spend_path(self):
+        # Единая форма траты (2026-10-13): чек с фото правится, как любая трата; фото и вырезки остаются.
+        response = self.client.patch(self.url, {"note": "сверено с фото"}, format="json")
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual((response.json()["note"], response.json()["receipt_images_count"]), ("сверено с фото", 1))
 
     def test_manual_spend_ignores_the_photo_flag(self):
         spend = Receipt.objects.create(owner=local_user(), source="manual", currency=self.receipt.currency,

@@ -153,7 +153,13 @@ export const isReviewConfirmInput: Guard<ReviewConfirmInput> = (value): value is
 /** Amounts of a parse draft as the manual save takes them: «4500», «230.5», «680.50». */
 const draftMoney = (value: unknown) => typeof value === 'string' && /^[0-9]{1,12}(?:\.[0-9]{1,2})?$/.test(value)
 const draftQuantity = (value: unknown) => typeof value === 'string' && /^[0-9]{1,9}(?:\.[0-9]{1,3})?$/.test(value)
-const isParseLine = object<ManualParseLine>({ name: text, amount: draftMoney, quantity: nullable(draftQuantity), category: nullable(isId) })
+const isParseLineShape = object<Omit<ManualParseLine, 'unit' | 'unit_price' | 'discount_amount'>>({
+  name: text, amount: draftMoney, quantity: nullable(draftQuantity), category: nullable(isId) })
+/** A line of the draft — the kind of a line of the form (2026-10-13); unit, price and discount are missing from an older server. */
+const draftPrice = (value: unknown) => typeof value === 'string' && /^[0-9]{1,10}(?:\.[0-9]{1,4})?$/.test(value)
+const isParseLine = (value: unknown): value is ManualParseLine => isParseLineShape(value)
+  && [['unit', unit], ['unit_price', draftPrice], ['discount_amount', draftMoney]].every(([key, check]) =>
+    !Object.hasOwn(value as object, key as string) || (check as (field: unknown) => boolean)((value as Record<string, unknown>)[key as string]))
 const parseDraftShape = object<Omit<ManualParseDraft, 'kind' | 'payment_method' | 'item_name'>>({
   total: nullable(draftMoney), currency, category: nullable(isId), purchased_on: isISODate,
   store_name: nullable(text), note: text, lines: array(isParseLine),
