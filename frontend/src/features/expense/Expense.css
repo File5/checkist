@@ -64,7 +64,10 @@
 .expense-calc-result { margin-left: auto; color: var(--ck-text-muted); font-size: var(--ck-text-base); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 @media (pointer: fine) {
   .expense-calc-keys { display: none; }
-  .expense-calc:not(:has(.expense-calc-result)) { display: none; }
+  /* The line of the result keeps its room: leaving the field puts the sum in place of «1200+350», and a row that
+     disappeared there moved the chips under the mouse between its press and release, so the click was lost. */
+  .expense-calc { min-height: calc(var(--ck-text-base) * 1.5); }
+  .expense-calc:not(:has(.expense-calc-result)) { visibility: hidden; }
 }
 
 /* «Категория»: chips wrap into rows; a dot of the category colour, the chosen chip filled. A fieldset: its legend is
