@@ -44,7 +44,7 @@ describe('PieChart markup (Node, not pointer or focus behaviour)', () => {
     expect(html).toContain('<th scope="col">Название</th><th scope="col" class="ck-chart-number">Сумма</th><th scope="col" class="ck-chart-number">Доля</th>')
     const body = rows(html).slice(1)
     expect(body).toHaveLength(5)
-    expect(body[0]).toContain('<td class="ck-chart-number">412,30 EUR</td><td class="ck-chart-number">20,70 %</td>')
+    expect(body[0]).toContain('<td class="ck-chart-number">412,30 EUR<span class="ck-pie-share-under">20,70 %</span></td><td class="ck-chart-number">20,70 %</td>')
     expect(body[1]).toContain('Категорию назначают в админке.')
     expect(body[2]).toContain('Прочее (3)')
     expect(body[3]).toContain('Строки без товара')
@@ -127,7 +127,7 @@ describe('PieChart legend rows of an item’s parts (Node, not pointer or focus 
       + '<span class="ck-pie-name-text">Прочее<span class="ck-chart-note">Ещё 3 обобщённых продукта с меньшими суммами, одной строкой.</span>'
       // The thin bar of the share, the largest item full: decoration for the eye, the share column is the number.
       + '<span class="ck-pie-bar ck-chart-other" aria-hidden="true"><span style="width:33.3%"></span></span></span></span></th>'
-      + '<td class="ck-chart-number">40,00 EUR</td><td class="ck-chart-number">16,00 %</td>',
+      + '<td class="ck-chart-number">40,00 EUR<span class="ck-pie-share-under">16,00 %</span></td><td class="ck-chart-number">16,00 %</td>',
     )
     expect(trs(plain)[0].body).toContain('<span class="ck-pie-bar ck-chart-c1" aria-hidden="true"><span style="width:100%"></span></span>')
     // Empty or absent values of the new fields are the same as no fields.
@@ -150,7 +150,7 @@ describe('PieChart legend rows of an item’s parts (Node, not pointer or focus 
     expect(trs(expanded)[2].body).toContain('<a href="/stats" class="ck-pie-action" aria-expanded="true">Скрыть состав</a></span>')
     expect(count(collapsed, /aria-expanded=/g)).toBe(1)
     // The toggle only: the row keeps its sum and share, the drawing its link count.
-    expect(trs(collapsed)[2].body).toContain('<td class="ck-chart-number">40,00 EUR</td><td class="ck-chart-number">16,00 %</td>')
+    expect(trs(collapsed)[2].body).toContain('<td class="ck-chart-number">40,00 EUR<span class="ck-pie-share-under">16,00 %</span></td><td class="ck-chart-number">16,00 %</td>')
     const spa = ({ to, ...props }: ChartLinkProps) => <a {...props} href={to} data-spa="true" />
     const linked = renderToStaticMarkup(<PieChart title="Траты, EUR" items={withOther({ action: { label: 'Показать состав', href: '/stats?other=open', expanded: false } })} linkComponent={spa} />)
     expect(linked).toContain('<a class="ck-pie-action" aria-expanded="false" href="/stats?other=open" data-spa="true">Показать состав</a>')
@@ -167,13 +167,13 @@ describe('PieChart legend rows of an item’s parts (Node, not pointer or focus 
       '<th scope="row"><span class="ck-pie-name"><span class="ck-pie-swatch ck-chart-other" aria-hidden="true"></span>'
       + '<span class="ck-pie-name-text"><span><span class="ck-chart-hidden">В составе «Прочего»: </span><a href="/stats?generic=3">Сыр</a></span>'
       + '<span class="ck-chart-note">4 строки · 3 чека</span></span></span></th>'
-      + '<td class="ck-chart-number">25,00 EUR</td><td class="ck-chart-number">10,00 %</td>',
+      + '<td class="ck-chart-number">25,00 EUR<span class="ck-pie-share-under">10,00 %</span></td><td class="ck-chart-number">10,00 %</td>',
     )
     expect(body[4].body).not.toContain('ck-chart-note')
     // The remainder: no link, the hint under the name.
     expect(body[5].body).toContain('</span>Ещё 12 товаров с меньшими суммами, одной строкой</span><span class="ck-chart-note">Чтобы увидеть их, сузьте период.</span>')
     expect(body[5].body).not.toContain('<a ')
-    expect(body[5].body).toContain('<td class="ck-chart-number">5,00 EUR</td><td class="ck-chart-number">2,00 %</td>')
+    expect(body[5].body).toContain('<td class="ck-chart-number">5,00 EUR<span class="ck-pie-share-under">2,00 %</span></td><td class="ck-chart-number">2,00 %</td>')
     // Child links are keyboard stops; the drawing gets no link for them.
     expect(count(expanded, /tabindex="-1"/g)).toBe(2)
     expect(count(expanded, /<a href="\/stats\?generic=3"/g)).toBe(1)

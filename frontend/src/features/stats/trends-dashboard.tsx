@@ -6,6 +6,7 @@ import { categoryTone } from '../../lib/category-tone'
 import { useNarrow } from '../../lib/cards'
 import { sparkline } from '../../lib/charts/sparkline'
 import { currencySymbol } from '../../lib/money'
+import { useMoneyDigits } from '../../lib/money-digits'
 import { Link } from '../../navigation'
 import type { TrendsQuery } from '../../navigation'
 import { Badge, Failure, Panel } from './trends-blocks'
@@ -134,7 +135,8 @@ export function MonthRowCards({ rows, label }: { rows: readonly MonthRow[]; labe
 function MonthToMonthCurrency({ block, query, several }: { block: TrendsMonthlyCurrency; query: TrendsQuery; several: boolean }) {
   const id = useId()
   const narrow = useNarrow()
-  const rows = useMemo(() => monthRows(block, query), [block, query])
+  const digits = useMoneyDigits()
+  const rows = useMemo(() => monthRows(block, query, digits), [block, query, digits])
   const months = block.months.map((entry) => entry.month)
   const label = `Месяц к месяцу, ${block.currency}`
   const headings = monthRowHeadings(block)
@@ -215,7 +217,8 @@ function LimitMonth({ cell }: { cell: LimitCell }) {
 
 export function LimitsBlock({ state, onRetry }: { state: BlockState<TrendsLimits>; onRetry: () => void }) {
   const shown = loadingOf(state)
-  const rows = useMemo(() => (shown.kind === 'ok' ? limitRows(shown.data.limits) : []), [shown])
+  const digits = useMoneyDigits()
+  const rows = useMemo(() => (shown.kind === 'ok' ? limitRows(shown.data.limits, digits) : []), [shown, digits])
   let body
   if (shown.kind === 'loading') body = <RequestState kind="loading" message="Загружаем лимиты…" />
   else if (shown.kind !== 'ok') body = <Failure state={shown} onRetry={onRetry} />

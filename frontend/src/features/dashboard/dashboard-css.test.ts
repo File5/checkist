@@ -67,7 +67,19 @@ describe('«Главная» and «Лимиты» styles (text of the rules, not
     }
   })
   it('keeps «spent / limit» on one line at the right and lets the name take the rest', () => {
-    expect(body('.dash-limit-head')).not.toContain('flex-wrap')
+    // Wider than a phone the head never wraps. On a phone (sums with cents, 2026-10-13) the value takes a line of its
+    // own, still whole and at the right, once the name would be left with less than its basis.
+    const phoneStart = css.indexOf('@media (max-width: 540px)')
+    const phone = [...css.slice(phoneStart).matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+      .flatMap((match) => match[1].split(',').map((selector) => ({ selector: selector.trim(), body: match[2] })))
+    const onPhone = (selector: string) => phone.filter((rule) => rule.selector === selector).map((rule) => rule.body).join(' ')
+    expect(css.slice(0, phoneStart)).not.toMatch(/\.(dash-limit-head|limits-row-head)[^{}]*\{[^{}]*flex-wrap/)
+    for (const selector of ['.dash-limit-head', '.limits-row-head']) expect(onPhone(selector), selector).toContain('flex-wrap: wrap;')
+    expect(onPhone('.dash-limit-name')).toContain('flex-basis: 6em;')
+    expect(onPhone('.limits-name')).toContain('flex-basis: 6em;')
+    expect(onPhone('.dash-sublimit-name')).toContain('flex-basis: 8em;')
+    expect(onPhone('.limits-current')).toContain('margin-left: auto;')
+    expect(css.slice(phoneStart)).not.toMatch(/white-space/)
     expect(body('.dash-limit-value')).toContain('margin-left: auto;')
     expect(body('.dash-limit-value')).toContain('white-space: nowrap')
     expect(body('.dash-limit-name')).toContain('overflow-wrap: normal;')

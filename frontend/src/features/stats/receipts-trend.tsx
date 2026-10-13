@@ -6,6 +6,7 @@ import { useLocalRequestFocus } from '../../components/useLocalRequestFocus'
 import { LineChart } from '../../lib/charts'
 import { formatAxisTick } from '../../lib/charts/scale'
 import { currencySymbol } from '../../lib/money'
+import { useMoneyDigits } from '../../lib/money-digits'
 import { Link, receiptsStatsHref } from '../../navigation'
 import type { ReceiptsStatsQuery } from '../../navigation'
 import { PeriodDate } from './period'
@@ -18,7 +19,8 @@ const moneyAxisNumber = (value: number, step?: number) => formatAxisTick(value, 
 
 function CurrencyTrend({ block, interval }: { block: ReceiptSeriesCurrency; interval: ReceiptInterval }) {
   const id = useId()
-  const charts = useMemo(() => trendCharts(block), [block])
+  const digits = useMoneyDigits()
+  const charts = useMemo(() => trendCharts(block, digits), [block, digits])
   const formatX = useCallback((x: string) => intervalName(x, interval), [interval])
   const formatTick = useCallback((x: string) => intervalName(x, interval, true), [interval])
   return (

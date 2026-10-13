@@ -10,6 +10,8 @@ import { formatAxisTick } from '../../lib/charts/scale'
 import { categoryTone } from '../../lib/category-tone'
 import { formatPercent, formatPrice } from '../../lib/format'
 import { formatMoney, formatMoneyNumber } from '../../lib/money'
+import { moneyDigits } from '../../lib/money-digits'
+import type { MoneyDigits } from '../../lib/money-digits'
 import { glue } from '../../lib/text'
 import { spendingHref, trendsHref } from '../../navigation'
 import type { TrendsQuery } from '../../navigation'
@@ -19,9 +21,11 @@ import { intervalName } from './receipts-series'
 /**
  * The one place where «Динамика» turns a sum into text. When the central money helper arrives (`lib/money.ts`,
  * `formatMoney`, rounding up to whole units for display), swap the body of this function and nothing else.
+ * `digits` — the choice of the device («Суммы»): a builder called inside `useMemo` takes it from `useMoneyDigits()`
+ * of its component and passes it here, so the kept texts are rebuilt when the choice changes.
  */
-export function money(value: Decimal | null, currency: string): string {
-  return formatMoney(value, currency)
+export function money(value: Decimal | null, currency: string, digits: MoneyDigits = moneyDigits()): string {
+  return formatMoney(value, currency, digits)
 }
 
 export const defaultTrendsMonths = 12
@@ -64,8 +68,8 @@ const positive = (value: Decimal) => (decimalNumber(value) ?? 0) > 0
 
 export interface MonthlyChart { legend: StackedLegendEntry[]; columns: StackedColumn[] }
 /** Columns of one currency: categories in the order of the legend, then «Без категории» when it is positive. */
-export function monthlyChart(block: TrendsMonthlyCurrency, query: TrendsQuery): MonthlyChart {
-  const amount = (value: Decimal) => money(value, block.currency)
+export function monthlyChart(block: TrendsMonthlyCurrency, query: TrendsQuery, digits: MoneyDigits = moneyDigits()): MonthlyChart {
+  const amount = (value: Decimal) => money(value, block.currency, digits)
   const withRest = block.months.some((entry) => positive(entry.uncategorized))
   const legend: StackedLegendEntry[] = [
     ...block.categories.map((category) => ({
@@ -140,8 +144,8 @@ export const optionLabel = (path: readonly string[]) => path.join(' › ')
 export const categoryHref = (query: TrendsQuery, category: number | undefined) => trendsHref({ ...query, category })
 
 /** Monthly spend of the category and its average as two lines; every month is a point, an empty one is zero. */
-export function categoryChart(block: TrendsCategoryCurrency): LineChartSeries[] {
-  const amount = (value: Decimal) => money(value, block.currency)
+export function categoryChart(block: TrendsCategoryCurrency, digits: MoneyDigits = moneyDigits()): LineChartSeries[] {
+  const amount = (value: Decimal) => money(value, block.currency, digits)
   const points = (pick: (amount: Decimal) => Decimal): LineChartPoint[] => block.months.map((entry) => ({
     x: monthStart(entry.month), value: decimalNumber(pick(entry.amount)) ?? 0, valueText: amount(pick(entry.amount)),
   }))
@@ -278,20 +282,20 @@ export interface MonthRow {
   href: string
 }
 /** Rows of one currency: top-level categories with their sub-categories; the link opens the category over time. */
-export function monthRows(block: TrendsMonthlyCurrency, query: TrendsQuery): MonthRow[] {
+export function monthRows(block: TrendsMonthlyCurrency, query: TrendsQuery, digits: MoneyDigits = moneyDigits()): MonthRow[] {
   const months = block.months.map((entry) => entry.month)
   return block.rows.map((row) => {
     const values = row.amounts.map((value) => decimalNumber(value) ?? 0)
     const start = Math.max(0, values.findIndex((value) => value !== 0))
     return {
       key: String(row.id), id: row.id, name: row.name, depth: row.depth,
-      previous: money(row.amounts.at(-2) ?? null, block.currency), last: money(row.amounts.at(-1) ?? null, block.currency),
+      previous: money(row.amounts.at(-2) ?? null, block.currency, digits), last: money(row.amounts.at(-1) ?? null, block.currency, digits),
       badge: changeBadge(row.change_percent),
       months: row.amounts.map((amount, index) => ({
-        month: months[index], title: monthName(months[index]), amount: money(amount, block.currency),
+        month: months[index], title: monthName(months[index]), amount: money(amount, block.currency, digits),
         badge: changeBadge(row.change_percents[index] ?? null),
       })),
-      total: money(row.total, block.currency), average: money(row.average, block.currency),
+      total: money(row.total, block.currency, digits), average: money(row.average, block.currency, digits),
       values: values.slice(start), sparkFrom: start > 0 ? sinceMonth(months[start]) : null,
       href: trendsHref({ ...query, category: row.id }),
     }
@@ -306,9 +310,10 @@ export function monthRowHeadings(block: TrendsMonthlyCurrency): { previous: stri
 // --- части категории ---
 
 /** The category over time split by its direct sub-categories; `null` without sub-categories. */
-export function partsChart(block: TrendsCategoryCurrency, name: string, months: readonly string[]): { legend: StackedLegendEntry[]; columns: StackedColumn[] } | null {
+export function partsChart(block: TrendsCategoryCurrency, name: string, months: readonly string[],
+  digits: MoneyDigits = moneyDigits()): { legend: StackedLegendEntry[]; columns: StackedColumn[] } | null {
   if (block.parts.length === 0) return null
-  const amount = (value: Decimal) => money(value, block.currency)
+  const amount = (value: Decimal) => money(value, block.currency, digits)
   const legend = block.parts.map((part) => ({
     key: String(part.id), label: part.direct ? `${name}: без подкатегории` : part.name, tone: part.direct ? 0 : categoryTone(part.id),
     note: amount(part.total),
@@ -340,15 +345,15 @@ export interface LimitRow {
 }
 
 /** «лимит изменён: 120 000 → 150 000», «лимит задан: 150 000», «лимит снят (был 120 000)»: whole units, rounded up. */
-export function limitChangeText(change: TrendsLimitChange): string {
-  if (change.old === null) return `лимит задан: ${formatMoneyNumber(change.new)}`
-  if (change.new === null) return `лимит снят (был ${formatMoneyNumber(change.old)})`
-  return `лимит изменён: ${formatMoneyNumber(change.old)} → ${formatMoneyNumber(change.new)}`
+export function limitChangeText(change: TrendsLimitChange, digits: MoneyDigits = moneyDigits()): string {
+  if (change.old === null) return `лимит задан: ${formatMoneyNumber(change.new, digits)}`
+  if (change.new === null) return `лимит снят (был ${formatMoneyNumber(change.old, digits)})`
+  return `лимит изменён: ${formatMoneyNumber(change.old, digits)} → ${formatMoneyNumber(change.new, digits)}`
 }
 
 /** Every limit with a cell per month: the share of that month's limit used, over the limit marked by more than colour
  * (the word «сверх»). */
-export function limitRows(limits: readonly TrendsLimit[]): LimitRow[] {
+export function limitRows(limits: readonly TrendsLimit[], digits: MoneyDigits = moneyDigits()): LimitRow[] {
   return limits.map((limit) => {
     const cells = limit.months.map((entry): LimitCell => {
       const monthLimit = entry.limit
@@ -356,16 +361,16 @@ export function limitRows(limits: readonly TrendsLimit[]): LimitRow[] {
       const value = none ? 0 : decimalNumber(entry.percent) ?? 0
       return {
         month: entry.month, title: monthName(entry.month), short: monthName(entry.month, true),
-        percent: none ? 'без лимита' : formatPercent(entry.percent), spent: money(entry.spent, limit.currency),
-        limit: none ? 'без лимита' : money(monthLimit, limit.currency), none, over: value > 100,
-        fill: Math.max(0, Math.min(100, Math.round(value))), ...(entry.change ? { change: limitChangeText(entry.change) } : {}),
+        percent: none ? 'без лимита' : formatPercent(entry.percent), spent: money(entry.spent, limit.currency, digits),
+        limit: none ? 'без лимита' : money(monthLimit, limit.currency, digits), none, over: value > 100,
+        fill: Math.max(0, Math.min(100, Math.round(value))), ...(entry.change ? { change: limitChangeText(entry.change, digits) } : {}),
       }
     })
     const category = limit.category
     return {
       key: limit.id === null ? `deleted:${category?.id ?? 0}:${limit.currency}` : String(limit.id),
       name: category ? optionLabel(category.path.map((node) => node.name)) : 'Категория удалена',
-      currency: limit.currency, amount: limit.amount === null ? null : money(limit.amount, limit.currency), cells,
+      currency: limit.currency, amount: limit.amount === null ? null : money(limit.amount, limit.currency, digits), cells,
       overCount: cells.filter((cell) => cell.over).length, limitedCount: cells.filter((cell) => !cell.none).length,
       changes: cells.flatMap((cell) => (cell.change ? [`${cell.title}: ${cell.change}`] : [])),
       tone: categoryTone(category?.path[0]?.id ?? category?.id),

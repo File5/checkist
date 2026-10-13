@@ -266,4 +266,11 @@
   .dash-sublimit .dash-sublimit-list { padding-left: 8px; }
   .limits-row { padding: 14px 16px; }
   .limits-row-sub { padding-left: calc(16px + var(--limits-depth, 1) * 10px); }
+  /* Суммы с копейками (2026-10-13): the value («spent / limit», the limit of a row) stays whole and at the right, but
+     takes a line of its own when the name beside it would be left with less than about six letters (eight in the
+     smaller text of a sub-category). A short value stays beside the name, as before. */
+  .dash-limit-head, .limits-row-head { flex-wrap: wrap; row-gap: 2px; }
+  .dash-limit-name, .limits-name { flex-basis: 6em; }
+  .dash-sublimit-name { flex-basis: 8em; }
+  .limits-current { margin-left: auto; }
 }

@@ -63,6 +63,13 @@ describe('stylesheet guards (text of the rules, not rendering)', () => {
     expect(lineSource).toContain('<div className="ck-line-table-scroll" role="region"')
     const scrolling = rules(charts).filter((item) => /overflow-x:\s*auto/.test(item.body)).map((item) => item.selector)
     expect(scrolling).toEqual(['.ck-pie-legend-scroll', '.ck-line-table-scroll'])
+    // A phone (sums with cents, 2026-10-13): the share is read under its sum, the third column is not drawn.
+    expect(rule(charts, '.ck-pie-share-under')).toContain('display: none')
+    const phone = narrow(charts)
+    const onPhone = (selector: string) => phone.filter((item) => item.selector === selector).map((item) => item.body).join(' ')
+    expect(onPhone('.ck-pie-legend tr > :nth-child(3)')).toBe('display: none;')
+    expect(onPhone('.ck-pie-share-under')).toContain('display: block')
+    expect(pieSource.match(/<span className="ck-pie-share-under">\{(item|child)\.shareText\}<\/span><\/td>/g)).toHaveLength(2)
   })
   it('keeps the sum in the middle of the pie whole and no wider than the hole of the ring', () => {
     const center = rule(charts, '.ck-pie-center')

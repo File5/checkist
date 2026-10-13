@@ -16,6 +16,10 @@
 @media (max-width: 540px) {
   /* Three figures in a third of a phone each: the note of the percent goes under its amount. */
   .inc-summary-note { display: block; }
+  /* Суммы с копейками (2026-10-13): three equal columns while every figure fits its third; a figure that does not
+     (six digits with cents on 360 px) moves the last column to a line of its own. The figure itself is not broken. */
+  .inc-summary-list { display: flex; flex-wrap: wrap; }
+  .inc-summary-item { flex: 1 1 0; min-width: max-content; }
 }
 
 /* The page: the month with its total and the records, then the categories. Low controls as in «Статистика»
