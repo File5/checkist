@@ -32,11 +32,13 @@ export const isReceiptListItem: Guard<ReceiptListItem> = (value): value is Recei
   && optional(value, 'first_line', text) && optional(value, 'category', named) && optional(value, 'categories', array(named))
 export const isManualDefaults = object<ManualDefaults>({ currency, frequent_categories: array(isId) })
 const isSuggestionLine = object<ManualSuggestionLine>({ name: text, amount, category: nullable(isId) })
-const isManualSuggestion = object<ManualSuggestion>({
+const isSuggestionShape = object<Omit<ManualSuggestion, 'item_name'>>({
   receipt_id: isId, store_name: nullable(text), category: nullable(named), currency, total: amount, note: text,
   purchased_on: isISODate, lines: array(isSuggestionLine), uses: (value: unknown) => Number.isSafeInteger(value) && (value as number) > 0,
 })
-export const isManualSuggestions = object<{ results: ManualSuggestion[] }>({ results: array(isManualSuggestion) })
+const isSuggestion = (value: unknown): value is ManualSuggestion => isSuggestionShape(value)
+  && optional(value as Record<string, unknown>, 'item_name', text)
+export const isManualSuggestions = object<{ results: ManualSuggestion[] }>({ results: array(isSuggestion) })
 const translations = (value: unknown) => record(value) && Object.entries(value).every(
   ([key, val]) => /^[a-z]{2,3}(?:-[A-Za-z]{2,4})?$/.test(key) && text(val),
 )

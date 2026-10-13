@@ -7,12 +7,14 @@ import type { GenericRef, StoreBrief } from './types.ts'
 const point = object<PriceSeriesPoint>({ period_start: isISODate, count: isId, min: price, max: price, avg: price, last: price })
 const storeBrief = object<StoreBrief>({ id: isId, name: text, city: text, country })
 const lineShape = object<PriceSeriesLine>({
-  role: choice('own', 'similar'), product: named, store: nullable(storeBrief), country, currency, unit, comparable: bool,
-  observations: isId, points: array(point),
+  role: choice('own', 'similar'), product: named, store: nullable(storeBrief), country: nullable(country), currency, unit,
+  manual: bool, comparable: bool, observations: isId, points: array(point),
 })
 const line: Guard<PriceSeriesLine> = (value): value is PriceSeriesLine => lineShape(value)
-  // Only the product's own series belongs to a store, and that store is in the series' country.
-  && (value.role === 'own' ? value.store !== null && value.store.country === value.country : value.store === null)
+  // Only the product's own series belongs to a store, and that store is in the series' country; manual spends without
+  // a place have neither.
+  && (value.role === 'own' ? (value.store === null ? value.country === null : value.store.country === value.country)
+    : value.store === null)
   && value.points.every((item, index) => index === 0 || value.points[index - 1].period_start < item.period_start)
   && value.points.reduce((sum, item) => sum + item.count, 0) === value.observations
 const generic = object<GenericRef>({ id: isId, name: text, base_unit: choice('pcs', 'kg', 'l') })

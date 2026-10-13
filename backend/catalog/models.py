@@ -76,6 +76,9 @@ class Product(models.Model):
         max_length=8, choices=Unit.choices, blank=True, default="",
     )
     attributes = models.JSONField(default=dict, blank=True)
+    # Empty — a shared product. «user:<id>» — made from a named purchase of that person's manual spend
+    # (receipts.manual): its name is private text, so namesakes of different people live side by side.
+    scope = models.CharField(max_length=32, blank=True, default="")
 
     class Meta:
         # Decisions about the shared catalog: product merges and suggested categories.
@@ -85,7 +88,8 @@ class Product(models.Model):
                 fields=["gtin"], condition=~Q(gtin=""), name="catalog_product_gtin_uniq",
             ),
             models.UniqueConstraint(
-                fields=["brand", "name", "package_quantity", "package_unit"],
+                # scope first: the admin's message still ends with «Package unit уже существует».
+                fields=["scope", "brand", "name", "package_quantity", "package_unit"],
                 nulls_distinct=False, name="catalog_product_brand_name_package_uniq",
             ),
             models.CheckConstraint(

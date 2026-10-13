@@ -179,7 +179,8 @@ def _line_category(rows, kind, line_category, product_id):
     """Категория строки либо ``None`` (услуга, залог, строка без категории)."""
     if kind != _KIND.PRODUCT:
         return None
-    if product_id is not None:
+    # Своя категория строки важнее категории товара (названная покупка траты вручную).
+    if product_id is not None and line_category is None:
         return rows.product_category.get(product_id)
     return line_category
 

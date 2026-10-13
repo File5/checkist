@@ -11,7 +11,7 @@ from django.test import TestCase, override_settings, tag
 from django.utils import timezone
 
 from accounts.models import Household, Membership
-from catalog.models import Category
+from catalog.models import Category, Product
 from incomes.models import IncomeCategory
 from receipts import manual, manual_parse
 from receipts.manual_parse import CodexTextParser, FakeTextParser, ParseOutputError, draft_from_output
@@ -26,7 +26,7 @@ TODAY = date(2026, 10, 12)
 def answer(**fields):
     """Ответ модели по схеме: все ключи, по умолчанию пустые."""
     base = {"kind": "spend", "total": None, "currency": None, "category": None, "purchased_on": None,
-            "store_name": None, "note": None, "payment_method": None, "lines": []}
+            "store_name": None, "note": None, "payment_method": None, "item_name": None, "lines": []}
     return {**base, **fields}
 
 
@@ -53,7 +53,7 @@ class DraftValidationTests(ParseFixture, TestCase):
         draft = draft_from_output(answer(total="4500", category=self.taxi.pk, note=" до аэропорта "), self.payload())
         self.assertEqual(draft, {
             "total": "4500", "currency": "KZT", "category": self.taxi.pk, "purchased_on": "2026-10-12",
-            "store_name": None, "note": "до аэропорта", "payment_method": "", "lines": [],
+            "store_name": None, "note": "до аэропорта", "payment_method": "", "item_name": None, "lines": [],
         })
         self.assertEqual(draft_from_output(answer(total="900", payment_method="cash"), self.payload())["payment_method"], "cash")
 
@@ -96,7 +96,8 @@ class DraftValidationTests(ParseFixture, TestCase):
         draft = draft_from_output(answer(kind="income", total="650000", category=7, store_name="Работа",
                                          lines=[{"name": "x", "amount": "1", "quantity": None, "category": None}]), payload)
         self.assertEqual(draft, {"kind": "income", "total": "650000", "currency": "KZT", "category": 7,
-                                 "purchased_on": "2026-10-12", "store_name": None, "note": "", "lines": []})
+                                 "purchased_on": "2026-10-12", "store_name": None, "note": "", "item_name": None,
+                                 "lines": []})
         with self.assertRaises(ParseOutputError):
             draft_from_output(answer(kind="income", total="0", category=7), payload)
 
@@ -156,7 +157,7 @@ class ExecuteTests(ParseFixture, TestCase):
         self.assertEqual((row.status, row.error_code), ("succeeded", ""))
         self.assertEqual(row.draft, {
             "total": "230.5", "currency": "KZT", "category": first.pk, "purchased_on": "2026-10-12",
-            "store_name": None, "note": "", "payment_method": "", "lines": [],
+            "store_name": None, "note": "", "payment_method": "", "item_name": "Молоко хлеб", "lines": [],
         })
         self.assertEqual(Receipt.objects.count(), receipts)  # the parse saves nothing
 
@@ -165,7 +166,8 @@ class ExecuteTests(ParseFixture, TestCase):
         IncomeCategory.objects.get_or_create(name="Кэшбэк и проценты", household=None, user=None)
         row = self.run_one(FakeTextParser(), "зарплата 650 000")
         self.assertEqual(row.draft, {"kind": "income", "total": "650000", "currency": "KZT", "category": salary.pk,
-                                     "purchased_on": "2026-10-12", "store_name": None, "note": "", "lines": []})
+                                     "purchased_on": "2026-10-12", "store_name": None, "note": "", "item_name": None,
+                                     "lines": []})
         cashback = IncomeCategory.objects.get(name="Кэшбэк и проценты", household=None, user=None)
         self.assertEqual(self.run_one(FakeTextParser(), "кэшбэк 3 200").draft["category"], cashback.pk)
 
@@ -175,6 +177,12 @@ class ExecuteTests(ParseFixture, TestCase):
                              ("vpn 2500 оплатил в USDT", "crypto"), ("хлеб 230", "")):
             with self.subTest(text=text):
                 self.assertEqual(self.run_one(FakeTextParser(), text).draft["payment_method"], method)
+
+    def test_fake_names_the_purchase_by_the_words_of_the_text(self):
+        for text, item in (("подписка claude max 225$", "Подписка claude max"), ("стрижка 5000 тг наличными", "Стрижка"),
+                           ("4500", None)):
+            with self.subTest(text=text):
+                self.assertEqual(self.run_one(FakeTextParser(), text).draft["item_name"], item)
 
     def test_fake_without_a_number_leaves_the_total_empty(self):
         self.assertIsNone(self.run_one(FakeTextParser(), "такси").draft["total"])
@@ -255,10 +263,26 @@ class HistoryInputTests(ParseFixture, TestCase):
         row = manual_parse.execute(manual_parse.claim(), parser=FakeTextParser())
         self.assertEqual(row.draft, {
             "total": "225.00", "currency": "USD", "category": self.subs.pk, "purchased_on": "2026-10-12",
-            "store_name": "CLAUDE.AI SUBSCRIPTION", "note": "", "payment_method": "", "lines": [],
+            "store_name": "CLAUDE.AI SUBSCRIPTION", "note": "", "payment_method": "", "item_name": None, "lines": [],
         })
         self.queued("claude 230")
         self.assertEqual(manual_parse.execute(manual_parse.claim(), parser=FakeTextParser()).draft["total"], "230")
+
+    def test_history_names_the_product_of_a_named_purchase_and_fake_takes_it(self):
+        # «Что купили» в истории — название товара каталога: модель берёт существующее.
+        receipt = manual.create(self.owner, {"total": "225", "currency": "USD", "category": self.subs.pk,
+                                             "purchased_on": "2026-10-01", "item_name": "подписка claude max"})
+        Product.objects.filter(pk=receipt.lines.get().product_id).update(name="Подписка Claude Max 20x")
+        payload = manual_parse.build_input(self.queued("подписка claude 230"))
+        self.assertEqual([(item["item_name"], item["store_name"], item["lines"]) for item in payload["history"]][0],
+                         ("Подписка Claude Max 20x", None, []))
+        self.assertTrue(all(item["item_name"] is None for item in payload["history"][1:]))
+        row = manual_parse.execute(manual_parse.claim(), parser=FakeTextParser())
+        self.assertEqual((row.draft["item_name"], row.draft["total"], row.draft["currency"], row.draft["category"]),
+                         ("Подписка Claude Max 20x", "230", "USD", self.subs.pk))
+        # Черновик — тело сохранения: та же трата ведёт к тому же товару.
+        saved = manual.create(self.owner, row.draft)
+        self.assertEqual(saved.lines.get().product_id, receipt.lines.get().product_id)
 
     @override_settings(CHECKIST_AUTH_MODE="accounts")
     def test_history_is_the_family_of_the_requester(self):

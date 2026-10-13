@@ -90,11 +90,13 @@ function normalized(value: unknown): value is NormalizedPrice {
 function matchesBase(value: NormalizedPrice, base: BaseUnit): boolean {
   return value.comparable === (value.normalized_unit === base)
 }
+/** A field an older server leaves out: missing passes, anything else must pass `check`. */
+const optionalKey = (value: unknown, key: string, check: Check) => !record(value) || !Object.hasOwn(value, key) || check(value[key])
 const lastPrice: Guard<LastProductPrice> = (value): value is LastProductPrice => normalized(value)
-  && object<{ paid_unit_price: string; purchased_on: string; store_id: number }>({
-    paid_unit_price: price, purchased_on: isISODate, store_id: isId,
-  })(value)
-const productPrice = object<ProductPrice>({ country, currency, observations: isId, last: lastPrice })
+  && object<{ paid_unit_price: string; purchased_on: string; store_id: number | null }>({
+    paid_unit_price: price, purchased_on: isISODate, store_id: nullable(isId),
+  })(value) && optionalKey(value, 'manual', bool)
+const productPrice = object<ProductPrice>({ country: nullable(country), currency, observations: isId, last: lastPrice })
 const productShape = object<Product>({
   id: isId, name: text, brand: nullable(named), model: text, gtin: text,
   package: nullable(object<{ quantity: string; unit: string }>({ quantity, unit })),
@@ -129,18 +131,18 @@ export function page<T>(check: Guard<T>, maximum = 200): Guard<Page<T>> {
 
 const priceProduct = object<PriceProduct>({ id: isId, name: text, base_unit: baseUnit })
 type PointShape = {
-  own: boolean; observed_at: string | null; purchased_on: string; store: StoreBrief; currency: string
+  own: boolean; observed_at: string | null; purchased_on: string; store: StoreBrief | null; currency: string
   quantity: string | null; unit: string; list_unit_price: string; paid_unit_price: string
   discount_amount: string | null; receipt_id: number | null; position: number | null
 }
 const pointShape = object<PointShape>({
-  own: bool, observed_at: nullable(isISODateTime), purchased_on: isISODate, store: storeBrief, currency,
+  own: bool, observed_at: nullable(isISODateTime), purchased_on: isISODate, store: nullable(storeBrief), currency,
   quantity: nullable(quantity), unit, list_unit_price: price, paid_unit_price: price,
   discount_amount: nullable(amount), receipt_id: nullable(isId), position: nullable(nonNegativeInteger),
 })
 /** `own` is mandatory and decides the five receipt fields: all set for my purchase, all null for a foreign one. */
 const point: Guard<PricePoint> = (value): value is PricePoint => normalized(value) && pointShape(value)
-  && [value.observed_at, value.quantity, value.discount_amount, value.receipt_id, value.position]
+  && optionalKey(value, 'manual', bool) && [value.observed_at, value.quantity, value.discount_amount, value.receipt_id, value.position]
     .every((field) => (field !== null) === value.own)
 export const isPriceHistory: Guard<PriceHistory> = (value): value is PriceHistory => page(point, 500)(value)
   && object<{ product: PriceProduct }>({ product: priceProduct })(value)
@@ -164,6 +166,6 @@ export const isPriceSummary: Guard<PriceSummary> = (value): value is PriceSummar
     && (value.group_by === 'country'
       ? object<{ country: string }>({ country })(item) && !Object.hasOwn(item, 'store')
       : value.group_by === 'store'
-        ? object<{ store: Store }>({ store })(item) && !Object.hasOwn(item, 'country')
+        ? object<{ store: Store | null }>({ store: nullable(store) })(item) && !Object.hasOwn(item, 'country')
         : !Object.hasOwn(item, 'country') && !Object.hasOwn(item, 'store')))
 }

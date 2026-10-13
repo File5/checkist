@@ -13,6 +13,8 @@
 .expense-hint-note { margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-xs); }
 .expense-error { margin: 0; color: var(--ck-error-text); font-size: var(--ck-text-xs); font-weight: 600; }
 .expense-row-block > .expense-error, .expense-line > .expense-error { padding-bottom: 10px; }
+/* «Что купили»: what the named purchase becomes, under the row. */
+.expense-item-note { margin-top: -6px; padding-bottom: 12px; }
 
 /* «Скажите словами — заполню форму»: its own small form on the soft accent, one row of field, mic and arrow. */
 .expense-hint { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 16px; border-radius: var(--ck-radius); background: var(--ck-accent-bg); }

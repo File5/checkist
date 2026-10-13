@@ -122,7 +122,8 @@ class ReceiptLine(models.Model):
     product = models.ForeignKey(
         "catalog.Product", null=True, blank=True, on_delete=models.SET_NULL, related_name="receipt_lines",
     )
-    # Категория строки без товара (трата вручную); у строки с товаром категория — товара.
+    # Категория строки траты вручную (и обслуживания/чаевых без товара); важнее категории товара:
+    # названная покупка траты вручную — товар каталога, но лежит в категории, выбранной человеком.
     category = models.ForeignKey(
         "catalog.Category", null=True, blank=True, on_delete=models.PROTECT, related_name="receipt_lines",
     )

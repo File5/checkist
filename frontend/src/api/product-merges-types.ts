@@ -41,7 +41,9 @@ export type MergeGroup = MergeGroupBase & { members: MergeMember[]; conflicts: M
  * `receipt_id: null` — a purchase of another user (only a moderator gets such lines); there is no `own` field.
  */
 export type MergeLine = {
-  line_id: number; receipt_id: number | null; position: number; purchased_on: ISODate; store: StoreBrief
+  line_id: number; receipt_id: number | null; position: number; purchased_on: ISODate
+  /** Null — «Без места»: a named purchase of a manual spend without a place. */
+  store: StoreBrief | null
   name: string; quantity: Decimal; unit: Unit; unit_price: Decimal; amount: Decimal; discount_amount: Decimal
   currency: CurrencyCode; origin_product_id: number | null
 }

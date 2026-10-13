@@ -114,9 +114,10 @@ function LineHeading({ line, lines }: { line: Line; lines: Line[] }) {
   return <>
     <span className="receipt-note">{glue('Строка', line.position)} · {lineKinds[line.kind]}</span>
     <span className="receipt-printed-name">{recognizedText(line.name)}</span>
+    {/* A named purchase of a manual spend has both: its category and its product of the catalogue. */}
+    {line.category && <span className="receipt-note receipt-line-category">Категория: {line.category.name}</span>}
     {line.product ? <Link className="receipt-product-link" to={`/catalog/products/${line.product.id}`}>Товар каталога: {recognizedText(line.product.name)}</Link>
-      : line.category ? <span className="receipt-note receipt-line-category">Категория: {line.category.name}</span>
-        : <span className="receipt-warning">Товар не сопоставлен</span>}
+      : !line.category && <span className="receipt-warning">Товар не сопоставлен</span>}
     <LineRelations line={line} lines={lines} />
   </>
 }

@@ -37,7 +37,7 @@ export type Line = {
   id: number; position: number; kind: LineKind; parent_id: number | null; name: string; name_i18n: Record<string, string>
   store_item_code: string; barcode: string; quantity: Decimal; unit: Unit; unit_price: Decimal; amount: Decimal
   discount_amount: Decimal; paid_amount: Decimal; product: NamedObject | null
-  /** The category of a line without a product (a manual spend); a line with a product takes the product's. */
+  /** The category of a line of a manual spend (and of a service charge); it wins over the product's (2026-10-13). */
   category: NamedObject | null; matching_status: MatchingStatus
   tax_rate: TaxRate | null; tax_code: string; tax_amount: Decimal | null; is_excise: boolean; is_marked: boolean
 }
@@ -56,12 +56,14 @@ export type ReceiptLineParams = PageParams & { kind?: LineKind; matching?: Match
 /** Defaults of the «Добавить трату» form: the currency of the last receipt and the categories of manual spends by use. */
 export type ManualDefaults = { currency: CurrencyCode; frequent_categories: number[] }
 /** A past manual spend of the family to repeat with one tap (`GET /api/receipts/manual/suggest/`): the last of its kind
- * (place, currency, category or names of positions) and how many there were. `lines` — positions of an itemized spend,
- * empty for one amount in `category`. */
+ * (place, currency, category and «Что купили» or names of positions) and how many there were. `lines` — positions of an
+ * itemized spend, empty for one amount in `category`; `item_name` — «Что купили» of such an amount (the catalogue name),
+ * null without one or from an older server. */
 export type ManualSuggestionLine = { name: string; amount: Decimal; category: number | null }
 export type ManualSuggestion = {
   receipt_id: number; store_name: string | null; category: { id: number; name: string } | null; currency: CurrencyCode
   total: Decimal; note: string; purchased_on: ISODate; lines: ManualSuggestionLine[]; uses: number
+  item_name?: string | null
 }
 export type ManualLineInput = { name: string; amount: Decimal; quantity?: Decimal; category?: number | null }
 /** Body of `POST /api/receipts/manual/` and of `PATCH /api/receipts/{id}/`. Without lines `total` and `category` are required. */
@@ -70,6 +72,9 @@ export type ManualSpendInput = {
   store_name?: string | null; note?: string; lines?: ManualLineInput[]
   /** Not sent — the saved one stays (`PATCH`), `''` on a new spend. */
   payment_method?: PaymentMethodValue
+  /** «Что купили» of a spend without positions: the one line is named so and becomes a product of the catalogue;
+   * null or `''` — the line is named after the category, no product. Never with positions. */
+  item_name?: string | null
 }
 
 /** «Трата словами»: the text waits for the worker; `draft` is a body of `POST /api/receipts/manual/` once `succeeded`. */
@@ -82,6 +87,8 @@ export type ManualParseDraft = {
   payment_method?: PaymentMethodValue
   /** `income` — «зарплата 650 000»: `category` is a category of incomes, no place and no positions. Absent — a spend. */
   kind?: 'spend' | 'income'
+  /** «Что купили» («подписка claude max 225$» — «Подписка Claude Max»); null without one, missing from an older server. */
+  item_name?: string | null
 }
 export type ManualParse = {
   id: number; status: ManualParseStatus; draft: ManualParseDraft | null

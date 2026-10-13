@@ -514,7 +514,7 @@ MEDIA: original сохраняется без изменений (у PDF — о�
 
 - Без позиций — одна строка «<название категории>» на всю сумму с `category`; с позициями — строки с названиями человека. Строка: `kind=product`, `unit=pcs`, `unit_price = amount / quantity`, `product=NULL`, `category` — своя, иначе общая. Товаром каталога строки не сопоставляются: `find_alias` ищет по продавцу, которого у траты может не быть, а новый товар попал бы в «Не разобрано» и спрятал бы категорию человека.
 - `store` — найденный по вывеске или названию без учёта регистра магазин либо новый `Merchant` + `Store` (страна по валюте, адрес пустой); без места — `NULL`. `operation` — `sale`; `purchased_at` — момент сохранения, если дата сегодняшняя, иначе полдень даты в поясе места (без места — сервера).
-- Дедупликации нет (условие `source='photo'`); наблюдением цены трата не бывает (`receipts.prices.observation_q` требует `source='photo'`). Статистика берёт категорию товара, а у строки без товара — `ReceiptLine.category` (`receipts/spending.py`, особые элементы `no_product` и `no_store`).
+- Дедупликации нет (условие `source='photo'`); наблюдением цены трата не бывает (`receipts.prices.observation_q` требует `source='photo'`). (До 2026-10-13; теперь — раздел «Названная покупка — товар каталога» в конце.) Статистика берёт категорию товара, а у строки без товара — `ReceiptLine.category` (`receipts/spending.py`, особые элементы `no_product` и `no_store`).
 - В админке `source` показан отключённым полем: чек, заведённый там, — `photo`, с прежними правилами дубликатов; у такого чека магазин обязателен.
 
 **Откат** `receipts.0006_manual_expense` — `manage.py migrate receipts 0005_receipt_owner_required`: при хотя бы одной трате `source=manual` первым шагом отказывает (`RuntimeError`, схема не меняется) — сначала удалите траты (`DELETE /api/receipts/{id}/` или админка). Без ручных трат откат снимает `source`, `note`, `category`, возвращает `store NOT NULL` и прежние условия ограничений; данные чеков с фото не теряются.
@@ -1028,3 +1028,26 @@ docker compose -p checkist_dev cp postgres:/tmp/checkist.dump ./checkist.dump
   только `accounts.family.set_visible_from` (API) и админка (`Households` → члены, колонка «Visible from»).
 - Миграция `accounts.0005_membership_visible_from` — одно `AddField` со значением `NULL`: доступ после неё прежний.
   Откат — `migrate accounts 0004_families_ai_invites` (столбец удаляется, ограничения пропадают).
+## Названная покупка — товар каталога (`receipts`, 2026-10-13, ветка `feature/manual-products`)
+
+- Схема прежняя, миграций нет. `ReceiptLine.product` у траты вручную теперь заполнен у названной покупки: строки «Что
+  купили» (`item_name`) и каждой позиции; строка «<категория>» (трата без названия — выписки, регулярные платежи,
+  «Продукты 12 000») остаётся `product=NULL`. Пишет только `receipts.manual` (`find_or_create_products`, правило — как
+  у импорта среди общих товаров и товаров своих областей: написание продавца места → `name_key` названия → новый
+  `Product` в «Не разобрано» в области владельца траты; поглощённый слиянием — оставляемый). Написаний трата вручную
+  не создаёт.
+- `catalog.Product.scope` (миграция `catalog.0004_product_scope`): пусто — общий товар; `user:<id>` — личный товар из
+  траты вручную (`receipts.prices.product_scope`: всегда владелец траты, не семья). Видимость личного товара — сам
+  человек либо член его семьи и видимая запросу строка траты (`receipts.prices.seen_product_q`, fail-closed). Поле входит в уникальность
+  `catalog_product_brand_name_package_uniq` (первым). Откат — `migrate catalog 0003_service_charge_category`
+  (отказывает, пока есть товары, различающиеся только `scope`).
+- Личное название: `receipts.prices.observation_q(prefix, request)` пускает строку траты вручную только видимую запросу
+  и только товара видимой области; импорт чеков с фото к чужому личному товару не привязывает; `merges` и
+  `classification` берут только `scope=""`.
+- `ReceiptLine.category` важнее категории товара (`receipts.spending.line_category`, `category_spends.line_category`,
+  `trends`, `budget.dashboard`, список «Трат», выгрузка): у строки чека с фото категории нет (кроме обслуживания без
+  товара), поэтому прежние суммы не меняются.
+- `receipts.prices.observation_q` принимает строки трат вручную с товаром; `price_history` аннотирует `country_code`
+  (`NULL` у траты без места), `is_manual(line)` — признак ответа API.
+- Старые траты не меняются; откат кода — после отката `catalog.0004`: строки с товаром у трат вручную безвредны для
+  прежнего кода, прежний `observation_q` их не видит.

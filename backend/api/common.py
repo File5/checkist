@@ -73,7 +73,10 @@ def store_name(store):
 
 
 def store_brief(store):
-    """``{"id", "name", "city", "country"}`` — магазин в точке истории и в сравнении."""
+    """``{"id", "name", "city", "country"}`` — магазин в точке истории и в сравнении; ``None`` — «Без места»
+    (трата вручную)."""
+    if store is None:
+        return None
     return {"id": store.pk, "name": store_name(store), "city": store.city, "country": store.country_id}
 
 

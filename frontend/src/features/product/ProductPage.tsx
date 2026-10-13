@@ -115,10 +115,10 @@ function ProductScreen({ productId, query, returnTo }: ProductPageProps) {
   const failures = [historyRequest.state, summaryRequest.state].filter((state): state is ApiFailure => state.kind === 'error')
   // Store-grouped summary already includes full stores beyond the card's 50-item limit.
   const summaryStores = summaryRequest.state.kind === 'ok' && summaryRequest.state.data.group_by === 'store'
-    ? summaryRequest.state.data.groups.map((group) => group.store) : []
+    ? summaryRequest.state.data.groups.flatMap((group) => group.store ? [group.store] : []) : []
   const stores = mergeStores(mergeStores(directoryStores, product?.stores ?? []), summaryStores)
   const selectedStore = historyRequest.state.kind === 'ok'
-    ? historyRequest.state.data.results.find((point) => point.store.id === query.store)?.store : undefined
+    ? historyRequest.state.data.results.find((point) => point.store?.id === query.store)?.store ?? undefined : undefined
   const missing = productRequest.state.kind === 'error' && productRequest.state.reason === 'not_found'
   // Independent of the card: a refusal of the local API leaves the card and «не найден» as they were.
   const merges = useProductMergeLookup(productId)
@@ -156,7 +156,8 @@ function ProductScreen({ productId, query, returnTo }: ProductPageProps) {
       </section>
       {!missing && <>
         <aside className="product-limitations" aria-label="Ограничения данных о ценах">
-          <p>Это наблюдения покупок из чеков, а не текущие цены магазинов. Скидка всего чека не распределена по товарам. Налоговая база цен не указана.</p>
+          <p>Это наблюдения покупок из чеков, а не текущие цены магазинов. Скидка всего чека не распределена по товарам. Налоговая база цен не указана.
+            Цена с пометкой «вручную» внесена человеком в трате без чека.</p>
           <p>Сопоставимость обозначает совместимость единиц; она не подтверждает одинаковую налоговую базу. Валюты и единицы не объединяются.</p>
         </aside>
         <FilterForm query={query} product={product} stores={stores} selectedStore={selectedStore}

@@ -241,6 +241,19 @@ export function ExpenseForm({ draft, chips, errors, saving, failure, receiptId, 
     </Sheet>
 
     <section className="expense-card expense-details">
+      {/* «Что купили»: a named purchase of a spend without positions becomes a product of the catalogue (positions name
+          their own purchases). */}
+      {!income && !itemized && <div className="expense-row-block">
+        <label className="expense-row" htmlFor="expense-item">
+          <span className="expense-row-label">Что купили</span>
+          <input id="expense-item" className="expense-row-input" autoComplete="off" value={draft.item ?? ''} placeholder="Необязательно"
+            aria-invalid={Boolean(errors.item)} aria-describedby={describedBy(errors, 'item') ?? 'expense-item-note'}
+            onChange={(event) => set({ item: event.target.value })} />
+        </label>
+        <p className="expense-hint-note expense-item-note" id="expense-item-note">
+          {draft.item?.trim() ? 'Станет товаром каталога с ценой «вручную».' : 'Например, «Стрижка» или «Подписка Claude Max» — станет товаром каталога.'}</p>
+        {fieldError(errors, 'item')}
+      </div>}
       <div className="expense-row-block">
         <div className="expense-row" role="group" aria-labelledby="expense-when-label" aria-describedby={describedBy(errors, dateField)}>
           <span id="expense-when-label" className="expense-row-label">Когда</span>

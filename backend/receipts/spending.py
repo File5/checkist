@@ -7,9 +7,10 @@
 Значение элемента — ``Σ (amount − discount_amount)`` его строк. Скидка на весь чек по
 строкам не распределяется и видна разницей ``receipts_total − lines_paid``.
 
-Категория строки — категория её товара, а у строки без товара — собственная
-``ReceiptLine.category`` (трата, внесённая вручную, либо строка-услуга обслуживания и
-чаевых — ``receipts.service_charges``). Такая строка в разбивке по
+Категория строки — собственная ``ReceiptLine.category`` (трата, внесённая вручную, либо
+строка-услуга обслуживания и чаевых — ``receipts.service_charges``), а без неё — категория
+её товара: названная покупка траты вручную (товар каталога, 2026-10-13) лежит в категории,
+выбранной человеком, а не в категории товара. Строка без товара в разбивке по
 категориям лежит в своей категории, по обобщённым продуктам и товарам — в особом
 элементе ``no_product``. Чеки без магазина (``store`` NULL) в разбивке по магазинам —
 особый элемент ``no_store``. Строка без товара и без категории — ``unmatched``, как раньше.
@@ -52,7 +53,7 @@ class LineRow(NamedTuple):
     paid: Decimal
     lines: int
     quantity: Decimal
-    category_id: int | None = None  # ReceiptLine.category: только у строки без товара
+    category_id: int | None = None  # ReceiptLine.category: важнее категории товара
 
 
 class ReceiptRow(NamedTuple):
@@ -230,6 +231,13 @@ def _special(row, product):
     return "unmatched" if product is None and row.category_id is None else None
 
 
+def line_category(row, product):
+    """Категория строки: своя ``ReceiptLine.category``, иначе категория товара; ``None`` — ни той, ни другой."""
+    if row.category_id is not None or product is None:
+        return row.category_id
+    return product.category_id
+
+
 def _store_key(store_id):
     return ("no_store", None, False) if store_id is None else ("store", store_id, False)
 
@@ -278,7 +286,7 @@ def spent_categories(data):
         product = data.products.get(row.product_id) if row.kind == _KIND.PRODUCT else None
         if _special(row, product):
             continue
-        category_id = product.category_id if product is not None else row.category_id
+        category_id = line_category(row, product)
         if category_id is not None:
             found.add((row.currency, category_id))
     return found
@@ -306,7 +314,7 @@ def summarize(data, *, group_by="category", limit=10, tree=None, category=None, 
     for row in data.lines:
         product = data.products.get(row.product_id) if row.kind == _KIND.PRODUCT else None
         special = _special(row, product)
-        category_id = product.category_id if product is not None else row.category_id
+        category_id = line_category(row, product)
         if filtered and (
             special
             or (generic is not None and (product is None or product.generic_id != generic))

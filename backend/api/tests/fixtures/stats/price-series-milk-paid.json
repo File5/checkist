@@ -28,6 +28,7 @@
       "country": "DE",
       "currency": "EUR",
       "unit": "pcs",
+      "manual": false,
       "comparable": false,
       "observations": 63,
       "points": [
@@ -211,6 +212,7 @@
       "country": "DE",
       "currency": "EUR",
       "unit": "pcs",
+      "manual": false,
       "comparable": false,
       "observations": 21,
       "points": [
@@ -394,6 +396,7 @@
       "country": "KZ",
       "currency": "KZT",
       "unit": "pcs",
+      "manual": false,
       "comparable": false,
       "observations": 21,
       "points": [

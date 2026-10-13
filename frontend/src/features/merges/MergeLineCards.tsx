@@ -18,7 +18,7 @@ export default function MergeLineCards({ lines, columns, caption, label, origin 
       const cells: CardFact[] = [
         { key: 'origin', label: columns.origin, kind: 'text', value: origin(line) },
         { key: 'date', label: columns.date, value: <time dateTime={line.purchased_on}>{formatPurchasedOn(line.purchased_on)}</time> },
-        { key: 'store', label: columns.store, kind: 'text', value: <>{line.store.name.trim() || 'Не указано'}<span className="ck-merge-subtext">{[line.store.city.trim(), line.store.country].filter(Boolean).join(' · ')}</span></> },
+        { key: 'store', label: columns.store, kind: 'text', value: line.store ? <>{line.store.name.trim() || 'Не указано'}<span className="ck-merge-subtext">{[line.store.city.trim(), line.store.country].filter(Boolean).join(' · ')}</span></> : 'Без места' },
         { key: 'quantity', label: columns.quantity, value: formatQuantity(line.quantity, line.unit) },
         { key: 'price', label: columns.price, value: formatPrice(line.unit_price, line.currency) },
         { key: 'amount', label: columns.amount, value: formatMoney(line.amount, line.currency) },

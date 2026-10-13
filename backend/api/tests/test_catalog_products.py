@@ -43,7 +43,7 @@ class ProductsTestCase(TestCase):
                 "country": "RU", "currency": "RUB", "observations": 1,
                 "last": {
                     "paid_unit_price": "111.0000", "normalized_price": "130.5882", "normalized_unit": "l",
-                    "comparable": True, "purchased_on": "2026-09-28", "store_id": data.shop_store.pk,
+                    "comparable": True, "purchased_on": "2026-09-28", "store_id": data.shop_store.pk, "manual": False,
                 },
             }],
         }
@@ -56,7 +56,7 @@ class ProductsTestCase(TestCase):
                 "country": "DE", "currency": "EUR", "observations": 6,
                 "last": {
                     "paid_unit_price": "1.0900", "normalized_price": None, "normalized_unit": None,
-                    "comparable": False, "purchased_on": "2026-10-01", "store_id": data.lidl_store.pk,
+                    "comparable": False, "purchased_on": "2026-10-01", "store_id": data.lidl_store.pk, "manual": False,
                 },
             }],
         }
@@ -73,7 +73,7 @@ class ProductsTestCase(TestCase):
                 "country": "KZ", "currency": "KZT", "observations": 1,
                 "last": {
                     "paid_unit_price": "189490.0000", "normalized_price": None, "normalized_unit": None,
-                    "comparable": False, "purchased_on": "2026-09-11", "store_id": data.dns_store.pk,
+                    "comparable": False, "purchased_on": "2026-09-11", "store_id": data.dns_store.pk, "manual": False,
                 },
             }],
         }
@@ -112,7 +112,7 @@ class ProductListTests(ProductsTestCase):
                 "country": "RU", "currency": "EUR", "observations": 1,
                 "last": {
                     "paid_unit_price": "1.2000", "normalized_price": "1.4118", "normalized_unit": "l",
-                    "comparable": True, "purchased_on": "2026-07-01", "store_id": line.receipt.store_id,
+                    "comparable": True, "purchased_on": "2026-07-01", "store_id": line.receipt.store_id, "manual": False,
                 },
             },
             *self.shop_milk["prices"],

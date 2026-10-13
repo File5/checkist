@@ -295,12 +295,15 @@ def candidates(*, product_ids=None, auto=False):
     The generic product is the service one, there is no pending record, the
     product is not absorbed by a pending merge and it is not a service or a
     deposit (no receipt lines, or at least one line of kind ``product``).
+    A private product (``Product.scope`` not empty — made from a manual spend) is
+    never selected: its name is a person's own text, and a new generic product
+    suggested for it would land in the shared catalogue.
     ``auto`` — the run after an import: also no record of any status, ever.
     """
     lines = ReceiptLine.objects.filter(product_id=OuterRef("pk"))
     queryset = visible(Product.objects.filter(
         generic__name__iexact=taxonomy.SERVICE_NAME, pending_classification__isnull=True,
-    )).filter(~Exists(lines) | Exists(lines.filter(kind=ReceiptLine.Kind.PRODUCT)))
+    )).filter(~Exists(lines) | Exists(lines.filter(kind=ReceiptLine.Kind.PRODUCT))).filter(scope="")
     if product_ids is not None:
         queryset = queryset.filter(pk__in=list(product_ids))
     if auto:
@@ -1278,9 +1281,13 @@ def cancel_pending():
 # --- Reading --------------------------------------------------------------------------------------
 
 
-def get_record(record_id):
+def get_record(record_id, condition=None):
+    """Record by id; ``condition`` — an extra ``Q`` the record must match (the API's visibility), else not found."""
+    queryset = ProductClassification.objects.select_related("run")
+    if condition is not None:
+        queryset = queryset.filter(condition)
     try:
-        return ProductClassification.objects.select_related("run").get(pk=record_id)
+        return queryset.get(pk=record_id)
     except (ProductClassification.DoesNotExist, ValueError, TypeError):
         raise ClassificationNotFound() from None
 

@@ -19,8 +19,11 @@ export type ExpenseDraft = {
   lines: LineDraft[]
   /** How it was paid, `''` — not said; `undefined` — not sent, the saved one stays. An income has none. */
   method?: PaymentMethodValue
+  /** «Что купили» of a spend without positions: it names the one line and becomes a product of the catalogue
+   * (2026-10-13). Ignored with positions and for an income; missing — empty. */
+  item?: string
 }
-/** Messages by field: `amount`, `currency`, `category`, `date`, `place`, `note`, `lines.N.name`, `lines.N.amount`. */
+/** Messages by field: `amount`, `currency`, `category`, `date`, `place`, `note`, `item`, `lines.N.name`, `lines.N.amount`. */
 export type ExpenseErrors = Record<string, string>
 
 export const PLACE_MAX = 100
@@ -39,6 +42,7 @@ export const messages = {
   place: `Место — не длиннее ${PLACE_MAX} символов.`,
   note: `Комментарий — не длиннее ${NOTE_MAX} символов.`,
   lineName: 'Назовите позицию.',
+  item: `Что купили — не длиннее ${NAME_MAX} символов.`,
   lineAmount: 'Сумма позиции больше нуля, не больше двух знаков после запятой.',
   lines: `Не больше ${LINES_MAX} позиций.`,
   total: 'Итог не совпадает с суммой позиций.',
@@ -123,10 +127,13 @@ export function draftBody(draft: ExpenseDraft): { body: ManualSpendInput } | { e
     })
   } else {
     const amount = normalizeAmount(draft.amount)
+    const item = (draft.item ?? '').trim()
     if (amount === undefined) errors.amount = messages.amount
     if (draft.category === null) errors.category = messages.category
+    if ([...item].length > NAME_MAX) errors.item = messages.item
     body.total = amount
     body.lines = []
+    body.item_name = item || null
   }
   return Object.keys(errors).length ? { errors } : { body }
 }
@@ -169,6 +176,7 @@ export function serverErrors(fields: string[]): ExpenseErrors {
     else if (field === 'total') errors.amount = messages.total
     else if (field === 'purchased_on' || field === 'received_on') errors.date = messages.date
     else if (field === 'store_name') errors.place = messages.place
+    else if (field === 'item_name') errors.item = messages.item
     else if (field in messages) errors[field] = messages[field as keyof typeof messages]
     else errors.form = messages.unknown
   }
@@ -186,16 +194,23 @@ export function amountText(value: string): string {
   return value.endsWith('.00') ? value.slice(0, -3) : value
 }
 
+/** «Что купили» of a saved spend: its one line with a category is named by a person — it has a product of the catalogue
+ * or a name other than its category's. `''` — a spend named after its category, or not one line. */
+export function itemOf(lines: Line[]): string {
+  const [only] = lines
+  return lines.length === 1 && only.category && (only.product !== null || only.name !== only.category.name) ? only.name : ''
+}
+
 /**
- * The draft of a saved manual spend. One line named after its category is a spend without positions;
- * anything else keeps its positions with their categories.
+ * The draft of a saved manual spend. One line with a category is a spend without positions — named after its category,
+ * or «Что купили»; anything else keeps its positions with their categories.
  */
 export function draftFromReceipt(receipt: Receipt, lines: Line[]): ExpenseDraft {
   const base = { currency: receipt.currency, date: receipt.purchased_on, place: receipt.store?.name ?? '', note: receipt.note,
     method: receipt.payment_method ?? '' }
   const [only] = lines
-  if (lines.length === 1 && only.category && only.name === only.category.name) {
-    return { ...base, amount: amountText(receipt.total), category: only.category.id, lines: [] }
+  if (lines.length === 1 && only.category) {
+    return { ...base, amount: amountText(receipt.total), category: only.category.id, lines: [], item: itemOf(lines) }
   }
   return {
     ...base, amount: '', category: null,

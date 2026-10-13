@@ -58,8 +58,9 @@ class HistoryTests(TestCase):
         self.assertEqual(found[0]["category"], {"id": self.subs.pk, "name": "Демо-подписки"})
         self.assertEqual((found[0]["currency"], found[0]["note"], found[0]["purchased_on"], found[0]["lines"]),
                          ("USD", "Claude Max", "2026-09-12", []))
-        self.assertEqual(set(found[0]), {"receipt_id", "store_name", "category", "currency", "total", "note",
+        self.assertEqual(set(found[0]), {"receipt_id", "store_name", "category", "item_name", "currency", "total", "note",
                                          "purchased_on", "lines", "uses"})
+        self.assertIsNone(found[0]["item_name"])
 
     def test_suggest_by_a_spelling_note_lines_and_cyrillic_typed_for_latin(self):
         claude = Receipt.objects.filter(store__name="CLAUDE.AI SUBSCRIPTION").first().store
@@ -73,6 +74,13 @@ class HistoryTests(TestCase):
         self.assertEqual(itemized["lines"], [{"name": "Молоко", "amount": "450.00", "category": self.food.pk},
                                              {"name": "Хлеб", "amount": "230.50", "category": None}])
         self.assertEqual([item["store_name"] for item in history.suggest(self.receipts(), "магн")], ["MAGNUM", "Демо-магнит"])
+
+    def test_a_named_purchase_is_repeated_with_its_name(self):
+        manual.create(self.owner, {"total": "5000", "currency": "KZT", "category": self.food.pk,
+                                   "purchased_on": "2026-10-08", "item_name": "Демо-стрижка"})
+        [found] = history.suggest(self.receipts(), "стрижк")
+        self.assertEqual((found["item_name"], found["category"]["id"], found["lines"], found["total"]),
+                         ("Демо-стрижка", self.food.pk, [], "5000.00"))
 
     def test_every_word_must_match_and_numbers_are_ignored(self):
         self.assertEqual(history.suggest(self.receipts(), "claude магнум"), [])

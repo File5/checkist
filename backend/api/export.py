@@ -196,10 +196,10 @@ def _source_q(source):
 
 
 def _category_lines(category_ids):
-    """Строки, чья категория (товара либо своя) в ``category_ids``."""
+    """Строки, чья категория (своя, а без неё — товара) в ``category_ids``."""
     in_products = Product.objects.filter(generic__category_id__in=category_ids).values("pk")
     return (ReceiptLine.objects.annotate(owner_pid=owner_product_id())
-            .filter(Q(owner_pid__in=in_products) | Q(product__isnull=True, category_id__in=category_ids)))
+            .filter(Q(category_id__in=category_ids) | Q(category__isnull=True, owner_pid__in=in_products)))
 
 
 def receipts_queryset(request, filters):
@@ -252,7 +252,7 @@ def _lines(selected, tree):
     found = {}
     for receipt_id, position, kind, name, quantity, unit, unit_price, amount, discount, pid, own_category in rows:
         product = products.get(pid)
-        category_id = product[1] if product else own_category
+        category_id = own_category if own_category is not None or not product else product[1]
         with price_context():
             paid = amount - discount
         found.setdefault(receipt_id, []).append({
@@ -375,7 +375,7 @@ def _summary(selected, filters, tree):
             entry = block(row.currency)
             entry["lines_count"] += row.lines
             product = data.products.get(row.product_id)
-            category_id = product.category_id if product is not None else row.category_id
+            category_id = spending.line_category(row, product)
             root = tree.path_ids(category_id)[0] if category_id is not None and category_id in tree else None
             bucket = entry["categories"].setdefault(root, [_ZERO, 0])
             bucket[0] += row.paid

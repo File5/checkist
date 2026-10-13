@@ -31,14 +31,21 @@ Fields:
   ("с каспи", "каспи голд", "kaspi"); "forte" — ForteBank ("картой форте", "с форте"); "cash" — cash
   ("наличными", "налом", "кэшем"); "crypto" — cryptocurrency ("криптой", "в USDT", "биткоином"); "card" — any other card ("картой", "другой картой"). null when the text
   does not say it and for an income.
+- item_name: what was bought when the text names one particular thing or service whose price is worth
+  remembering — a subscription, goods, a haircut ("подписка claude max 225$" — "Подписка Claude Max",
+  "кроссовки найк 45000" — "Кроссовки Nike", "стрижка 5000" — "Стрижка"); first letter capital, without
+  the amount, date, place or way of payment. When a history spend is clearly the same purchase and has
+  item_name or a position with that thing, return that name exactly as written there. null when the text
+  names only a kind of spending, a payee or a trip ("продукты 12000", "такси до аэропорта", "магнум",
+  "кафе"), for an income and when lines is not empty.
 - lines: positions when the text lists several items with their own amounts ("молоко 450, хлеб 230");
   each with name (as typed, first letter capital), amount (decimal string), quantity (decimal string
   or null for one) and category (an id from categories or null). An empty list when the text names
   one spend; never a single line.
 History: history lists up to ten past spends of the family most like the text, the most alike
 first; it may be empty or unrelated. Each has store_name, category (an id of categories or null),
-currency, total, note, purchased_on, lines (positions, empty for one spend) and uses (how many such
-spends there were). When a history spend is clearly the same spend, take its category and currency
+item_name (the catalogue name of what was bought, or null), currency, total, note, purchased_on, lines
+(positions, empty for one spend) and uses (how many such spends there were). When a history spend is clearly the same spend, take its category and currency
 unless the text names others; never copy its date or note. stores lists the places the family pays
 at, the most frequent first, each with its other spellings (aliases).
 All keys are required even when their values are null.

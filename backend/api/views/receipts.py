@@ -40,6 +40,7 @@ MANUAL_MESSAGES = {
     "unknown": "Значение не найдено.",
     "mismatch": "Итог не совпадает с суммой позиций.",
     "itemized": "У траты с позициями категорию задают позициям.",
+    "item_itemized": "У траты с позициями покупки называют позициями.",
     "choice": "Способ оплаты — kaspi_gold, forte, cash, crypto, card либо пусто.",
 }
 
@@ -67,11 +68,11 @@ def manual_invalid(error):
 def with_list_fields(receipts):
     """Поля строки списка «Траты»: первая позиция и категории строк — подзапросами, без запроса на чек.
 
-    Категория строки — категория товара, если товар есть, иначе ``ReceiptLine.category``
-    (как в статистике); строки без неё не учитываются.
+    Категория строки — своя ``ReceiptLine.category``, если есть, иначе категория товара (как в статистике);
+    строки без обеих не учитываются.
     """
     lines = ReceiptLine.objects.filter(receipt_id=OuterRef("pk"))
-    categories = (lines.annotate(spent_category=Coalesce("product__generic__category_id", "category_id"))
+    categories = (lines.annotate(spent_category=Coalesce("category_id", "product__generic__category_id"))
                   .filter(spent_category__isnull=False).order_by().values("receipt_id")
                   .annotate(ids=ArrayAgg("spent_category", distinct=True)).values("ids"))
     return receipts.annotate(first_line=Subquery(lines.order_by("position", "id").values("raw_name")[:1]),

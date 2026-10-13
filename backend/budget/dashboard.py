@@ -264,8 +264,9 @@ def recent(receipts, tree, limit=RECENT_LIMIT, product_ref=None):
     owners = {owner for _, _, owner, _ in lines if owner is not None}
     product_category = dict(Product.objects.filter(pk__in=owners).values_list("pk", "generic__category_id"))
     for receipt_id, line_category, owner, amount in lines:
-        category = product_category.get(owner) if owner is not None else None
-        root = _root(tree, category if category is not None else line_category)
+        # Своя категория строки важнее категории товара (названная покупка траты вручную).
+        category = line_category if line_category is not None or owner is None else product_category.get(owner)
+        root = _root(tree, category)
         if root is not None:
             sums = paid.setdefault(receipt_id, {})
             sums[root] = sums.get(root, _ZERO) + amount
