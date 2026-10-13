@@ -3,7 +3,7 @@
     GRAFANA_DB_PASSWORD=... python manage.py grafana_reader [--password-env NAME] [--role NAME]
 
 Creates the role or updates it, then sets its privileges anew: CONNECT, USAGE on ``public`` and SELECT
-only on the columns below — never ``auth_user.password``, sessions, sign-in tokens, receipt texts or
+only on the columns the spending dashboard reads — no users, sessions, tokens, notes, receipt texts or
 photos. Column grants, not views: a view would block a later migration that alters a column it reads.
 No default privileges: a new table stays closed until it is added here and the command is run again.
 Without the password variable an existing role keeps its password (a re-run after a migration).
@@ -16,24 +16,21 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import connection, transaction
 from psycopg import sql
 
-# {model: fields}; a renamed field fails here loudly instead of leaving Grafana without a column.
+# {model: fields}: exactly the columns the SQL of «Checkist · Траты» reads (test_grafana_reader checks
+# both ways) — no free text (notes, raw receipt and line texts), no addresses, no people's data
+# beyond the family name of the variable. A renamed field fails here loudly.
 READABLE = {
-    "auth.User": ("id", "username", "first_name", "is_active"),
     "accounts.Household": ("id", "name"),
-    "accounts.Membership": ("user", "household", "role"),
-    # note: «· Выписка …» marks a spend of a bank statement (api.export.STATEMENT_NOTE_REGEX).
-    "receipts.Receipt": ("id", "owner", "store", "source", "currency", "operation", "purchased_on", "total",
-                         "payment_method", "hidden", "note"),
-    "receipts.ReceiptLine": ("id", "receipt", "kind", "product", "category", "amount", "discount_amount"),
+    "accounts.Membership": ("user", "household"),
+    "receipts.Receipt": ("id", "owner", "store", "source", "currency", "purchased_on", "total", "payment_method",
+                         "hidden"),
+    "receipts.ReceiptLine": ("receipt", "product", "category", "amount", "discount_amount"),
     "catalog.Category": ("id", "name", "parent"),
     "catalog.GenericProduct": ("id", "category"),
     "catalog.Product": ("id", "generic"),
     "stores.Store": ("id", "name", "merchant", "merged_into"),
     "stores.Merchant": ("id", "brand_name"),
-    "stores.Currency": ("code", "name"),
-    "incomes.Income": ("id", "owner", "received_on", "amount", "currency", "category"),
-    "incomes.IncomeCategory": ("id", "name"),
-    "rates.Rate": ("currency", "day", "value", "quant"),
+    "incomes.Income": ("owner", "received_on", "amount", "currency"),
 }
 ROLE_NAME = re.compile(r"[a-z_][a-z0-9_]{0,62}")
 

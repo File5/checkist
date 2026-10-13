@@ -1,18 +1,28 @@
 # Override of compose.prod.yaml for a server with Prometheus and Grafana (docs/observability.md).
-# deploy/docker/ck adds it when the environment file sets CHECKIST_OBSERVABILITY_NETWORK: web and
-# postgres join that existing Docker network as well, so Prometheus scrapes checkist-web-1:8000/metrics
-# and Grafana reads checkist-postgres-1:5432 as the read-only role of `manage.py grafana_reader`.
-# Without the variable nothing changes: a QA machine has no such network.
+# deploy/docker/ck adds it when the environment file sets CHECKIST_OBSERVABILITY=1. Two networks of
+# two members each, created on the server beforehand (`docker network create --internal`), never the
+# shared monitoring network:
+#   checkist-metrics    — web and observ-prometheus: Prometheus scrapes checkist-web:8000/metrics;
+#   checkist-grafana-db — postgres and suslicketeam-grafana: Grafana reads checkist-pg:5432 as the
+#                         read-only role of `manage.py grafana_reader`.
+# Without the variable nothing changes: a QA machine has no such networks.
 services:
   web:
-    networks: [default, observability]
+    networks:
+      default:
+      checkist-metrics:
+        aliases: [checkist-web]
     environment:
       # Commit of the checkout for checkist_build_info; ck exports it.
       CHECKIST_COMMIT: ${CHECKIST_COMMIT:-}
   postgres:
-    networks: [default, observability]
+    networks:
+      default:
+      checkist-grafana-db:
+        aliases: [checkist-pg]
 
 networks:
-  observability:
+  checkist-metrics:
     external: true
-    name: ${CHECKIST_OBSERVABILITY_NETWORK:-observability}
+  checkist-grafana-db:
+    external: true

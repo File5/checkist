@@ -14,11 +14,11 @@
     version: 1
 
   # Checkist spends — role checkist_grafana (`manage.py grafana_reader`): SELECT on listed columns
-  # only, read-only transactions; postgres joins `observability` through compose.observability.yaml.
+  # only, read-only transactions; reached over the pair network checkist-grafana-db (alias checkist-pg).
   - name: Checkist · Postgres
     type: grafana-postgresql-datasource
     uid: checkist-postgres
-    url: checkist-postgres-1:5432
+    url: checkist-pg:5432
     user: checkist_grafana
     editable: false
     jsonData:

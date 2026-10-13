@@ -1,3 +1,4 @@
+import re
 from io import StringIO
 from unittest import SkipTest
 from unittest.mock import patch
@@ -5,6 +6,9 @@ from unittest.mock import patch
 from django.core.management import CommandError, call_command
 from django.db import ProgrammingError, connection, transaction
 from django.test import TestCase
+
+from health.management.commands.grafana_reader import columns
+from health.tests.test_grafana_dashboards import builder
 
 ROLE = "checkist_grafana_test"
 PASSWORD = {"OBS_TEST_GRAFANA_PASSWORD": "test-only-grafana-password"}
@@ -44,23 +48,32 @@ class GrafanaReaderTests(TestCase):
                            [ROLE])
             self.assertEqual(cursor.fetchone(), (True, False, False, False))
         for allowed in (
-            "SELECT id, username, first_name, is_active FROM auth_user",
-            "SELECT id, owner_id, total, currency_id, purchased_on, hidden, note FROM receipts_receipt",
+            "SELECT id, owner_id, store_id, source, currency_id, purchased_on, total, payment_method, hidden "
+            "FROM receipts_receipt",
             "SELECT receipt_id, amount, discount_amount, category_id, product_id FROM receipts_receiptline",
             "SELECT id, name, parent_id FROM catalog_category",
             "SELECT user_id, household_id FROM accounts_membership",
-            "SELECT amount, received_on FROM incomes_income",
-            "SELECT currency, day, value, quant FROM rates_rate",
+            "SELECT id, name, merchant_id, merged_into_id FROM stores_store",
+            "SELECT owner_id, amount, received_on, currency_id FROM incomes_income",
         ):
             with self.subTest(allowed=allowed):
                 self.assertIsInstance(self.as_reader(allowed), list)
         for denied in (
-            "SELECT password FROM auth_user", "SELECT * FROM auth_user", "SELECT email FROM auth_user",
-            "SELECT session_key FROM django_session", "SELECT raw_text FROM receipts_receipt",
-            "SELECT raw_name FROM receipts_receiptline", "SELECT text FROM receipts_manualparserequest",
-            "SELECT token_hash FROM accounts_invite", "SELECT endpoint FROM push_pushsubscription",
-            "INSERT INTO stores_currency (code, name) VALUES ('XXX', 'x')",
-            "UPDATE catalog_category SET name = 'x'", "DELETE FROM rates_rate",
+            # People, sessions and tokens.
+            "SELECT id FROM auth_user", "SELECT password FROM auth_user", "SELECT username FROM auth_user",
+            "SELECT session_key FROM django_session", "SELECT token_hash FROM accounts_invite",
+            "SELECT endpoint FROM push_pushsubscription", "SELECT role FROM accounts_membership",
+            # Free text and addresses.
+            "SELECT note FROM receipts_receipt", "SELECT raw_text FROM receipts_receipt",
+            "SELECT fiscal FROM receipts_receipt", "SELECT * FROM receipts_receipt",
+            "SELECT raw_name FROM receipts_receiptline", "SELECT note FROM incomes_income",
+            "SELECT address_raw FROM stores_store", "SELECT legal_name FROM stores_merchant",
+            "SELECT text FROM receipts_manualparserequest", "SELECT details FROM statements_statementrow",
+            # Tables the dashboard does not read.
+            "SELECT code FROM stores_currency", "SELECT day FROM rates_rate",
+            # Writes.
+            "INSERT INTO catalog_category (name) VALUES ('x')", "UPDATE catalog_category SET name = 'x'",
+            "DELETE FROM receipts_receipt",
         ):
             with self.subTest(denied=denied), self.assertRaises(ProgrammingError):
                 self.as_reader(denied)
@@ -74,6 +87,26 @@ class GrafanaReaderTests(TestCase):
             self.run_command()
         self.assertIn("updated", self.run_command())
         self.assertEqual(self.as_reader("SELECT id FROM catalog_category"), [])
+
+    def test_the_grants_are_exactly_what_the_spending_dashboard_reads(self):
+        spending = builder().build()["checkist-spending"]
+        queries = [variable["query"] for variable in spending["templating"]["list"]]
+        queries += [target["rawSql"] for panel in spending["panels"] for target in panel.get("targets", [])]
+        # Not more: every granted table and column is read by some query.
+        text = "\n".join(queries)
+        for table, names in columns().items():
+            for name in names:
+                with self.subTest(table=table, column=name):
+                    self.assertIn(table, text)
+                    self.assertRegex(text, rf"\b{name}\b")
+        # Enough: every query runs as the role (the macros of Grafana replaced by literals).
+        with patch.dict("os.environ", PASSWORD):
+            self.run_command()
+        for query in queries:
+            expanded = re.sub(r"\$__timeFilter\(([^)]+)\)", r"\1 BETWEEN '2026-01-01' AND '2026-12-31'", query)
+            expanded = expanded.replace("$household", "'0'").replace("$currency", "KZT").replace("%", "%%")
+            with self.subTest(query=query[:60]):
+                self.assertIsInstance(self.as_reader(expanded), list)
 
     def test_the_role_name_is_an_identifier(self):
         with self.assertRaisesMessage(CommandError, "--role"):

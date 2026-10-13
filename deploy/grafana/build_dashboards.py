@@ -203,8 +203,6 @@ INCOME = ("SELECT date_trunc('month', i.received_on) AS month, sum(i.amount) AS 
 SPENT = f"SELECT date_trunc('month', r.purchased_on) AS month, sum(r.total) AS spent {RECEIPTS} WHERE {SCOPE} GROUP BY 1"
 METHODS = {"": "Не указан", "kaspi_gold": "Kaspi Gold", "forte": "ForteBank", "cash": "Наличные", "crypto": "Криптовалюта",
            "card": "Другая карта"}
-# api.export.STATEMENT_NOTE_REGEX: a spend of a bank statement ends its note with «· Выписка …».
-STATEMENT = "r.note ~ '·\\s*Выписка[^·]*$'"
 
 
 def spending():
@@ -249,9 +247,9 @@ def spending():
         (piechart("Способы оплаты", sql(f"SELECT CASE r.payment_method {methods} ELSE r.payment_method END AS method, "
                                        f"sum(r.total) AS spent {RECEIPTS} WHERE {SCOPE} GROUP BY 1 ORDER BY 2 DESC", "table"),
                   unit=money), 12, 6),
-        (piechart("Источники", sql(f"SELECT CASE WHEN r.source = 'photo' THEN 'Фото чека' WHEN {STATEMENT} THEN 'Выписка' "
-                                  f"ELSE 'Вручную' END AS source, sum(r.total) AS spent {RECEIPTS} WHERE {SCOPE} GROUP BY 1",
-                                  "table"), "Выписка — по комментарию « · Выписка …», как в выгрузке", money), 12, 6),
+        (piechart("Источники", sql(f"SELECT CASE WHEN r.source = 'photo' THEN 'Фото чека' ELSE 'Вручную и выписки' END "
+                                  f"AS source, sum(r.total) AS spent {RECEIPTS} WHERE {SCOPE} GROUP BY 1", "table"),
+                  "Receipt.source; выписку отличает только комментарий, а свободный текст Grafana не читает", money), 12, 6),
     ]
     return dashboard("checkist-spending", "Checkist · Траты", layout,
                      "Траты, доходы, места и способы оплаты семьи из базы; валюты не складываются — выберите валюту",

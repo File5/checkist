@@ -10,7 +10,7 @@
       type: Bearer
       credentials: '__METRICS_TOKEN__'
     static_configs:
-      - targets: ['checkist-web-1:8000']
+      - targets: ['checkist-web:8000']
         labels: { cluster: 'checkist', service: 'web' }
 
   - job_name: 'checkist-pages'

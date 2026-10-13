@@ -635,7 +635,7 @@
     {
       "type": "piechart",
       "title": "Источники",
-      "description": "Выписка — по комментарию « · Выписка …», как в выгрузке",
+      "description": "Receipt.source; выписку отличает только комментарий, а свободный текст Grafana не читает",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "checkist-postgres"
@@ -650,7 +650,7 @@
           "format": "table",
           "rawQuery": true,
           "editorMode": "code",
-          "rawSql": "SELECT CASE WHEN r.source = 'photo' THEN 'Фото чека' WHEN r.note ~ '·\\s*Выписка[^·]*$' THEN 'Выписка' ELSE 'Вручную' END AS source, sum(r.total) AS spent FROM receipts_receipt r LEFT JOIN accounts_membership m ON m.user_id = r.owner_id WHERE NOT r.hidden AND r.currency_id = '$currency' AND COALESCE(m.household_id, 0)::text IN ($household) AND $__timeFilter(r.purchased_on) GROUP BY 1"
+          "rawSql": "SELECT CASE WHEN r.source = 'photo' THEN 'Фото чека' ELSE 'Вручную и выписки' END AS source, sum(r.total) AS spent FROM receipts_receipt r LEFT JOIN accounts_membership m ON m.user_id = r.owner_id WHERE NOT r.hidden AND r.currency_id = '$currency' AND COALESCE(m.household_id, 0)::text IN ($household) AND $__timeFilter(r.purchased_on) GROUP BY 1"
         }
       ],
       "fieldConfig": {
