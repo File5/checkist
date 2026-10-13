@@ -442,7 +442,8 @@ SKIPPED_ROUTES = {
          "product-merges-exclude", "product-classifications-confirm-many", "product-classifications-confirm",
          "product-classifications-reject", "receipts-manual-parse", "receipts-hide", "receipts-unhide",
          "family-members", "family-member", "family-head", "family-leave", "family-invites", "family-invite",
-         "family-join", "recurring-decision", "recurring-suggestion-accept", "recurring-suggestion-dismiss"),
+         "family-join", "recurring-decision", "recurring-suggestion-accept", "recurring-suggestion-dismiss",
+         "store-merges-merge", "store-merges-dismiss"),
         "только POST",
     ),
     "recurring-payment": "регулярный платёж семьи или пользователя; id чеков в нём нет",
@@ -452,7 +453,7 @@ SKIPPED_ROUTES = {
     **dict.fromkeys(
         ("api-not-found", "recognition-not-found", "receipts-not-found", "product-merges-not-found",
          "product-classifications-not-found", "stats-not-found", "budget-not-found", "export-not-found",
-         "family-not-found", "recurring-not-found"),
+         "family-not-found", "recurring-not-found", "store-merges-not-found"),
         "ответ 404 без данных",
     ),
     **dict.fromkeys(
@@ -516,6 +517,7 @@ class NoForeignReceiptIdTests(ProjectionMixin, TestCase):
             "/api/countries/", "/api/countries/?all=1", "/api/stores/", "/api/brands/", "/api/categories/",
             "/api/generic-products/", "/api/products/", "/api/products/?ordering=-last_observed_at",
             "/api/receipts/", "/api/receipts/?ordering=purchased_at", "/api/receipts/manual/",
+            "/api/receipts/manual/suggest/", "/api/receipts/manual/suggest/?q=пицца", "/api/store-merges/",
             "/api/recognition/csrf/", "/api/recognition/photos/", "/api/recognition/jobs/",
             "/api/recognition/receipt-images/",
             "/api/stats/spending/", "/api/stats/spending/?group_by=product", "/api/stats/spending/?group_by=store",

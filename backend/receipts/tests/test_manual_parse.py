@@ -6,11 +6,13 @@
 from datetime import date, timedelta
 from unittest.mock import Mock, patch
 
+from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings, tag
 from django.utils import timezone
 
+from accounts.models import Household, Membership
 from catalog.models import Category
-from receipts import manual_parse
+from receipts import manual, manual_parse
 from receipts.manual_parse import CodexTextParser, FakeTextParser, ParseOutputError, draft_from_output
 from receipts.models import ManualParseRequest, Receipt
 from receipts.ownership import local_user
@@ -192,3 +194,50 @@ class ExecuteTests(ParseFixture, TestCase):
             self.assertEqual(manual_parse.get_parser(scenario="timeout").scenario, "timeout")
         with self.assertRaises(ProviderError):
             FakeTextParser("unknown")
+
+
+@tag("integration")
+class HistoryInputTests(ParseFixture, TestCase):
+    """Разбор словами с историей: похожие прошлые траты семьи и её места во входе модели."""
+
+    def setUp(self):
+        self.subs = Category.objects.create(name="Демо-подписки")
+        for day in ("2026-08-12", "2026-09-12"):
+            self.spend(self.owner, "CLAUDE.AI SUBSCRIPTION", "225", day, currency="USD")
+        hidden = self.spend(self.owner, "Демо-секрет claude", "999", "2026-09-01")
+        Receipt.objects.filter(pk=hidden.pk).update(hidden=True)
+
+    def spend(self, owner, store, total, day, currency="KZT"):
+        return manual.create(owner, {"total": total, "currency": currency, "category": self.subs.pk,
+                                     "store_name": store, "purchased_on": day})
+
+    def test_input_has_similar_spends_and_the_places_of_the_family_without_hidden_ones(self):
+        payload = manual_parse.build_input(self.queued("claude подписка"))
+        self.assertEqual([(item["store_name"], item["total"], item["currency"], item["category"], item["uses"])
+                          for item in payload["history"]], [("CLAUDE.AI SUBSCRIPTION", "225.00", "USD", self.subs.pk, 2)])
+        self.assertEqual(payload["stores"], [{"name": "CLAUDE.AI SUBSCRIPTION", "aliases": []}])
+        self.assertEqual(manual_parse.build_input(self.queued("такси 4500"))["history"], [])
+
+    def test_fake_repeats_the_same_spend_and_keeps_a_typed_amount(self):
+        self.queued("claude подписка")
+        row = manual_parse.execute(manual_parse.claim(), parser=FakeTextParser())
+        self.assertEqual(row.draft, {
+            "total": "225.00", "currency": "USD", "category": self.subs.pk, "purchased_on": "2026-10-12",
+            "store_name": "CLAUDE.AI SUBSCRIPTION", "note": "", "lines": [],
+        })
+        self.queued("claude 230")
+        self.assertEqual(manual_parse.execute(manual_parse.claim(), parser=FakeTextParser()).draft["total"], "230")
+
+    @override_settings(CHECKIST_AUTH_MODE="accounts")
+    def test_history_is_the_family_of_the_requester(self):
+        users = get_user_model().objects
+        first, second, outsider = (users.create_user(name) for name in ("synthetic-a", "synthetic-b", "synthetic-c"))
+        family = Household.objects.create(name="Демо-семья")
+        Membership.objects.create(user=first, household=family, role="head")
+        Membership.objects.create(user=second, household=family)
+        self.spend(second, "Демо-кофейня", "1500", "2026-10-01")
+        self.spend(outsider, "Демо-чужое", "700", "2026-10-01")
+        row = ManualParseRequest.objects.create(owner=first, text="кофейня", today=TODAY)
+        payload = manual_parse.build_input(row)
+        self.assertEqual([item["store_name"] for item in payload["history"]], ["Демо-кофейня"])
+        self.assertEqual(payload["stores"], [{"name": "Демо-кофейня", "aliases": []}])

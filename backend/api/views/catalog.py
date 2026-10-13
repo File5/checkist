@@ -80,7 +80,8 @@ class StoresView(ReadOnlyAPIView):
         page = params.page()
         params.check()
 
-        stores = Store.objects.select_related("merchant").annotate(
+        # Склеенный магазин — только вариант написания главного (stores.merging): в списке его нет.
+        stores = Store.objects.filter(merged_into__isnull=True).select_related("merchant").annotate(
             # То же правило, что у api.common.store_name, — для сортировки в БД.
             display_name=Coalesce(
                 NullIf("merchant__brand_name", Value("")), NullIf("name", Value("")),

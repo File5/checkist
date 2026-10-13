@@ -16,6 +16,7 @@ urlpatterns = [
     re_path(r"", include("api.urls_export")),
     re_path(r"", include("api.urls_family")),
     re_path(r"", include("api.urls_recurring")),
+    re_path(r"", include("api.urls_store_merges")),
     # Только пути с завершающим «/»: иначе APPEND_SLASH перестанет перенаправлять /api/health.
     re_path(r"^(?:.*/)?$", NotFoundView.as_view(), name="api-not-found"),
 ]

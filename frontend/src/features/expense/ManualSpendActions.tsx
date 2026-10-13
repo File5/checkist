@@ -44,7 +44,7 @@ function useSpendDeletion(receiptId: number, initial: DeleteStep) {
   return { step, setStep, asking, confirm, close }
 }
 
-/** «Изменить» and «Удалить» of a manual spend on its page. The deletion asks inline on a wide screen and in a sheet on
+/** «Изменить», «Повторить» (a new spend like this one, dated today) and «Удалить» of a manual spend on its page. The deletion asks inline on a wide screen and in a sheet on
  * a phone (`narrow`), never with a browser dialog. */
 export function ManualSpendActions({ receiptId, initial = { kind: 'idle' }, narrow = false }: { receiptId: number; initial?: DeleteStep; narrow?: boolean }) {
   const { step, setStep, asking, confirm, close } = useSpendDeletion(receiptId, initial)
@@ -53,6 +53,7 @@ export function ManualSpendActions({ receiptId, initial = { kind: 'idle' }, narr
   return <>
     <div className="receipt-actions expense-manual-actions ck-action-bar">
       <Link className="action-link receipt-primary" to={`/receipts/${receiptId}/edit`}>Изменить</Link>
+      <Link className="action-link receipt-secondary expense-repeat" to={`/receipts/new?repeat=${receiptId}`}>Повторить</Link>
       <button type="button" className="receipt-secondary" onClick={() => setStep({ kind: 'confirm' })}>Удалить</button>
       {step.kind === 'failed' && <p className="expense-failure" role="alert">{step.message}</p>}
     </div>

@@ -1,21 +1,30 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { FormEvent } from 'react'
-import { getManualParse, requestManualParse } from '../../api/receipts'
-import type { ManualParse, ManualParseDraft } from '../../api/receipts'
+import { getManualParse, getManualSuggestions, requestManualParse } from '../../api/receipts'
+import type { ManualParse, ManualParseDraft, ManualSuggestion } from '../../api/receipts'
+import ChipScroller from '../../components/ChipScroller'
+import { formatMoney } from '../../lib/money'
 import { createPollingRequest } from '../recognition/polling'
 import { todayISO } from './expense-form'
 import { isActive, PARSE_TEXT_MAX, PARSE_WAIT_MS, parseOutcome, parseTexts, requestFailureMessage } from './parse-text'
 import type { ParseView } from './parse-text'
+import { chipText, hasSearchWords, SUGGEST_DELAY_MS, suggestionMeta, suggestionTitle } from './suggestions'
 import { speechRecognition, transcript, voiceError } from './voice'
 import type { Recognition } from './voice'
 
-/** `voice` — the browser can listen: the mic button is shown. */
-export type TextHintViewProps = { text: string; view: ParseView; onText: (text: string) => void; onSubmit: () => void; voice?: { listening: boolean; onToggle: () => void } }
+/** `voice` — the browser can listen: the mic button is shown. `suggestions` — past spends that match the text (shown
+ * while the text has words), `frequent` — repeated ones (shown while the field is empty); a tap is `onRepeat`. */
+export type TextHintViewProps = {
+  text: string; view: ParseView; onText: (text: string) => void; onSubmit: () => void; voice?: { listening: boolean; onToggle: () => void }
+  suggestions?: ManualSuggestion[]; frequent?: ManualSuggestion[]; onRepeat?: (spend: ManualSuggestion) => void; today?: string
+}
 
 /** The hint itself, without the network: the markup tests render it directly. */
-export function TextHintView({ text, view, onText, onSubmit, voice }: TextHintViewProps) {
+export function TextHintView({ text, view, onText, onSubmit, voice, suggestions = [], frequent = [], onRepeat = () => {}, today = todayISO() }: TextHintViewProps) {
   const working = view.kind === 'working'
   const submit = (event: FormEvent) => { event.preventDefault(); onSubmit() }
+  const listed = !working && hasSearchWords(text) ? suggestions : []
+  const chips = !working && !text.trim() ? frequent : []
   return <form className="expense-hint" onSubmit={submit} noValidate aria-busy={working}>
     <label htmlFor="expense-hint-text" className="expense-hint-label">{parseTexts.label}</label>
     <div className="expense-hint-row">
@@ -37,17 +46,60 @@ export function TextHintView({ text, view, onText, onSubmit, voice }: TextHintVi
     <p id="expense-hint-status" className={`expense-hint-status expense-hint-${view.kind}`}
       role={view.kind === 'failed' ? 'alert' : 'status'}>
       {voice?.listening ? 'Слушаю… Скажите, что и за сколько купили.' : view.kind === 'working' ? parseTexts.working : view.kind === 'filled' ? parseTexts.filled
-        : view.kind === 'failed' ? view.message : ''}
+        : view.kind === 'repeated' ? parseTexts.repeated : view.kind === 'failed' ? view.message : ''}
     </p>
+    {listed.length > 0 && <ul className="ck-list expense-suggest" aria-label="Как в прошлый раз">
+      {listed.map((spend) => <li key={spend.receipt_id}>
+        <button type="button" className="ck-row expense-suggest-row" onClick={() => onRepeat(spend)}>
+          <span className="ck-row-main">
+            <span className="ck-row-title">{suggestionTitle(spend)}</span>
+            <span className="ck-row-meta">{suggestionMeta(spend, today)}</span>
+          </span>
+          <span className="ck-row-amount">{formatMoney(spend.total, spend.currency)}</span>
+        </button>
+      </li>)}
+    </ul>}
+    {chips.length > 0 && <ChipScroller label="Частые траты" className="expense-frequent">
+      <span className="expense-frequent-label" aria-hidden="true">Повторить:</span>
+      {chips.map((spend) => <button key={spend.receipt_id} type="button" className="ck-chip" onClick={() => onRepeat(spend)}>{chipText(spend)}</button>)}
+    </ChipScroller>}
   </form>
 }
 
 const noChanges = () => () => {}
 
-/** POST the text, poll the request, hand the draft to the form. Nothing is saved here. */
-export default function TextHint({ onFill }: { onFill: (draft: ManualParseDraft) => void }) {
+/** Past spends for the text as it is typed, without the model: the frequent ones once, matching ones after a pause.
+ * A failed request shows nothing — typing and the parse go on as before. */
+function useSuggestions(text: string, enabled: boolean) {
+  const [frequent, setFrequent] = useState<ManualSuggestion[]>([])
+  const [found, setFound] = useState<{ text: string; spends: ManualSuggestion[] }>({ text: '', spends: [] })
+  useEffect(() => {
+    const controller = new AbortController()
+    void getManualSuggestions('', { signal: controller.signal }).then((result) => { if (result.kind === 'ok') setFrequent(result.data) })
+    return () => controller.abort()
+  }, [])
+  const query = text.trim()
+  const wanted = enabled && hasSearchWords(query)
+  useEffect(() => {
+    if (!wanted) return
+    const controller = new AbortController()
+    const timer = setTimeout(() => {
+      void getManualSuggestions(query, { signal: controller.signal })
+        .then((result) => { if (result.kind === 'ok') setFound({ text: query, spends: result.data }) })
+    }, SUGGEST_DELAY_MS)
+    return () => { clearTimeout(timer); controller.abort() }
+  }, [query, wanted])
+  return { frequent, suggestions: wanted && found.text === query ? found.spends : [] }
+}
+
+/** POST the text, poll the request, hand the draft to the form. Nothing is saved here. Under the field: past spends to
+ * repeat with one tap (`onRepeat`). */
+export default function TextHint({ onFill, onRepeat }: { onFill: (draft: ManualParseDraft) => void; onRepeat: (spend: ManualSuggestion) => void }) {
   const [text, setText] = useState('')
   const [view, setView] = useState<ParseView>({ kind: 'idle' })
+  // After a fill the list hides until the text changes again.
+  const [typed, setTyped] = useState(false)
+  const { frequent, suggestions } = useSuggestions(text, typed)
   const stop = useRef<() => void>(() => {})
   const fill = useRef(onFill)
   useEffect(() => { fill.current = onFill }, [onFill])
@@ -87,6 +139,7 @@ export default function TextHint({ onFill }: { onFill: (draft: ManualParseDraft)
     const value = (spoken ?? text).trim()
     if (!value || view.kind === 'working') return
     stop.current()
+    setTyped(false)
     setView({ kind: 'working' })
     const controller = new AbortController()
     stop.current = () => { controller.abort(); stop.current = () => {} }
@@ -125,6 +178,13 @@ export default function TextHint({ onFill }: { onFill: (draft: ManualParseDraft)
     listener.start()
   }
 
-  return <TextHintView text={text} view={view} onText={setText} onSubmit={() => { void submit() }}
-    voice={canListen ? { listening, onToggle: toggleVoice } : undefined} />
+  const repeat = (spend: ManualSuggestion) => {
+    stop.current()
+    setText('')
+    setTyped(false)
+    setView({ kind: 'repeated' })
+    onRepeat(spend)
+  }
+  return <TextHintView text={text} view={view} onText={(value) => { setText(value); setTyped(true) }} onSubmit={() => { void submit() }}
+    voice={canListen ? { listening, onToggle: toggleVoice } : undefined} suggestions={suggestions} frequent={frequent} onRepeat={repeat} />
 }

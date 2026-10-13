@@ -29,7 +29,15 @@
 .expense-hint-send:hover:not(:disabled) { border-color: var(--ck-primary-hover); background: var(--ck-primary-hover); }
 .expense-hint-status { margin: 0; color: var(--ck-accent-text); font-size: var(--ck-text-xs); }
 .expense-hint-status:empty { display: none; }
-.expense-hint-filled { font-weight: 700; }
+.expense-hint-filled, .expense-hint-repeated { font-weight: 700; }
+/* Past spends under the field (suggestions.ts): rows on the surface while the text has words, chips of the frequent
+   ones while it is empty. A tap fills the form as a repeat with today's date. */
+.expense-suggest { padding: 0 12px; border-radius: var(--ck-radius-sm); background: var(--ck-surface); }
+.expense-suggest-row { width: 100%; min-height: 56px; margin: 0; padding: 8px 0; border: 0; border-radius: 0; background: transparent; color: var(--ck-text); font-weight: inherit; text-align: left; }
+.expense-suggest-row:hover:not(:disabled), .expense-suggest-row:active:not(:disabled) { border: 0; background: transparent; color: var(--ck-text); }
+.expense-suggest-row:hover .ck-row-title { text-decoration: underline; }
+.expense-frequent .ck-chip { font-size: var(--ck-text-sm); }
+.expense-frequent-label { display: inline-flex; flex: none; align-items: center; color: var(--ck-accent-text); font-size: var(--ck-text-xs); font-weight: 700; white-space: nowrap; }
 .expense-hint-failed { color: var(--ck-error-text); font-weight: 600; }
 
 /* «Сумма»: the hero figure without a frame and the currency pill beside it. */
@@ -44,6 +52,20 @@
 .expense-currency input { width: calc(2.6em + 28px); height: 44px; min-height: 44px; padding: 0 12px 0 14px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-pill); background: var(--ck-bg); color: inherit; font-size: var(--ck-text-base); font-weight: 700; text-transform: uppercase; }
 .expense-currency-signed input { width: calc(2.6em + 46px); padding-left: 32px; }
 .expense-currency input[aria-invalid="true"] { border-color: var(--ck-error-border); color: var(--ck-error-text); }
+/* The calculator of «Сумма» (amount-calc.ts): four keys on a touch screen, whose number keyboard has no «+», and the
+   counted amount on the right while the field holds an expression. */
+.expense-calc { display: flex; align-items: center; gap: 12px; min-width: 0; }
+/* One pill of four keys with dividers, like the keys of a calculator; shown once a number is typed. */
+.expense-calc-keys { display: flex; overflow: hidden; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-pill); background: var(--ck-bg); }
+.expense-calc-key { display: flex; align-items: center; justify-content: center; width: 48px; height: 44px; min-height: 44px; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--ck-text); font-size: var(--ck-text-xl); font-weight: 600; line-height: 1; }
+.expense-calc-key + .expense-calc-key { border-left: 1px solid var(--ck-border-field); }
+.expense-calc-key:hover:not(:disabled), .expense-calc-key:active:not(:disabled) { border-color: var(--ck-border-field); background: var(--ck-surface-raised); color: var(--ck-text); }
+.expense-amount-input.expense-amount-long { font-size: var(--ck-text-xl); }
+.expense-calc-result { margin-left: auto; color: var(--ck-text-muted); font-size: var(--ck-text-base); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+@media (pointer: fine) {
+  .expense-calc-keys { display: none; }
+  .expense-calc:not(:has(.expense-calc-result)) { display: none; }
+}
 
 /* «Категория»: chips wrap into rows; a dot of the category colour, the chosen chip filled. A fieldset: its legend is
    floated so it lies inside the card like any child. */

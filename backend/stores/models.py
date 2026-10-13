@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 from django.db.models import Q
 
@@ -100,6 +101,11 @@ class Store(models.Model):
     street = models.CharField(max_length=255, blank=True, default="")
     house = models.CharField(max_length=32, blank=True, default="")
     timezone = models.CharField(max_length=64)  # IANA
+    # Склеенный магазин (stores.merging): чеков у него нет, его названия — варианты написания главного.
+    # Всегда указывает прямо на главный: склейка главного переносит и его варианты.
+    merged_into = models.ForeignKey(
+        "self", null=True, blank=True, on_delete=models.PROTECT, related_name="aliases",
+    )
 
     class Meta:
         constraints = [
@@ -123,3 +129,47 @@ class Store(models.Model):
         if not self.address_key:
             self.address_key = address_key(self.address_raw, self.address_i18n)
         super().save(*args, **kwargs)
+
+
+class StoreMerge(models.Model):
+    """Журнал склейки: магазин ``merged`` стал вариантом написания ``store``.
+
+    ``receipt_ids`` — чеки, перенесённые с ``merged`` на ``store``; ``alias_ids`` — прежние варианты
+    ``merged``, перенаправленные на ``store``. По ним ``stores.merging.revert`` возвращает всё назад.
+    """
+
+    store = models.ForeignKey(Store, on_delete=models.PROTECT, related_name="+")
+    merged = models.ForeignKey(Store, on_delete=models.PROTECT, related_name="+")
+    receipt_ids = models.JSONField(default=list)
+    alias_ids = models.JSONField(default=list)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+                                   related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+    reverted_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"{self.merged_id} → {self.store_id}"
+
+
+class StoreMergeSuggestion(models.Model):
+    """Группа магазинов, похожих на одного получателя, по ответу модели (``model``) либо отказ человека.
+
+    Похожие названия приложение считает при чтении (``similar``) и не хранит; строка ``dismissed`` —
+    «Не то»: эта группа и пары внутри неё больше не предлагаются.
+    """
+
+    class Source(models.TextChoices):
+        SIMILAR = "similar", "Похожие названия"
+        MODEL = "model", "Модель"
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Ждёт решения"
+        DISMISSED = "dismissed", "Не то"
+
+    store_ids = models.JSONField()  # отсортированные id, не меньше двух
+    source = models.CharField(max_length=8, choices=Source.choices)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.source} {self.store_ids} {self.status}"

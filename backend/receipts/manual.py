@@ -21,7 +21,7 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from django.db import transaction
-from django.db.models import Count, Q
+from django.db.models import Count, F, Q
 from django.utils import timezone
 
 from catalog.models import Category
@@ -225,13 +225,18 @@ def frequent_categories(lines, limit=FREQUENT_LIMIT):
 # --- место и момент покупки ---
 
 def find_or_create_store(name, currency):
-    """Магазин с вывеской или названием ``name`` (без учёта регистра) либо новый продавец с магазином."""
+    """Магазин с вывеской или названием ``name`` (без учёта регистра) либо новый продавец с магазином.
+
+    Единственный вход «название → магазин» для трат без чека и импорта выписок. Склеенный магазин
+    (вариант написания, ``Store.merged_into``) отвечает своим главным: «Anthropic Claude» после склейки —
+    «CLAUDE.AI SUBSCRIPTION».
+    """
     found = (
         Store.objects.filter(Q(merchant__brand_name__iexact=name) | Q(name__iexact=name))
-        .order_by("pk").first()
+        .select_related("merged_into").order_by(F("merged_into").asc(nulls_first=True), "pk").first()
     )
     if found is not None:
-        return found
+        return found.merged_into or found
     code = COUNTRY_BY_CURRENCY.get(currency, DEFAULT_COUNTRY)
     country = Country.objects.filter(pk=code).first() or Country.objects.order_by("pk").first()
     merchant = Merchant.objects.create(country=country, legal_name=name, brand_name=name[:100])

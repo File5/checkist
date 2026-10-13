@@ -21,14 +21,16 @@ from datetime import date, timedelta
 from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
+from types import SimpleNamespace
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils import timezone
 
+from accounts.access import visible_receipts_q
 from catalog.models import Category
-from receipts import manual
+from receipts import history, manual
 from receipts.models import ManualParseRequest, Receipt
 from recognition.providers.base import ProviderError, RunContext
 from recognition.queue import db_now
@@ -126,15 +128,24 @@ def finish(row, *, draft=None, error_code=""):
 
 # --- вход модели и проверка ответа ---
 
+def family_receipts(owner):
+    """Чеки, которые видит ``owner``: правило ``visible_receipts_q`` без HTTP-запроса (воркер работает вне него)."""
+    return Receipt.objects.filter(visible_receipts_q(SimpleNamespace(user=owner)))
+
+
 def build_input(row):
-    """Вход модели: сегодня, валюта по умолчанию, валюты и категории каталога, текст."""
+    """Вход модели: сегодня, валюта по умолчанию, валюты и категории каталога, до 10 похожих прошлых трат
+    семьи (``history``), места семьи — частые сначала, с вариантами написания (``stores``), текст."""
     categories = (Category.objects.exclude(name=UNASSIGNED).order_by("pk")
                   .values("pk", "name", "parent_id")[:CATEGORIES_MAX])
+    receipts = family_receipts(row.owner)
     return {
         "today": row.today.isoformat(),
         "default_currency": manual.default_currency(Receipt.objects.filter(owner_id=row.owner_id, hidden=False), row.owner),
         "currencies": list(Currency.objects.order_by("pk").values_list("pk", flat=True)),
         "categories": [{"id": item["pk"], "name": item["name"], "parent_id": item["parent_id"]} for item in categories],
+        "history": history.similar(receipts, row.text),
+        "stores": history.store_names(receipts),
         "text": row.text,
     }
 
@@ -173,7 +184,11 @@ def draft_from_output(data, payload):
 # --- исполнители ---
 
 class FakeTextParser:
-    """Детерминированный ответ без модели: последнее число текста — сумма, первая категория входа, сегодня."""
+    """Детерминированный ответ без модели: последнее число текста — сумма, первая категория входа, сегодня.
+
+    С похожей прошлой тратой (первая в ``history``) — как модель по промпту: её место, категория и валюта,
+    без числа в тексте — её сумма.
+    """
 
     name = "fake"
 
@@ -192,6 +207,12 @@ class FakeTextParser:
             return {"total": "много"}
         numbers = re.findall(r"[0-9]+(?:[.,][0-9]{1,2})?", payload["text"])
         total = numbers[-1].replace(",", ".") if numbers else None
+        same = (payload.get("history") or [None])[0]
+        if same is not None and same["category"] is not None:
+            return {
+                "total": total or same["total"], "currency": same["currency"], "category": same["category"],
+                "purchased_on": None, "store_name": same["store_name"], "note": None, "lines": [],
+            }
         return {
             "total": total, "currency": None,
             "category": payload["categories"][0]["id"] if payload["categories"] else None,

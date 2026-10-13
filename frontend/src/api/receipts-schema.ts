@@ -1,7 +1,7 @@
 import { safeMediaUrl } from '../lib/media.ts'
 import { amount, array, bool, choice, country, currency, isId, isISODate, isISODateTime, named, nonNegativeInteger, nullable, object, price, quantity, record, store, text, unit } from './schema.ts'
 import type { Guard } from './schema.ts'
-import type { Discount, Line, ManualDefaults, Receipt, ReceiptListItem, Tax, TaxRate } from './receipts-types.ts'
+import type { Discount, Line, ManualDefaults, ManualSuggestion, ManualSuggestionLine, Receipt, ReceiptListItem, Tax, TaxRate } from './receipts-types.ts'
 
 export const receiptOperation = choice('sale', 'refund')
 export const receiptSource = choice('photo', 'manual')
@@ -29,6 +29,12 @@ export const isReceipt: Guard<Receipt> = (value): value is Receipt => isReceiptS
 export const isReceiptListItem: Guard<ReceiptListItem> = (value): value is ReceiptListItem => isReceipt(value)
   && optional(value, 'first_line', text) && optional(value, 'category', named) && optional(value, 'categories', array(named))
 export const isManualDefaults = object<ManualDefaults>({ currency, frequent_categories: array(isId) })
+const isSuggestionLine = object<ManualSuggestionLine>({ name: text, amount, category: nullable(isId) })
+const isManualSuggestion = object<ManualSuggestion>({
+  receipt_id: isId, store_name: nullable(text), category: nullable(named), currency, total: amount, note: text,
+  purchased_on: isISODate, lines: array(isSuggestionLine), uses: (value: unknown) => Number.isSafeInteger(value) && (value as number) > 0,
+})
+export const isManualSuggestions = object<{ results: ManualSuggestion[] }>({ results: array(isManualSuggestion) })
 const translations = (value: unknown) => record(value) && Object.entries(value).every(
   ([key, val]) => /^[a-z]{2,3}(?:-[A-Za-z]{2,4})?$/.test(key) && text(val),
 )

@@ -1,11 +1,11 @@
 import { invalidIds } from './http.ts'
 import { mutate } from './local.ts'
 import { getLocalJson } from './recognition.ts'
-import { isDiscount, isLine, isManualDefaults, isReceipt, isReceiptListItem, isTax } from './receipts-schema.ts'
+import { isDiscount, isLine, isManualDefaults, isManualSuggestions, isReceipt, isReceiptListItem, isTax } from './receipts-schema.ts'
 import { isManualParse } from './recognition-schema.ts'
 import { page } from './schema.ts'
 import type { LocalApiResult, Page, PageParams, RequestOptions } from './types.ts'
-import type { Discount, Line, ManualDefaults, ManualParse, ManualSpendInput, Receipt, ReceiptLineParams, ReceiptListItem, ReceiptParams, Tax } from './receipts-types.ts'
+import type { Discount, Line, ManualDefaults, ManualParse, ManualSpendInput, ManualSuggestion, Receipt, ReceiptLineParams, ReceiptListItem, ReceiptParams, Tax } from './receipts-types.ts'
 
 export type * from './receipts-types.ts'
 
@@ -29,6 +29,13 @@ export async function getReceiptTaxes(id: number, params: PageParams = {}, optio
 /** Defaults of the «Добавить трату» form. */
 export function getManualDefaults(options: RequestOptions = {}): Promise<LocalApiResult<ManualDefaults>> {
   return getLocalJson('receipts/manual/', {}, isManualDefaults, options)
+}
+/** Past manual spends of the family to repeat, without the model: with words in `q` — up to 5 that have every word in
+ * the place (its other spellings too), the note or the positions; without words — up to 4 repeated ones, the most
+ * frequent first. Hidden payments never come. */
+export async function getManualSuggestions(q: string, options: RequestOptions = {}): Promise<LocalApiResult<ManualSuggestion[]>> {
+  const result = await getLocalJson('receipts/manual/suggest/', q ? { q } : {}, isManualSuggestions, options)
+  return result.kind === 'ok' ? { kind: 'ok', data: result.data.results } : result
 }
 /** A new spend without a receipt; `201` with the receipt. Never replayed implicitly. */
 export function createManualSpend(input: ManualSpendInput, options: RequestOptions = {}): Promise<LocalApiResult<Receipt>> {

@@ -885,3 +885,22 @@ docker compose -p checkist_dev cp postgres:/tmp/checkist.dump ./checkist.dump
 Оплата месяца не хранится — сверка при чтении (`recurring.matching`, правило — [api-contract.md](api-contract.md#регулярные-платежи-2026-10-13-ветка-featurerecurring));
 сигналов и правок в `receipts` нет. Одно чтение месяца — около восьми запросов независимо от числа платежей и трат
 (траты 13 месяцев и их категории читаются целиком, сверка — в памяти).
+## Склейка магазинов (2026-10-13, ветка `feature/smart-expense`)
+
+- `stores.Store.merged_into` — FK на главный магазин (NULL, `PROTECT`, `related_name="aliases"`). Склеенный магазин —
+  вариант написания: чеков у него нет, его вывеска и название ведут к главному. Указывает всегда прямо на главный:
+  склейка главного переносит и его варианты. В админке поле только для чтения.
+- `stores.StoreMerge` — журнал: `store` (главный), `merged`, `receipt_ids` и `alias_ids` (JSON: какие чеки и варианты
+  перенесены), `created_by` (`SET_NULL`), `created_at`, `reverted_at`.
+- `stores.StoreMergeSuggestion` — `store_ids` (JSON, отсортированные id), `source` `similar` | `model`, `status`
+  `pending` | `dismissed`, `created_at`: группы модели и отказы человека («Не то»). Пары похожих названий не хранятся.
+- Правила — только `stores/merging.py` (`merge`, `revert`, `dismiss`, `suggestions`, `name_key`); группы модели —
+  `stores/grouping.py`, команда `manage.py store_merges suggest [--dry-run] [--limit N] | list | revert ID`.
+  Магазин по названию — по-прежнему только `receipts.manual.find_or_create_store` (теперь находит главный по
+  варианту); импорт фото (`recognition.importer`) тоже переходит от склеенного магазина к главному, `resolution.py`
+  не менялся. Склейка — одна транзакция с блокировкой строк магазинов; одинаковые чеки с фото одного владельца
+  (ограничения дедупликации) отменяют её целиком (`MergeConflict`).
+- Миграция `stores.0005_store_merge` — только схема. Откат — `migrate stores 0004_more_currencies`: варианты и журнал
+  стираются, перенесённые чеки остаются у главного; чтобы вернуть их, до отката — `store_merges revert` по журналу.
+- История трат для «Новой траты» (`receipts/history.py`) моделей не добавляет: подсказки, частые и похожие траты
+  считаются при чтении из видимых чеков.

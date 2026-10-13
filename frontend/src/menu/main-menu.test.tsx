@@ -32,8 +32,8 @@ describe('markup of the main menu (SSR only: the bar, touches and keys are check
   })
 
   it.each<[string, Session, string[]]>([
-    ['eight items in local_single', local, ['Платежи', 'Каталог', 'Обработка', 'Выгрузка', 'Состояние сервисов']],
-    ['ten items in accounts', reader, ['Платежи', 'Каталог', 'Обработка', 'Выгрузка', 'Состояние сервисов', 'Семья', 'synthetic-reader']],
+    ['nine items in local_single', local, ['Платежи', 'Каталог', 'Магазины', 'Обработка', 'Выгрузка', 'Состояние сервисов']],
+    ['eleven items in accounts', reader, ['Платежи', 'Каталог', 'Магазины', 'Обработка', 'Выгрузка', 'Состояние сервисов', 'Семья', 'synthetic-reader']],
   ])('keeps the links after the third one behind «Ещё» with %s', (_name, session, more) => {
     const html = render(session, { kind: 'not-found', path: '/missing' })
     // The same nav: «Главная · Траты · ＋ · Статистика · Ещё»; the sections are its direct children, with no new attributes.

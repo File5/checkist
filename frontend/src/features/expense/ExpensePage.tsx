@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { CSSProperties, FormEvent, RefObject } from 'react'
 import { getCategories } from '../../api/catalog'
 import { createManualSpend, getManualDefaults, getReceipt, getReceiptLines, updateManualSpend } from '../../api/receipts'
@@ -13,7 +13,9 @@ import { errorMessage } from '../receipts/state'
 import type { Failure } from '../receipts/state'
 import { saveMessage } from './labels'
 import { draftFromParse } from './parse-text'
+import { draftFromSuggestion } from './suggestions'
 import TextHint from './TextHint'
+import { caretAfter, charsBefore, evaluateAmount, groupDigits, hasOperator, ungrouped } from './amount-calc'
 import {
   categoryChips, categoryTree, chipParent, chipToneId, dateChoice, sumText, dayBefore, sentIndexes, draftBody, draftFromReceipt, emptyDraft, fieldScrollDelta,
   linesTotal, filledLines, LINES_MAX, newLine, saveLabel, savedNotice, serverErrors, setExpenseNotice, shortDay, todayISO, updatedNotice, visibleChips,
@@ -30,6 +32,10 @@ import './Expense.css'
 type Loaded = { draft: ExpenseDraft; chips: Category[]; byline?: string }
 type LoadState = { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'read-only' } | { kind: 'ok'; data: Loaded }
 
+/** The keys of the amount calculator and their names for a screen reader. */
+const CALC_KEYS = [['+', 'Плюс'], ['−', 'Минус'], ['×', 'Умножить'], ['÷', 'Разделить']] as const
+/** A longer amount («12000+3500») takes a smaller figure: the hero size keeps about this many characters in sight. */
+const AMOUNT_HERO_CHARS = 8
 /** A name, not a literal: the guard of date fields (theme/date-fields-css.test.ts) counts a literal argument as a field. */
 const dateField = 'date'
 const errorId = (name: string) => `expense-${name.replaceAll('.', '-')}-error`
@@ -120,6 +126,30 @@ export function ExpenseForm({ draft, chips, errors, saving, failure, receiptId, 
   // «₸ KZT»: the sign before the code, where the currency has one.
   const signed = symbol !== '' && symbol !== draft.currency
   const set = (patch: Partial<ExpenseDraft>) => onChange({ ...draft, ...patch })
+  // The amount is kept without the spaces of grouping; the caret is put back after the same characters.
+  const amountInput = useRef<HTMLInputElement>(null)
+  const caret = useRef<number | undefined>(undefined)
+  const counted = !itemized && hasOperator(draft.amount) ? evaluateAmount(draft.amount) : undefined
+  const typeAmount = (value: string, at: number | null) => {
+    caret.current = charsBefore(value, at ?? value.length)
+    set({ amount: ungrouped(value) })
+  }
+  const insertOperator = (key: string) => {
+    const input = amountInput.current
+    const shown = groupDigits(draft.amount)
+    const focused = input !== null && document.activeElement === input
+    const start = focused ? input.selectionStart ?? shown.length : shown.length
+    const end = focused ? input.selectionEnd ?? start : start
+    typeAmount(shown.slice(0, start) + key + shown.slice(end), start + key.length)
+    input?.focus()
+  }
+  useLayoutEffect(() => {
+    const input = amountInput.current
+    if (caret.current === undefined || !input || document.activeElement !== input) return
+    const at = caretAfter(input.value, caret.current)
+    input.setSelectionRange(at, at)
+    caret.current = undefined
+  })
   const setLine = (key: number, patch: Partial<LineDraft>) => set({ lines: draft.lines.map((line) => line.key === key ? { ...line, ...patch } : line) })
   const addLine = () => { const line = newLine(); added.current = line.key; set({ lines: [...draft.lines, line] }) }
   const submit = (event: FormEvent) => { event.preventDefault(); onSubmit() }
@@ -135,9 +165,11 @@ export function ExpenseForm({ draft, chips, errors, saving, failure, receiptId, 
     <section className="expense-card expense-amount">
       <label htmlFor="expense-amount" className="expense-label">{itemized ? 'Сумма позиций' : 'Сумма'}</label>
       <div className="expense-amount-row">
-        <input id="expense-amount" className="expense-amount-input ck-hero-figure" inputMode="decimal" autoComplete="off" enterKeyHint="done"
-          placeholder="0" value={itemized ? (sum === undefined ? '' : sumText(sum)) : draft.amount} readOnly={itemized} aria-invalid={Boolean(errors.amount)}
-          aria-describedby={describedBy(errors, 'amount')} onChange={(event) => set({ amount: event.target.value })} />
+        <input ref={amountInput} id="expense-amount" className={`expense-amount-input ck-hero-figure${draft.amount.length > AMOUNT_HERO_CHARS ? ' expense-amount-long' : ''}`}
+          inputMode="decimal" autoComplete="off" enterKeyHint="done"
+          placeholder="0" value={itemized ? (sum === undefined ? '' : sumText(sum)) : groupDigits(draft.amount)} readOnly={itemized} aria-invalid={Boolean(errors.amount)}
+          aria-describedby={describedBy(errors, 'amount')} onChange={(event) => typeAmount(event.target.value, event.target.selectionStart)}
+          onBlur={() => { if (counted) set({ amount: counted }) }} />
         <label className={`expense-currency${signed ? ' expense-currency-signed' : ''}`}>
           {signed && <span className="expense-currency-sign" aria-hidden="true">{symbol}</span>}
           <span className="expense-visually-hidden">Валюта</span>
@@ -147,6 +179,15 @@ export function ExpenseForm({ draft, chips, errors, saving, failure, receiptId, 
         </label>
       </div>
       {itemized && <p className="expense-hint-note">Сумма считается по позициям.</p>}
+      {!itemized && draft.amount !== '' && <div className="expense-calc">
+        {/* «1200+350» on a phone, whose number keyboard has no «+»: the keys keep the field focused. */}
+        <div className="expense-calc-keys" role="group" aria-label="Посчитать сумму">
+          {CALC_KEYS.map(([key, label]) => <button key={key} type="button" className="expense-calc-key" aria-label={label}
+            onPointerDown={(event) => event.preventDefault()} onMouseDown={(event) => event.preventDefault()}
+            onClick={() => insertOperator(key)}>{key}</button>)}
+        </div>
+        {counted && <output className="expense-calc-result" htmlFor="expense-amount">= {sumText(counted)}</output>}
+      </div>}
       {fieldError(errors, 'amount')}
       {fieldError(errors, 'currency')}
     </section>
@@ -266,7 +307,7 @@ const isFailure = (value: unknown): value is Failure => typeof value === 'object
 
 /** `/receipts/new` and `/receipts/{id}/edit`: loads what the form needs, saves, then opens the page of the spend.
  * The shell keys it by the spend, so another spend starts from «loading» again. */
-export default function ExpensePage({ receiptId }: { receiptId?: number }) {
+export default function ExpensePage({ receiptId, repeat }: { receiptId?: number; repeat?: number }) {
   const [load, setLoad] = useState<LoadState>({ kind: 'loading' })
   const [attempt, setAttempt] = useState(0)
   const [draft, setDraft] = useState<ExpenseDraft | undefined>()
@@ -287,10 +328,15 @@ export default function ExpensePage({ receiptId }: { receiptId?: number }) {
     const { signal } = controller
     void (async () => {
       const categories = getCategories({}, { signal })
+      // «Повторить» (`?repeat=`): the spend to copy is read like the one to change; if it cannot be read, the form is empty.
+      const source = receiptId ?? (handed ? undefined : repeat)
+      const copied = source === undefined ? undefined
+        : Promise.all([getReceipt(source, { signal }), getReceiptLines(source, { page_size: 200 }, { signal })])
       const loaded = receiptId === undefined
         ? Promise.all([categories, getManualDefaults({ signal })])
         : Promise.all([categories, getReceipt(receiptId, { signal }), getReceiptLines(receiptId, { page_size: 200 }, { signal })])
       const [categoryResult, ...rest] = await loaded
+      const [copiedReceipt, copiedLines] = receiptId === undefined && copied ? await copied : []
       if (signal.aborted) return
       const values = [unwrap(categoryResult), ...rest.map((result) => unwrap(result as LocalApiResult<unknown>))]
       if (values.some((value) => value === undefined)) return
@@ -303,6 +349,9 @@ export default function ExpensePage({ receiptId }: { receiptId?: number }) {
       if (receiptId === undefined) {
         const defaults = values[1] as ManualDefaults
         next = handed ? draftFromPending(handed.body, categoryData.results) : emptyDraft(defaults.currency)
+        if (copiedReceipt?.kind === 'ok' && copiedLines?.kind === 'ok' && copiedReceipt.data.source === 'manual') {
+          next = { ...draftFromReceipt(copiedReceipt.data, copiedLines.data.results), date: todayISO() }
+        }
         frequent = defaults.frequent_categories
       } else {
         const receipt = values[1] as Receipt
@@ -314,7 +363,7 @@ export default function ExpensePage({ receiptId }: { receiptId?: number }) {
       setLoad({ kind: 'ok', data: { draft: next, chips: categoryChips(categoryData.results, frequent), byline } })
     })()
     return () => controller.abort()
-  }, [receiptId, attempt, handed])
+  }, [receiptId, repeat, attempt, handed])
 
   useEffect(() => () => saveController.current?.abort(), [])
 
@@ -359,7 +408,8 @@ export default function ExpensePage({ receiptId }: { receiptId?: number }) {
   const byline = !family ? undefined : receiptId === undefined && session.kind === 'user'
     ? `Добавит: ${personName(session.user.username, session.user.display_name)} · видна всей семье` : load.data.byline
   return <div className="expense-page">
-    {receiptId === undefined && <TextHint onFill={(parsed) => { setDraft(draftFromParse(parsed, chips)); setErrors({}); setFailure(undefined) }} />}
+    {receiptId === undefined && <TextHint onFill={(parsed) => { setDraft(draftFromParse(parsed, chips)); setErrors({}); setFailure(undefined) }}
+      onRepeat={(spend) => { setDraft(draftFromSuggestion(spend, chips, todayISO())); setErrors({}); setFailure(undefined) }} />}
     <ExpenseForm draft={draft ?? load.data.draft} chips={chips} errors={errors} saving={saving} failure={failure}
       receiptId={receiptId} onChange={setDraft} onSubmit={() => { void save() }} byline={byline} narrow={narrow} />
   </div>

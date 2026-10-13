@@ -22,6 +22,7 @@ from receipts.dedup import build_fiscal_key, find_duplicates, name_key
 from receipts import service_charges
 from receipts.models import Receipt, ReceiptDiscount, ReceiptLine, ReceiptTax
 from receipts.validation import validate_receipt
+from stores.models import Store
 
 from .dto import ReceiptObservation
 from .import_policy import derive_line_values, optional_field, prepare_observation
@@ -437,6 +438,9 @@ def _import_domain(observation, derived, *, owner_id, require_duplicate=False, l
                                   notices=notices)
         if store is None:
             raise ResolutionError(issue("missing_required", "/currency_code"))
+        if store.merged_into_id is not None:
+            # A merged store (stores.merging) is a spelling of its main one: receipts and duplicates live there.
+            store = Store.objects.select_related("merchant", "country").get(pk=store.merged_into_id)
         currency = resolve_currency(observation, store=store)
         if observation.currency_code is None:
             derived = [*derived, "/currency_code"]
