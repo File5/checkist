@@ -32,7 +32,7 @@ export const ADD_AFTER = 2
 /** The month dashboard at '/', its limits at '/budget/limits' and the spends of one of its categories. */
 const homeKinds: Route['kind'][] = ['dashboard', 'limits', 'category-spends']
 const catalogKinds: Route['kind'][] = ['catalog', 'category', 'product', 'merges', 'merge', 'classification']
-const receiptKinds: Route['kind'][] = ['receipts', 'upload', 'expense-new', 'expense-edit', 'receipt']
+const receiptKinds: Route['kind'][] = ['receipts', 'upload', 'expense-new', 'expense-edit', 'receipt', 'statement-new', 'statement']
 const statsKinds: Route['kind'][] = ['spending', 'receipts-stats', 'trends']
 const jobKinds: Route['kind'][] = ['jobs', 'job']
 
@@ -50,6 +50,7 @@ function allItems(session: Session, route: Route): MenuItem[] {
     { key: 'catalog', to: '/catalog', label: 'Каталог', current: catalogKinds.includes(route.kind), icon: 'catalog' },
     { key: 'jobs', to: '/recognition/jobs', label: 'Обработка', current: jobKinds.includes(route.kind), icon: 'jobs' },
     { key: 'export', to: '/export', label: 'Выгрузка', current: route.kind === 'export', icon: 'export' },
+    { key: 'statement-rules', to: '/statements/rules', label: 'Правила выписок', current: route.kind === 'statement-rules', icon: 'statement' },
     health,
   ]
   if (session.mode === 'accounts') {

@@ -38,7 +38,7 @@ describe('items of the main menu and their split for the bottom bar of a phone',
     expect(menu.primary.map((item) => [item.label, item.to])).toEqual([['Главная', '/'], ['Траты', '/receipts'], ['Статистика', '/stats']])
     expect(menu.add).toBe(true)
     expect(ADD_AFTER).toBe(2)
-    expect(menu.more.map((item) => [item.label, item.to])).toEqual([['Каталог', '/catalog'], ['Обработка', '/recognition/jobs'], ['Выгрузка', '/export'], ['Состояние сервисов', '/health']])
+    expect(menu.more.map((item) => [item.label, item.to])).toEqual([['Каталог', '/catalog'], ['Обработка', '/recognition/jobs'], ['Выгрузка', '/export'], ['Правила выписок', '/statements/rules'], ['Состояние сервисов', '/health']])
     expect([...menu.primary, ...menu.more].some((item) => item.account)).toBe(false)
   })
 
@@ -46,10 +46,10 @@ describe('items of the main menu and their split for the bottom bar of a phone',
     const menu = menuItems(reader, catalog)
     expect(labels(menu.primary)).toEqual(['Главная', 'Траты', 'Статистика'])
     expect(menu.add).toBe(true)
-    expect(labels(menu.more)).toEqual(['Каталог', 'Обработка', 'Выгрузка', 'Состояние сервисов', 'Семья', 'synthetic-reader'])
-    expect(menu.more[5]).toEqual({ key: 'account', to: '/account', label: 'synthetic-reader', current: false, account: true, icon: 'account' })
+    expect(labels(menu.more)).toEqual(['Каталог', 'Обработка', 'Выгрузка', 'Правила выписок', 'Состояние сервисов', 'Семья', 'synthetic-reader'])
+    expect(menu.more[6]).toEqual({ key: 'account', to: '/account', label: 'synthetic-reader', current: false, account: true, icon: 'account' })
     // The pictures of the bottom bar and of the list behind «Ещё» (components/Icon.tsx).
-    expect([...menu.primary, ...menu.more].map((item) => item.icon)).toEqual(['home', 'list', 'stats', 'catalog', 'jobs', 'export', 'health', 'family', 'account'])
+    expect([...menu.primary, ...menu.more].map((item) => item.icon)).toEqual(['home', 'list', 'stats', 'catalog', 'jobs', 'export', 'statement', 'health', 'family', 'account'])
   })
 
   it('never puts more into the bar than it holds, and keeps «Ещё» for at least two links', () => {

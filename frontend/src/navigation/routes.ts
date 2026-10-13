@@ -169,6 +169,10 @@ export type NavigableRoute = CatalogRoute
   | { kind: 'export'; query: ExportQuery }
   /** «Семья» (only with accounts): members, invites, the head role; `token` — an invite opened from its link. */
   | { kind: 'family'; token?: string }
+  /** Импорт выписок: загрузка PDF, черновик одной выписки и правила получателей. */
+  | { kind: 'statement-new' }
+  | { kind: 'statement'; statementId: number }
+  | { kind: 'statement-rules' }
 
 export type Route = NavigableRoute
   | { kind: 'not-found'; path: string }
@@ -555,6 +559,9 @@ export function buildRoute(route: NavigableRoute): string {
     case 'account': return '/account'
     case 'export': return exportHref(route.query)
     case 'family': return route.token ? `/family/join?${new URLSearchParams({ token: route.token })}` : '/family'
+    case 'statement-new': return '/statements/new'
+    case 'statement': return `/statements/${buildId(route.statementId)}`
+    case 'statement-rules': return '/statements/rules'
   }
 }
 
@@ -594,6 +601,14 @@ export function parseRoute(input: string | URL): Route {
   }
   if (normalizedPath === '/account') return { kind: 'account' }
   if (normalizedPath === '/family') return { kind: 'family' }
+  if (normalizedPath === '/statements/new') return { kind: 'statement-new' }
+  if (normalizedPath === '/statements/rules') return { kind: 'statement-rules' }
+  const statement = /^\/statements\/([^/]+)$/.exec(normalizedPath)
+  if (statement) {
+    let id: number | undefined
+    try { id = positiveInteger(decodeURIComponent(statement[1])) } catch { /* Invalid path encoding. */ }
+    return id === undefined ? { kind: 'not-found', path } : { kind: 'statement', statementId: id }
+  }
   if (normalizedPath === '/family/join') {
     const token = url.searchParams.get('token') ?? ''
     return /^[A-Za-z0-9_-]{8,200}$/.test(token) ? { kind: 'family', token } : { kind: 'family' }

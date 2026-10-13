@@ -105,7 +105,7 @@ function AddMenu() {
     <div className="main-add">
       {/* Hidden wherever the menu is a row of links. */}
       <button type="button" className="main-add-toggle" aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? ADD_SHEET_ID : undefined}
-        aria-label="Добавить: снять чек, выбрать из галереи или добавить трату" onClick={() => setOpen(true)}>
+        aria-label="Добавить: снять чек, выбрать из галереи, добавить трату или загрузить выписку" onClick={() => setOpen(true)}>
         <Icon name="plus" size={26} />
       </button>
       <Sheet open={open} onClose={close} title="Добавить" id={ADD_SHEET_ID}>
@@ -113,6 +113,7 @@ function AddMenu() {
           <button type="button" className="main-add-action main-add-primary" onClick={choose(shot.open)}>{body('camera', 'Снять чек', 'Камера — чек распознается сам')}</button>
           <button type="button" className="main-add-action" onClick={choose(gallery.open)}>{body('image', 'Из галереи', 'Фото чека или PDF с телефона')}</button>
           <Link className="main-add-action" to="/receipts/new" onClick={close}>{body('pencil', 'Добавить трату', 'Вручную или словами, без чека')}</Link>
+          <Link className="main-add-action" to="/statements/new" onClick={close}>{body('statement', 'Загрузить выписку', 'PDF Kaspi Gold или ForteBank')}</Link>
         </div>
       </Sheet>
       {shot.field}
