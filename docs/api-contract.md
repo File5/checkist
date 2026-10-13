@@ -1886,7 +1886,7 @@ Line несёт ещё `category` (`{"id","name"}` либо `null`, после `
    "lines": [{"position": 1, "kind": "product", "name": "МОЛОКО 3,2% 1Л", "quantity": "2.000", "unit": "pcs", "unit_price": "645.0000",
      "amount": "1290.00", "discount_amount": "0.00", "paid_amount": "1290.00", "category_id": 3, "category_path": "Продукты / Молочное",
      "product_id": 44, "product_name": "Молоко 3,2% 1 л"}],
-   "media": {"display_url": "https://…/media/crops/…/preview-1600-v1.webp", "download_url": "https://…/media/originals/…/source.jpg?download=1"}}],
+   "media": {"display_url": "https://…/media/crops/…/preview-1600-v2.webp", "download_url": "https://…/media/originals/…/source.jpg?download=1"}}],
  "limits": [{"category_id": 1, "category_path": "Продукты", "currency": "KZT", "amount": "150000.00"}],
  "summary": {"receipts_count": 1, "lines_count": 1, "max_receipts": 20000, "currencies": [{"currency": "KZT", "receipts_count": 1,
    "lines_count": 1, "total": "1290.00", "category_total": null,
@@ -2408,3 +2408,30 @@ CSRF). Видимость — только `goals.access.goals_q`: общая ц
   итог, ни в категории и названы в `excluded` (доходы и траты вместе, по валютам).
 - Число запросов от объёма данных не зависит. Тесты — `incomes.tests.test_api` (`test_stats_tab_*`), обход
   `api.tests.test_projection` знает маршрут `stats-incomes`.
+## Выпрямленные копии вырезок (2026-10-13, ветка `feature/receipt-scan`)
+
+Заменяет имена копий вырезок в разделе [MEDIA](#media). Сжатые копии вырезки (`crops/{uuid}/…/`) теперь
+`preview-1600-v2.webp` и `thumb-400-v2.webp` и показывают бумагу чека, как сканер документов: `crop.png` по `quad`
+(углы TL, TR, BR, BL относительно текста) перспективно выпрямляется в прямоугольник текстом вверх
+(`recognition.images.scan_quad`, Pillow `PERSPECTIVE`), с запасом 1,5 % наружу с каждой стороны, чтобы неточный угол не
+срезал край текста; размер — по большей из каждой пары противоположных сторон. Копия остаётся прежней обрезкой по
+`bbox` (как v1), когда:
+
+- `quad` нет либо геометрия не проходит общую проверку (`validate_geometry`: строго выпуклый, по часовой стрелке, внутри
+  `bbox`), нет `crop_transform`;
+- четырёхугольник занимает меньше 75 % ширины или высоты `bbox` (не доля площади: длинный чек под 25° занимает лишь
+  около 38 % площади своего `bbox`), сторона короче 16 px;
+- противоположные стороны различаются больше чем вдвое (крутая перспектива — вероятнее неверные углы), стороны
+  соотносятся больше чем 1 : 20;
+- верхняя сторона расходится с `rotation_degrees` больше чем на 45° — порядок углов не по тексту, копия вышла бы боком;
+- фото — PDF (одна вырезка на всё отрисованное изображение, `pipeline.whole_document`).
+
+Новые имена — потому что v1 закэширован у браузеров как `immutable`. В каталоге вырезки v1 больше не копия: обычный
+путь, файла нет — тот же пустой `404`; уже написанные `*-v1.webp` там остаются и не нужны. Копии фото
+(`originals/{uuid}/`) — прежние v1. Поля API прежние, меняются только адреса копий вырезок: `display_url` /
+`thumb_url` вырезки (ReceiptImage), `preview_thumb_url` чека, `media.display_url` выгрузки. `image_url` вырезки —
+прежний `crop.png` без выпрямления, её `width` / `height` — его размер (у выпрямленной копии пропорции другие).
+«Скачать оригинал» (`download_url`) — исходный файл фото, как прежде. Проверка владельца, `Cache-Control: private,
+max-age=31536000, immutable` и отказы — как у v1; копия пишется при первом разрешённом запросе либо
+`manage.py media_previews backfill`. Распознавание, промпты и форма исправления читают `crop.png`, он не меняется;
+миграций нет.

@@ -373,13 +373,13 @@ describe('compressed previews and the original download (SSR)', () => {
   const crop = () => images.results.find((image) => image.receipt_id === 71)!
   it('lists receipts with the 400 px thumbnail, linked to the full crop', () => {
     const html = renderToStaticMarkup(<ReceiptList receipts={receipts.results} />)
-    expect(html).toContain('src="/media/crops/test/thumb-400-v1.webp"')
+    expect(html).toContain('src="/media/crops/test/thumb-400-v2.webp"')
     expect(html).toContain('href="/media/crops/test/crop.png"')
     expect(html).toContain('loading="lazy"')
   })
   it('shows a crop of the receipt by its WebP copy with a reserved size and «Скачать оригинал»', () => {
     const html = renderToStaticMarkup(<ReceiptImages images={[crop()]} receiptId={71} />)
-    expect(html).toContain('src="/media/crops/test/preview-1600-v1.webp"')
+    expect(html).toContain('src="/media/crops/test/preview-1600-v2.webp"')
     expect(html).toContain('width="8" height="16"')
     expect(html).toContain('<a class="action-link ck-media-download" href="/media/originals/test/source.png?download=1" download="">Скачать оригинал</a>')
   })

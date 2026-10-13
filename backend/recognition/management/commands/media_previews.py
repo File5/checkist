@@ -11,7 +11,8 @@ from recognition.previews import VARIANTS, ensure_variant, variant_name
 class Command(BaseCommand):
     help = (
         "Display previews of stored photos and crops (recognition.previews). `backfill` writes the missing "
-        "preview-1600-v1.webp and thumb-400-v1.webp beside every original image and every crop; existing ones "
+        "preview-1600-v1.webp and thumb-400-v1.webp beside every original image and the straightened "
+        "preview-1600-v2.webp and thumb-400-v2.webp beside every crop; existing ones "
         "are kept, so a repeated run only reports them. The same files are otherwise written on their first "
         "request, so the command is optional: it only spares the first viewer the wait. `--dry-run` counts "
         "without writing. Output is JSON: {\"dry_run\", \"written\", \"present\", \"missing_source\", \"failed\"} — counts only. "

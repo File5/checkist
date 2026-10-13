@@ -68,7 +68,7 @@ describe('recognition SSR markup (interactive UI remains manual)', () => {
   it.each(Object.keys(imageLabels) as (keyof typeof imageLabels)[])('displays crop %s with safe media', (status) => {
     const data = { ...image(), status, normalized_result: status === 'needs_review' ? image().normalized_result : null }
     const html = renderToStaticMarkup(<ReceiptImages images={[data]} />)
-    expect(html).toContain(imageLabels[status]); expect(html).toContain('src="/media/crops/test/preview-1600-v1.webp"')
+    expect(html).toContain(imageLabels[status]); expect(html).toContain('src="/media/crops/test/preview-1600-v2.webp"')
     expect(html).toContain('width="8" height="16"')
     expect(html).toContain('href="/media/originals/test/source.png?download=1" download="">Скачать оригинал</a>')
   })
