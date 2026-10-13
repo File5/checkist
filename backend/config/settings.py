@@ -112,6 +112,7 @@ INSTALLED_APPS = [
     "api.apps.ApiConfig",
     "accounts.apps.AccountsConfig",
     "budget.apps.BudgetConfig",
+    "recurring.apps.RecurringConfig",
 ]
 MIDDLEWARE = [
     "config.robots.NoIndexMiddleware",

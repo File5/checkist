@@ -47,6 +47,7 @@ function allItems(session: Session, route: Route): MenuItem[] {
     { key: 'home', to: '/', label: 'Главная', current: homeKinds.includes(route.kind), icon: 'home' },
     { key: 'receipts', to: '/receipts', label: 'Траты', current: receiptKinds.includes(route.kind), icon: 'list' },
     { key: 'stats', to: '/stats', label: 'Статистика', current: statsKinds.includes(route.kind), icon: 'stats' },
+    { key: 'recurring', to: '/recurring', label: 'Платежи', current: route.kind === 'recurring', icon: 'repeat' },
     { key: 'catalog', to: '/catalog', label: 'Каталог', current: catalogKinds.includes(route.kind), icon: 'catalog' },
     { key: 'jobs', to: '/recognition/jobs', label: 'Обработка', current: jobKinds.includes(route.kind), icon: 'jobs' },
     { key: 'export', to: '/export', label: 'Выгрузка', current: route.kind === 'export', icon: 'export' },

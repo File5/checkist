@@ -169,6 +169,8 @@ export type NavigableRoute = CatalogRoute
   | { kind: 'export'; query: ExportQuery }
   /** «Семья» (only with accounts): members, invites, the head role; `token` — an invite opened from its link. */
   | { kind: 'family'; token?: string }
+  /** «Регулярные платежи»: rent, utilities, subscriptions of this month, suggestions from history, the form. */
+  | { kind: 'recurring' }
 
 export type Route = NavigableRoute
   | { kind: 'not-found'; path: string }
@@ -555,6 +557,7 @@ export function buildRoute(route: NavigableRoute): string {
     case 'account': return '/account'
     case 'export': return exportHref(route.query)
     case 'family': return route.token ? `/family/join?${new URLSearchParams({ token: route.token })}` : '/family'
+    case 'recurring': return '/recurring'
   }
 }
 
@@ -594,6 +597,7 @@ export function parseRoute(input: string | URL): Route {
   }
   if (normalizedPath === '/account') return { kind: 'account' }
   if (normalizedPath === '/family') return { kind: 'family' }
+  if (normalizedPath === '/recurring') return { kind: 'recurring' }
   if (normalizedPath === '/family/join') {
     const token = url.searchParams.get('token') ?? ''
     return /^[A-Za-z0-9_-]{8,200}$/.test(token) ? { kind: 'family', token } : { kind: 'family' }
