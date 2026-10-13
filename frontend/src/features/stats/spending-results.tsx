@@ -7,6 +7,7 @@ import RequestState from '../../components/RequestState'
 import { useLocalRequestFocus } from '../../components/useLocalRequestFocus'
 import { PieChart } from '../../lib/charts'
 import { currencySymbol } from '../../lib/money'
+import { useMoneyDigits } from '../../lib/money-digits'
 import { Link } from '../../navigation'
 import type { SpendingQuery } from '../../navigation'
 import { PeriodText } from './period'
@@ -74,7 +75,8 @@ function CurrencyBlock({ block, groupBy, query, tail, retryTail, refresh, hero }
   const failure = tail?.kind === 'error' ? tail : undefined
   const opened = useMemo((): TailView | undefined =>
     !open ? undefined : phase === 'loading' ? loadingTail : phase === 'error' ? failedTail : blockTail(block, long), [open, phase, block, long])
-  const view = useMemo(() => blockView(block, groupBy, query, opened), [block, groupBy, query, opened])
+  const digits = useMoneyDigits()
+  const view = useMemo(() => blockView(block, groupBy, query, opened, digits), [block, groupBy, query, opened, digits])
   const items = useMemo(() => {
     const state = view.tail
     if (!state) return view.items

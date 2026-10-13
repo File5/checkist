@@ -6,6 +6,7 @@ import RequestState from '../../components/RequestState'
 import { useLocalRequestFocus } from '../../components/useLocalRequestFocus'
 import { LineChart, StackedColumns } from '../../lib/charts'
 import { currencySymbol } from '../../lib/money'
+import { useMoneyDigits } from '../../lib/money-digits'
 import { Link, navigate } from '../../navigation'
 import type { TrendsQuery } from '../../navigation'
 import { canRetry, failureMessage } from './receipts-state'
@@ -92,7 +93,8 @@ function MonthDetails({ block, month, query }: { block: TrendsMonthlyCurrency; m
 
 function MonthlyCurrency({ block, query, several }: { block: TrendsMonthlyCurrency; query: TrendsQuery; several: boolean }) {
   const id = useId()
-  const chart = useMemo(() => monthlyChart(block, query), [block, query])
+  const digits = useMoneyDigits()
+  const chart = useMemo(() => monthlyChart(block, query, digits), [block, query, digits])
   const summary = monthlySummary(block)
   const title = `Траты по месяцам, ${block.currency}`
   return (
@@ -149,8 +151,9 @@ function CategoryPicker({ options, query, current }: { options: readonly TrendsC
 
 function CategoryCurrency({ block, several, name }: { block: TrendsCategoryCurrency; several: boolean; name: string }) {
   const id = useId()
-  const series = useMemo(() => categoryChart(block), [block])
-  const parts = useMemo(() => partsChart(block, name, block.months.map((entry) => entry.month)), [block, name])
+  const digits = useMoneyDigits()
+  const series = useMemo(() => categoryChart(block, digits), [block, digits])
+  const parts = useMemo(() => partsChart(block, name, block.months.map((entry) => entry.month), digits), [block, name, digits])
   const change = lastMonthChange(block)
   const summary = monthlySummary(block)
   return (
