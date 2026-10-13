@@ -25,6 +25,7 @@ export type LocalApiErrorReason = ApiErrorReason
   | 'statement_unsupported_bank' | 'statement_empty' | 'statement_too_large'
   | 'storage_unavailable' | 'database_unavailable' | 'method_not_allowed' | 'not_acceptable'
   | 'ai_disabled' | 'ai_quota'
+  | 'push_not_configured'
 export type ApiFailure = {
   kind: 'error'
   reason: ApiErrorReason

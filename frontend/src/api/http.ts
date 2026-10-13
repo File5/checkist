@@ -54,7 +54,8 @@ export function readError(status: number, body: unknown, local: boolean): LocalA
     409: ['job_active', 'job_terminal', 'retry_not_allowed', 'merge_conflict', 'merge_resolved', 'merge_changed', 'merge_busy',
       'review_unavailable', 'review_resolved', 'review_busy', 'review_invalid',
       'classification_resolved', 'classification_changed', 'classification_busy', 'receipt_read_only', 'photo_shared',
-      'store_merge_conflict'],
+      'store_merge_conflict',
+      'push_not_configured'],
     413: ['upload_too_large'], 415: ['unsupported_media_type'], 429: ['parse_limit', 'ai_quota'],
     503: ['storage_unavailable', 'database_unavailable'],
   }

@@ -8,3 +8,4 @@ Pillow==12.3.0
 pillow-heif==1.8.0
 pypdfium2==5.13.0
 gunicorn==26.2.0
+pywebpush==2.5.0

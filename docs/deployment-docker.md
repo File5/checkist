@@ -618,3 +618,37 @@ curl -sI https://<домен>/api/health/ | grep -i strict-transport-security
 - Codex CLI 0.162.0 в контейнере: вход без браузера, песочница `bubblewrap` под Docker, обновление токена в томе, первое настоящее распознавание;
 - установка Docker и `ufw`, файл подкачки — команды шагов 1–3 взяты из общего знания, в рамках проекта не выполнялись;
 - вся приёмка [deployment-acceptance.md](deployment-acceptance.md): браузер, два устройства, телефон, файл 20 МБ, перезагрузка сервера, вывоз копий.
+
+## Уведомления: web push (2026-10-13, ветка `feature/push`)
+
+Новых контейнеров и правок `compose.prod.yaml` нет. Поводы ищет и отправляет `manage.py push tick` — строкой cron на
+хосте раз в 5 минут, как ежедневная копия (одноразовый контейнер `web`). Повторный и одновременный запуск ничего не
+задваивает: уведомление одно на `(человек, повод, ключ)`, отправку захватывает одна строка `UPDATE`. Тишина 22:00–9:00
+по Алматы: накопленное за ночь уходит тиком в 9:00.
+
+1. Ключи — один раз; хранить вместе с `.env.prod` (новая пара отвязывает все подписанные устройства):
+
+   ```bash
+   ./deploy/docker/ck manage push keys
+   ```
+
+2. В `.env.prod` — три строки (`WEBPUSH_VAPID_SUBJECT` — `mailto:` или `https:` владельца), затем пересоздать `web`
+   (`./deploy/docker/ck compose up -d web` либо обычное `deploy/docker/deploy.sh`):
+
+   ```
+   WEBPUSH_VAPID_PUBLIC_KEY=<из вывода>
+   WEBPUSH_VAPID_PRIVATE_KEY=<из вывода>
+   WEBPUSH_VAPID_SUBJECT=mailto:<адрес владельца>
+   ```
+
+3. Cron того же пользователя, что и копия (`crontab -e`):
+
+   ```cron
+   */5 * * * * /opt/checkist/deploy/docker/ck manage push tick >> "$HOME/checkist-push.log" 2>&1
+   ```
+
+   Строка лога — JSON `{"configured", "users", "notified", "released"}`; `configured: false` — ключей нет.
+
+Без ключей push выключен, приложение пишет «Уведомления не настроены на сервере.»; тик ничего не делает. Исходящие
+HTTPS-запросы `web` идут только на push-сервисы браузеров (FCM, Apple, Mozilla, WNS). Не проверено: настоящая доставка,
+строка cron на сервере.

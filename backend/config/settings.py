@@ -118,6 +118,7 @@ INSTALLED_APPS = [
     "insights.apps.InsightsConfig",
     "incomes.apps.IncomesConfig",
     "goals.apps.GoalsConfig",
+    "push.apps.PushConfig",
 ]
 MIDDLEWARE = [
     "config.robots.NoIndexMiddleware",
@@ -366,3 +367,9 @@ RATES_NBRK_URL = env_text("RATES_NBRK_URL", "https://nationalbank.kz/rss/get_rat
 RATES_FETCH_TIMEOUT_SECONDS = env_integer("RATES_FETCH_TIMEOUT_SECONDS", 20, 1, 120)
 RATES_LAZY_TIMEOUT_SECONDS = env_integer("RATES_LAZY_TIMEOUT_SECONDS", 3, 1, 30)
 RATES_AUTO_FETCH = env_flag("RATES_AUTO_FETCH", "1")
+
+# Web push (push): a VAPID key pair from `manage.py push keys` and a contact (mailto: or https:). Without all three
+# push is off: the client says «не настроено на сервере» and `manage.py push tick` sends nothing.
+WEBPUSH_VAPID_PUBLIC_KEY = os.environ.get("WEBPUSH_VAPID_PUBLIC_KEY", "").strip()
+WEBPUSH_VAPID_PRIVATE_KEY = os.environ.get("WEBPUSH_VAPID_PRIVATE_KEY", "").strip()
+WEBPUSH_VAPID_SUBJECT = os.environ.get("WEBPUSH_VAPID_SUBJECT", "").strip()
