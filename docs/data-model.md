@@ -1036,9 +1036,9 @@ docker compose -p checkist_dev cp postgres:/tmp/checkist.dump ./checkist.dump
   у импорта среди общих товаров и товаров своих областей: написание продавца места → `name_key` названия → новый
   `Product` в «Не разобрано» в области владельца траты; поглощённый слиянием — оставляемый). Написаний трата вручную
   не создаёт.
-- `catalog.Product.scope` (миграция `catalog.0004_product_scope`): пусто — общий товар; `household:<id>` / `user:<id>` —
-  личный товар из траты вручную (`receipts.prices.product_scope`: семья владельца траты, без семьи — он сам). Видимость
-  личного товара — своя область и видимая запросу строка траты (`receipts.prices.seen_product_q`, fail-closed). Поле входит в уникальность
+- `catalog.Product.scope` (миграция `catalog.0004_product_scope`): пусто — общий товар; `user:<id>` — личный товар из
+  траты вручную (`receipts.prices.product_scope`: всегда владелец траты, не семья). Видимость личного товара — сам
+  человек либо член его семьи и видимая запросу строка траты (`receipts.prices.seen_product_q`, fail-closed). Поле входит в уникальность
   `catalog_product_brand_name_package_uniq` (первым). Откат — `migrate catalog 0003_service_charge_category`
   (отказывает, пока есть товары, различающиеся только `scope`).
 - Личное название: `receipts.prices.observation_q(prefix, request)` пускает строку траты вручную только видимую запросу

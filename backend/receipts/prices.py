@@ -57,18 +57,14 @@ def observation_q(prefix="", request=None):
 
 
 def product_scope(user_id):
-    """``Product.scope`` нового товара из траты вручную: семья владельца траты (её видят все члены), без семьи — он сам.
-
-    Товар семьи остаётся у семьи, когда человек уходит из неё: это её покупки."""
-    from accounts.models import Membership
-
-    household = Membership.objects.filter(user_id=user_id).values_list("household_id", flat=True).first()
-    return f"household:{household}" if household is not None else f"user:{user_id}"
+    """``Product.scope`` нового товара из траты вручную — всегда владелец траты, «user:<id>» (не семья): чужой товар
+    никогда не находится по уникальности названия. Семья видит его только через видимые ей траты (``seen_product_q``)."""
+    return f"user:{user_id}"
 
 
 def seen_product_q(request):
-    """Условие над ``Product``: товар виден запросу. Общий (``scope=""``) — всем; личный (из траты вручную) — только своей
-    области (``user:<id>`` либо ``household:<id>`` своей семьи) и только пока у него есть строка траты, видимой запросу
+    """Условие над ``Product``: товар виден запросу. Общий (``scope=""``) — всем; личный (из траты вручную, «user:<id>»
+    владельца) — себе и членам своей семьи и только пока у него есть строка траты, видимой запросу
     (``visible_receipts_q``; главному — и скрытой): скрытый главным платёж, траты раньше ``visible_from`` и удалённые траты
     название не открывают (fail-closed), чужие строки — тоже. ``local_single`` — все товары. Подзапросы, без отдельного
     запроса."""
@@ -79,8 +75,9 @@ def seen_product_q(request):
         return Q(scope="")
     from accounts.models import Membership
 
-    family = Membership.objects.filter(user_id=pk).annotate(
-        key=Concat(Value("household:"), Cast("household_id", CharField()))).values("key")
+    family = Membership.objects.filter(
+        household_id__in=Membership.objects.filter(user_id=pk).values("household_id"),
+    ).annotate(key=Concat(Value("user:"), Cast("user_id", CharField()))).values("key")
     lines = ReceiptLine.objects.filter(visible_receipts_q(request, "receipt__", include_hidden=True), product=OuterRef("pk"))
     return Q(scope="") | ((Q(scope=f"user:{pk}") | Q(scope__in=family)) & Exists(lines))
 

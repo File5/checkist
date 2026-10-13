@@ -334,21 +334,21 @@ class PrivatePurchaseTests(TwoUsers, NamedMixin, TestCase):
         again = self.line(self.save(self.client_of(self.second), item_name="психотерапевт", currency="KZT"))
         self.assertEqual(again.product_id, theirs.pk)
 
-    def test_the_family_sees_its_product_and_manual_points(self):
+    def test_the_family_sees_its_products_through_visible_spends(self):
         family = Household.objects.create(name="Демо-семья")
         Membership.objects.create(user=self.first, household=family, role="head")
         Membership.objects.create(user=self.second, household=family)
         head = self.line(self.save(self.client_of(self.first), item_name="Семейный врач", total="30000", currency="KZT"))
         member = self.line(self.save(self.client_of(self.second), item_name="семейный врач", total="35000", currency="KZT"))
-        self.assertEqual((member.product_id, head.product.scope), (head.product_id, f"household:{family.pk}"))
-        for account in (self.first, self.second):
-            with self.subTest(account=account.username):
-                points = self.get(account, f"/api/products/{head.product_id}/prices/").json()["results"]
-                self.assertEqual([(point["paid_unit_price"], point["manual"]) for point in points],
-                                 [("30000.0000", True), ("35000.0000", True)])
-        self.assertEqual(self.get(self.moderator, f"/api/products/{head.product_id}/").status_code, 404)
-        # Товар, заведённый до семьи, — свой (user:<id>): член семьи его не видит и заводит семейный.
-        self.assertEqual(self.get(self.second, f"/api/products/{self.private.pk}/").status_code, 404)
+        # Личный товар — всегда свой: член семьи с тем же названием получает свой, область — «user:<id>».
+        self.assertNotEqual(member.product_id, head.product_id)
+        self.assertEqual((head.product.scope, member.product.scope), (f"user:{self.first.pk}", f"user:{self.second.pk}"))
+        for line, price in ((head, "30000.0000"), (member, "35000.0000")):
+            for account in (self.first, self.second):
+                with self.subTest(product=line.product.name, account=account.username):
+                    points = self.get(account, f"/api/products/{line.product_id}/prices/").json()["results"]
+                    self.assertEqual([(point["paid_unit_price"], point["manual"]) for point in points], [(price, True)])
+            self.assertEqual(self.get(self.moderator, f"/api/products/{line.product_id}/").status_code, 404)
 
     def test_a_deleted_spend_opens_nothing(self):
         receipt_id = ReceiptLine.objects.get(product=self.private).receipt_id
@@ -376,10 +376,14 @@ class PrivatePurchaseTests(TwoUsers, NamedMixin, TestCase):
                 self.assertEqual(self.get(self.first, f"/api/products/{product.pk}/").status_code, 200)  # главный
                 self.assertEqual(self.get(self.second, f"/api/products/{product.pk}/").status_code, 404)
                 self.assertEqual(self.get(self.second, f"/api/products/?q={product.name}").json()["results"], [])
-        # Член семьи с тем же названием в другом регистре получает свой товар: чужое написание не открывается.
-        mine = self.line(self.save(self.client_of(self.second), item_name="подарок лене", currency="KZT")).product
-        self.assertEqual(mine.name, "подарок лене")
+        # Член семьи с в точности тем же названием (тот же регистр) получает свой товар, не товар главного.
+        mine = self.line(self.save(self.client_of(self.second), item_name="Подарок Лене", currency="KZT")).product
+        self.assertEqual((mine.name, mine.scope), ("Подарок Лене", f"user:{self.second.pk}"))
         self.assertNotEqual(mine.pk, hidden.product_id)
+        self.assertEqual(self.get(self.second, f"/api/products/{hidden.product_id}/").status_code, 404)
+        # Другой регистр — тот же свой товар.
+        again = self.line(self.save(self.client_of(self.second), item_name="подарок лене", currency="KZT"))
+        self.assertEqual(again.product_id, mine.pk)
 
     def test_own_private_namesake_wins_over_a_shared_one(self):
         shared = make_product(self.private.generic, "ПСИХОТЕРАПЕВТ")  # общий тёзка из чека с фото

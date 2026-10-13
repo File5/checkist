@@ -21,7 +21,6 @@ import re
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from decimal import Decimal
-from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 from django.db import IntegrityError, connection, transaction
@@ -271,15 +270,15 @@ def find_or_create_products(names, owner, store=None):
     поглощённый ожидающим слиянием товар и название товара, поглощённого подтверждённым слиянием
     (``merges``), отвечают оставляемым.
 
-    Название — личный текст человека: ищутся только товары, которые владелец видит (``receipts.prices.seen_product_q``:
-    общие и свои личные с видимой ему строкой), свой личный тёзка важнее общего; чужой личный товар не находится; новый
-    товар — в области владельца (``product_scope``: семья либо он сам). Написание у места не запоминается.
+    Название — личный текст человека: ищутся только общие товары (``scope=""``) и свои личные («user:<id владельца>»,
+    ``receipts.prices.product_scope``), свой личный тёзка важнее общего; товар другого человека, в том числе члена семьи,
+    не находится; новый товар — личный товар владельца. Написание у места не запоминается.
 
     Вызывается в транзакции записи: берёт мьютекс импорта (``recognition.importer.IMPORT_LOCK``), чтобы
     не пересекаться с импортом и слияниями дублей.
     """
     from merges.models import ProductMerge, ProductMergeMember
-    from receipts.prices import seen_product_q
+    from receipts.prices import product_scope
     from recognition.importer import IMPORT_LOCK  # lazy: the importer imports receipts
 
     spelled = {}
@@ -321,7 +320,7 @@ def find_or_create_products(names, owner, store=None):
         return pk
 
     ids = {key: {survivor(pk) for pk in pks} for key, pks in found.items()}
-    existing = (Product.objects.filter(seen_product_q(SimpleNamespace(user=owner)))
+    existing = (Product.objects.filter(scope__in=["", product_scope(owner.pk)])
                 .in_bulk({pk for pks in ids.values() for pk in pks}))
     result = {}
     for key, name in spelled.items():
@@ -333,8 +332,8 @@ def find_or_create_products(names, owner, store=None):
 
 
 def _new_product(name, owner):
-    """Новый личный товар в «Не разобрано» (как у импорта) в области владельца траты (``product_scope``): его видят
-    только он либо его семья; чужой товар-тёзка уникальности не мешает."""
+    """Новый личный товар владельца траты в «Не разобрано» (как у импорта), ``scope`` — «user:<id>» (``product_scope``):
+    тёзка другого человека уникальности не мешает."""
     from receipts.prices import product_scope
 
     category, _ = Category.objects.get_or_create(parent=None, name=UNASSIGNED)
@@ -344,7 +343,7 @@ def _new_product(name, owner):
     try:
         with transaction.atomic():
             return Product.objects.create(generic=generic, name=name, scope=scope)
-    except IntegrityError:  # тёзка той же области, не найденный по name_key (другой регистр не мешает — точное имя)
+    except IntegrityError:  # гонка за то же точное имя: в области «user:<id>» это может быть только свой товар
         return Product.objects.get(brand=None, name=name, package_quantity=None, package_unit="", scope=scope)
 
 
