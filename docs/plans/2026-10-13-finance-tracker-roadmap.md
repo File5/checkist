@@ -85,3 +85,48 @@ node <scratchpad>/shoot.cjs '<имена>' both --base=http://127.0.0.1:518N --o
 Тесты: `cd backend && $PY manage.py test <свои приложения> receipts accounts budget --noinput`; `cd frontend && npx
 vitest run && npx tsc -b --noEmit && npx eslint . && npx vite build`. Снимки — только локально, синтетические данные,
 формы демо-базы отправлять можно (база своя); прод не открывать. В конце — остановить свои серверы, базу оставить.
+
+## Договорённости волны 2 (обязательны для агентов)
+
+Волна 1 выложена на прод 2026-10-13 (`163be34`). Среда — как у волны 1, номер N ниже, но база `checkist_w2N`, порты
+`802N` (Django) и `519N` (Vite), снимки — `<scratchpad>/shots-w2N`; `shoot.cjs` не править — новые страницы в своей
+копии `<scratchpad>/shoot-w2N.cjs`.
+
+| N | ветка | что | миграции (только она трогает) |
+|---|---|---|---|
+| 1 | `feature/spends-home` | Траты и Главная | `budget.0004_…` (бюджет месяца) — `budget` |
+| 2 | `feature/push` | push-уведомления | новое приложение `push` |
+| 3 | `feature/goals` | цели | новое приложение `goals`; `statements.0002_…` (правило «→ цель») — `statements` |
+| 4 | `feature/ai-insights` | разбор месяца, ответы на вопросы | новое приложение `insights` |
+| 5 | `feature/incomes` | доходы | новое приложение `incomes`; `recurring.0002_…` (вид «доход») — `recurring` |
+
+**Общие точки** (не переписывать чужое):
+
+- Главная: `budget/dashboard.py`, `GET /api/dashboard/`, `features/dashboard/` правит только spends-home. incomes
+  добавляет **одну строку** `<IncomeSummary month={data.month} />` прямо перед `<RecurringDue … />` (компонент в
+  `features/incomes/`, свой запрос).
+- «Можно тратить в день» — `budget/allowance.py`: `daily(user, month, *, income=None)`; spends-home передаёт
+  `income=None`. incomes даёт `incomes.services.month_income(user, month) -> Decimal | None` (в основной валюте, `None` —
+  дохода за месяц нет). Связывает ведущий при слиянии.
+- Траты (`features/receipts/`, список `/receipts`) — только spends-home. В строке поиска при введённом тексте — кнопка
+  «Спросить» = ссылка `/ask?q=<текст>`; экран `/ask` — ai-insights.
+- Форма траты (`features/expense/`), `receipts/manual.py`, `receipts/manual_parse.py` — только incomes.
+- `recognition_worker.py` — только ai-insights: свой шаг очереди, как вопрос выписки.
+- Любой путь к модели — `accounts.ai.use_ai(user)` до постановки в очередь.
+- push даёт `push.services.notify(user, kind, title, body, url, key)` (настройки человека, тишина 22–9 по
+  `TIME_ZONE` — отложить до 9:00, без повторов по `(user, kind, key)`); поводы push находит сам, читая
+  `recurring.services.unpaid`, `budget.dashboard`, траты через `visible_receipts_q`; 1-го числа — ссылка
+  `/review?month=ГГГГ-ММ` (экран ai-insights). `frontend/public/sw.js` — только push. Новых контейнеров нет; правки
+  `compose.prod.yaml` — с зелёным `health.tests.test_docker_deploy_files`.
+- Регулярные платежи (`recurring`, `features/recurring/`) в волне 2 правит только incomes (вид «доход»).
+- Выгрузка `api/export.py` — только incomes (доходы в документе).
+- «Динамика»: incomes добавляет свою точку `GET /api/stats/trends/incomes/` и одну строку-компонент на экран;
+  `receipts/trends.py` не трогает никто.
+- История лимитов прошлых месяцев — команда `manage.py limit_history backfill --since ГГГГ-ММ [--dry-run]`
+  (spends-home; только `BudgetLimitChange`, повтор ничего не меняет); на проде запускает ведущий после «да».
+- Пункты «Ещё» (`menu/menu-items.ts`): goals «Цели», ai-insights «Разбор месяца», incomes «Доходы»; настройки push — блок
+  «Уведомления» на `/account`. Маршруты, `App.tsx`, `urls.py`, `INSTALLED_APPS`, коды `api/http.ts` — каждый по строке,
+  конфликты разрешает ведущий.
+- Деньги разных валют — только `rates.convert`; чтение трат — через `accounts.access.visible_receipts_q`.
+- `CLAUDE.md` агенты не меняют — абзац для него в отчёте. В `docs/*.md` — свой раздел в конце. Новые токены — в конце
+  `tokens.css` своим блоком с именем ветки.
