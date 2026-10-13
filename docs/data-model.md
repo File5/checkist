@@ -942,3 +942,21 @@ docker compose -p checkist_dev cp postgres:/tmp/checkist.dump ./checkist.dump
   запроса), для многих сумм — `rates.convert.converter(base, {(валюта, день)})` (курсы одним запросом, дальше
   `convert(amount, currency, day)` без БД).
 - `budget`: миграций нет; лимиты прежних валют не переносились.
+
+## ИИ о тратах (2026-10-13, ветка `feature/ai-insights`)
+
+- `insights.InsightRequest` — запрос к модели: `owner` (CASCADE; видит только он), `kind` `review`|`ask`, `month`
+  (1-е число разбираемого месяца либо месяца вопроса), `question` (≤ 300), `context` (JSON — сводка, которую получила
+  модель), `status` `queued|running|succeeded|failed`, `answer` (JSON), `error_code`, `run_token`,
+  `lease_expires_at`, `created_at`, `started_at`, `finished_at`. Миграция `insights.0001_initial`, откат —
+  `migrate insights zero`. Траты и каталог строка не меняет.
+- Сводка — `insights/context.py` `build(user, month)`: окно 12 месяцев по месяц включительно, всё в основной валюте
+  (`rates.convert`), траты только через `visible_receipts_q` пользователя (скрытый платёж не попадает ни к кому):
+  `months`, `totals`, `categories` (корни и прямые подкатегории с суммой на каждый месяц — `receipts.trends`),
+  `focus` (цифры месяца, лимиты — `budget.dashboard`, места месяца), `places_year`, `recurring`
+  (`recurring.services.month_view`), `incomes` (пока `[]` — место для доходов), `without_rate`. Запросов — 17,
+  от объёма данных не зависит; около 6 КБ на демо-семье.
+- Очередь и шаг воркера — `insights/queue.py` (`request_review`, `request_ask`, `claim`, `execute`,
+  `recover_expired`), промпты `insights/prompts/{review,ask}.txt`, схемы `insights/schemas/{review,ask}.schema.json`;
+  fake — `INSIGHTS_FAKE_SCENARIO` (`simple|invalid_output|provider_error|timeout`), срок — `INSIGHTS_TIMEOUT_SECONDS`
+  (120, читается через `getattr`, в settings не вынесен).

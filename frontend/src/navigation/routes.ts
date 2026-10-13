@@ -180,6 +180,9 @@ export type NavigableRoute = CatalogRoute
   | { kind: 'statement-new' }
   | { kind: 'statement'; statementId: number }
   | { kind: 'statement-rules' }
+  /** «Разбор месяца» (`/review?month=`; no `month` — the one before the current) and «Вопрос о тратах» (`/ask?q=`). */
+  | { kind: 'review'; month?: string }
+  | { kind: 'ask'; q?: string }
 
 export type Route = NavigableRoute
   | { kind: 'not-found'; path: string }
@@ -572,6 +575,8 @@ export function buildRoute(route: NavigableRoute): string {
     case 'statement-new': return '/statements/new'
     case 'statement': return `/statements/${buildId(route.statementId)}`
     case 'statement-rules': return '/statements/rules'
+    case 'review': return parseMonthParam(route.month) ? `/review?month=${route.month}` : '/review'
+    case 'ask': return route.q?.trim() ? `/ask?${new URLSearchParams({ q: route.q.trim() })}` : '/ask'
   }
 }
 
@@ -619,6 +624,15 @@ export function parseRoute(input: string | URL): Route {
   if (normalizedPath === '/recurring') return { kind: 'recurring' }
   if (normalizedPath === '/statements/new') return { kind: 'statement-new' }
   if (normalizedPath === '/statements/rules') return { kind: 'statement-rules' }
+  // Like the dashboard: a wrong month is dropped and the default one opens; an empty question is no question.
+  if (normalizedPath === '/review') {
+    const month = parseMonthParam(url.searchParams.getAll('month').at(-1))
+    return month ? { kind: 'review', month } : { kind: 'review' }
+  }
+  if (normalizedPath === '/ask') {
+    const q = url.searchParams.get('q')?.trim().slice(0, 300)
+    return q ? { kind: 'ask', q } : { kind: 'ask' }
+  }
   const statement = /^\/statements\/([^/]+)$/.exec(normalizedPath)
   if (statement) {
     let id: number | undefined
