@@ -19,6 +19,7 @@ from budget.access import limit_owner, limits_q, people
 from budget.models import BudgetLimit, BudgetLimitChange
 from catalog.models import Category
 from config.exceptions import InvalidParameter
+from incomes.services import month_income
 from rates.convert import request_base_currency
 from receipts import spending
 from receipts.models import Receipt
@@ -346,5 +347,7 @@ class DashboardView(LocalAPIView):
             "recent": [_recent_object(row, name, converter) for row, name in latest],
             # Общий бюджет месяца и «можно тратить в день» (только текущий месяц) — в основной валюте.
             "budget": _month_budget(budget, converter, rate_day, block),
-            "allowance": _allowance_object(allowance.daily(request_user(request), month, today=today)),
+            "allowance": _allowance_object(allowance.daily(
+                request_user(request), month, today=today,
+                income=lambda: month_income(request_user(request), month))),
         })

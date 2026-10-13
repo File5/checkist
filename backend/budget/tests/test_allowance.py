@@ -99,6 +99,21 @@ class DailyTests(TestCase):
         self.limit(self.food, "150000")
         self.assertEqual(self.daily(income=D("400000")).basis, "limits")
 
+    def test_income_function_is_called_only_without_budget_and_limits(self):
+        self.limit(self.food, "150000")
+        income = mock.Mock(return_value=D("400000"))
+        self.assertEqual(self.daily(income=income).basis, "limits")
+        income.assert_not_called()
+
+    def test_dashboard_takes_the_income_of_the_month(self):
+        from incomes.models import Income, IncomeCategory
+        salary = IncomeCategory.objects.create(user=self.owner, name="Демо-зарплата")
+        Income.objects.create(owner=self.owner, received_on=date(2026, 10, 5), amount=D("400000"), currency_id="KZT",
+                              category=salary)
+        with today():
+            body = APIClient().get(DASHBOARD, {"month": "2026-10"}).json()
+        self.assertEqual((body["allowance"]["basis"], body["allowance"]["amount"]), ("income", "400000.00"))
+
     def test_overspent_instead_of_a_negative_day(self):
         self.limit(self.food, "60000")
         value = self.daily()

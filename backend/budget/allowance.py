@@ -67,7 +67,8 @@ def daily(user, month, *, income=None, today=None):
     """daily(user, month, *, income=None) -> Allowance | None; ``None`` — не текущий месяц либо основы нет.
 
     ``month`` — ``budget.dashboard.Month`` либо дата внутри месяца; ``income`` — доход месяца в основной
-    валюте (``incomes.services.month_income``), основа только без бюджета и лимитов.
+    валюте (``incomes.services.month_income``) либо функция без аргументов, которая его вернёт: основа только
+    без бюджета и лимитов, и функция зовётся только тогда.
     """
     from recurring.access import as_request  # recurring зависит от budget: импорт внутри
     from recurring.services import unpaid
@@ -100,7 +101,7 @@ def daily(user, month, *, income=None, today=None):
         amounts = [converter.convert(limit.amount, limit.currency_id, today) for limit in limits]
         basis, amount = "limits", _sum(amounts) if any(value is not None for value in amounts) else None
     else:
-        basis, amount = "income", income
+        basis, amount = "income", income() if callable(income) else income
     if amount is None:
         return None
     spent = _sum(converter.convert(total, currency, day) for currency, day, total in spends)
