@@ -40,6 +40,7 @@ describe('fields of a date keep the width of their panel (text of the rules and 
       'features/receipts/ReceiptFilters.tsx: date',
       'features/receipts/ReceiptFilters.tsx: date',
       'features/recognition/ReviewForm.tsx: date',
+      'features/recurring/RecurringPay.tsx: date',
       'features/stats/receipts-filters.tsx: date',
       'features/stats/spending-filters.tsx: date',
     ])

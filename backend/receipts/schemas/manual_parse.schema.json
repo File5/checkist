@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "required": ["kind", "total", "currency", "category", "purchased_on", "store_name", "note", "lines"],
+  "required": ["kind", "total", "currency", "category", "purchased_on", "store_name", "note", "payment_method", "lines"],
   "properties": {
     "kind": {"type": "string", "enum": ["spend", "income"]},
     "total": {"type": ["string", "null"], "maxLength": 15, "pattern": "^[0-9]{1,12}(\\.[0-9]{1,2})?$"},
@@ -11,6 +11,7 @@
     "purchased_on": {"type": ["string", "null"], "maxLength": 10, "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
     "store_name": {"type": ["string", "null"], "maxLength": 100},
     "note": {"type": ["string", "null"], "maxLength": 200},
+    "payment_method": {"type": ["string", "null"], "enum": ["kaspi_gold", "forte", "cash", "card", null]},
     "lines": {
       "type": "array",
       "maxItems": 30,

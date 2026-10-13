@@ -87,8 +87,13 @@ describe('a saved spend in the form', () => {
   const saved = (name: string, amount: string, lineCategory: { id: number; name: string } | null) => ({ name, amount, category: lineCategory }) as Line
   it('opens one line named after its category as one amount', () => {
     expect(draftFromReceipt(receipt, [saved('Кафе', '450.00', { id: 2, name: 'Кафе' })])).toEqual({
-      amount: '450', currency: 'KZT', category: 2, date: '2026-10-01', place: '', note: 'кофе', lines: [],
+      amount: '450', currency: 'KZT', category: 2, date: '2026-10-01', place: '', note: 'кофе', lines: [], method: '',
     })
+    // The way of payment of the spend comes with it and goes back in the body; not said — not sent at all.
+    const kaspi = draftFromReceipt({ ...receipt, payment_method: 'kaspi_gold' }, [saved('Кафе', '450.00', { id: 2, name: 'Кафе' })])
+    expect(kaspi.method).toBe('kaspi_gold')
+    expect(draftBody(kaspi)).toMatchObject({ body: { payment_method: 'kaspi_gold' } })
+    expect('payment_method' in (draftBody({ ...kaspi, method: undefined }) as { body: object }).body).toBe(false)
   })
   it('opens any other spend with its positions', () => {
     const result = draftFromReceipt({ ...receipt, store: { id: 1, name: 'Рынок', city: '', country: 'KZ', address: '', timezone: 'Asia/Almaty' } },

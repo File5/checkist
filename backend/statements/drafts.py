@@ -447,7 +447,8 @@ def save(statement_id, data, *, rule_owner, actor, goal_scope=None):
                 continue
             store = item["store_name"]
             body = {"total": f"{spend_amount(row):.2f}", "currency": row.currency, "category": item["category"],
-                    "purchased_on": row.date.isoformat(), "note": note_for(row, statement.bank, store)}
+                    "purchased_on": row.date.isoformat(), "note": note_for(row, statement.bank, store),
+                    "payment_method": statement.bank}  # коды банка и способа оплаты совпадают: kaspi_gold, forte
             if store:
                 body["store_name"] = store
             try:

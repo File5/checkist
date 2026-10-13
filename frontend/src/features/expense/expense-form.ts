@@ -3,6 +3,7 @@ import type { Income, IncomeCategory, IncomeInput } from '../../api/incomes'
 import type { Line, ManualSpendInput, Receipt } from '../../api/receipts'
 import type { Category } from '../../api/types'
 import { formatMoney } from '../../lib/money'
+import type { PaymentMethodValue } from '../../lib/payment-methods'
 import { evaluateAmount, hasOperator } from './amount-calc'
 
 export type LineDraft = { key: number; name: string; amount: string; category: number | null }
@@ -16,6 +17,8 @@ export type ExpenseDraft = {
   place: string
   note: string
   lines: LineDraft[]
+  /** How it was paid, `''` — not said; `undefined` — not sent, the saved one stays. An income has none. */
+  method?: PaymentMethodValue
 }
 /** Messages by field: `amount`, `currency`, `category`, `date`, `place`, `note`, `lines.N.name`, `lines.N.amount`. */
 export type ExpenseErrors = Record<string, string>
@@ -39,6 +42,7 @@ export const messages = {
   lineAmount: 'Сумма позиции больше нуля, не больше двух знаков после запятой.',
   lines: `Не больше ${LINES_MAX} позиций.`,
   total: 'Итог не совпадает с суммой позиций.',
+  payment_method: 'Выберите способ оплаты из списка.',
   unknown: 'Проверьте значение.',
 } as const
 
@@ -105,7 +109,8 @@ export function draftBody(draft: ExpenseDraft): { body: ManualSpendInput } | { e
   if ([...place].length > PLACE_MAX) errors.place = messages.place
   const note = draft.note.trim()
   if ([...note].length > NOTE_MAX) errors.note = messages.note
-  const body: ManualSpendInput = { currency, purchased_on: draft.date, store_name: place || null, note, category: draft.category }
+  const body: ManualSpendInput = { currency, purchased_on: draft.date, store_name: place || null, note, category: draft.category,
+    ...(draft.method !== undefined && { payment_method: draft.method }) }
   if (lines.length > LINES_MAX) errors.lines = messages.lines
   if (lines.length) {
     body.lines = lines.map((line, index) => {
@@ -186,7 +191,8 @@ export function amountText(value: string): string {
  * anything else keeps its positions with their categories.
  */
 export function draftFromReceipt(receipt: Receipt, lines: Line[]): ExpenseDraft {
-  const base = { currency: receipt.currency, date: receipt.purchased_on, place: receipt.store?.name ?? '', note: receipt.note }
+  const base = { currency: receipt.currency, date: receipt.purchased_on, place: receipt.store?.name ?? '', note: receipt.note,
+    method: receipt.payment_method ?? '' }
   const [only] = lines
   if (lines.length === 1 && only.category && only.name === only.category.name) {
     return { ...base, amount: amountText(receipt.total), category: only.category.id, lines: [] }

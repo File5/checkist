@@ -173,6 +173,9 @@
 /* «20 $» and under it «≈ 8 979 ₸» (the family's base currency): right-aligned, the twin quiet. */
 .spends-row-amount:has(.spends-row-twin) { text-align: right; }
 .spends-row-twin, .receipt-head-twin { display: block; color: var(--ck-text-muted); font-size: var(--ck-text-xs); font-weight: 600; }
+/* Способ оплаты под суммой (feature/payment-method): коротко и целиком, справа. */
+.spends-row-amount:has(.spends-row-method) { text-align: right; }
+.spends-row-method { display: block; color: var(--ck-text-muted); font-size: var(--ck-text-xs); font-weight: 600; }
 .receipt-head-twin { font-size: var(--ck-text-sm); }
 .spends-count { margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-xs); text-align: center; }
 .spends-page .pagination { padding: 0; }

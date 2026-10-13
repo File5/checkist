@@ -92,3 +92,29 @@
   .rec-dot, .rec-day { border: 1px solid CanvasText; }
   .rec-dot-paid { background: CanvasText; }
 }
+
+/* «Оплатил» (feature/payment-method): the main action of the sheet of a payment and a small one under the amount of an open
+   payment on «Главная»; the small form — rows like the form of a payment, the keys of the calculator of a spend
+   (Expense.css), the chips of the way of payment. Then «История оплат»: the year by ways of payment and a row a month. */
+.rec-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.rec-row-end { display: flex; flex: none; flex-direction: column; align-items: flex-end; gap: 6px; }
+/* The row with «Оплатил» is tall anyway: its state wraps instead of ending in «…» on a narrow phone. */
+.rec-row:has(.rec-row-end) .ck-row-meta { white-space: normal; }
+.rec-pay-open { min-height: 44px; padding: 0 14px; border-radius: var(--ck-radius-pill); font-size: var(--ck-text-sm); white-space: nowrap; }
+.rec-pay { display: grid; gap: 12px; margin-bottom: 20px; }
+.rec-pay-main { width: 100%; min-height: 52px; font-size: var(--ck-text-base); }
+.rec-pay-form { gap: 14px; }
+.rec-pay-calc { display: flex; align-items: center; gap: 12px; padding-bottom: 10px; }
+.rec-pay-method { display: grid; gap: 10px; }
+.rec-pay-label { font-size: var(--ck-text-sm); font-weight: 600; }
+@media (pointer: fine) {
+  .rec-pay-calc:not(:has(.expense-calc-result)) { display: none; }
+}
+.rec-year { display: grid; gap: 8px; min-width: 0; }
+.rec-year h3, .rec-pay-heading { margin: 0; font-size: var(--ck-text-base); font-weight: 800; }
+.rec-pay-heading { margin-top: 8px; }
+.rec-year-total, .rec-year-methods { margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-sm); font-weight: 600; }
+.rec-year-method { white-space: nowrap; }
+.rec-year-method .ck-figures { color: var(--ck-text); font-weight: 800; }
+.rec-year-list > li:first-child { border-top: 1px solid var(--ck-divider); }
+.rec-year-row { min-height: 52px; padding-block: 8px; }

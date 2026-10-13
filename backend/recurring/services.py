@@ -17,6 +17,10 @@
 оплат за 12 месяцев (нет оплат — ожидаемая сумма). Сам модуль ничего не добавляет: только
 по ответу человека. Удалённая трата такого ответа снова открывает вопрос.
 
+«Оплатил» (``pay``, 2026-10-13) — тот же ответ ``added`` о любом месяце до текущего включительно, но трата —
+на сумму, день и способ оплаты, которые ввёл человек. История в листе платежа — ``PaymentMonth.year``:
+12 месяцев со своими состоянием и найденной тратой (у неё ``method`` — способ оплаты).
+
 Регулярный доход (``kind = income``) сверяется тем же окном с доходами всей семьи
 (``load_incomes``, правило — ``matching.income_signals``): ``paid`` — доход получен. Вопросов о
 прошлом месяце и «осталось оплатить» у дохода нет, ``unpaid`` его не отдаёт.
@@ -43,6 +47,7 @@ from .models import DismissedSuggestion, RecurringDecision, RecurringPayment
 
 LOOKBACK_MONTHS = 12
 HISTORY_MONTHS = 6
+YEAR_MONTHS = 12  # «как и сколько оплатил» в листе платежа
 AVERAGE_MONTHS = 12
 
 PAID, SKIPPED, ELSEWHERE, DUE, OVERDUE, BEFORE, INACTIVE = (
@@ -69,11 +74,12 @@ class PaymentMonth:
     state: str
     due: date
     spend: matching.Spend | None = None
-    added: bool = False  # трата добавлена ответом «по средней»
+    added: bool = False  # трата добавлена ответом «по средней» (у «Оплатил» — нет: человек ввёл свою сумму)
     average: object = None  # Decimal | None: средняя найденных оплат за 12 месяцев до месяца включительно
     last: object = None  # последняя найденная оплата до месяца включительно
     previous: object = None  # прошлая найденная оплата, только если отличается от последней
     history: list = field(default_factory=list)  # [(Month, state)] за 6 месяцев по этот
+    year: list = field(default_factory=list)  # [(Month, state, Spend | None)] за 12 месяцев по этот, новые сначала
 
 
 @dataclass
@@ -133,7 +139,7 @@ def load_spends(request, first, last, parents, unassigned):
     с товаром — категория его обобщённого продукта); «Не разобрано» не считается.
     """
     receipts = Receipt.objects.filter(visible_receipts_q(request), purchased_on__gte=first, purchased_on__lte=last)
-    rows = list(receipts.values_list("id", "purchased_on", "store_id", "currency_id", "total"))
+    rows = list(receipts.values_list("id", "purchased_on", "store_id", "currency_id", "total", "payment_method"))
     lines = (ReceiptLine.objects.filter(receipt_id__in=receipts.values("id"))
              .annotate(line_category=Coalesce(F("category_id"), F("product__generic__category_id")))
              .filter(line_category__isnull=False).values_list("receipt_id", "line_category").distinct())
@@ -142,8 +148,8 @@ def load_spends(request, first, last, parents, unassigned):
         if category_id not in unassigned:
             categories.setdefault(receipt_id, set()).add(category_id)
     return [
-        matching.Spend(pk, day, store_id, matching.common_category(categories.get(pk, ()), parents), currency, total)
-        for pk, day, store_id, currency, total in rows
+        matching.Spend(pk, day, store_id, matching.common_category(categories.get(pk, ()), parents), currency, total, method)
+        for pk, day, store_id, currency, total, method in rows
     ]
 
 
@@ -176,8 +182,10 @@ class _Ledger:
         self.spends = load_spends(request, first.first - timedelta(days=matching.EARLY_DAYS),
                                   matching.shift(last, 1).last, self.parents, unassigned)
         self.months = _months(first, last)
+        # С тратой ответа тем же запросом: её комментарий отличает «по средней» от «Оплатил».
         decisions = list(RecurringDecision.objects.filter(
-            payment__in=[payment.pk for payment in self.payments], month__gte=first.first, month__lte=last.first))
+            payment__in=[payment.pk for payment in self.payments], month__gte=first.first, month__lte=last.first)
+            .select_related("receipt"))
         visible = {spend.id for spend in self.spends}
         missing = {item.receipt_id for item in decisions
                    if item.decision == RecurringDecision.Decision.ADDED and item.receipt_id not in visible}
@@ -234,7 +242,8 @@ class _Ledger:
         decision = self.decisions.get((payment.pk, month))
         row = PaymentMonth(payment, state, matching.due_date(month, payment.due_day),
                            spend=self.assigned.get((payment.pk, month)),
-                           added=decision is not None and decision.decision == RecurringDecision.Decision.ADDED)
+                           added=decision is not None and decision.decision == RecurringDecision.Decision.ADDED
+                           and decision.receipt is not None and decision.receipt.note.endswith(AVERAGE_NOTE))
         if state == INACTIVE:
             return row
         row.average = self.average(payment, month)
@@ -245,6 +254,8 @@ class _Ledger:
                 row.previous = found[-2]
         row.history = [(item, self.state(payment, item))
                        for item in (matching.shift(month, step - HISTORY_MONTHS + 1) for step in range(HISTORY_MONTHS))]
+        row.year = [(item, self.state(payment, item), self.assigned.get((payment.pk, item)))
+                    for item in (matching.shift(month, -step) for step in range(YEAR_MONTHS))]
         return row
 
     def question(self, payment, month):
@@ -330,8 +341,11 @@ def unpaid(user, month, today=None):
     ]
 
 
+AVERAGE_NOTE = ": средняя оплата (платёж не найден)"
+
+
 def spend_note(payment, month):
-    return f"{payment.name} за {month_name(month)}: средняя оплата (платёж не найден)"
+    return f"{payment.name} за {month_name(month)}{AVERAGE_NOTE}"
 
 
 def _store_name(store):
@@ -349,6 +363,27 @@ def decide(request, payment_id, month, decision, today=None):
     среднюю оплату. Платёж уже оплачен — ``DecisionRefused("already_paid")``, ответ уже есть —
     ``DecisionRefused("already_decided")``. Одна транзакция: трата и ответ вместе либо ничего.
     """
+    def spend(payment, ledger):
+        amount = ledger.average(payment, month) or payment.amount
+        return {"total": f"{amount:.2f}", "purchased_on": matching.due_date(month, payment.due_day).isoformat(),
+                "note": spend_note(payment, month)}
+
+    return _answer(request, payment_id, month, decision, today,
+                   spend if decision == RecurringDecision.Decision.ADDED else None)
+
+
+def pay(request, payment_id, month, amount, method, day, today=None):
+    """«Оплатил» (2026-10-13): трата на ``amount`` в день ``day`` способом ``method`` (``""`` — не указан) с местом и
+    категорией платежа и комментарием «<название> за <месяц>» плюс ответ ``added`` с ней — месяц ``month`` оплачен,
+    даже если сумма далеко от ожидаемой или у платежа нет места. Отказы и транзакция — как у ``decide``.
+    """
+    return _answer(request, payment_id, month, RecurringDecision.Decision.ADDED, today, lambda payment, ledger: {
+        "total": f"{amount:.2f}", "purchased_on": day.isoformat(), "note": f"{payment.name} за {month_name(month)}",
+        "payment_method": method})
+
+
+def _answer(request, payment_id, month, decision, today, spend):
+    """Ответ о месяце; ``spend(payment, ledger)`` — поля траты ответа (без валюты, категории и места), ``None`` — без траты."""
     today = today or timezone.localdate()
     with transaction.atomic():
         # Блокировка платежа упорядочивает ответы на один платёж: второй ждёт и видит первый.
@@ -365,11 +400,8 @@ def decide(request, payment_id, month, decision, today=None):
         if state in (SKIPPED, ELSEWHERE):
             raise DecisionRefused("already_decided")
         receipt = None
-        if decision == RecurringDecision.Decision.ADDED:
-            amount = ledger.average(payment, month) or payment.amount
-            body = {"total": f"{amount:.2f}", "currency": payment.currency_id, "category": payment.category_id,
-                    "purchased_on": matching.due_date(month, payment.due_day).isoformat(),
-                    "note": spend_note(payment, month)}
+        if spend is not None:
+            body = {"currency": payment.currency_id, "category": payment.category_id, **spend(payment, ledger)}
             store_name = _store_name(payment.store)
             if store_name:
                 body["store_name"] = store_name

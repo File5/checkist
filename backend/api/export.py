@@ -301,6 +301,7 @@ def _receipts(request, selected, filters, tree):
             "store_name": None if receipt.store_id is None else common.store_name(receipt.store),
             "currency": receipt.currency_id, "total": common.amount(receipt.total),
             "discount_total": common.amount(receipt.discount_total), "note": receipt.note,
+            "payment_method": receipt.payment_method,
             "owner": receipt.owner.get_username(), "owner_name": display_name(receipt.owner),
             "created_at": common.utc_datetime(receipt.created_at),
             "categories": sorted({line["category_path"] for line in own if line["category_path"]}),

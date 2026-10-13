@@ -7,6 +7,7 @@ import { categoryTone, groupByDay, isRowFlag, rowMeta, rowTitle, spendSource, wi
 import type { OwnerChip, SpendSource } from './spends'
 import { money } from './state'
 import { baseTwin } from '../../lib/money'
+import { methodLabels, methodShort } from '../../lib/payment-methods'
 import ChipScroller from '../../components/ChipScroller'
 import Icon from '../../components/Icon'
 import { SWIPE_REVEAL, swipeEnd } from './undo-delete'
@@ -107,7 +108,10 @@ function SpendRow({ receipt, showOwner, onDelete }: { receipt: ReceiptListItem; 
           {index > 0 && ' · '}{text}</span>)}</span>
       </span>
       <span className="spends-row-amount ck-figures">{money(receipt.total, receipt.currency)}
-        <BaseTwin receipt={receipt} /></span>
+        <BaseTwin receipt={receipt} />
+        {/* How it was paid, short and whole under the amount; the full name for a screen reader. */}
+        {receipt.payment_method && <span className="spends-row-method"><span aria-hidden="true">{methodShort[receipt.payment_method]}</span>
+          <span className="spends-hidden">, {methodLabels[receipt.payment_method]}</span></span>}</span>
     </Link>
   if (!deletable) return <li>{row}</li>
   // «Удалить» lies behind the row: a swipe shows it, the Tab key slides the row aside to it (Receipts.css).

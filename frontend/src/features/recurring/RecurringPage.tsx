@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { FormEvent, ReactNode } from 'react'
+import type { FormEvent } from 'react'
 import { getCategories } from '../../api/catalog'
 import { getIncomeCategories } from '../../api/incomes'
 import type { IncomeCategory } from '../../api/incomes'
 import { getManualDefaults } from '../../api/receipts'
 import {
-  acceptSuggestion, createRecurring, decideRecurring, deleteRecurring, dismissSuggestion, getRecurringMonth, updateRecurring,
+  acceptSuggestion, createRecurring, decideRecurring, deleteRecurring, dismissSuggestion, getRecurringMonth, payRecurring, updateRecurring,
 } from '../../api/recurring'
 import type { RecurringMonth, RecurringMonthPayment, RecurringPayment, RecurringSuggestion } from '../../api/recurring'
 import type { Category, LocalApiResult } from '../../api/types'
@@ -15,8 +15,10 @@ import { formatMoney } from '../../lib/money'
 import { dashboardErrorMessage, monthTitle } from '../dashboard/dashboard-state'
 import { DueBadge, NoticeLine, QuestionsCard } from './RecurringDue'
 import type { Decide } from './RecurringDue'
+import { Field, PaySection } from './RecurringPay'
+import type { Pay } from './RecurringPay'
 import {
-  changeText, counted, decisionNotice, draftBody, draftErrors, draftOf, historyWords, recurringFailure, stateText, suggestionMeta,
+  changeText, counted, decisionNotice, draftBody, draftErrors, draftOf, historyWords, payNotice, recurringFailure, stateText, suggestionMeta,
 } from './recurring-state'
 import type { DraftErrors, Notice, RecurringDraft } from './recurring-state'
 import './Recurring.css'
@@ -126,14 +128,6 @@ export function RecurringView({ data, busy = false, notice = null, onDecide = ()
   </div>
 }
 
-/** A field as a row of the sheet: the words on the left, the control on the right; its error under the row. */
-function Field({ id, label, error, children }: { id: string; label: string; error?: string; children: ReactNode }) {
-  return <div className="rec-field-wrap">
-    <label className="rec-field" htmlFor={id}><span>{label}</span>{children}</label>
-    {error && <p className="rec-field-error" id={`${id}-error`}>{error}</p>}
-  </div>
-}
-
 export type RecurringFormProps = {
   payment: RecurringPayment | null
   categories: Category[]
@@ -223,6 +217,7 @@ export default function RecurringPage() {
   const [notice, setNotice] = useState<Notice | null>(null)
   const [editing, setEditing] = useState<Editing>(null)
   const [failure, setFailure] = useState<string | null>(null)
+  const [payFailure, setPayFailure] = useState<string | null>(null)
   useEffect(() => {
     const controller = new AbortController()
     const signal = controller.signal
@@ -274,6 +269,23 @@ export default function RecurringPage() {
       } else if (result.kind === 'error') setFailure(recurringFailure(result))
     })
   }
+  // «Оплатил» of the sheet: the spend is made, the sheet closes with a line about it and a link to the spend.
+  const pay: Pay = (row, values) => {
+    if (busy || load?.kind !== 'ok') return
+    const { month, today } = load.data
+    const input = { ...values, month }
+    setBusy(true)
+    setPayFailure(null)
+    void payRecurring(row.id, input).then((result) => {
+      setBusy(false)
+      if (result.kind === 'ok') {
+        setEditing(null)
+        setNotice(payNotice(row, input, result.data.receipt_id, today))
+      } else if (result.kind === 'error') setPayFailure(recurringFailure(result))
+      // A 409 means the month was closed meanwhile: the sheet shows it once the month is read again.
+      reload()
+    })
+  }
   const remove = () => {
     const payment = editing?.payment
     if (!payment || busy) return
@@ -290,13 +302,17 @@ export default function RecurringPage() {
 
   if (!load) return <RequestState kind="loading" message="Загружаем регулярные платежи…" />
   if (load.kind === 'error') return <RequestState kind="error" message={load.message} onRetry={() => setAttempt((value) => value + 1)} />
+  // The month of the payment being changed, read again after every answer: «Оплатил» and the history of a year.
+  const monthRow = editing?.payment ? load.data.payments.find((row) => row.id === editing.payment?.id) : undefined
   return <>
     <RecurringView data={load.data} busy={busy} notice={notice} onDecide={decide}
       onAccept={(item) => run(() => acceptSuggestion(item), (payment) => ({ text: `«${payment.name}» теперь в регулярных платежах.` }))}
       onDismiss={(item) => run(() => dismissSuggestion(item), () => ({ text: `«${item.name}» больше не предлагаю.` }))}
-      onEdit={(payment, kind) => { setFailure(null); setEditing({ payment, kind }) }} />
+      onEdit={(payment, kind) => { setFailure(null); setPayFailure(null); setEditing({ payment, kind }) }} />
     <Sheet open={editing !== null} onClose={() => setEditing(null)} id="rec-form-sheet"
       title={editing?.payment ? editing.payment.name : editing?.kind === 'income' ? 'Новый доход' : 'Новый платёж'}>
+      {monthRow && <PaySection key={`pay-${monthRow.id}`} row={monthRow} month={load.data.month} today={load.data.today} busy={busy}
+        failure={payFailure} onPay={pay} />}
       {editing && <RecurringForm key={editing.payment?.id ?? `new-${editing.kind ?? 'spend'}`} payment={editing.payment} categories={load.categories}
         currency={load.currency} busy={busy} failure={failure} onSubmit={save} onDelete={remove} kind={editing.kind}
         incomeCategories={load.incomeCategories} />}

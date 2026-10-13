@@ -16,6 +16,8 @@ CENT = Decimal("0.01")
 ALL_SAMPLES = [samples.DNS_KZ, samples.SHOP_RU, *samples.LIDL_DE]
 # Признаки платёжных данных в именах полей.
 PAYMENT_FIELD_MARKERS = ("card", "pay", "terminal", "rrn", "auth", "bank", "acquir")
+# Способ оплаты — одно из пяти значений без реквизитов карты (решение человека 2026-10-13, receipts.0009).
+ALLOWED_PAYMENT_FIELDS = {("Receipt", "payment_method")}
 # Реквизиты слипа терминала из трёх образцов: в сохранённых данных их быть не должно.
 CARD_SLIP_MARKERS = (
     "mastercard", "contactless", "rrn", "одобрено", "терминал", "банковская карта", "kreditkarte",
@@ -61,6 +63,9 @@ class SampleDataTests(SimpleTestCase):
     def test_models_have_no_separate_payment_fields(self):
         for model in (Receipt, ReceiptLine, ReceiptDiscount, ReceiptTax, Merchant, Store):
             for field in model._meta.get_fields():
+                if (model.__name__, field.name) in ALLOWED_PAYMENT_FIELDS:
+                    self.assertEqual(Receipt.PaymentMethod.values, ["", "kaspi_gold", "forte", "cash", "card"])
+                    continue
                 with self.subTest(model=model.__name__, field=field.name):
                     self.assertFalse([marker for marker in PAYMENT_FIELD_MARKERS if marker in field.name])
 

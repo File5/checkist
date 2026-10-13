@@ -57,6 +57,9 @@ FAKE_SCENARIOS = ("simple", "invalid_output", "provider_error", "timeout")
 FAKE_SCENARIO_ENV = "MANUAL_PARSE_FAKE_SCENARIO"
 # Fake-исполнитель считает текст доходом по этим словам (модель решает сама, по промпту).
 INCOME_WORDS = re.compile(r"зарплат|аванс|преми|подработ|кэшб|кешб|процент|доход|продал", re.IGNORECASE)
+# Fake-исполнитель: способ оплаты по словам текста, первое совпадение по порядку (модель решает сама, по промпту).
+METHOD_WORDS = (("kaspi_gold", re.compile(r"каспи|kaspi", re.IGNORECASE)), ("forte", re.compile(r"форте|forte", re.IGNORECASE)),
+                ("cash", re.compile(r"наличн|налом|кэшем", re.IGNORECASE)), ("card", re.compile(r"карт", re.IGNORECASE)))
 
 
 class ParseLimit(Exception):
@@ -187,7 +190,7 @@ def draft_from_output(data, payload):
         "total": data["total"], "currency": data["currency"] or payload["default_currency"],
         "category": data["category"], "purchased_on": data["purchased_on"] or payload["today"],
         "store_name": (data["store_name"] or "").strip() or None, "note": (data["note"] or "").strip(),
-        "lines": lines,
+        "payment_method": data["payment_method"] or "", "lines": lines,
     }
     try:
         manual.parse({key: value for key, value in body.items() if value is not None})
@@ -219,7 +222,8 @@ class FakeTextParser:
 
     С похожей прошлой тратой (первая в ``history``) — как модель по промпту: её место, категория и валюта,
     без числа в тексте — её сумма. Слово дохода («зарплата», «аванс», «кэшбэк», …) — доход: число с
-    разрядами («650 000») целиком, категория дохода по первым буквам названия, иначе первая.
+    разрядами («650 000») целиком, категория дохода по первым буквам названия, иначе первая. Способ оплаты траты —
+    по словам ``METHOD_WORDS`` («наличными», «с каспи», «картой форте»).
     """
 
     name = "fake"
@@ -241,16 +245,17 @@ class FakeTextParser:
             return self._income(payload)
         numbers = re.findall(r"[0-9]+(?:[.,][0-9]{1,2})?", payload["text"])
         total = numbers[-1].replace(",", ".") if numbers else None
+        method = next((code for code, words in METHOD_WORDS if words.search(payload["text"])), None)
         same = (payload.get("history") or [None])[0]
         if same is not None and same["category"] is not None:
             return {
                 "kind": "spend", "total": total or same["total"], "currency": same["currency"], "category": same["category"],
-                "purchased_on": None, "store_name": same["store_name"], "note": None, "lines": [],
+                "purchased_on": None, "store_name": same["store_name"], "note": None, "payment_method": method, "lines": [],
             }
         return {
             "kind": "spend", "total": total, "currency": None,
             "category": payload["categories"][0]["id"] if payload["categories"] else None,
-            "purchased_on": None, "store_name": None, "note": None, "lines": [],
+            "purchased_on": None, "store_name": None, "note": None, "payment_method": method, "lines": [],
         }
 
     @staticmethod
@@ -261,7 +266,8 @@ class FakeTextParser:
         options = payload.get("income_categories") or []
         chosen = next((item for item in options if item["name"][:5].lower() in lower), options[0] if options else None)
         return {"kind": "income", "total": numbers[-1].replace(",", ".") if numbers else None, "currency": None,
-                "category": chosen and chosen["id"], "purchased_on": None, "store_name": None, "note": None, "lines": []}
+                "category": chosen and chosen["id"], "purchased_on": None, "store_name": None, "note": None,
+                "payment_method": None, "lines": []}
 
 
 class CodexTextParser:

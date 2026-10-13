@@ -40,7 +40,7 @@ DEFAULT_COUNTRY = "KZ"
 COUNTRY_BY_CURRENCY = {"RUB": "RU", "KZT": "KZ", "EUR": "DE"}
 TIMEZONE_BY_COUNTRY = {"RU": "Europe/Moscow", "KZ": "Asia/Almaty", "DE": "Europe/Berlin"}
 
-FIELDS = ("total", "currency", "category", "purchased_on", "store_name", "note", "lines")
+FIELDS = ("total", "currency", "category", "purchased_on", "store_name", "note", "lines", "payment_method")
 LINE_FIELDS = ("name", "amount", "quantity", "category")
 _MONEY = re.compile(r"[0-9]{1,12}(?:\.[0-9]{1,2})?")
 _QUANTITY = re.compile(r"[0-9]{1,9}(?:\.[0-9]{1,3})?")
@@ -145,6 +145,11 @@ def parse(data):
         values["note"] = note or ""
     if "lines" in data:
         values["lines"] = _parse_lines(errors, data["lines"], refs)
+    if "payment_method" in data:
+        method = data["payment_method"] or ""  # null и пусто — «не указан»
+        if method not in Receipt.PaymentMethod.values:
+            errors["payment_method"] = "choice"
+        values["payment_method"] = method
     _check_references(errors, values, refs)
     if errors:
         raise ManualInvalid(errors)
@@ -326,6 +331,7 @@ def create(owner, data):
             owner=owner, source=Receipt.Source.MANUAL, store=store, currency_id=currency,
             operation=Receipt.Operation.SALE, purchased_on=purchased_on,
             purchased_at=purchase_moment(purchased_on, store), total=total, note=values.get("note", ""),
+            payment_method=values.get("payment_method", ""),
         )
         _write_lines(receipt, _rows(lines, total, category, _category_names(category)))
     return receipt
@@ -386,6 +392,8 @@ def update(receipt_id, data):
             receipt.store = find_or_create_store(name, receipt.currency_id) if name else None
         if "note" in values:
             receipt.note = values["note"]
+        if "payment_method" in values:
+            receipt.payment_method = values["payment_method"]
         if "purchased_on" in values and values["purchased_on"] != receipt.purchased_on:
             receipt.purchased_on = values["purchased_on"]
             receipt.purchased_at = purchase_moment(receipt.purchased_on, receipt.store)

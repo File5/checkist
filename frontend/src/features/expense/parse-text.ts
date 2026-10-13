@@ -90,5 +90,7 @@ export function draftFromParse(parsed: ManualParseDraft, chips: Category[]): Exp
     place: parsed.store_name ?? '',
     note: parsed.note,
     lines: parsed.lines.map((line) => ({ ...newLine(), name: line.name, amount: money(line.amount), category: known(line.category) })),
+    // A text that does not say how it was paid leaves the choice of the form (ExpensePage).
+    method: parsed.payment_method || undefined,
   }
 }

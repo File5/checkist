@@ -243,8 +243,17 @@ class SaveTests(DraftFixture, TestCase):
         for receipt, category in ((purchase, self.food), (fee, self.bank)):
             self.assertTrue(re.search(STATEMENT_NOTE_REGEX, receipt.note))
             self.assertEqual(receipt.lines.get().category_id, category.pk)
+            self.assertEqual(receipt.payment_method, "kaspi_gold")
         statement.refresh_from_db()
         self.assertIsNotNone(statement.saved_at)
+
+    def test_forte_spends_are_paid_by_forte(self):
+        text = "\n".join(demo.forte_header(END, END) + [demo.forte_line(day(3), -1450, "Покупка", "YANDEX.GO")])
+        statement, _ = drafts.import_text(self.owner, text, sha256="f" * 64, rule_scope=scope_of(self.owner))
+        row = statement.rows.get()
+        self.saved(statement, {"id": row.pk, "category": self.transport.pk, "store_name": "Yandex Go"})
+        receipt = Receipt.objects.get()
+        self.assertEqual((receipt.note.endswith("· Выписка ForteBank"), receipt.payment_method), (True, "forte"))
 
     def test_a_plain_spend_note_still_marks_the_statement(self):
         statement, rows = self.draft(demo.kaspi_line(day(3), -1450, "Покупка", "YANDEX.GO"))

@@ -1008,3 +1008,15 @@ docker compose -p checkist_dev cp postgres:/tmp/checkist.dump ./checkist.dump
   удалённые лимиты не восстанавливаются; повтор ничего не меняет. Пишет только `BudgetLimitChange`; `--since` — месяц до
   текущего. Вывод — JSON (`added`, `entries`). Откат — удалить добавленные записи (`changed_by` NULL, `effective_month`
   = `--since`).
+
+## Способ оплаты траты (2026-10-13, ветка `feature/payment-method`)
+
+- `Receipt.payment_method` — `CharField(16)`, выбор `""` (не указан, по умолчанию) / `kaspi_gold` / `forte` / `cash` /
+  `card` (`Receipt.PaymentMethod`); без ограничения БД и индекса. Миграция `receipts.0009_receipt_payment_method`
+  (только `AddField`), откат — `migrate receipts 0008_receipt_hidden` (значения пропадут). Это не реквизиты карты:
+  страж `receipts.tests.test_samples` по-прежнему не пускает в модели другие поля «оплаты».
+- Пишут: форма траты и `PATCH` ручной траты, разбор словами (черновик), импорт выписки (`statements.drafts.save` —
+  код банка совпадает с кодом способа), «Оплатил» регулярного платежа (`recurring.services.pay`), команда
+  `payment_methods backfill` для старых трат из выписок.
+- «Оплатил» хранится как прежний ответ `RecurringDecision` (`added` + `receipt`), новых таблиц у `recurring` нет;
+  `recurring.matching.Spend` получил поле `method`.

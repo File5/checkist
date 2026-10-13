@@ -7,8 +7,12 @@ loopback; запись — с CSRF. Платежи семьи видят и пр
 Регулярный доход (``kind: "income"``, 2026-10-13): ``category_id`` — категория дохода
 (``/api/incomes/categories/``), места нет; получен ли — сверка с доходами месяца. Такой шаблон
 видят его автор и главный в семье, остальным он — ``404``. Вопросов о прошлом месяце у дохода нет.
+
+«Оплатил» (2026-10-13): ``POST {id}/pay/`` — трата на введённые сумму, день и способ оплаты и ответ ``added``
+о месяце; у месяца платежа ``year`` — «как и сколько оплатил» за 12 месяцев с итогом по способам оплаты.
 """
 import re
+from datetime import date, timedelta
 
 from django.utils import timezone
 from rest_framework import status
@@ -20,6 +24,7 @@ from budget.dashboard import Month
 from catalog.models import Category
 from config.exceptions import ApiError, InvalidParameter, ObjectNotFound
 from receipts import manual
+from receipts.models import Receipt
 from recurring import matching, services
 from incomes.access import categories_q
 from incomes.models import IncomeCategory
@@ -52,6 +57,9 @@ MESSAGES = {
     "month": "Месяц до текущего, не раньше чем за год, в формате ГГГГ-ММ.",
     "store": "Магазин не найден.",
     "kind": "Вид — spend или income; у сохранённого шаблона не меняется.",
+    "pay_month": "Месяц не позже текущего, не раньше чем за год, в формате ГГГГ-ММ.",
+    "payment_method": "Способ оплаты — kaspi_gold, forte, cash, card либо пусто.",
+    "purchased_on": "Дата в формате ГГГГ-ММ-ДД, не позже сегодняшней.",
 }
 _MONTH = re.compile(r"([0-9]{4})-([0-9]{2})")
 
@@ -172,17 +180,45 @@ def payment_object(payment):
     }
 
 
+def _paid(spend, payment):
+    # У дохода ``receipt_id`` — null, ``purchased_on`` — день, когда доход получен.
+    return None if spend is None else {
+        "receipt_id": None if payment.kind == INCOME else spend.id, "purchased_on": common.iso_date(spend.day),
+        "total": common.amount(spend.total)}
+
+
+def _year(row):
+    """«Как и сколько оплатил» за 12 месяцев по этот (новые сначала) и итог по способам оплаты; выключенный — null.
+
+    Все оплаты платежа — в его валюте (сверка берёт траты той же валюты); трата ответа в другой валюте (валюту
+    платежа сменили позже) в итог не входит.
+    """
+    if not row.year:
+        return None
+    total, methods = None, {}
+    for _, _, spend in row.year:
+        if spend is not None and spend.currency == row.payment.currency_id:
+            total = (total or 0) + spend.total
+            methods[spend.method] = methods.get(spend.method, 0) + spend.total
+    return {
+        # ``payment_method`` — способ оплаты найденной траты (``""`` — не указан; у дохода всегда ``""``).
+        "months": [{"month": month.label(), "state": state,
+                    "paid": None if spend is None else {**_paid(spend, row.payment), "payment_method": spend.method}}
+                   for month, state, spend in row.year],
+        "total": common.amount(total),
+        "methods": [{"payment_method": method, "total": common.amount(value)}
+                    for method, value in sorted(methods.items(), key=lambda item: (-item[1], item[0] == "", item[0]))],
+    }
+
+
 def _month_payment(row):
-    spend = row.spend
     return {
         **payment_object(row.payment), "state": row.state, "due_date": common.iso_date(row.due),
-        # У дохода ``receipt_id`` — null, ``purchased_on`` — день, когда доход получен.
-        "paid": None if spend is None else {
-            "receipt_id": None if row.payment.kind == INCOME else spend.id, "purchased_on": common.iso_date(spend.day),
-            "total": common.amount(spend.total)},
+        "paid": _paid(row.spend, row.payment),
         "added": row.added, "average": common.amount(row.average), "last_amount": common.amount(row.last),
         "previous_amount": common.amount(row.previous),
         "history": [{"month": month.label(), "state": state} for month, state in row.history],
+        "year": _year(row),
     }
 
 
@@ -270,6 +306,17 @@ class PaymentView(LocalAPIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+def _answer_month(raw, today, *, current=False):
+    """Месяц ``ГГГГ-ММ`` не раньше чем за год и до текущего (с ``current`` — включая текущий); иначе ``None``."""
+    match = _MONTH.fullmatch(raw) if isinstance(raw, str) else None
+    if not (match and 1 <= int(match[2]) <= 12 and int(match[1]) >= 1901):
+        return None
+    month, now = Month(int(match[1]), int(match[2])), Month.of(today)
+    earliest = matching.shift(now, -services.LOOKBACK_MONTHS)
+    last = now if current else now.previous()
+    return month if (earliest.year, earliest.month) <= (month.year, month.month) <= (last.year, last.month) else None
+
+
 def read_decision(data, today):
     errors = {}
     for key in data:
@@ -278,21 +325,42 @@ def read_decision(data, today):
     decision = data.get("decision")
     if decision not in RecurringDecision.Decision.values:
         errors["decision"] = [MESSAGES["decision"]]
-    month = None
-    raw = data.get("month")
-    match = _MONTH.fullmatch(raw) if isinstance(raw, str) else None
-    if match and 1 <= int(match[2]) <= 12 and int(match[1]) >= 1901:
-        month = Month(int(match[1]), int(match[2]))
-        current = Month.of(today)
-        earliest = matching.shift(current, -services.LOOKBACK_MONTHS)
-        # Отвечают о прошлых месяцах, не дальше года назад: текущий ещё не кончился.
-        if not (earliest.year, earliest.month) <= (month.year, month.month) < (current.year, current.month):
-            month = None
+    # Отвечают о прошлых месяцах, не дальше года назад: текущий ещё не кончился.
+    month = _answer_month(data.get("month"), today)
     if month is None:
         errors["month"] = [MESSAGES["month"]]
     if errors:
         raise InvalidParameter(errors)
     return month, decision
+
+
+def read_pay(data, today):
+    """``(month, amount, method, day)`` тела «Оплатил»; способ и дата необязательны — «не указан» и сегодня."""
+    errors = {}
+    for key in data:
+        if key not in ("month", "amount", "payment_method", "purchased_on"):
+            errors[key] = [MESSAGES["unknown_field"]]
+    month = _answer_month(data.get("month"), today, current=True)
+    if month is None:
+        errors["month"] = [MESSAGES["pay_month"]]
+    amount = _amount(data.get("amount"))
+    if amount is None:
+        errors["amount"] = [MESSAGES["amount"]]
+    method = data.get("payment_method") or ""
+    if method not in Receipt.PaymentMethod.values:
+        errors["payment_method"] = [MESSAGES["payment_method"]]
+    day, raw = today, data.get("purchased_on")
+    if raw is not None:
+        try:
+            day = date.fromisoformat(raw) if isinstance(raw, str) and len(raw) == 10 else None
+        except ValueError:
+            day = None
+        # Сутки запаса: день клиента может быть впереди дня сервера.
+        if day is None or day > today + timedelta(days=1):
+            errors["purchased_on"] = [MESSAGES["purchased_on"]]
+    if errors:
+        raise InvalidParameter(errors)
+    return month, amount, method, day
 
 
 class DecisionView(LocalAPIView):
@@ -307,6 +375,32 @@ class DecisionView(LocalAPIView):
         month, decision = read_decision(manual_body(request), today)
         try:
             saved = services.decide(request, payment.pk, month, decision, today)
+        except services.DecisionRefused as refused:
+            raise RecurringConflict(refused.code) from None
+        except RecurringPayment.DoesNotExist:
+            raise ObjectNotFound() from None
+        except manual.ManualInvalid as error:
+            raise manual_invalid(error) from None
+        return Response({"payment_id": payment.pk, "month": month.label(), "decision": saved.decision,
+                         "receipt_id": saved.receipt_id}, status=status.HTTP_201_CREATED)
+
+
+class PayView(LocalAPIView):
+    """``POST {"month", "amount", "payment_method"?, "purchased_on"?}`` — «Оплатил»: трата и ответ ``added``.
+
+    Ответ — как у ``decision``. Регулярный доход — ``404``; оплачен — ``409 already_paid``, ответ есть —
+    ``409 already_decided``.
+    """
+
+    http_method_names = ["post", "options"]
+    parser_classes = [RecurringBodyParser]
+
+    def post(self, request, pk):
+        payment = common.get_or_404(visible_payments(request).filter(kind=RecurringPayment.Kind.SPEND), path_id(pk))
+        today = timezone.localdate()
+        month, amount, method, day = read_pay(manual_body(request), today)
+        try:
+            saved = services.pay(request, payment.pk, month, amount, method, day, today)
         except services.DecisionRefused as refused:
             raise RecurringConflict(refused.code) from None
         except RecurringPayment.DoesNotExist:

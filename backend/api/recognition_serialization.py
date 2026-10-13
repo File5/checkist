@@ -429,7 +429,7 @@ def receipt_object(receipt):
         "origin": "recognized" if receipt.image_count else "legacy/manual",
         "review_required": bool(receipt.has_review or receipt.unmatched_products_count),
         "lines_count": receipt.lines_count, "unmatched_products_count": receipt.unmatched_products_count,
-        "receipt_images_count": receipt.image_count, "note": receipt.note,
+        "receipt_images_count": receipt.image_count, "note": receipt.note, "payment_method": receipt.payment_method,
         "hidden": receipt.hidden, "hidden_at": utc_datetime(receipt.hidden_at),
         "preview_image_url": settings.MEDIA_URL + receipt.preview_file if receipt.preview_file else None,
         "preview_thumb_url": variant_url(receipt.preview_file, "thumb"),

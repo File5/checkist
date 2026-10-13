@@ -14,6 +14,13 @@ class Receipt(models.Model):
         PHOTO = "photo", "Фото чека"
         MANUAL = "manual", "Вручную"
 
+    class PaymentMethod(models.TextChoices):
+        NONE = "", "Не указан"
+        KASPI_GOLD = "kaspi_gold", "Kaspi Gold"
+        FORTE = "forte", "ForteBank"
+        CASH = "cash", "Наличные"
+        CARD = "card", "Другая карта"
+
     # Значения по умолчанию нет: забытый владелец — ошибка, а не тихий local.
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="receipts")
     # NULL — «Без места»: бывает только у траты, внесённой вручную.
@@ -38,6 +45,8 @@ class Receipt(models.Model):
     raw_text = models.TextField(blank=True, default="")
     extra = models.JSONField(default=dict, blank=True)  # кассир, способ оплаты, реклама
     note = models.TextField(blank=True, default="")  # комментарий человека к трате
+    # Чем заплачено (2026-10-13): форма траты, разбор словами, импорт выписки, «Оплатил» регулярного платежа.
+    payment_method = models.CharField(max_length=16, choices=PaymentMethod.choices, blank=True, default="")
     # Скрытый платёж (решает главный в семье): не виден остальным и не входит ни в какие суммы.
     hidden = models.BooleanField(default=False)
     hidden_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
