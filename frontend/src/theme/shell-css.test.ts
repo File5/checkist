@@ -126,9 +126,8 @@ describe('state rules of the shell (text of the rules, not rendering)', () => {
       // The bottom bar of a phone and the list behind «Ещё»: the shell's own parts, like the links of the header. They
       // weigh as much as the header rules they replace in the bar, and come after them.
       '.brand-bar .main-navigation :focus-visible = 3',
-      '.brand-bar .main-navigation > a:hover = 3', '.brand-bar .main-more-toggle:where(:hover) = 2',
-      '.brand-bar .main-more-toggle[aria-expanded="true"] = 3',
-      '.brand-bar .main-more-list a:hover = 3',
+      // «Ещё» is a link to its screen (2026-10-13): its hover weighs as much as the header rule it replaces.
+      '.brand-bar .main-navigation > a:hover = 3', '.brand-bar .main-more > a:hover = 3',
       // «＋» of the bar opens a modal sheet (components/Sheet) that covers it: the button has no open state of its own.
     ])
   })

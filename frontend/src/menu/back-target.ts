@@ -12,6 +12,12 @@ export function isFocusRoute(route: Route): boolean {
   return route.kind === 'expense-new' || route.kind === 'expense-edit' || route.kind === 'income-edit'
 }
 
+/** The sections of the screen «Ещё» (menu/menu-items.ts `groups`): opened from it, they go back to it. */
+const MORE_KINDS: Route['kind'][] = ['incomes', 'recurring', 'goals', 'review', 'catalog', 'stores', 'statement-rules', 'jobs', 'export', 'family', 'account', 'health']
+export function isMoreSection(route: Route): boolean {
+  return MORE_KINDS.includes(route.kind)
+}
+
 /** The name of the way back by the kind of the page it leads to. */
 const backLabels: Partial<Record<Route['kind'], string>> = {
   dashboard: 'Назад на главную',
@@ -26,6 +32,7 @@ const backLabels: Partial<Record<Route['kind'], string>> = {
   'statement-new': 'Назад к выпискам',
   incomes: 'Назад к доходам',
   goals: 'Назад к целям',
+  more: 'Назад в «Ещё»',
 }
 
 const labelOf = (href: string) => backLabels[parseRoute(new URL(href, 'http://checkist.invalid')).kind] ?? 'Назад'
@@ -58,11 +65,12 @@ export function backTarget({ route, returnTo }: Pick<NavigationSnapshot, 'route'
  * the page of the app the person came from (`from`), otherwise to «Главная». Any other nested page goes back by
  * «назад» (`backTarget`); a page of a section has none.
  */
-export function headerAction(navigation: Pick<NavigationSnapshot, 'route' | 'returnTo'>, from?: string): HeaderAction | undefined {
+export function headerAction(navigation: Pick<NavigationSnapshot, 'route' | 'returnTo'>, from?: string, fromMore = false): HeaderAction | undefined {
   const { route } = navigation
   if (route.kind === 'expense-new') return { kind: 'close', to: from ?? '/', label: 'Закрыть' }
   if (route.kind === 'expense-edit') return { kind: 'close', to: `/receipts/${route.receiptId}`, label: 'Закрыть' }
   if (route.kind === 'income-edit') return { kind: 'close', to: from ?? '/incomes', label: 'Закрыть' }
-  const back = backTarget(navigation)
+  // A section opened from «Ещё» goes back to it, as a pushed screen of a phone app; from anywhere else it has none.
+  const back = backTarget(navigation) ?? (fromMore && isMoreSection(route) ? target('/more') : undefined)
   return back && { kind: 'back', ...back }
 }

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react'
-import type { FocusEvent, MouseEvent, ReactNode, RefObject } from 'react'
+import type { FocusEvent, MouseEvent, RefObject } from 'react'
 import { Link } from '../navigation'
 import type { Route } from '../navigation'
 import type { Session } from '../session'
@@ -7,13 +7,10 @@ import { useQuickShot } from '../features/recognition/QuickShot'
 import Sheet from '../components/Sheet'
 import Icon from '../components/Icon'
 import type { IconName } from '../components/Icon'
-import { ThemeToggle } from '../theme'
-import ListIconsToggle from '../components/ListIconsToggle'
 import { menuItems, ADD_AFTER } from './menu-items'
 import type { MenuGroup, MenuItem } from './menu-items'
 import { MORE_MENU_CLOSED, PRESS_END_EVENTS, moreMenuStep } from './more-menu'
 
-const MORE_LIST_ID = 'main-more-list'
 const ADD_SHEET_ID = 'main-add-sheet'
 
 /** A link of the menu: the word, and a picture that only the bottom bar and the list behind «Ещё» of a phone show. */
@@ -22,7 +19,7 @@ function item({ key, to, label, current, account, icon }: MenuItem) {
     aria-current={current ? 'page' : undefined}><Icon name={icon} />{label}</Link>
 }
 
-/** A button and the list it opens: «Ещё» of the bottom bar of a phone.
+/** A button and the list it opens: «Данные ▾» and «Настройки ▾» of the header row of a wide screen.
  * Only the button opens the list; Esc, a press outside, an action of the list and the focus that leaves close it.
  */
 function usePopup() {
@@ -86,10 +83,9 @@ function usePopup() {
   return { open, toggle, list, wrapperProps, onListClick, onToggle: () => dispatch('toggle') }
 }
 
-/** «Данные» and «Настройки» behind «Ещё». On a phone: a heading and the rows under it, always open inside the sheet. In
- * the header of a wide screen: a word with ▾ that opens its own list, like «Ещё» used to (`usePopup`). `children` —
- * what follows the links (the theme row of «Настройки»). */
-function MenuSection({ group, children }: { group: MenuGroup; children?: ReactNode }) {
+/** «Данные» and «Настройки» in the header of a wide screen: a word with ▾ that opens its own list (`usePopup`). A phone
+ * shows them on the screen «Ещё» (features/more), the narrow strip as plain links. */
+function MenuSection({ group }: { group: MenuGroup }) {
   const { open, toggle, list, wrapperProps, onListClick, onToggle } = usePopup()
   const id = `main-group-${group.key}`
   const current = group.items.find((entry) => entry.current)
@@ -98,11 +94,8 @@ function MenuSection({ group, children }: { group: MenuGroup; children?: ReactNo
     <button type="button" className="main-group-toggle" ref={toggle} aria-expanded={open} aria-controls={id}
       aria-label={current ? `${group.title}, текущий раздел: ${current.label}` : undefined}
       data-current={current ? '' : undefined} onClick={onToggle}>{group.title}<Icon name="down" size={16} /></button>
-    {/* Drawn only in the sheet of a phone; the list says the same name to a screen reader. */}
-    <p className="main-group-title" aria-hidden="true">{group.title}</p>
     <div className="main-group-list" id={id} ref={list} role="group" aria-label={group.title} onClick={onListClick}>
       {group.items.map(item)}
-      {children}
     </div>
   </div>
 }
@@ -144,34 +137,30 @@ function AddMenu() {
   )
 }
 
-/** The main menu of the shell: one `nav` for every width. In the header it is a row of links; on a phone the
- * stylesheet pins it to the bottom of the window: «Главная · Траты · ＋ · Статистика · Ещё», the links after
- * the third one behind «Ещё».
+/** The main menu of the shell: one `nav` for every width. In the header it is a row of links with «Данные ▾» and
+ * «Настройки ▾»; on a phone the stylesheet pins it to the bottom of the window: «Главная · Траты · ＋ · Статистика ·
+ * Ещё», and «Ещё» is a link to its screen (`/more`, features/more) — the links after the third one live there.
  */
 export default function MainMenu({ session, route, menuRef }: { session: Session; route: Route; menuRef: RefObject<HTMLElement | null> }) {
   const { primary, more, groups, add } = menuItems(session, route)
-  const { open, toggle, list, wrapperProps, onListClick, onToggle } = usePopup()
   const currentInMore = more.find((entry) => entry.current)
+  const onMore = route.kind === 'more'
 
   return (
     <nav className="main-navigation" aria-label="Основная навигация" ref={menuRef}>
       {primary.slice(0, ADD_AFTER).map(item)}
       {add && <AddMenu />}
       {primary.slice(ADD_AFTER).map(item)}
-      {more.length > 0 && <div className="main-more" {...wrapperProps}>
-        {/* Hidden wherever the menu is a row of links. The current section is named: the mark alone is for the eye. */}
-        <button type="button" className="main-more-toggle" ref={toggle} aria-expanded={open} aria-controls={MORE_LIST_ID}
+      {more.length > 0 && <div className="main-more">
+        {/* The bar of a phone only. The current section behind it is named: the mark alone is for the eye. */}
+        <Link className="main-more-toggle" to="/more" aria-current={onMore ? 'page' : undefined}
           aria-label={currentInMore ? `Ещё, текущий раздел: ${currentInMore.label}` : undefined}
-          data-current={currentInMore ? '' : undefined} onClick={onToggle}><Icon name="more" />Ещё</button>
-        <div className="main-more-list" id={MORE_LIST_ID} ref={list} onClick={onListClick}>
+          data-current={currentInMore ? '' : undefined}><Icon name="more" />Ещё</Link>
+        {/* The header row of a wide screen and the narrow strip: «Деньги» as links, «Данные ▾», «Настройки ▾». */}
+        <div className="main-more-list">
           {groups.map((group) => group.key === 'money'
-            // «Деньги» — four tiles at the top of the sheet; in the header row, links like the others.
             ? <div key={group.key} className="main-more-tiles" role="group" aria-label={group.title}>{group.items.map(item)}</div>
-            : <MenuSection key={group.key} group={group}>
-              {/* The header of a phone is gone: its theme switch lives at the end of «Настройки» (hidden on wider
-                  screens), and beside it what the squares of the spends show (lib/list-icons). */}
-              {group.key === 'settings' && <div className="main-more-theme"><ThemeToggle placement="menu" /><ListIconsToggle /></div>}
-            </MenuSection>)}
+            : <MenuSection key={group.key} group={group} />)}
         </div>
       </div>}
     </nav>

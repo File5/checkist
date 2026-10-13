@@ -20,6 +20,7 @@ import { SpendingPage, ReceiptsStatsPage, TrendsPage, IncomesStatsPage } from '.
 import { rememberStats, statsTabHref, statsTabs } from './features/stats/stats-memory'
 import { LoginPage, AccountPage } from './features/auth'
 import { ExportPage } from './features/export'
+import MorePage from './features/more/MorePage'
 import { RecurringPage } from './features/recurring'
 import { IncomesPage } from './features/incomes'
 import { StoresPage } from './features/stores'
@@ -33,7 +34,7 @@ import { moderatorOnlyText } from './features/auth/labels'
 import { canModerate, loadSession, useSession } from './session'
 import { menuKey, useCurrentItemInView } from './menu-view'
 import MainMenu from './menu/MainMenu'
-import { headerAction, isFocusRoute } from './menu/back-target'
+import { headerAction, isFocusRoute, isMoreSection } from './menu/back-target'
 import { ThemeToggle } from './theme'
 import OfflineBanner from './offline/OfflineBanner'
 import { usePendingSync } from './offline/pending-store'
@@ -68,6 +69,7 @@ function pageTitle(route: Route) {
     case 'login': return 'Вход'
     case 'account': return 'Аккаунт'
     case 'export': return 'Выгрузка'
+    case 'more': return 'Ещё'
     case 'family': return 'Семья'
     case 'recurring': return 'Регулярные платежи'
     case 'stores': return 'Магазины'
@@ -128,6 +130,7 @@ function pageContent({ route, returnTo }: NavigationSnapshot, username: string) 
     case 'login': return null
     case 'account': return <AccountPage username={username} />
     case 'export': return <ExportPage query={route.query} />
+    case 'more': return <MorePage />
     case 'family': return <FamilyPage joinToken={route.token} />
     case 'recurring': return <RecurringPage />
     case 'stores': return <StoresPage />
@@ -170,9 +173,11 @@ export default function App() {
   const heading1 = view === 'page' && pageHeading?.path === pathname ? pageHeading.text : title
 
   // Where «✕» of a focus screen (a new spend) leads: the page the person came from, inside of the app.
-  const [trail, setTrail] = useState<{ href: string; focus: boolean; from?: string }>({ href: navigation.href, focus: isFocusRoute(route) })
+  // `more` — the section opened from the screen «Ещё», kept while the person stays in it (its own filters and months).
+  const [trail, setTrail] = useState<{ href: string; focus: boolean; from?: string; more?: Route['kind'] }>({ href: navigation.href, focus: isFocusRoute(route) })
   if (trail.href !== navigation.href) {
-    setTrail({ href: navigation.href, focus: isFocusRoute(route), from: trail.focus ? trail.from : trail.href })
+    const more = (trail.href === '/more' && isMoreSection(route)) || trail.more === route.kind ? route.kind : undefined
+    setTrail({ href: navigation.href, focus: isFocusRoute(route), from: trail.focus ? trail.from : trail.href, more })
   }
 
   useEffect(() => watchSession(loadSession, document), [])
@@ -227,7 +232,7 @@ export default function App() {
   const mainNavigation = useCurrentItemInView(menuKey(view, session, route))
   // «Назад» before the heading on a nested page (to the list the person came from, or to the parent list), or «✕»
   // after it on a focus screen: a new or changed spend, drawn without the bottom bar of a phone.
-  const action = view === 'page' ? headerAction(navigation, trail.from) : undefined
+  const action = view === 'page' ? headerAction(navigation, trail.from, trail.more === route.kind) : undefined
   const focus = view === 'page' && isFocusRoute(route)
   useLayoutEffect(() => {
     document.documentElement.classList.toggle('ck-focus-mode', focus)
