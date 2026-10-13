@@ -25,7 +25,7 @@
 (``load_incomes``, правило — ``matching.income_signals``): ``paid`` — доход получен. Вопросов о
 прошлом месяце и «осталось оплатить» у дохода нет, ``unpaid`` его не отдаёт.
 """
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
 
 from django.db import IntegrityError, transaction
@@ -36,6 +36,7 @@ from django.utils import timezone
 from accounts.access import owner_q, request_user, visible_receipts_q
 from budget.dashboard import Month
 from catalog.models import Category
+from rates import convert
 from receipts import manual
 from receipts.models import Receipt, ReceiptLine
 from receipts.spending import UNASSIGNED_NAME
@@ -170,6 +171,25 @@ def _plan(payment):
                          payment.due_day)
 
 
+def _in_plan_currencies(spends, currencies):
+    """Траты и их копии в валютах платежей по курсу дня покупки: 225 $ оплачивают платёж в тенге.
+
+    Копия — тот же id, поэтому трата по-прежнему закрывает один платёж; без курса копии нет. Курсы — один
+    запрос на валюту платежа и только когда есть траты в другой валюте.
+    """
+    copies = []
+    for currency in currencies:
+        foreign = [spend for spend in spends if spend.currency != currency]
+        if not foreign:
+            continue
+        rates = convert.converter(currency, {(spend.currency, spend.day) for spend in foreign})
+        for spend in foreign:
+            total = rates.convert(spend.total, spend.currency, spend.day)
+            if total is not None:
+                copies.append(replace(spend, currency=currency, total=total))
+    return spends + copies
+
+
 class _Ledger:
     """Сверка платежей запроса с тратами за месяцы ``first`` … ``last``."""
 
@@ -202,7 +222,8 @@ class _Ledger:
                     continue
             self.decisions[key] = item
         plans = [_plan(payment) for payment in self.payments if payment.active and payment.kind == SPEND]
-        self.assigned = matching.assign(plans, self.spends, self.months, self.parents, fixed)
+        pool = _in_plan_currencies(self.spends, {plan.currency for plan in plans})
+        self.assigned = matching.assign(plans, pool, self.months, self.parents, fixed)
         self.taken = {spend.id for spend in self.assigned.values()}
         # Регулярный доход сверяется с доходами месяца тем же окном; запрос — только когда такой шаблон есть.
         incomes = [_plan(payment) for payment in self.payments if payment.active and payment.kind == INCOME]

@@ -159,7 +159,9 @@ def assign(plans, spends, months, parents, fixed=None, score=signals):
     признаков (у регулярного дохода — ``income_signals``, «траты» — доходы месяца).
     """
     months = set(months)
-    by_id = {spend.id: spend for spend in spends}
+    by_id = {}
+    for spend in spends:
+        by_id.setdefault(spend.id, spend)  # трата ответа — сама, а не её копия в другой валюте
     result, used = {}, set()
     for key, spend_id in (fixed or {}).items():
         spend = by_id.get(spend_id)

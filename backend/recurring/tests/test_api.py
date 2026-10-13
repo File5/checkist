@@ -98,6 +98,17 @@ class RecurringLocalTests(Fixture, TestCase):
     def payment(self, data, payment_id):
         return next(row for row in data["payments"] if row["id"] == payment_id)
 
+    def test_a_spend_in_another_currency_pays_by_the_rate_of_its_day(self):
+        # Подписка в тенге, а октябрь оплачен в долларах: 225 $ × 535 = 120 375 ₸ (+20 % к 99 990 — в допуске).
+        from rates.models import Rate
+        Rate.objects.create(currency="USD", day=date(2026, 10, 12), value=D("535"))
+        spend(local_user(), self.subs, 99990, date(2026, 9, 12), "Демо-Claude")
+        october = spend(local_user(), self.subs, 225, date(2026, 10, 12), "Демо-Claude", currency="USD")
+        claude = self.create(name="Claude", store_name="Демо-Claude", amount="99990", due_day=12)
+        row = self.payment(self.month(), claude["id"])
+        self.assertEqual((row["state"], row["paid"]["receipt_id"], row["paid"]["total"]), ("paid", october.pk, "120375.00"))
+        self.assertEqual(row["year"]["total"], "220365.00")
+
     def test_suggestions_from_history_and_accept_in_one_tap(self):
         data = self.month()
         self.assertEqual((data["month"], data["previous_month"], data["today"]), ("2026-10", "2026-09", "2026-10-13"))
