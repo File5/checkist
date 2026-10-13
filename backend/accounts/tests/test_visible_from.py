@@ -20,6 +20,7 @@ from api.tests.test_owner_isolation import IsolationMixin, ids, milk, purchase
 from budget.dashboard import Month
 from incomes.models import Income, IncomeCategory
 from insights import context
+from receipts.models import Receipt
 from receipts.tests import samples
 from recognition.models import ProcessingJob, SourcePhoto
 from recognition.tests.test_models import make_image, make_photo
@@ -38,7 +39,7 @@ class VisibleFromTests(IsolationMixin, TestCase):
         cls.family = Household.objects.create(name="Демо-семья")
         Membership.objects.create(user=cls.first, household=cls.family, role=Membership.Role.HEAD)
         cls.membership = Membership.objects.create(user=cls.third, household=cls.family, visible_from=APRIL)
-        store, product = samples.lidl_store(), milk()
+        cls.store, cls.product = store, product = samples.lidl_store(), milk()
         cls.head_march = purchase(cls.first, store, "KZT", MARCH, "500.00", product)
         cls.head_may = purchase(cls.first, store, "KZT", MAY, "700.00", product)
         cls.own_march = purchase(cls.third, store, "KZT", MARCH, "300.00", product)
@@ -102,11 +103,21 @@ class VisibleFromTests(IsolationMixin, TestCase):
         self.assertEqual(self.get(self.third, "/api/incomes/?month=2026-05")["family_total"], "2000.00")
         self.assertEqual(self.get(self.first, "/api/incomes/?month=2026-03")["family_total"], "1050.00")
 
-    def test_photos_jobs_crops_and_media_by_upload_day(self):
+    def test_photos_jobs_crops_and_media_follow_upload_day_and_their_receipt(self):
+        """Фото без чека — по дню загрузки; фото с вырезкой невидимого запросу чека не видно вместе с заданием,
+        вырезками и MEDIA — и автору, если чек скрыл главный; главный видит всё."""
         root = Path(settings.MEDIA_ROOT)  # временный каталог temporary_media()
+        hidden_head = purchase(self.first, self.store, "KZT", MAY, "100.00", self.product)
+        hidden_own = purchase(self.third, self.store, "KZT", MAY, "200.00", self.product)
+        Receipt.objects.filter(pk__in=[hidden_head.pk, hidden_own.pk]).update(hidden=True)
         rows = {}
-        for key, owner, uploaded in (("head_march", self.first, MARCH), ("head_may", self.first, MAY),
-                                     ("own_march", self.third, MARCH)):
+        for key, owner, uploaded, receipt in (
+            ("head_march", self.first, MARCH, None), ("head_may", self.first, MAY, None),
+            ("own_march", self.third, MARCH, None),
+            # Куплен раньше visible_from, сфотографирован позже; скрытые главным — чужой и свой.
+            ("old_receipt", self.first, MAY, self.head_march), ("hidden_head", self.first, MAY, hidden_head),
+            ("hidden_own", self.third, MAY, hidden_own),
+        ):
             storage = uuid.uuid4()
             original = f"originals/{storage}/source.png"
             (root / original).parent.mkdir(parents=True)
@@ -115,23 +126,29 @@ class VisibleFromTests(IsolationMixin, TestCase):
             SourcePhoto.objects.filter(pk=photo.pk).update(
                 created_at=datetime.combine(uploaded, datetime.min.time(), tzinfo=dt_timezone.utc))
             job = ProcessingJob.objects.create(photo=photo)
-            rows[key] = {"photos": photo.pk, "jobs": job.pk, "receipt-images": make_image(job).pk, "file": original}
+            image = make_image(job) if receipt is None else make_image(
+                job, status="imported", receipt=receipt, import_effect="created", outcome_snapshot={"receipt_id": receipt.pk})
+            rows[key] = {"photos": photo.pk, "jobs": job.pk, "receipt-images": image.pk, "file": original}
+        unseen = ("head_march", "old_receipt", "hidden_head", "hidden_own")
         for name in ("photos", "jobs", "receipt-images"):
             with self.subTest(name=name):
                 self.assertEqual(sorted(ids(self.client_of(self.third).get(f"/api/recognition/{name}/"))),
                                  sorted([rows["own_march"][name], rows["head_may"][name]]))
-                self.assertEqual(len(ids(self.client_of(self.first).get(f"/api/recognition/{name}/"))), 3)
-                hidden = self.client_of(self.third).get(f"/api/recognition/{name}/{rows['head_march'][name]}/")
-                self.assertEqual(hidden.status_code, 404)
-        for key, status in (("head_march", 404), ("head_may", 200), ("own_march", 200)):
-            with self.subTest(media=key):
-                response = self.client_of(self.third).get(f"/media/{rows[key]['file']}")
-                self.assertEqual(response.status_code, status)
-                if response.streaming:
-                    b"".join(response.streaming_content)
-        response = self.client_of(self.first).get(f"/media/{rows['head_march']['file']}")
-        self.assertEqual(response.status_code, 200)
-        b"".join(response.streaming_content)
+                self.assertEqual(sorted(ids(self.client_of(self.first).get(f"/api/recognition/{name}/"))),
+                                 sorted(row[name] for row in rows.values()))
+                for key in unseen:
+                    response = self.client_of(self.third).get(f"/api/recognition/{name}/{rows[key][name]}/")
+                    self.assertEqual(response.status_code, 404, key)
+                    self.assertEqual(self.client_of(self.first).get(f"/api/recognition/{name}/{rows[key][name]}/").status_code, 200)
+        cancel = self.call(self.third, "post", f"/api/recognition/jobs/{rows['hidden_head']['jobs']}/cancel/", {})
+        self.assertEqual(cancel.status_code, 404, cancel.content)
+        for key in rows:
+            for account, status in ((self.third, 404 if key in unseen else 200), (self.first, 200)):
+                with self.subTest(media=key, account=account.username):
+                    response = self.client_of(account).get(f"/media/{rows[key]['file']}")
+                    self.assertEqual(response.status_code, status)
+                    if response.streaming:
+                        b"".join(response.streaming_content)
 
     def test_head_sets_the_month_member_never_sees_it(self):
         url = f"/api/family/members/{self.third.username}/"

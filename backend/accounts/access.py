@@ -13,7 +13,7 @@ Views read neither ``request.user`` nor the setting: they take ``request_user``,
 import ipaddress
 
 from django.conf import settings
-from django.db.models import Exists, Q, Subquery
+from django.db.models import Exists, OuterRef, Q, Subquery
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import NotAuthenticated
 from rest_framework.permissions import SAFE_METHODS, BasePermission
@@ -25,7 +25,7 @@ from recognition.auth import enforce_csrf
 ACCOUNTS = "accounts"
 LOCAL_SINGLE = "local_single"
 MODERATE_CATALOG = "catalog.moderate_catalog"
-# ``owner_q(..., since=UPLOADED)``: a photo (and its jobs, crops, MEDIA) is dated by its upload day.
+# A photo (and its jobs, crops, MEDIA) is dated by its upload day (``photos_q``).
 UPLOADED = "created_at__date"
 
 
@@ -130,6 +130,25 @@ def visible_receipts_q(request, prefix="", include_hidden=False):
             head = ~Exists(mine) | Exists(mine.filter(role=Membership.Role.HEAD))
             return condition & (shown | Q(head))
     return condition & shown
+
+
+def photos_q(request, prefix=""):
+    """photos_q(request, prefix="") -> Q; source photos the request reads, and through them jobs, crops and MEDIA.
+
+    ``prefix`` is the path to ``SourcePhoto``: ``"photo__"`` from a job or a receipt image. A photo is read like
+    a row of the family dated by its upload day (``owner_q(..., since=UPLOADED)``) and only while no crop of it
+    leads to a receipt the request does not see (``visible_receipts_q`` with ``include_hidden=True``: a payment
+    hidden by the head, a purchase before ``visible_from``): the picture of a receipt is never shown where the
+    receipt is not, its author included; the head sees everything. All crops of one photo go together. One
+    correlated subquery, no separate query.
+    """
+    from receipts.models import Receipt
+    from recognition.models import ReceiptImage
+
+    visible = Receipt.objects.filter(visible_receipts_q(request, include_hidden=True), pk=OuterRef("receipt_id"))
+    photo = f"{prefix.removesuffix('__')}_id" if prefix else "pk"
+    unseen = ReceiptImage.objects.filter(photo_id=OuterRef(photo), receipt__isnull=False).filter(~Exists(visible))
+    return owner_q(request, prefix, since=UPLOADED) & ~Exists(unseen)
 
 
 def household(request):
