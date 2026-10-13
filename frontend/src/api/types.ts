@@ -22,6 +22,7 @@ export type LocalApiErrorReason = ApiErrorReason
   | 'receipt_read_only' | 'photo_shared' | 'parse_limit' | 'store_merge_conflict'
   | 'upload_too_large' | 'unsupported_media_type' | 'unsupported_format' | 'invalid_image' | 'image_too_large'
   | 'invalid_pdf' | 'pdf_encrypted' | 'pdf_too_many_pages'
+  | 'statement_unsupported_bank' | 'statement_empty' | 'statement_too_large'
   | 'storage_unavailable' | 'database_unavailable' | 'method_not_allowed' | 'not_acceptable'
   | 'ai_disabled' | 'ai_quota'
 export type ApiFailure = {

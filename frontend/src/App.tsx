@@ -22,6 +22,7 @@ import { ExportPage } from './features/export'
 import { RecurringPage } from './features/recurring'
 import { StoresPage } from './features/stores'
 import { FamilyPage, NewFamilyPage, NewFamilySignedIn } from './features/family'
+import { StatementPage, StatementRulesPage, UploadStatementPage } from './features/statements'
 import { pageKey, shellView, watchSession } from './features/auth/auth-state'
 import type { ShellView } from './features/auth/auth-state'
 import { moderatorOnlyText } from './features/auth/labels'
@@ -64,6 +65,9 @@ function pageTitle(route: Route) {
     case 'recurring': return 'Регулярные платежи'
     case 'stores': return 'Магазины'
     case 'family-new': return 'Новая семья'
+    case 'statement-new': return 'Загрузить выписку'
+    case 'statement': return 'Выписка'
+    case 'statement-rules': return 'Правила выписок'
     case 'invalid-query': return 'Некорректная ссылка'
     case 'not-found': return 'Страница не найдена'
   }
@@ -114,6 +118,9 @@ function pageContent({ route, returnTo }: NavigationSnapshot, username: string) 
     case 'recurring': return <RecurringPage />
     case 'stores': return <StoresPage />
     case 'family-new': return <NewFamilySignedIn />
+    case 'statement-new': return <UploadStatementPage />
+    case 'statement': return <StatementPage key={route.statementId} statementId={route.statementId} />
+    case 'statement-rules': return <StatementRulesPage />
     case 'invalid-query': return <RequestState kind="empty" message="В адресе указаны некорректные фильтры или номер страницы. Сбросьте параметры и попробуйте снова." action={<Link className="action-link" to={route.resetTo} replace>Сбросить параметры</Link>} />
     case 'not-found': return notFound
   }

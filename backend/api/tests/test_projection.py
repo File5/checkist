@@ -444,17 +444,19 @@ SKIPPED_ROUTES = {
          "family-members", "family-member", "family-head", "family-leave", "family-invites", "family-invite",
          "family-join", "recurring-decision", "recurring-suggestion-accept", "recurring-suggestion-dismiss",
          "store-merges-merge", "store-merges-dismiss", "family-ai", "family-new-invites", "family-new-invite",
-         "auth-new-family", "auth-new-family-check"),
+         "auth-new-family", "auth-new-family-check", "statements-save"),
         "только POST",
     ),
     "recurring-payment": "регулярный платёж семьи или пользователя; id чеков в нём нет",
+    "statements-rule": "только PATCH и DELETE",
+    "statements-detail": "черновик выписки своего пользователя: receipt_id и duplicate_of — его же траты",
     "receipts-manual-parse-detail": "запрос «Трата словами» своего пользователя; id чеков в нём нет",
     "family": "только в accounts (в local_single — 404); id чеков в ответе нет",
     "budget-limit": "лимит семьи или пользователя; id чеков в нём нет",
     **dict.fromkeys(
         ("api-not-found", "recognition-not-found", "receipts-not-found", "product-merges-not-found",
          "product-classifications-not-found", "stats-not-found", "budget-not-found", "export-not-found",
-         "family-not-found", "recurring-not-found", "store-merges-not-found"),
+         "family-not-found", "recurring-not-found", "store-merges-not-found", "statements-not-found"),
         "ответ 404 без данных",
     ),
     **dict.fromkeys(
@@ -529,6 +531,7 @@ class NoForeignReceiptIdTests(ProjectionMixin, TestCase):
             "/api/product-classifications/runs/", "/api/budget/limits/", "/api/budget/limits/history/", "/api/dashboard/",
             "/api/dashboard/?month=2026-06", "/api/export/",
             "/api/export/?include=receipts,lines,media,stores,summary", "/api/recurring/",
+            "/api/statements/", "/api/statements/rules/",
         ]
         paths += [f"/api/categories/{pk}/" for pk in Category.objects.values_list("pk", flat=True)]
         months = sorted({day.strftime("%Y-%m") for day in Receipt.objects.values_list("purchased_on", flat=True)})

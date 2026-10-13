@@ -32,8 +32,8 @@ describe('markup of the main menu (SSR only: the bar, touches and keys are check
   })
 
   it.each<[string, Session, string[]]>([
-    ['nine items in local_single', local, ['Платежи', 'Каталог', 'Магазины', 'Обработка', 'Выгрузка', 'Состояние сервисов']],
-    ['eleven items in accounts', reader, ['Платежи', 'Каталог', 'Магазины', 'Обработка', 'Выгрузка', 'Состояние сервисов', 'Семья', 'synthetic-reader']],
+    ['ten items in local_single', local, ['Платежи', 'Каталог', 'Магазины', 'Обработка', 'Выгрузка', 'Правила выписок', 'Состояние сервисов']],
+    ['twelve items in accounts', reader, ['Платежи', 'Каталог', 'Магазины', 'Обработка', 'Выгрузка', 'Правила выписок', 'Состояние сервисов', 'Семья', 'synthetic-reader']],
   ])('keeps the links after the third one behind «Ещё» with %s', (_name, session, more) => {
     const html = render(session, { kind: 'not-found', path: '/missing' })
     // The same nav: «Главная · Траты · ＋ · Статистика · Ещё»; the sections are its direct children, with no new attributes.
@@ -41,7 +41,7 @@ describe('markup of the main menu (SSR only: the bar, touches and keys are check
     expect(links(html)).toEqual(['Главная', 'Траты', 'Статистика', ...more])
     // Closed buttons that name what they open: «Ещё» a list, «＋» a sheet (a dialog, components/Sheet) not drawn while closed.
     expect(html).toContain('<button type="button" class="main-more-toggle" aria-expanded="false" aria-controls="main-more-list">Ещё</button>')
-    expect(html).toContain('<button type="button" class="main-add-toggle" aria-haspopup="dialog" aria-expanded="false" aria-label="Добавить: снять чек, выбрать из галереи или добавить трату">')
+    expect(html).toContain('<button type="button" class="main-add-toggle" aria-haspopup="dialog" aria-expanded="false" aria-label="Добавить: снять чек, выбрать из галереи, добавить трату или загрузить выписку">')
     const list = html.split('<div class="main-more-list" id="main-more-list">')[1].split('<div class="main-more-theme">')[0]
     expect(links(list)).toEqual(more)
     // The header of a phone is gone: its theme switch is the last row of the list (hidden on wider screens).
@@ -55,8 +55,8 @@ describe('markup of the main menu (SSR only: the bar, touches and keys are check
   it('draws a picture over each word of the bar and before each row of «Ещё», hidden from the screen reader', () => {
     const html = raw(reader, catalog)
     const pictures = html.match(/<svg\b[^>]*>/g) ?? []
-    // Eight links of «Ещё», three of the bar, «Ещё» itself and «＋» (26 px); the theme switch keeps its own picture.
-    expect(pictures.filter((tag) => tag.includes('class="ck-icon"'))).toHaveLength(3 + 8 + 1 + 1)
+    // Nine links of «Ещё», three of the bar, «Ещё» itself and «＋» (26 px); the theme switch keeps its own picture.
+    expect(pictures.filter((tag) => tag.includes('class="ck-icon"'))).toHaveLength(3 + 9 + 1 + 1)
     for (const tag of pictures) expect(tag).toContain('aria-hidden="true"')
     expect(html).toMatch(/<a href="\/"><svg class="ck-icon" viewBox="0 0 24 24" width="22" height="22"[^>]*>.*?<\/svg>Главная<\/a>/)
     expect(html).toMatch(/<button type="button" class="main-add-toggle"[^>]*><svg class="ck-icon" viewBox="0 0 24 24" width="26" height="26"/)

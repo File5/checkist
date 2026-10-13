@@ -23,6 +23,7 @@ const backLabels: Partial<Record<Route['kind'], string>> = {
   category: 'Назад к категории',
   merges: 'Назад к дублям',
   classification: 'Назад к категориям товаров',
+  'statement-new': 'Назад к выпискам',
 }
 
 const labelOf = (href: string) => backLabels[parseRoute(new URL(href, 'http://checkist.invalid')).kind] ?? 'Назад'
@@ -42,6 +43,7 @@ export function backTarget({ route, returnTo }: Pick<NavigationSnapshot, 'route'
     case 'category': return target('/catalog')
     case 'merge': return target(returnTo ?? '/catalog/merges')
     case 'limits': return target('/')
+    case 'statement': return target(returnTo ?? '/statements/new')
     // Back to «Главная» of the same month; from a deeper category — still «Главная», the screen links its parents itself.
     case 'category-spends': return target(returnTo ?? (route.month ? `/?month=${route.month}` : '/'))
     default: return undefined
