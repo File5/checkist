@@ -28,6 +28,8 @@ import Sheet from '../../components/Sheet'
 import { categoryTone } from '../../lib/category-tone'
 import { useNarrow } from '../../lib/cards'
 import { currencySymbol } from '../../lib/money'
+import MethodChips from '../../components/MethodChips'
+import { lastMethod } from '../../lib/payment-methods'
 import { ownerName, personName } from '../../lib/people'
 import { DeleteSpend } from './ManualSpendActions'
 import type { ExpenseDraft, ExpenseErrors, LineDraft } from './expense-form'
@@ -264,6 +266,11 @@ export function ExpenseForm({ draft, chips, errors, saving, failure, receiptId, 
         </label>
         {fieldError(errors, 'place')}
       </div>}
+      {!income && <div className="expense-row-block expense-method">
+        <span id="expense-method-label" className="expense-row-label">Способ оплаты</span>
+        <MethodChips value={draft.method ?? ''} onChange={(method) => set({ method })} labelledBy="expense-method-label" />
+        {fieldError(errors, 'payment_method')}
+      </div>}
       <div className="expense-row-block">
         <label className="expense-row" htmlFor="expense-note">
           <span className="expense-row-label">Комментарий</span>
@@ -386,6 +393,8 @@ export default function ExpensePage({ receiptId, repeat, income = false, incomeI
           next = { ...draftFromReceipt(copiedReceipt.data, copiedLines.data.results), date: todayISO() }
         }
         frequent = defaults.frequent_categories
+        // The method chosen last on this device, unless the spend being repeated or sent later says its own.
+        if (next.method === undefined) next = { ...next, method: lastMethod() }
       } else {
         const receipt = values[1] as Receipt
         if (receipt.source !== 'manual') { setLoad({ kind: 'read-only' }); return }
@@ -475,7 +484,10 @@ export default function ExpensePage({ receiptId, repeat, income = false, incomeI
     setErrors({})
     setFailure(undefined)
   }
-  const fill = (next: FormKind, filled: ExpenseDraft) => { setKind(next); setDraft(filled); setErrors({}); setFailure(undefined) }
+  // A text or a past spend that does not say how it was paid keeps the method chosen in the form.
+  const fill = (next: FormKind, filled: ExpenseDraft) => {
+    setKind(next); setDraft({ ...filled, method: filled.method ?? draft?.method }); setErrors({}); setFailure(undefined)
+  }
   return <div className="expense-page">
     {isNew && incomeChips.length > 0 && <div className="expense-kind" role="group" aria-label="Что вносим">
       <button type="button" aria-pressed={kind === 'spend'} onClick={() => switchKind('spend')}>Трата</button>

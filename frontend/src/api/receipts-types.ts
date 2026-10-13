@@ -1,5 +1,6 @@
 import type { CurrencyCode, Decimal, ISODate, ISODateTime, NamedObject, PageParams, Store, Unit } from './types.ts'
 import type { Executor } from './recognition-types.ts'
+import type { PaymentMethodValue } from '../lib/payment-methods.ts'
 
 export type ReceiptOperation = 'sale' | 'refund'
 /** `manual` — a spend without a receipt: no photo, may have no store, editable through the API. */
@@ -22,6 +23,8 @@ export type Receipt = {
   /** The family's base currency and the total in it at the rate of the National Bank on `purchased_on` (null — no rate);
    * only the list and the detail send them, an older server none. */
   base_currency?: CurrencyCode; base_total?: Decimal | null
+  /** How it was paid, `''` — not said (2026-10-13); missing from an older server. */
+  payment_method?: PaymentMethodValue
 }
 /** An item of `GET /api/receipts/` (the list only): the first line's name and the one top-level category of the lines.
  * Optional for an older server: a missing field reads as null. */
@@ -65,6 +68,8 @@ export type ManualLineInput = { name: string; amount: Decimal; quantity?: Decima
 export type ManualSpendInput = {
   total?: Decimal; currency?: CurrencyCode; category?: number | null; purchased_on?: ISODate
   store_name?: string | null; note?: string; lines?: ManualLineInput[]
+  /** Not sent — the saved one stays (`PATCH`), `''` on a new spend. */
+  payment_method?: PaymentMethodValue
 }
 
 /** «Трата словами»: the text waits for the worker; `draft` is a body of `POST /api/receipts/manual/` once `succeeded`. */
@@ -73,6 +78,8 @@ export type ManualParseLine = { name: string; amount: Decimal; quantity: Decimal
 export type ManualParseDraft = {
   total: Decimal | null; currency: CurrencyCode; category: number | null; purchased_on: ISODate
   store_name: string | null; note: string; lines: ManualParseLine[]
+  /** «наличными», «с каспи», «картой форте»: `''` — the text does not say; never of an income. Missing from an older server. */
+  payment_method?: PaymentMethodValue
   /** `income` — «зарплата 650 000»: `category` is a category of incomes, no place and no positions. Absent — a spend. */
   kind?: 'spend' | 'income'
 }

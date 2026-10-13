@@ -1,9 +1,11 @@
 import type {
-  RecurringDecisionKind, RecurringInput, RecurringMonth, RecurringMonthPayment, RecurringPayment, RecurringQuestion, RecurringState,
-  RecurringSuggestion,
+  RecurringDecisionKind, RecurringInput, RecurringMonth, RecurringMonthPayment, RecurringPayInput, RecurringPayment, RecurringQuestion,
+  RecurringState, RecurringSuggestion, RecurringYearMonth,
 } from '../../api/recurring'
 import type { LocalApiFailure } from '../../api/types'
 import { formatMoney } from '../../lib/money'
+import { methodLabels } from '../../lib/payment-methods'
+import type { PaymentMethodValue } from '../../lib/payment-methods'
 import { glue } from '../../lib/text'
 import { dayAndMonth, plural } from '../dashboard/dashboard-state'
 
@@ -142,6 +144,35 @@ export function decisionNotice(question: RecurringQuestion, decision: RecurringD
   const month = forMonth(question.month, today)
   if (decision === 'added') return { text: `Добавил трату «${question.name}» ${month} — ${formatMoney(question.amount, question.currency)}.`, receiptId }
   return { text: `«${question.name}» ${month}: ${decision === 'skipped' ? 'отметил, что платежа не было' : 'отметил, что оплачено иначе'}.` }
+}
+
+/** «Kaspi Gold» of the history; a spend that does not say — «без способа» in the sum by ways, «—» in a month. */
+export const methodName = (method: PaymentMethodValue, missing = 'без способа') => method ? methodLabels[method] : missing
+
+/** «Ожидается 220 000 ₸ до 5 октября» under «Оплатил»: the expected amount and the due date. */
+export function payExpected(row: Pick<RecurringMonthPayment, 'amount' | 'currency' | 'due_date' | 'state'>, today: string): string {
+  const late = row.state === 'overdue' || row.due_date < today
+  return `Ожидается ${formatMoney(row.amount, row.currency)} ${late ? `· срок был ${dayAndMonth(row.due_date)}` : glue('до', dayAndMonth(row.due_date))}`
+}
+
+/** A month of the history: «5 октября · Kaspi Gold» (`—` when the way is not said), else «не было», «оплачено иначе»,
+ * «просрочен», «ещё не срок». */
+export function yearMonthText(item: RecurringYearMonth, today: string): string {
+  switch (item.state) {
+    case 'paid': return item.paid ? `${dayAndMonth(item.paid.purchased_on)} · ${methodName(item.paid.payment_method, '—')}` : 'оплачен'
+    case 'skipped': return 'не было'
+    case 'elsewhere': return 'оплачено иначе'
+    case 'overdue': return 'просрочен'
+    case 'due': return item.month === today.slice(0, 7) ? 'ещё не срок' : 'не оплачен'
+    case 'before': return 'ещё не было платежа'
+    case 'inactive': return 'выключен'
+  }
+}
+
+/** «Аренда» за октябрь оплачен — 220 000 ₸, Kaspi Gold. */
+export function payNotice(row: Pick<RecurringMonthPayment, 'name' | 'currency'>, input: RecurringPayInput, receiptId: number | null, today: string): Notice {
+  const how = input.payment_method ? `, ${methodLabels[input.payment_method]}` : ''
+  return { text: `«${row.name}» ${forMonth(input.month, today)} оплачен — ${formatMoney(input.amount, row.currency)}${how}.`, receiptId }
 }
 
 /** Local texts of a refusal; 409 — the month was answered or paid meanwhile, the list is read again. */

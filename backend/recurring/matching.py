@@ -46,7 +46,7 @@ _DEPTH = 64  # дерево категорий без циклов в БД не 
 
 @dataclass(frozen=True)
 class Spend:
-    """Видимая трата: ``category_id`` — общий предок категорий строк либо ``None``."""
+    """Видимая трата: ``category_id`` — общий предок категорий строк либо ``None``; ``method`` — способ оплаты."""
 
     id: int
     day: date
@@ -54,6 +54,7 @@ class Spend:
     category_id: int | None
     currency: str
     total: Decimal
+    method: str = ""
 
 
 @dataclass(frozen=True)

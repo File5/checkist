@@ -26,7 +26,7 @@ TODAY = date(2026, 10, 12)
 def answer(**fields):
     """Ответ модели по схеме: все ключи, по умолчанию пустые."""
     base = {"kind": "spend", "total": None, "currency": None, "category": None, "purchased_on": None,
-            "store_name": None, "note": None, "lines": []}
+            "store_name": None, "note": None, "payment_method": None, "lines": []}
     return {**base, **fields}
 
 
@@ -53,8 +53,9 @@ class DraftValidationTests(ParseFixture, TestCase):
         draft = draft_from_output(answer(total="4500", category=self.taxi.pk, note=" до аэропорта "), self.payload())
         self.assertEqual(draft, {
             "total": "4500", "currency": "KZT", "category": self.taxi.pk, "purchased_on": "2026-10-12",
-            "store_name": None, "note": "до аэропорта", "lines": [],
+            "store_name": None, "note": "до аэропорта", "payment_method": "", "lines": [],
         })
+        self.assertEqual(draft_from_output(answer(total="900", payment_method="cash"), self.payload())["payment_method"], "cash")
 
     def test_lines_total_is_their_sum_and_named_values_are_kept(self):
         draft = draft_from_output(answer(
@@ -81,6 +82,7 @@ class DraftValidationTests(ParseFixture, TestCase):
             answer(lines=[{"name": "a", "amount": "0", "quantity": None, "category": None}]),
             answer(extra=1),
             answer(kind="gift"),
+            answer(payment_method="visa"),
             answer(kind="income", total="1", category=999999),  # not one of income_categories
             "not an object",
         ]
@@ -154,7 +156,7 @@ class ExecuteTests(ParseFixture, TestCase):
         self.assertEqual((row.status, row.error_code), ("succeeded", ""))
         self.assertEqual(row.draft, {
             "total": "230.5", "currency": "KZT", "category": first.pk, "purchased_on": "2026-10-12",
-            "store_name": None, "note": "", "lines": [],
+            "store_name": None, "note": "", "payment_method": "", "lines": [],
         })
         self.assertEqual(Receipt.objects.count(), receipts)  # the parse saves nothing
 
@@ -166,6 +168,12 @@ class ExecuteTests(ParseFixture, TestCase):
                                      "purchased_on": "2026-10-12", "store_name": None, "note": "", "lines": []})
         cashback = IncomeCategory.objects.get(name="Кэшбэк и проценты", household=None, user=None)
         self.assertEqual(self.run_one(FakeTextParser(), "кэшбэк 3 200").draft["category"], cashback.pk)
+
+    def test_fake_hears_the_way_of_payment(self):
+        for text, method in (("такси 4500 наличными", "cash"), ("кофе 900 с каспи", "kaspi_gold"),
+                             ("обед 3000 картой форте", "forte"), ("билеты 7000 картой", "card"), ("хлеб 230", "")):
+            with self.subTest(text=text):
+                self.assertEqual(self.run_one(FakeTextParser(), text).draft["payment_method"], method)
 
     def test_fake_without_a_number_leaves_the_total_empty(self):
         self.assertIsNone(self.run_one(FakeTextParser(), "такси").draft["total"])
@@ -246,7 +254,7 @@ class HistoryInputTests(ParseFixture, TestCase):
         row = manual_parse.execute(manual_parse.claim(), parser=FakeTextParser())
         self.assertEqual(row.draft, {
             "total": "225.00", "currency": "USD", "category": self.subs.pk, "purchased_on": "2026-10-12",
-            "store_name": "CLAUDE.AI SUBSCRIPTION", "note": "", "lines": [],
+            "store_name": "CLAUDE.AI SUBSCRIPTION", "note": "", "payment_method": "", "lines": [],
         })
         self.queued("claude 230")
         self.assertEqual(manual_parse.execute(manual_parse.claim(), parser=FakeTextParser()).draft["total"], "230")

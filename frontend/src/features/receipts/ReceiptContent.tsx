@@ -6,6 +6,7 @@ import { useNarrow } from '../../lib/cards'
 import { imageLabels } from '../../lib/recognition-labels'
 import { formatObservedAt, formatPercent, formatPurchasedOn, formatQuantity } from '../../lib/format'
 import { baseTwin } from '../../lib/money'
+import { methodLabels } from '../../lib/payment-methods'
 import { ownerName } from '../../lib/people'
 import { glue, numbered } from '../../lib/text'
 import { Link } from '../../navigation'
@@ -53,6 +54,7 @@ export function ReceiptHeader({ receipt, showOwner = false, photo, categories = 
             : <div><dt>Дата и время покупки</dt><dd><time dateTime={receipt.purchased_at}>{recognizedValue(formatObservedAt(receipt.purchased_at, store?.timezone))}</time></dd></div>}
           {showOwner && <div><dt>Добавил</dt><dd className="receipt-owner">{ownerName(receipt)}</dd></div>}
           <div><dt>Откуда</dt><dd>{sourceMark(receipt.source, receipt.note)}</dd></div>
+          {receipt.payment_method && <div><dt>Оплата</dt><dd>{methodLabels[receipt.payment_method]}</dd></div>}
         </dl>
       </div>
       {photo}

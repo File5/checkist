@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { announceIncome, createIncome } from '../../api/incomes'
-import { decideRecurring, getRecurringMonth } from '../../api/recurring'
+import { decideRecurring, getRecurringMonth, payRecurring } from '../../api/recurring'
 import type { RecurringDecisionKind, RecurringMonth, RecurringMonthPayment, RecurringQuestion } from '../../api/recurring'
+import Sheet from '../../components/Sheet'
 import { formatMoney } from '../../lib/money'
 import { Link } from '../../navigation'
 import { capitalize, dayAndMonth, inMonth } from '../dashboard/dashboard-state'
-import { amountValue, counted, decisionNotice, forMonth, foundText, incomeDue, isOpen, paymentsText, recurringFailure, stateText } from './recurring-state'
+import { amountValue, counted, decisionNotice, forMonth, foundText, incomeDue, isOpen, payExpected, payNotice, paymentsText, recurringFailure, stateText } from './recurring-state'
+import { PayForm } from './RecurringPay'
+import type { Pay } from './RecurringPay'
 import type { Notice } from './recurring-state'
 import '../incomes/Incomes.css'
 import './Recurring.css'
@@ -47,15 +50,21 @@ export function DueBadge({ row }: { row: Pick<RecurringMonthPayment, 'due_date' 
   return <span className={`ck-row-badge rec-day rec-day-${row.state}`} aria-hidden="true">{Number(row.due_date.slice(8, 10))}</span>
 }
 
-/** One payment of the month: the day, the name, its state in words and the amount (paid — what was paid). */
-export function PaymentRow({ row, today }: { row: RecurringMonthPayment; today: string }) {
+/** One payment of the month: the day, the name, its state in words and the amount (paid — what was paid). `onPay` — an
+ * open one gets «Оплатил» under its amount. */
+export function PaymentRow({ row, today, onPay }: { row: RecurringMonthPayment; today: string; onPay?: (row: RecurringMonthPayment) => void }) {
+  const amount = formatMoney(row.paid?.total ?? row.amount, row.currency)
   return <li className="ck-row rec-row">
     <DueBadge row={row} />
     <span className="ck-row-main">
       <span className="ck-row-title">{row.name}</span>
       <span className={`ck-row-meta rec-meta-${row.state}`}>{stateText(row, today)}</span>
     </span>
-    <span className="ck-row-amount ck-figures">{formatMoney(row.paid?.total ?? row.amount, row.currency)}</span>
+    {onPay
+      ? <span className="rec-row-end"><span className="ck-row-amount ck-figures">{amount}</span>
+        <button type="button" className="rec-pay-open" aria-haspopup="dialog" onClick={() => onPay(row)}>
+          Оплатил<span className="rec-visually-hidden"> «{row.name}»</span></button></span>
+      : <span className="ck-row-amount ck-figures">{amount}</span>}
   </li>
 }
 
@@ -91,11 +100,15 @@ export function NoticeLine({ notice }: { notice: Notice | null }) {
     {notice.receiptId ? <> <Link className="rec-inline-link" to={`/receipts/${notice.receiptId}`}>Открыть трату</Link></> : null}</p>
 }
 
-export type RecurringDueViewProps = { data: RecurringMonth; busy?: boolean; notice?: Notice | null; onDecide?: Decide; onAddIncome?: AddIncome }
+export type RecurringDueViewProps = {
+  data: RecurringMonth; busy?: boolean; notice?: Notice | null; onDecide?: Decide; onAddIncome?: AddIncome
+  /** «Оплатил» of an open payment of a month up to the current one: opens the small form. */
+  onPay?: (row: RecurringMonthPayment) => void
+}
 
 /** The block of «Главная» without loading: the markup tests render it directly. Nothing without payments and
  * suggestions; only a quiet line with suggestions alone. A regular income of the month asks to be entered on top. */
-export function RecurringDueView({ data, busy = false, notice = null, onDecide = () => {}, onAddIncome = () => {} }: RecurringDueViewProps) {
+export function RecurringDueView({ data, busy = false, notice = null, onDecide = () => {}, onAddIncome = () => {}, onPay }: RecurringDueViewProps) {
   const rows = counted(data)
   const open = rows.filter(isOpen)
   const closed = rows.filter((row) => !isOpen(row))
@@ -109,6 +122,7 @@ export function RecurringDueView({ data, busy = false, notice = null, onDecide =
     </>
   }
   const past = data.month < data.today.slice(0, 7)
+  const payable = data.month <= data.today.slice(0, 7) ? onPay : undefined
   const heading = open.length ? (past ? `Не оплачено ${inMonth(data.month)}` : 'Осталось оплатить') : 'Регулярные платежи'
   const left = data.totals.filter((total) => total.left !== null)
   return <>
@@ -124,7 +138,7 @@ export function RecurringDueView({ data, busy = false, notice = null, onDecide =
         ? <>
           {left.length > 0 && <p className="rec-sum">{paymentsText(open.length)} · {left.map((total, index) => <span key={total.currency}>
             {index > 0 && ' + '}<span className="ck-figures rec-sum-value">{formatMoney(total.left, total.currency)}</span></span>)}</p>}
-          <ul className="ck-list rec-list">{open.map((row) => <PaymentRow key={row.id} row={row} today={data.today} />)}</ul>
+          <ul className="ck-list rec-list">{open.map((row) => <PaymentRow key={row.id} row={row} today={data.today} onPay={payable} />)}</ul>
         </>
         : <p className="rec-all-paid">Всё оплачено</p>}
       {closed.length > 0 && <details className="rec-closed">
@@ -143,6 +157,8 @@ export default function RecurringDue({ month }: { month: string }) {
   const [attempt, setAttempt] = useState(0)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<Notice | null>(null)
+  const [paying, setPaying] = useState<RecurringMonthPayment | null>(null)
+  const [payFailure, setPayFailure] = useState<string | null>(null)
   useEffect(() => {
     const controller = new AbortController()
     void getRecurringMonth(month, { signal: controller.signal }).then((result) => {
@@ -174,7 +190,32 @@ export default function RecurringDue({ month }: { month: string }) {
       setAttempt((value) => value + 1)
     })
   }
+  const pay: Pay = (row, values) => {
+    if (busy || !loaded) return
+    const input = { ...values, month: loaded.data.month }
+    setBusy(true)
+    setPayFailure(null)
+    setNotice(null)
+    void payRecurring(row.id, input).then((result) => {
+      setBusy(false)
+      if (result.kind === 'ok') {
+        setPaying(null)
+        setNotice(payNotice(row, input, result.data.receipt_id, loaded.data.today))
+      } else if (result.kind === 'error') setPayFailure(recurringFailure(result))
+      setAttempt((value) => value + 1)
+    })
+  }
   // Another month on «Главная»: the block of the month before goes away until its own answer comes.
   if (!loaded || loaded.month !== month) return null
-  return <RecurringDueView data={loaded.data} busy={busy} notice={notice} onDecide={decide} onAddIncome={addIncome} />
+  return <>
+    <RecurringDueView data={loaded.data} busy={busy} notice={notice} onDecide={decide} onAddIncome={addIncome}
+      onPay={(row) => { setPayFailure(null); setPaying(row) }} />
+    <Sheet open={paying !== null} onClose={() => setPaying(null)} title={paying ? `Оплатил «${paying.name}»` : 'Оплатил'}>
+      {paying && <>
+        <p className="rec-note">{payExpected(paying, loaded.data.today)}</p>
+        <PayForm row={paying} today={loaded.data.today} busy={busy} failure={payFailure} onSubmit={(values) => pay(paying, values)}
+          onCancel={() => setPaying(null)} />
+      </>}
+    </Sheet>
+  </>
 }

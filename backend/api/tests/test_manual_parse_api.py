@@ -44,7 +44,8 @@ class ManualParseLocalTests(TestCase):
         self.assertEqual(detail.status_code, 200)
         data = detail.json()
         self.assertEqual(data["status"], "succeeded")
-        self.assertEqual(set(data["draft"]), {"total", "currency", "category", "purchased_on", "store_name", "note", "lines"})
+        self.assertEqual(set(data["draft"]), {"total", "currency", "category", "purchased_on", "store_name", "note", "payment_method",
+                                             "lines"})
         self.assertEqual(data["draft"]["total"], "4500")
         self.assertIsNotNone(data["finished_at"])
         self.assertEqual(Receipt.objects.count(), receipts)

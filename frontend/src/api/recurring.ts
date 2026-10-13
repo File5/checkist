@@ -5,6 +5,8 @@ import type { Check, Guard } from './schema.ts'
 import type { CurrencyCode, Decimal, ISODate, LocalApiResult, RequestOptions } from './types.ts'
 import { isPerson } from '../lib/people.ts'
 import type { Person } from '../lib/people.ts'
+import { isPaymentMethod } from '../lib/payment-methods.ts'
+import type { PaymentMethodValue } from '../lib/payment-methods.ts'
 
 /** «Регулярные платежи» (`/api/recurring/`): a payment of every month — rent, utilities, internet, a subscription.
  * Whether it is paid in a month is the server's check of the spends on every read; nothing here is stored by the client.
@@ -43,7 +45,18 @@ export type RecurringMonthPayment = RecurringPayment & {
   previous_amount: Decimal | null
   /** The six months up to this one, oldest first. */
   history: { month: string; state: RecurringState }[]
+  /** «Как и сколько оплатил»: twelve months up to this one; `null` — switched off; missing from an older server. */
+  year?: RecurringYear | null
 }
+/** A month of the history of a payment, newest first: its state and the spend found (or added) with its way of payment. */
+export type RecurringYearMonth = {
+  month: string; state: RecurringState
+  paid: { receipt_id: number | null; purchased_on: ISODate; total: Decimal; payment_method: PaymentMethodValue } | null
+}
+/** The twelve months and what was paid in them in the currency of the payment, by way of payment, the most first. */
+export type RecurringYear = { months: RecurringYearMonth[]; total: Decimal | null; methods: { payment_method: PaymentMethodValue; total: Decimal }[] }
+/** «Оплатил»: a spend of `amount` on `purchased_on` with the place and the category of the payment closes `month`. */
+export type RecurringPayInput = { month: string; amount: Decimal; payment_method: PaymentMethodValue; purchased_on: ISODate }
 /** «За сентябрь оплата не найдена»: from the 1st of a month, about the month before. */
 export type RecurringQuestion = {
   payment_id: number; name: string; month: string; due_date: ISODate; currency: CurrencyCode
@@ -77,12 +90,20 @@ const paymentShape = {
   created_by: nullable(isPerson),
 }
 export const isRecurringPayment = object<RecurringPayment>(paymentShape)
-const isMonthPayment = object<RecurringMonthPayment>({
+const paidShape = { receipt_id: nullable(isId), purchased_on: isISODate, total: amount }
+const isYear = object<RecurringYear>({
+  months: array(object<RecurringYearMonth>({ month: isMonthCode, state,
+    paid: nullable(object<NonNullable<RecurringYearMonth['paid']>>({ ...paidShape, payment_method: isPaymentMethod })) })),
+  total: nullable(amount), methods: array(object<RecurringYear['methods'][number]>({ payment_method: isPaymentMethod, total: amount })),
+})
+const monthPaymentShape = object<Omit<RecurringMonthPayment, 'year'>>({
   ...paymentShape, state, due_date: isISODate,
-  paid: nullable(object<NonNullable<RecurringMonthPayment['paid']>>({ receipt_id: nullable(isId), purchased_on: isISODate, total: amount })),
+  paid: nullable(object<NonNullable<RecurringMonthPayment['paid']>>(paidShape)),
   added: bool, average: nullable(amount), last_amount: nullable(amount), previous_amount: nullable(amount),
   history: array(object<RecurringMonthPayment['history'][number]>({ month: isMonthCode, state })),
 })
+const isMonthPayment: Guard<RecurringMonthPayment> = (value): value is RecurringMonthPayment => monthPaymentShape(value)
+  && (!Object.hasOwn(value, 'year') || nullable(isYear)((value as Record<string, unknown>).year))
 const isQuestion = object<RecurringQuestion>({
   payment_id: isId, name: text, month: isMonthCode, due_date: isISODate, currency, amount, from_history: bool,
 })
@@ -123,6 +144,10 @@ export function deleteRecurring(id: number, options: RequestOptions = {}): Promi
  * A second answer about the same month is refused with 409 (the month is paid or already answered). */
 export function decideRecurring(id: number, month: string, decision: RecurringDecisionKind, options: RequestOptions = {}): Promise<LocalApiResult<RecurringDecisionResult>> {
   return send(`recurring/${id}/decision/`, { month, decision }, isDecision, options)
+}
+/** «Оплатил»: the spend and the answer `added` for the month; 409 when the month is already paid or answered. */
+export function payRecurring(id: number, input: RecurringPayInput, options: RequestOptions = {}): Promise<LocalApiResult<RecurringDecisionResult>> {
+  return send(`recurring/${id}/pay/`, input, isDecision, options)
 }
 /** A payment from a suggestion in one tap; 404 when the suggestion is gone (already taken, history changed). */
 export function acceptSuggestion(key: SuggestionKey, options: RequestOptions = {}): Promise<LocalApiResult<RecurringPayment>> {

@@ -24,6 +24,7 @@
   "unmatched_products_count": 0,
   "receipt_images_count": 1,
   "note": "",
+  "payment_method": "",
   "hidden": false,
   "hidden_at": null,
   "preview_image_url": "/media/crops/test/crop.png",

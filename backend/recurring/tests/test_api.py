@@ -180,6 +180,7 @@ class RecurringLocalTests(Fixture, TestCase):
         data = self.month()
         self.assertEqual(data["questions"], [])
         self.assertEqual(self.payment(data, net["id"])["history"][-2], {"month": "2026-09", "state": "paid"})
+        self.assertTrue(self.payment(self.month(month="2026-09"), net["id"])["added"])  # «добавлен по средней»
         self.assertEqual(self.decide(net["id"], "2026-09", "skipped").json()["error"]["code"], "already_paid")
         self.assertEqual(Receipt.objects.filter(note__startswith="Интернет за").count(), 1)
 
@@ -194,6 +195,76 @@ class RecurringLocalTests(Fixture, TestCase):
         conflict = self.decide(net["id"], "2026-09", "elsewhere")
         self.assertEqual((conflict.status_code, conflict.json()["error"]["code"]), (409, "already_decided"))
         self.assertEqual(RecurringDecision.objects.get().decision, "skipped")
+
+    def pay(self, payment_id, **body):
+        with today():
+            return self.client.post(f"{URL}{payment_id}/pay/", {"month": "2026-10", "amount": "5000", **body}, format="json")
+
+    def test_pay_makes_the_spend_and_closes_the_month_whatever_the_amount(self):
+        # Без места и на 25 % дороже ожидаемого: сверка такую трату не узнала бы, ответ закрывает месяц.
+        phone = self.create(name="Связь", store_name=None, amount="3990", due_day=25)
+        self.assertEqual(self.payment(self.month(), phone["id"])["state"], "due")
+        paid = self.pay(phone["id"], payment_method="cash", purchased_on="2026-10-12")
+        self.assertEqual(paid.status_code, 201, paid.content)
+        receipt = Receipt.objects.get(pk=paid.json()["receipt_id"])
+        self.assertEqual(paid.json(), {"payment_id": phone["id"], "month": "2026-10", "decision": "added",
+                                       "receipt_id": receipt.pk})
+        self.assertEqual((receipt.source, receipt.owner, receipt.purchased_on, receipt.total, receipt.payment_method,
+                          receipt.store, receipt.note), ("manual", local_user(), date(2026, 10, 12), D("5000.00"), "cash",
+                                                         None, "Связь за октябрь 2026"))
+        self.assertEqual(list(receipt.lines.values_list("category_id", flat=True)), [self.subs.pk])
+        row = self.payment(self.month(), phone["id"])
+        # Не «добавлен по средней»: сумму, день и способ ввёл человек.
+        self.assertEqual((row["state"], row["paid"]["receipt_id"], row["added"]), ("paid", receipt.pk, False))
+        self.assertEqual(row["year"]["months"][0], {"month": "2026-10", "state": "paid", "paid": {
+            "receipt_id": receipt.pk, "purchased_on": "2026-10-12", "total": "5000.00", "payment_method": "cash"}})
+        self.assertEqual((row["year"]["total"], row["year"]["methods"]),
+                         ("5000.00", [{"payment_method": "cash", "total": "5000.00"}]))
+        again = self.pay(phone["id"])
+        self.assertEqual((again.status_code, again.json()["error"]["code"]), (409, "already_paid"))
+        # Месяц до текущего; место платежа и способ «не указан» по умолчанию, дата — сегодня.
+        net = self.create()
+        Receipt.objects.filter(pk=self.net_spends[-1].pk).delete()
+        paid = self.pay(net["id"], month="2026-10", amount="6700")
+        receipt = Receipt.objects.get(pk=paid.json()["receipt_id"])
+        self.assertEqual((receipt.purchased_on, receipt.payment_method, receipt.store_id), (TODAY, "", self.net_spends[0].store_id))
+        self.assertEqual(self.decide(net["id"], "2026-09", "skipped").status_code, 201)
+        decided = self.pay(net["id"], month="2026-09")
+        self.assertEqual((decided.status_code, decided.json()["error"]["code"]), (409, "already_decided"))
+
+    def test_pay_validation(self):
+        net = self.create()
+        wrong = self.pay(net["id"], month="2026-11", amount="0", payment_method="visa", purchased_on="2026-10-15", x=1)
+        self.assertEqual(set(fields(wrong)), {"month", "amount", "payment_method", "purchased_on", "x"})
+        for month in ("2025-09", "2026-13", None):
+            self.assertEqual(set(fields(self.pay(net["id"], month=month))), {"month"}, month)
+        self.assertEqual(set(fields(self.pay(net["id"], purchased_on="2026-02-30"))), {"purchased_on"})
+        self.assertEqual(self.pay(999999999).json(), NOT_FOUND)
+        from incomes.models import IncomeCategory
+
+        salary = RecurringPayment.objects.create(
+            kind="income", user=local_user(), name="Зарплата", currency_id="KZT", amount=D("650000"), due_day=10,
+            income_category=IncomeCategory.objects.create(name="Демо-зарплата"))
+        self.assertEqual(self.pay(salary.pk).json(), NOT_FOUND)  # у дохода своё «внести»
+        self.assertEqual(RecurringDecision.objects.count(), 0)
+
+    def test_year_history_by_payment_method(self):
+        rent = self.create(name="Аренда", store_name="Демо-хозяин", category_id=self.rent.pk, amount="220000", due_day=5)
+        Receipt.objects.filter(pk__in=[item.pk for item in self.rent_spends[-2:]]).update(payment_method="kaspi_gold")
+        Receipt.objects.filter(pk=self.rent_spends[-3].pk).update(payment_method="forte")
+        year = self.payment(self.month(), rent["id"])["year"]
+        self.assertEqual([item["month"] for item in year["months"]], [f"2026-{month:02d}" for month in range(10, 0, -1)]
+                         + ["2025-12", "2025-11"])
+        self.assertEqual([item["state"] for item in year["months"]], ["paid"] * 6 + ["overdue"] * 4 + ["before"] * 2)
+        self.assertEqual([item["paid"]["payment_method"] for item in year["months"][:6]],
+                         ["kaspi_gold", "kaspi_gold", "forte", "", "", ""])
+        self.assertEqual(year["months"][-1]["paid"], None)
+        self.assertEqual(year["total"], "1320000.00")
+        self.assertEqual(year["methods"], [{"payment_method": "", "total": "660000.00"},
+                                           {"payment_method": "kaspi_gold", "total": "440000.00"},
+                                           {"payment_method": "forte", "total": "220000.00"}])
+        RecurringPayment.objects.filter(pk=rent["id"]).update(active=False)
+        self.assertIsNone(self.payment(self.month(), rent["id"])["year"])
 
     def test_average_falls_back_to_the_expected_amount(self):
         other = self.create(name="Подписка", store_name="Демо-нигде", amount="1990", due_day=20)
@@ -346,6 +417,15 @@ class RecurringFamilyTests(Fixture, TwoUsers, TestCase):
         self.assertEqual(added.status_code, 201, added.content)
         self.assertEqual(Receipt.objects.get(pk=added.json()["receipt_id"]).owner, self.third)
         self.assertEqual(self.get(self.first).json()["questions"], [])
+        # «Оплатил» члена семьи: трата — его.
+        Receipt.objects.filter(pk=self.net_spends[-1].pk).delete()
+        with today():
+            paid = self.client_of(self.first, csrf=True).post(
+                f"{URL}{net['id']}/pay/", {"month": "2026-10", "amount": "6800", "payment_method": "kaspi_gold"}, format="json")
+        self.assertEqual(paid.status_code, 201, paid.content)
+        self.assertEqual(Receipt.objects.get(pk=paid.json()["receipt_id"]).owner, self.first)
+        self.assertIn({"payment_method": "kaspi_gold", "total": "6800.00"},
+                      self.get(self.third).json()["payments"][0]["year"]["methods"])
 
     def test_outsider_sees_nothing_and_gets_404(self):
         net = self.create(self.first)
@@ -358,6 +438,7 @@ class RecurringFamilyTests(Fixture, TwoUsers, TestCase):
             self.assertEqual(outsider.patch(url, {"amount": "1"}, format="json").json(), NOT_FOUND)
             self.assertEqual(outsider.post(f"{url}decision/", {"month": "2026-09", "decision": "skipped"},
                                            format="json").json(), NOT_FOUND)
+            self.assertEqual(outsider.post(f"{url}pay/", {"month": "2026-10", "amount": "1"}, format="json").json(), NOT_FOUND)
             self.assertEqual(outsider.delete(url).json(), NOT_FOUND)
         self.assertTrue(RecurringPayment.objects.filter(pk=net["id"], amount=D("6700")).exists())
         # Траты чужого — не оплата семейного платежа; его собственный платёж свои траты видит.

@@ -26,7 +26,11 @@ Fields:
   the place as the person would name it, first letter capital ("Магнум", "Магнит"); null when the text
   names no place. Do not put a destination of a ride here.
 - note: a short remark in Russian that is not a place, amount or date ("до аэропорта"); null when
-  nothing is left.
+  nothing is left. Never repeat the way of payment here.
+- payment_method: how the spend was paid when the text says it: "kaspi_gold" — Kaspi or Kaspi Gold
+  ("с каспи", "каспи голд", "kaspi"); "forte" — ForteBank ("картой форте", "с форте"); "cash" — cash
+  ("наличными", "налом", "кэшем"); "card" — any other card ("картой", "другой картой"). null when the text
+  does not say it and for an income.
 - lines: positions when the text lists several items with their own amounts ("молоко 450, хлеб 230");
   each with name (as typed, first letter capital), amount (decimal string), quantity (decimal string
   or null for one) and category (an id from categories or null). An empty list when the text names
