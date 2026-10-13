@@ -9,6 +9,8 @@
 - главный убирает члена семьи и передаёт роль; член семьи выходит сам; главный выйти не
   может, пока не передал роль (одному в семье выходить некуда — семья с лимитами останется);
 - чеки и фото убранного либо вышедшего остаются за ним (``owner``), семья их больше не видит;
+- главный задаёт члену семьи месяц, с которого тот видит чужие траты семьи (``set_visible_from``);
+  сам член семьи своего ограничения не видит;
 - приглашение «новая семья» выдаёт только администратор сервера (``is_staff``); по нему гость
   заводит учётную запись и семью, где становится главным (ИИ у новой семьи выключен). Открытой
   регистрации нет: без действующего одноразового токена учётная запись не появляется.
@@ -16,8 +18,9 @@
 Отказы — ``FamilyError(code, fields=None, issues=())``; коды переводит вью.
 """
 import hashlib
+import re
 import secrets
-from datetime import timedelta
+from datetime import date, timedelta
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
@@ -29,6 +32,7 @@ from accounts.models import Household, Invite, Membership
 
 INVITE_DAYS = 7
 NAME_MAX = 100
+_MONTH = re.compile(r"([0-9]{4})-([0-9]{2})")
 
 
 class FamilyError(Exception):
@@ -154,12 +158,32 @@ def remove(family, actor, username):
 
 @transaction.atomic
 def transfer_head(family, actor, username):
-    """Роль главного переходит к ``username`` из той же семьи; ``actor`` становится членом."""
+    """Роль главного переходит к ``username`` из той же семьи; ``actor`` становится членом.
+
+    Ограничение «видит траты семьи с» нового главного снимается: главный видит всё.
+    """
     target = member(family, username)
     if target.user_id == actor.pk:
         return target
     Membership.objects.filter(household=family, role=Membership.Role.HEAD).update(role=Membership.Role.MEMBER)
-    Membership.objects.filter(pk=target.pk).update(role=Membership.Role.HEAD)
+    Membership.objects.filter(pk=target.pk).update(role=Membership.Role.HEAD, visible_from=None)
+    return target
+
+
+def set_visible_from(family, username, value):
+    """Главный задаёт члену семьи месяц «видит траты семьи с»: ``"ГГГГ-ММ"`` либо ``None`` — без ограничения.
+
+    Раньше этого месяца чужие траты, фото и доходы семьи члену не видны (``accounts.access.owner_q``),
+    свои — всегда. Главному месяц не задаётся.
+    """
+    target = member(family, username)
+    match = _MONTH.fullmatch(value) if isinstance(value, str) else None
+    if value is not None and (match is None or not (1901 <= int(match[1]) <= 9999 and 1 <= int(match[2]) <= 12)):
+        raise FamilyError("invalid_parameter", {"visible_from": ["Месяц в формате ГГГГ-ММ либо null."]})
+    if target.role == Membership.Role.HEAD:
+        raise FamilyError("invalid_parameter", {"visible_from": ["Главный видит все траты семьи."]})
+    target.visible_from = None if value is None else date(int(match[1]), int(match[2]), 1)
+    target.save(update_fields=["visible_from"])
     return target
 
 

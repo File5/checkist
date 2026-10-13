@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { isFamily } from '../../api/family'
 import type { Family } from '../../api/family'
 import { parseRoute, buildRoute } from '../../navigation/routes'
-import { familyFailure, familyTexts, inviteUrl, memberLine, memberMeta } from './family-state'
+import { familyFailure, familyTexts, inviteUrl, memberLine, memberMeta, visibleFromMonths, visibleFromText } from './family-state'
 import { FamilyView } from './FamilyPage'
 import type { FamilyViewProps } from './FamilyPage'
 
@@ -85,7 +85,27 @@ describe('family screen', () => {
     expect(inviteUrl('/family/join?token=abc', 'https://example.test')).toBe('https://example.test/family/join?token=abc')
   })
 
+  it('shows the head since when each member sees the spends of the family, never a member', () => {
+    const limited = [members[0], { ...members[1], visible_from: '2026-09' }, { username: 'demo-two', display_name: 'Катя', role: 'member' as const, is_me: false, visible_from: null }]
+    const html = view({ household: { id: 1, name: 'Демо', members: limited }, is_head: true, invites: [] })
+    expect(html).toContain('<span class="family-member-since" data-family-visible-from="true">Видит траты семьи: с сентября 2026</span>')
+    expect(html).toContain('Видит траты семьи: с начала')
+    expect(html.match(/data-family-visible-from/g)).toHaveLength(2)
+    // A member gets no `visible_from` from the server: no line about it at all.
+    const asMember = view({ household: { id: 1, name: 'Демо', members: members.map((m) => ({ ...m, is_me: !m.is_me })) }, is_head: false, invites: [] })
+    expect(asMember).not.toContain('Видит траты')
+    expect(visibleFromText(null)).toBe('с начала')
+    expect(visibleFromText('2026-01')).toBe('с января 2026')
+    const months = visibleFromMonths(null, '2026-10')
+    expect([months.length, months[0], months[1], months[23]]).toEqual([24, '2026-10', '2026-09', '2024-11'])
+    expect(visibleFromMonths('2020-03', '2026-10').at(-1)).toBe('2020-03')
+    expect(familyFailure('visible', { kind: 'error', reason: 'server', status: 400, fields: ['visible_from'] })).toBe('Проверьте: месяц.')
+  })
+
   it('reads the family answer and the routes', () => {
+    const withMonth = (visible_from: unknown) => ({ household: { id: 1, name: 'x', members: [{ ...members[1], visible_from }] }, is_head: true, invites: [] })
+    expect([isFamily(withMonth('2026-09')), isFamily(withMonth(null)), isFamily(withMonth('2026-13')), isFamily(withMonth(202609))])
+      .toEqual([true, true, false, false])
     expect(isFamily({ household: null, is_head: true, invites: [] })).toBe(true)
     expect(isFamily({ household: { id: 1, name: 'x', members: [{ username: 'a', display_name: 'a', role: 'boss', is_me: true }] }, is_head: true, invites: [] })).toBe(false)
     expect(parseRoute('http://x/family')).toEqual({ kind: 'family' })

@@ -24,7 +24,7 @@ class LoginFailureAdmin(admin.ModelAdmin):
 class MembershipInline(admin.TabularInline):
     model = Membership
     extra = 1
-    fields = ("user", "role")
+    fields = ("user", "role", "visible_from")
     autocomplete_fields = ("user",)
 
 

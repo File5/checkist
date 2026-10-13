@@ -24,7 +24,7 @@ from django.http import FileResponse, HttpResponseNotFound
 from django.utils._os import safe_join
 from django.views.decorators.http import require_http_methods
 
-from accounts.access import LOCAL_SINGLE, mode, owner_q
+from accounts.access import LOCAL_SINGLE, mode, photos_q
 from recognition.models import SourcePhoto
 from recognition.previews import ensure_variant, is_variant
 from recognition.storage import StorageError
@@ -76,7 +76,7 @@ def _allowed(request, segments):
     # Only the spelling used on disk: ``UUID()`` also reads braces, ``urn:`` and no hyphens.
     if str(storage_uuid) != segments[1]:
         return False
-    return SourcePhoto.objects.filter(owner_q(request), storage_uuid=storage_uuid).exists()
+    return SourcePhoto.objects.filter(photos_q(request), storage_uuid=storage_uuid).exists()
 
 
 @require_http_methods(["GET", "HEAD"])

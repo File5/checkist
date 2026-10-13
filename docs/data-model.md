@@ -1020,3 +1020,11 @@ docker compose -p checkist_dev cp postgres:/tmp/checkist.dump ./checkist.dump
   `payment_methods backfill` для старых трат из выписок.
 - «Оплатил» хранится как прежний ответ `RecurringDecision` (`added` + `receipt`), новых таблиц у `recurring` нет;
   `recurring.matching.Spend` получил поле `method`.
+## «Видит траты семьи с» (`accounts`, 2026-10-13, ветка `feature/member-visible-from`)
+
+- `accounts.Membership.visible_from` — `DateField`, `NULL` — без ограничения; иначе первое число месяца, с которого
+  член семьи видит чужие траты, фото и доходы семьи (`accounts.access.owner_q(..., since=…)`, правило —
+  `docs/multi-user.md`). У главного не действует; передача роли (`accounts.family.transfer_head`) его обнуляет. Пишет
+  только `accounts.family.set_visible_from` (API) и админка (`Households` → члены, колонка «Visible from»).
+- Миграция `accounts.0005_membership_visible_from` — одно `AddField` со значением `NULL`: доступ после неё прежний.
+  Откат — `migrate accounts 0004_families_ai_invites` (столбец удаляется, ограничения пропадают).

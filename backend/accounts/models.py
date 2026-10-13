@@ -53,6 +53,9 @@ class Membership(models.Model):
     ``role`` — ``head`` (главный в семье: скрывает и показывает платежи) либо ``member``;
     главного назначает администратор, в семье он не больше чем один (частичное уникальное
     ограничение). Пользователь без семьи — сам себе главный (``accounts.access.is_head``).
+
+    ``visible_from`` — первое число месяца, с которого член семьи видит чужие траты семьи
+    (``accounts.access.owner_q``); ``NULL`` — без ограничения. Задаёт главный; у главного не действует.
     """
 
     class Role(models.TextChoices):
@@ -62,6 +65,7 @@ class Membership(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="membership")
     household = models.ForeignKey(Household, on_delete=models.CASCADE, related_name="memberships")
     role = models.CharField(max_length=8, choices=Role.choices, default=Role.MEMBER)
+    visible_from = models.DateField(null=True, blank=True)
 
     class Meta:
         verbose_name = "membership"

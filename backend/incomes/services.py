@@ -128,8 +128,9 @@ def _rows(queryset, day_field, amount_field):
 
 def totals(request, first, last):
     """Доход семьи и траты видимых чеков с ``first`` по ``last`` включительно по месяцам; до пяти запросов."""
-    incomes = _rows(Income.objects.filter(owner_q(request), received_on__gte=first, received_on__lte=last),
-                    "received_on", "amount")
+    # Доходы семьи — с ``visible_from`` запроса (``owner_q``), свои — всегда.
+    incomes = _rows(Income.objects.filter(owner_q(request, since="received_on"), received_on__gte=first,
+                                          received_on__lte=last), "received_on", "amount")
     spends = _rows(Receipt.objects.filter(visible_receipts_q(request), purchased_on__gte=first, purchased_on__lte=last),
                    "purchased_on", "total")
     base = convert.base_currency(request_user(request))

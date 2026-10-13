@@ -8,7 +8,7 @@ from django.db.models import Count, Exists, F, IntegerField, OuterRef, Q, Subque
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
-from accounts.access import owner_q, visible_receipts_q
+from accounts.access import photos_q, visible_receipts_q
 from accounts.people import display_name
 from api.common import amount, iso_date, percent, price, quantity, store_object, utc_datetime
 from receipts.decimal_math import price_context
@@ -168,7 +168,7 @@ def annotate_photos(photos):
 
 
 def photos_queryset(request):
-    return annotate_photos(SourcePhoto.objects.filter(owner_q(request)))
+    return annotate_photos(SourcePhoto.objects.filter(photos_q(request)))
 
 
 def photo_object(photo):
@@ -236,11 +236,11 @@ def annotate_jobs(jobs):
 
 
 def jobs_queryset(request):
-    return annotate_jobs(ProcessingJob.objects.filter(owner_q(request, "photo__")))
+    return annotate_jobs(ProcessingJob.objects.filter(photos_q(request, "photo__")))
 
 
 def images_queryset(request):
-    return ReceiptImage.objects.filter(owner_q(request, "photo__")).select_related("photo")
+    return ReceiptImage.objects.filter(photos_q(request, "photo__")).select_related("photo")
 
 
 def job_object(job, executor, *, items=None):
