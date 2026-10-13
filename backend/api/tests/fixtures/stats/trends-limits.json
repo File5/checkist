@@ -121,5 +121,133 @@
         }
       ]
     }
+  ],
+  "base_currency": "KZT",
+  "base_limits": [
+    {
+      "id": 1,
+      "category": {
+        "id": 1,
+        "name": "Продукты питания",
+        "path": [
+          {
+            "id": 1,
+            "name": "Продукты питания"
+          }
+        ]
+      },
+      "currency": "EUR",
+      "amount": "80.00",
+      "months": [
+        {
+          "month": "2026-04",
+          "spent": "68.93",
+          "percent": "86.16",
+          "limit": "80.00",
+          "change": null
+        },
+        {
+          "month": "2026-05",
+          "spent": "82.94",
+          "percent": "103.68",
+          "limit": "80.00",
+          "change": null
+        },
+        {
+          "month": "2026-06",
+          "spent": "70.90",
+          "percent": "88.63",
+          "limit": "80.00",
+          "change": null
+        },
+        {
+          "month": "2026-07",
+          "spent": "74.33",
+          "percent": "92.91",
+          "limit": "80.00",
+          "change": null
+        },
+        {
+          "month": "2026-08",
+          "spent": "76.75",
+          "percent": "95.94",
+          "limit": "80.00",
+          "change": null
+        },
+        {
+          "month": "2026-09",
+          "spent": "86.11",
+          "percent": "107.64",
+          "limit": "80.00",
+          "change": null
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "category": {
+        "id": 1,
+        "name": "Продукты питания",
+        "path": [
+          {
+            "id": 1,
+            "name": "Продукты питания"
+          }
+        ]
+      },
+      "currency": "KZT",
+      "amount": "5500.00",
+      "months": [
+        {
+          "month": "2026-04",
+          "spent": "2230.20",
+          "percent": "40.55",
+          "limit": "5500.00",
+          "change": null
+        },
+        {
+          "month": "2026-05",
+          "spent": "5335.00",
+          "percent": "97.00",
+          "limit": "5500.00",
+          "change": null
+        },
+        {
+          "month": "2026-06",
+          "spent": "5650.00",
+          "percent": "102.73",
+          "limit": "5500.00",
+          "change": null
+        },
+        {
+          "month": "2026-07",
+          "spent": "3784.68",
+          "percent": "68.81",
+          "limit": "5500.00",
+          "change": null
+        },
+        {
+          "month": "2026-08",
+          "spent": "5591.75",
+          "percent": "101.67",
+          "limit": "5500.00",
+          "change": null
+        },
+        {
+          "month": "2026-09",
+          "spent": "5934.00",
+          "percent": "107.89",
+          "limit": "5500.00",
+          "change": null
+        }
+      ]
+    }
+  ],
+  "excluded": [
+    {
+      "currency": "EUR",
+      "receipts_count": 24,
+      "total": "1099.96"
+    }
   ]
 }

@@ -8,8 +8,10 @@
 от объёма данных не зависит. ``range/`` — первый и последний месяц с чеками и текущий месяц
 сервера: из них клиент строит «Всё время» и прочие готовые периоды.
 """
+import dataclasses
 import re
 from datetime import date
+from types import SimpleNamespace
 
 from django.db.models import Max, Min
 from django.utils import timezone
@@ -138,8 +140,14 @@ def _monthly_block(block):
     }
 
 
+def _in_base(request, rows):
+    """``(converter, rows в основной валюте)`` для расчёта «в основной валюте семьи»."""
+    converter = stats_common.converter(request, rows.needs())
+    return converter, trends.rebase(rows, converter)
+
+
 class TrendsMonthlyView(LocalAPIView):
-    """Траты по корневым категориям на каждый месяц окна, по валютам."""
+    """Траты по корневым категориям на каждый месяц окна, по валютам и в основной валюте (``base``)."""
 
     def get(self, request):
         params = Params(request.query_params)
@@ -147,14 +155,31 @@ class TrendsMonthlyView(LocalAPIView):
         params.check()
         tree = common.CategoryTree.load()
         rows = trends.collect_spending(_receipts(request), months, stats_common.owner_product_id())
+        converter, in_base = _in_base(request, rows)
+        block = stats_common.base_block(trends.monthly(in_base, months, tree), converter.base)
         return Response({
             **_head(months), "currencies": stats_common.primary_first(
                 request, [_monthly_block(block) for block in trends.monthly(rows, months, tree)]),
+            **stats_common.base_fields(converter, block and _monthly_block(block), trends.unconverted(rows, converter)),
         })
 
 
 def _option(tree, pk):
     return {"id": pk, "name": tree.name(pk), "path": [node["name"] for node in tree.path(pk)], "depth": tree.depth(pk)}
+
+
+def _category_block(block):
+    return {
+        "currency": block.currency,
+        "total": stats_common.money(block.total),
+        "average": stats_common.money(block.average),
+        "months": [
+            {"month": trends.label(spend.month), "amount": stats_common.money(spend.amount),
+             "lines_count": spend.lines_count}
+            for spend in block.months
+        ],
+        "parts": [_row(row) for row in block.parts],
+    }
 
 
 class TrendsCategoryView(LocalAPIView):
@@ -175,25 +200,16 @@ class TrendsCategoryView(LocalAPIView):
             category = trends.suggested_category(rows, tree)
         blocks = [] if category is None else stats_common.primary_first(
             request, trends.category_series(rows, months, tree, category))
+        converter, in_base = _in_base(request, rows)
+        block = None if category is None else stats_common.base_block(
+            trends.category_series(in_base, months, tree, category), converter.base)
         return Response({
             **_head(months),
             "category": None if category is None else tree.category(category),
             "suggested": suggested,
             "options": [_option(tree, pk) for pk in tree.ordered_ids() if pk in spent],
-            "currencies": [
-                {
-                    "currency": block.currency,
-                    "total": stats_common.money(block.total),
-                    "average": stats_common.money(block.average),
-                    "months": [
-                        {"month": trends.label(spend.month), "amount": stats_common.money(spend.amount),
-                         "lines_count": spend.lines_count}
-                        for spend in block.months
-                    ],
-                    "parts": [_row(row) for row in block.parts],
-                }
-                for block in blocks
-            ],
+            "currencies": [_category_block(block) for block in blocks],
+            **stats_common.base_fields(converter, block and _category_block(block), trends.unconverted(rows, converter)),
         })
 
 
@@ -205,6 +221,45 @@ def _limit_month(first, spent, percent, limit, changed):
         "change": None if before_after is None else {
             "old": stats_common.money(before_after[0]), "new": stats_common.money(before_after[1])},
     }
+
+
+def _limit_rows(history, months, tree):
+    return [
+        {
+            "id": row.id,
+            "category": tree.category(row.category_id) if row.category_id in tree else None,
+            "currency": row.currency, "amount": stats_common.money(row.amount),
+            "months": [
+                _limit_month(first, spent, percent, limit, row.changed)
+                for first, spent, percent, limit in zip(months, row.spent, row.percents, row.amounts)
+            ],
+        }
+        for row in history
+    ]
+
+
+def _series_in_base(item, converter, months, days, today):
+    """Лимит другой валюты — суммами в основной: месяц — по курсу его конца (текущий — сегодня), сейчас — сегодня.
+
+    Нет курса хотя бы на один нужный день — пара остаётся в своей валюте.
+    """
+    if item.currency == converter.base:
+        return item
+
+    def convert(amount, day):
+        return None if amount is None else converter.convert(amount, item.currency, day)
+
+    by_month = dict(zip(months, days))
+    amounts = [convert(amount, day) for amount, day in zip(item.amounts, days)]
+    changed = {month: (convert(old, by_month[month]), convert(new, by_month[month]))
+               for month, (old, new) in item.changed.items()}
+    limit = item.limit and SimpleNamespace(pk=item.limit.pk, amount=convert(item.limit.amount, today))
+    values = [*amounts, *(value for pair in changed.values() for value in pair), limit and limit.amount]
+    originals = [*item.amounts, *(value for pair in item.changed.values() for value in pair),
+                 item.limit and item.limit.amount]
+    if any(value is None and original is not None for value, original in zip(values, originals)):
+        return item
+    return dataclasses.replace(item, currency=converter.base, amounts=amounts, changed=changed, limit=limit)
 
 
 class TrendsLimitsView(LocalAPIView):
@@ -226,20 +281,20 @@ class TrendsLimitsView(LocalAPIView):
         series = budget_history.series(limits, changes, months)
         rows = trends.collect_spending(_receipts(request), months, stats_common.owner_product_id()) if series else None
         history = trends.limit_history(rows, months, tree, series) if series else []
+        today = timezone.localdate()
+        days = [min(trends.month_end(first), today) for first in months]
+        needs = rows.needs() if series else set()
+        needs |= {(item.currency, day) for item in series for day in [*days, today]}
+        converter = stats_common.converter(request, needs)
+        base_history = trends.limit_history(
+            trends.rebase(rows, converter), months, tree, [_series_in_base(item, converter, months, days, today)
+                                                           for item in series]) if series else []
         return Response({
             **_head(months),
-            "limits": [
-                {
-                    "id": row.id,
-                    "category": tree.category(row.category_id) if row.category_id in tree else None,
-                    "currency": row.currency, "amount": stats_common.money(row.amount),
-                    "months": [
-                        _limit_month(first, spent, percent, limit, row.changed)
-                        for first, spent, percent, limit in zip(months, row.spent, row.percents, row.amounts)
-                    ],
-                }
-                for row in history
-            ],
+            "limits": _limit_rows(history, months, tree),
+            "base_currency": converter.base,
+            "base_limits": _limit_rows(base_history, months, tree),
+            "excluded": stats_common.excluded(trends.unconverted(rows, converter) if series else []),
         })
 
 

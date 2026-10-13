@@ -4,6 +4,7 @@ import { getLocalJson } from './local.ts'
 import { isId } from './schema.ts'
 import { isReceiptCompare, isReceiptSeries, isSpending } from './stats-schema.ts'
 import type { ApiFailure, LocalApiFailure, LocalApiResult, RequestOptions } from './types.ts'
+import { resultInBase } from './base-currency.ts'
 import type {
   ReceiptCompare, ReceiptCompareParams, ReceiptSeries, ReceiptSeriesParams, Spending, SpendingParams, StatsFilters,
 } from './stats-types.ts'
@@ -41,18 +42,19 @@ export function statsFailureKind(failure: ApiFailure | LocalApiFailure): StatsFa
 /** Spending of a period by category, generic product, product or store; one block per currency. */
 export async function getSpending(params: SpendingParams = {}, options: RequestOptions = {}): Promise<LocalApiResult<Spending>> {
   const { date_from, date_to, group_by, category, generic, limit } = params
-  return refused({ category, generic, limit }, params.store, options.signal) ?? getLocalJson(
-    'stats/spending/', omitEmpty({ date_from, date_to, ...filters(params), group_by, category, generic, limit }), isSpending, options)
+  return refused({ category, generic, limit }, params.store, options.signal) ?? resultInBase(await getLocalJson(
+    'stats/spending/', omitEmpty({ date_from, date_to, ...filters(params), group_by, category, generic, limit }), isSpending, options))
 }
 /** Visits over time: receipts, average and median receipt, lines per receipt. */
 export async function getReceiptSeries(params: ReceiptSeriesParams = {}, options: RequestOptions = {}): Promise<LocalApiResult<ReceiptSeries>> {
   const { date_from, date_to, interval } = params
-  return refused({}, params.store, options.signal) ?? getLocalJson(
-    'stats/receipts/series/', omitEmpty({ date_from, date_to, ...filters(params), interval }), isReceiptSeries, options)
+  return refused({}, params.store, options.signal) ?? resultInBase(await getLocalJson(
+    'stats/receipts/series/', omitEmpty({ date_from, date_to, ...filters(params), interval }), isReceiptSeries, options))
 }
 /** Why the average receipt changed between two periods: quantity, prices and mix. */
 export async function getReceiptCompare(params: ReceiptCompareParams, options: RequestOptions = {}): Promise<LocalApiResult<ReceiptCompare>> {
   const { base_from, base_to, current_from, current_to, limit } = params
-  return refused({ limit }, params.store, options.signal) ?? getLocalJson(
-    'stats/receipts/compare/', omitEmpty({ base_from, base_to, current_from, current_to, ...filters(params), limit }), isReceiptCompare, options)
+  return refused({ limit }, params.store, options.signal) ?? resultInBase(await getLocalJson(
+    'stats/receipts/compare/', omitEmpty({ base_from, base_to, current_from, current_to, ...filters(params), limit }), isReceiptCompare, options),
+    { from: 'in_base', to: 'currencies' })
 }

@@ -1,5 +1,7 @@
 import { amount, array, choice, currency, isId, isISODate, isISODateTime, nonNegativeInteger, nullable, object, record, text } from './schema.ts'
 import type { Check, Guard } from './schema.ts'
+import { withBase } from './base-currency.ts'
+import type { InBase } from './base-currency.ts'
 import type {
   BudgetLimit, BudgetLimitChange, BudgetLimitHistory, BudgetLimitSeries, CategorySpendCurrency, CategorySpendItem, CategorySpendLine, CategorySpendPart, CategorySpends, Dashboard, DashboardCategory,
   DashboardCurrency, DashboardRecent, DashboardSubCategory,
@@ -27,43 +29,52 @@ const dashboardCurrencyShape = object<Omit<DashboardCurrency, 'limited_spent'>>(
   currency, spent: amount, previous_spent: amount, limit_total: nullable(amount), categories: array(dashboardCategory),
 })
 const dashboardCurrency: Check = (value) => dashboardCurrencyShape(value) && optional(value, 'limited_spent', nullable(amount))
-const dashboardRecent = object<Omit<DashboardRecent, 'owner_name'>>({
+const dashboardRecent = object<Omit<DashboardRecent, 'owner_name' | 'base_total'>>({
   id: isId, source: choice('photo', 'manual'), title: text, category_name: nullable(text), owner: username,
   purchased_on: isISODate, total: amount, currency, lines_count: nonNegativeInteger,
 })
 const recentItem: Check = (value) => dashboardRecent(value) && optional(value, 'owner_name', text)
-const dashboardShape = object<Omit<Dashboard, 'people'>>({
+  && optional(value, 'base_total', nullable(amount))
+const dashboardShape = object<Omit<Dashboard, 'people' | 'base' | keyof InBase>>({
   month: isMonthCode, previous_month: isMonthCode, days_left: nonNegativeInteger, members: array(username),
   currencies: array(dashboardCurrency), recent: array(recentItem),
 })
-export const isDashboard: Guard<Dashboard> = (value): value is Dashboard => dashboardShape(value)
-  && optional(value, 'people', array(isPerson))
+/** The month in the base currency too when the server sends it; an older server without it passes. */
+export const isDashboard = withBase<Dashboard>((value): value is Dashboard => dashboardShape(value)
+  && optional(value, 'people', array(isPerson)), undefined, false)
 
 const named = object<{ id: number; name: string }>({ id: isId, name: text })
 const categorySpendLine = object<CategorySpendLine>({ id: isId, name: text, amount, category_id: isId, category_name: text })
-const categorySpendItem = object<CategorySpendItem>({
+const categorySpendItemShape = object<Omit<CategorySpendItem, 'currency' | 'original_amount'>>({
   receipt_id: isId, source: choice('photo', 'manual'), purchased_on: isISODate, store: nullable(named), note: (value) => typeof value === 'string',
   owner: username, owner_name: text, receipt_total: amount, category_amount: amount, lines: array(categorySpendLine),
 })
+const categorySpendItem: Check = (value) => categorySpendItemShape(value) && optional(value, 'currency', currency)
+  && optional(value, 'original_amount', amount)
 const categorySpendPart = object<CategorySpendPart>({
   id: isId, name: text, direct: (value) => typeof value === 'boolean', children_count: nonNegativeInteger, amount, lines_count: nonNegativeInteger,
 })
 const categorySpendCurrency = object<CategorySpendCurrency>({
   currency, total: amount, receipts_count: nonNegativeInteger, parts: array(categorySpendPart), items: array(categorySpendItem),
 })
-export const isCategorySpends = object<CategorySpends>({
+const categorySpends = object<Omit<CategorySpends, 'base' | keyof InBase>>({
   month: isMonthCode, previous_month: isMonthCode,
   category: object<CategorySpends['category']>({ id: isId, name: text, path: array(named) }),
   children: array(named), currencies: array(categorySpendCurrency),
 }) as Guard<CategorySpends>
+export const isCategorySpends = withBase<CategorySpends>(categorySpends, undefined, false)
 
-export const isBudgetLimit = object<BudgetLimit>({ id: isId, category_id: isId, category_name: text, currency, amount })
+const budgetLimitShape = object<Omit<BudgetLimit, 'base_currency' | 'base_amount'>>({ id: isId, category_id: isId, category_name: text, currency, amount })
+export const isBudgetLimit: Guard<BudgetLimit> = (value): value is BudgetLimit => budgetLimitShape(value)
+  && optional(value, 'base_currency', currency) && optional(value, 'base_amount', nullable(amount))
 
-export type BudgetLimitList = BudgetLimit[] | { results: BudgetLimit[] }
-/** The list may come bare, as `{results}` or as a page: each is read as the list of limits. */
+export type BudgetLimitList = BudgetLimit[] | { results: BudgetLimit[]; base_currency?: string }
+/** The list may come bare, as `{results}` or as a page: each is read as the list of limits. A page of a newer server
+ * names the family's base currency too. */
 export const isBudgetLimitList: Guard<BudgetLimitList> = (value): value is BudgetLimitList =>
   Array.isArray(value) ? value.every(isBudgetLimit)
     : record(value) && Array.isArray(value.results) && value.results.every(isBudgetLimit)
+      && optional(value, 'base_currency', currency)
 
 const categoryRef = object<BudgetLimitChange['category']>({ id: isId, name: text, path: array(named) })
 const limitChangeShape = object<BudgetLimitChange>({

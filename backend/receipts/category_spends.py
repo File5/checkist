@@ -10,6 +10,9 @@
 
 Валюты не складываются: на каждую валюту чека свой блок. Чтение — три запроса
 независимо от объёма данных (строки, категории их товаров, чеки со строками категории).
+С ``converter`` (``rates.convert``) суммы переводятся в основную валюту по курсу дня покупки
+и складываются в её блок; у чека остаются исходная валюта и сумма (``ReceiptItem.original``),
+траты без курса — блоками своей валюты.
 """
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -38,6 +41,8 @@ class ReceiptItem:
     receipt: Receipt
     amount: Decimal = _ZERO
     lines: list = field(default_factory=list)
+    original: Decimal = _ZERO  # сумма строк категории в валюте чека (в основной валюте ``amount`` — пересчёт)
+    total: Decimal | None = None  # итог чека в валюте блока (в основной — пересчёт)
 
 
 @dataclass
@@ -72,6 +77,11 @@ def collect(receipts, tree, category_id, product_ref=None):
 
     ``tree`` — ``api.common.CategoryTree``, в нём есть ``category_id``. Три запроса.
     """
+    return group(load(receipts, tree, category_id, product_ref), tree, category_id)
+
+
+def load(receipts, tree, category_id, product_ref=None):
+    """Строки категории и их чеки: ``(matched, {receipt_id: Receipt})``; три запроса."""
     inside = set(tree.descendant_ids(category_id))
     rows = list(
         ReceiptLine.objects.filter(receipt__in=receipts.values("pk"), kind__in=(_KIND.PRODUCT, _KIND.SERVICE))
@@ -91,14 +101,32 @@ def collect(receipts, tree, category_id, product_ref=None):
         receipt.pk: receipt for receipt in
         Receipt.objects.filter(pk__in=ids).select_related("store__merchant", "owner")
     } if ids else {}
+    return matched, found
+
+
+def needs(loaded):
+    """Пары ``(валюта, день)`` чеков ``load``: какие курсы нужны для основной валюты."""
+    return {(receipt.currency_id, receipt.purchased_on) for receipt in loaded[1].values()}
+
+
+def group(loaded, tree, category_id, converter=None):
+    """Блоки из ``load``; с ``converter`` — в основной валюте (см. описание модуля). БД не используется."""
+    matched, found = loaded
     blocks = {}
     with price_context():
         for receipt_id, line in matched:
             receipt = found[receipt_id]
-            block = blocks.setdefault(receipt.currency_id, Block(receipt.currency_id))
+            currency, original, total = receipt.currency_id, line, receipt.total
+            if converter is not None:
+                amount = converter.convert(line.amount, receipt.currency_id, receipt.purchased_on)
+                if amount is not None:
+                    currency, line = converter.base, LineItem(line.id, line.position, line.name, amount, line.category_id)
+                    total = converter.convert(receipt.total, receipt.currency_id, receipt.purchased_on)
+            block = blocks.setdefault(currency, Block(currency))
             block.total += line.amount
-            item = block.receipts.setdefault(receipt_id, ReceiptItem(receipt))
+            item = block.receipts.setdefault(receipt_id, ReceiptItem(receipt, total=total))
             item.amount += line.amount
+            item.original += original.amount
             item.lines.append(line)
             path = tree.path_ids(line.category_id)
             direct = line.category_id == category_id

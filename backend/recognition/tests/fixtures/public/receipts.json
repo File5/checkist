@@ -50,7 +50,9 @@
           "id": 81,
           "name": "Тест"
         }
-      ]
+      ],
+      "base_currency": "KZT",
+      "base_total": null
     }
   ]
 }

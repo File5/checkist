@@ -19,6 +19,7 @@ from accounts.access import (
 from accounts.models import Membership
 from accounts.people import display_name, household_people
 from config.exceptions import AuthApiError, InvalidParameter, InvalidRequest, ObjectNotFound, PasswordRejected
+from rates.convert import request_base_currency
 from recognition.auth import enforce_csrf
 
 from stores.models import Currency
@@ -163,7 +164,9 @@ class SettingsView(LocalAPIView):
 
     def answer(self, request):
         currencies = [{"code": code, "name": name} for code, name in Currency.objects.order_by("code").values_list("code", "name")]
-        return Response({**settings_object(request_user(request)), "currencies": currencies})
+        # base_currency — основная валюта семьи (главного; без семьи — своя): в ней итоги и лимиты (rates.convert).
+        return Response({**settings_object(request_user(request)), "currencies": currencies,
+                         "base_currency": request_base_currency(request)})
 
     def get(self, request):
         return self.answer(request)

@@ -22,6 +22,7 @@ const part = (id: number, name: string, amounts: string[], total: string, direct
 })
 /** Six months of utilities paid as manual spends by sub-category (May — October 2026), like the production data. */
 export function utilitiesFixture(): TrendsCategory {
+  const block = utilitiesBlock()
   const body: TrendsCategory = {
     months: 6, month_from: '2026-05', month_to: '2026-10',
     category: { id: 21, name: 'Коммунальные услуги', path: [{ id: 20, name: 'Жильё' }, { id: 21, name: 'Коммунальные услуги' }] },
@@ -32,19 +33,22 @@ export function utilitiesFixture(): TrendsCategory {
       { id: 21, name: 'Коммунальные услуги', path: ['Жильё', 'Коммунальные услуги'], depth: 1 },
       { id: 23, name: 'Электричество', path: ['Жильё', 'Коммунальные услуги', 'Электричество'], depth: 2 },
     ],
-    currencies: [{
-      currency: 'KZT', total: '147500.00', average: '24583.33',
-      months: months.map((month, index) => ({ month, amount: ['28800.00', '17200.00', '17600.00', '18000.00', '30800.00', '35100.00'][index], lines_count: 5 })),
-      parts: [
-        part(23, 'Электричество', ['9000.00', '9100.00', '9200.00', '9300.00', '9400.00', '9500.00'], '55500.00'),
-        part(24, 'Отопление и газ', ['12000.00', '0.00', '0.00', '0.00', '12400.00', '12500.00'], '36900.00'),
-        part(25, 'ОСИ/КСК', ['4000.00', '4100.00', '4200.00', '4300.00', '4400.00', '4500.00'], '25500.00'),
-        part(26, 'Вода', ['3000.00', '3100.00', '3200.00', '3300.00', '3400.00', '3500.00'], '19500.00'),
-        part(27, 'Вывоз мусора', ['800.00', '900.00', '1000.00', '1100.00', '1200.00', '4600.00'], '9600.00'),
-        { ...part(21, 'Коммунальные услуги', ['0.00', '0.00', '0.00', '0.00', '0.00', '500.00'], '500.00', true), depth: 1, parent_id: 21 },
-      ],
-    }],
+    currencies: [block],
+    // Everything in tenge: the same block in the family's base currency, nothing without a rate.
+    base_currency: 'KZT', base: block, excluded: [],
   }
   if (!isTrendsCategory(body)) throw new Error('the utilities example does not match the runtime schema')
   return body
 }
+const utilitiesBlock = () => ({
+  currency: 'KZT', total: '147500.00', average: '24583.33',
+  months: months.map((month, index) => ({ month, amount: ['28800.00', '17200.00', '17600.00', '18000.00', '30800.00', '35100.00'][index], lines_count: 5 })),
+  parts: [
+    part(23, 'Электричество', ['9000.00', '9100.00', '9200.00', '9300.00', '9400.00', '9500.00'], '55500.00'),
+    part(24, 'Отопление и газ', ['12000.00', '0.00', '0.00', '0.00', '12400.00', '12500.00'], '36900.00'),
+    part(25, 'ОСИ/КСК', ['4000.00', '4100.00', '4200.00', '4300.00', '4400.00', '4500.00'], '25500.00'),
+    part(26, 'Вода', ['3000.00', '3100.00', '3200.00', '3300.00', '3400.00', '3500.00'], '19500.00'),
+    part(27, 'Вывоз мусора', ['800.00', '900.00', '1000.00', '1100.00', '1200.00', '4600.00'], '9600.00'),
+    { ...part(21, 'Коммунальные услуги', ['0.00', '0.00', '0.00', '0.00', '0.00', '500.00'], '500.00', true), depth: 1, parent_id: 21 },
+  ],
+})

@@ -596,7 +596,7 @@ MEDIA: original сохраняется без изменений (у PDF — о�
 - Период отбирается по `Receipt.purchased_on` — локальной дате магазина, обе границы включительно. Индекса по `purchased_on` нет (у чека есть `(store, purchased_at)`, у строки — `(product, receipt)`): на демо-базе из 466 чеков и 5604 строк самый медленный запрос статистики занял 132 мс ([замер](verification.md#статистика-серверная-часть-с5)). Если на настоящих данных запрос окажется дольше 500 мс, отдельной задачей добавляется `receipts.0002` с индексом `receipts_receipt(purchased_on)`; миграция обратима (`migrate receipts 0001`) и данных не меняет.
 - Траты — `Σ (amount − discount_amount)` строк всех чеков, включая возвраты со знаком. Скидка на весь чек и налог сверх цен по строкам не распределяются и видны разницей `Σ Receipt.total − Σ строк`.
 - Категория строки — `Product → GenericProduct → Category`. Импорт кладёт новые товары в служебные категорию и обобщённый продукт «Не разобрано»; пока человек в админке не сменит `Product.generic`, разбивка по категориям показывает их одним сектором, а похожих товаров для графика цен нет.
-- Поход — чек `operation='sale'`; позиции — строки `kind='product'` с `quantity > 0`. Медиана — `percentile_cont(0.5)` Postgres по сумме в центах.
+- Поход — чек `operation='sale'`; позиции — строки `kind='product'` с `quantity > 0`. Медиана — как `percentile_cont(0.5)`: середина двух средних (с 2026-10-13 считается в Python по итогам чеков, чтобы те же данные дали и блок в основной валюте).
 - Строка, которая ещё указывает на поглощённый слиянием товар, относится к оставляемому товару его ожидающей группы.
 - Валюты не складываются: каждый расчёт делит данные по `Receipt.currency`.
 
@@ -865,3 +865,27 @@ docker compose -p checkist_dev cp postgres:/tmp/checkist.dump ./checkist.dump
 - `accounts.Invite` — `household`, `token_hash` (SHA-256, уникален), `created_by`, `created_at`, `expires_at` (+7 дней), `used_at`, `used_by`; сам токен не хранится.
 - `receipts.Receipt.hidden` (bool, по умолчанию `false`), `hidden_by` (FK пользователь, NULL, `SET_NULL`), `hidden_at`. Скрытый платёж не виден членам семьи и не входит ни в какие суммы; правило — `accounts.access.visible_receipts_q`.
 - Миграции: `accounts.0003_profile_head_invite` (Profile, Invite, `role`, ограничение), `receipts.0008_receipt_hidden` — схема без данных. Откат: `migrate receipts 0007_manual_parse_request`, `migrate accounts 0002_household_membership` (роли, настройки и приглашения теряются; скрытые платежи снова видны всем).
+
+## Курсы Нацбанка РК (`rates`, 2026-10-13, ветка `feature/currency-rates`)
+
+- `rates.Rate` — `currency` (код ISO 4217 строкой, без связи со справочником валют: хранятся все опубликованные
+  коды), `day`, `value` (тенге за `quant` единиц, `Decimal(18, 6)`), `quant` (у UZS, KRW — 100, у IRR — 10 000),
+  `fetched_at`. Уникально `(currency, day)`; `value > 0`, `quant > 0`. Миграция `rates.0001_initial`, откат —
+  `migrate rates zero` (курсы теряются, итоги в основной валюте становятся «без курса»). В админке — только чтение.
+- Источник — `https://nationalbank.kz/rss/get_rates.cfm?fdate=ДД.ММ.ГГГГ` (`RATES_NBRK_URL`), разбор — `rates/nbrk.py`
+  (`xml.etree`, XML с DTD не принимается, ответ не больше 1 МБ). Нацбанк публикует курс на **каждый календарный день**,
+  включая выходные и праздники; на завтра и позже — пустой ответ «информации нет».
+- Курс на дату — последний не позже даты, не старше `rates.convert.STALE_DAYS` (7): дыра в загруженных курсах не
+  подменяется молча старым курсом, такая трата «без курса».
+- Загрузка: `manage.py rates fetch` — недостающие дни за последние 7 дней (ежедневное обновление строкой cron);
+  `--from ГГГГ-ММ-ДД [--to …]` — диапазон; `--receipts` — от первого чека до сегодня (задним числом для старых
+  трат); `--force` — и уже загруженные; `--pause` — секунды между запросами (0.2). `manage.py rates status` — первый
+  и последний день, число дней и дни чеков не в KZT без курса. Celery beat в проекте нет. Кроме того, расчёт сам
+  догружает недостающие дни не старше недели (`rates.services.lazy_fetch`): не чаще раза в 10 минут на все процессы
+  (ключ кэша `rates:lazy-fetch`), срок `RATES_LAZY_TIMEOUT_SECONDS` (3), до первой ошибки; выключается
+  `RATES_AUTO_FETCH=0`, в тестовой базе (`test_…`) не работает никогда.
+- Основная валюта семьи — не поле: `rates.convert.base_currency(user)` читает `Profile.default_currency` главного
+  одним запросом. Для волны 2: `rates.convert.to_base(amount, currency_code, day, user) -> Decimal | None` (два
+  запроса), для многих сумм — `rates.convert.converter(base, {(валюта, день)})` (курсы одним запросом, дальше
+  `convert(amount, currency, day)` без БД).
+- `budget`: миграций нет; лимиты прежних валют не переносились.

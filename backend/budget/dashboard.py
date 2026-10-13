@@ -13,11 +13,17 @@
 строки всех потомков, тем же расчётом ``receipts.spending`` с фильтром категории. В ``limit_total`` входят лимиты, у которых нет лимита у предка в той же валюте:
 вложенный лимит — часть лимита родителя, а не добавка к нему. ``limited_spent`` — траты
 этих же категорий (с потомками): общий лимит сравнивается с ним, а не со всеми тратами.
+
+Основная валюта (2026-10-13): с ``converter`` (``rates.convert``) траты каждой валюты
+переводятся в основную по курсу дня покупки (``spending.rebase``), лимиты другой валюты — по
+курсу ``limit_day`` (конец месяца, у текущего — сегодня); всё складывается в блок основной
+валюты, а траты и лимиты без курса остаются блоками своей валюты.
 """
 import calendar
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
+from types import SimpleNamespace
 
 from django.db.models import Count, F, Sum
 
@@ -85,10 +91,54 @@ class CurrencyBlock:
     categories: list = field(default_factory=list)
 
 
-def _totals(receipts, month):
-    rows = (receipts.filter(purchased_on__gte=month.first, purchased_on__lte=month.last)
-            .values("currency_id").annotate(total_sum=Sum("total")).order_by().values_list("currency_id", "total_sum"))
-    return dict(rows)
+@dataclass
+class MonthData:
+    """Траты месяца (``spending.Collected``) и итоги прошлого месяца по дням: ``[(валюта, день, сумма)]``."""
+
+    data: object
+    previous: list
+
+    def needs(self):
+        return self.data.needs() | {(currency, day) for currency, day, _total in self.previous}
+
+
+def collect_month(receipts, month, product_ref=None):
+    """Траты месяца и итоги прошлого; четыре запроса. ``product_ref`` — как в ``spending.collect``."""
+    in_month = receipts.filter(purchased_on__gte=month.first, purchased_on__lte=month.last)
+    before = month.previous()
+    previous = list(receipts.filter(purchased_on__gte=before.first, purchased_on__lte=before.last)
+                    .values("currency_id", "purchased_on").annotate(total_sum=Sum("total")).order_by()
+                    .values_list("currency_id", "purchased_on", "total_sum"))
+    return MonthData(spending.collect(in_month, product_ref), previous)
+
+
+def limit_day(month, today):
+    """День курса лимита месяца: последний день месяца, у текущего и будущих — сегодня."""
+    return min(month.last, today)
+
+
+def _previous_totals(previous, converter):
+    totals = {}
+    for currency, day, total in previous:
+        converted = converter.convert(total, currency, day) if converter is not None else None
+        if converted is not None:
+            currency, total = converter.base, converted
+        totals[currency] = totals.get(currency, _ZERO) + total
+    return totals
+
+
+def _limits_in_base(limits, converter, day):
+    """Лимиты другой валюты — суммой в основной по курсу ``day``; без курса — как были."""
+    result = []
+    for limit in limits:
+        amount = converter.convert(limit.amount, limit.currency_id, day)
+        if amount is None or limit.currency_id == converter.base:
+            result.append(limit)
+        else:
+            result.append(SimpleNamespace(pk=limit.pk, category_id=limit.category_id, category=limit.category,
+                                          currency_id=converter.base, amount=amount, original=limit))
+    # Лимит в основной валюте — первым: его ``limit_id`` и остаётся у строки, где сошлись два лимита.
+    return sorted(result, key=lambda item: hasattr(item, "original"))
 
 
 def _sort_rows(rows):
@@ -105,17 +155,20 @@ def _subtree_spent(data, tree, category_id):
     return result
 
 
-def currency_blocks(receipts, limits, month, tree, product_ref=None):
-    """Блоки по валютам в порядке кода валюты.
+def currency_blocks(found, limits, month, tree, converter=None, today=None):
+    """Блоки по валютам в порядке кода валюты; БД не используется.
 
-    ``receipts`` — видимые запросу чеки, ``limits`` — видимые лимиты (queryset
-    ``BudgetLimit`` либо список ``budget.history.limits_at`` для прошлого месяца), ``tree`` — ``api.common.CategoryTree``. Валюта попадает в ответ,
-    если в ней есть чеки этого или прошлого месяца либо лимит. Лимит подкатегории даёт
-    строку в ``children`` её корня (и строки промежуточных предков); корень без трат и
-    своего лимита появляется ради неё с нулём.
+    ``found`` — ``collect_month`` по видимым запросу чекам, ``limits`` — видимые лимиты (список
+    ``BudgetLimit`` либо ``budget.history.limits_at`` для прошлого месяца), ``tree`` —
+    ``api.common.CategoryTree``. Валюта попадает в ответ, если в ней есть чеки этого или
+    прошлого месяца либо лимит. Лимит подкатегории даёт строку в ``children`` её корня (и
+    строки промежуточных предков); корень без трат и своего лимита появляется ради неё с нулём.
+    С ``converter`` — в основной валюте (см. описание модуля; ``today`` — для ``limit_day``).
     """
-    in_month = receipts.filter(purchased_on__gte=month.first, purchased_on__lte=month.last)
-    data = spending.collect(in_month, product_ref)
+    data = found.data if converter is None else spending.rebase(found.data, converter)
+    limits = list(limits)
+    if converter is not None:
+        limits = _limits_in_base(limits, converter, limit_day(month, today or month.last))
     blocks = {}
     by_category = {}
     for block in spending.summarize(data, group_by="category", limit=_ALL, tree=tree):
@@ -125,9 +178,8 @@ def currency_blocks(receipts, limits, month, tree, product_ref=None):
                 row = CategoryRow(item.id, item.name, spent=item.amount)
                 target.categories.append(row)
                 by_category[(block.currency, item.id)] = row
-    for currency, total in _totals(receipts, month.previous()).items():
+    for currency, total in _previous_totals(found.previous, converter).items():
         blocks.setdefault(currency, CurrencyBlock(currency)).previous_spent = total
-    limits = list(limits.order_by("pk")) if hasattr(limits, "order_by") else list(limits)
     limited = {(limit.currency_id, limit.category_id) for limit in limits}
     subtree = {}  # category_id -> {валюта: потрачено}; считается один раз на узел
 
@@ -170,10 +222,12 @@ def currency_blocks(receipts, limits, month, tree, product_ref=None):
                 row = by_category[(limit.currency_id, limit.category_id)] = CategoryRow(
                     limit.category_id, limit.category.name)
                 target.categories.append(row)
+        merged = row.limit is not None  # второй лимит той же категории, пересчитанный из другой валюты
         if not any((limit.currency_id, ancestor) in limited for ancestor in path[:-1]):
             target.limit_total = (target.limit_total or _ZERO) + limit.amount
-            target.limited_spent = (target.limited_spent or _ZERO) + row.spent
-        row.limit, row.limit_id = limit.amount, limit.pk
+            if not merged:
+                target.limited_spent = (target.limited_spent or _ZERO) + row.spent
+        row.limit, row.limit_id = (row.limit + limit.amount, row.limit_id) if merged else (limit.amount, limit.pk)
     result = []
     for currency in sorted(blocks):
         block = blocks[currency]

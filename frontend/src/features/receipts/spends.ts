@@ -59,7 +59,8 @@ export type SpendDay = { day: ISODate; label: string; totals: DayTotal[]; receip
 /**
  * Receipts of one page grouped by `purchased_on`, in the order the API returned them (a day is one group even if
  * the ordering brought it twice). Each day has a total per currency in the order of first appearance — currencies
- * are never added together. A refund is subtracted. The total covers only the receipts of this page.
+ * are never added together; a spend converted into the family's base currency (`base_total`, 2026-10-13) counts in
+ * that currency, one without a rate in its own. A refund is subtracted. The total covers only the receipts of this page.
  */
 export function groupByDay(receipts: ReceiptListItem[], today: ISODate): SpendDay[] {
   const days = new Map<ISODate, ReceiptListItem[]>()
@@ -68,14 +69,16 @@ export function groupByDay(receipts: ReceiptListItem[], today: ISODate): SpendDa
     if (list) list.push(receipt)
     else days.set(receipt.purchased_on, [receipt])
   }
+  const counted = (receipt: ReceiptListItem) => receipt.base_currency && receipt.base_total != null
+    ? { currency: receipt.base_currency, amount: receipt.base_total } : { currency: receipt.currency, amount: receipt.total }
   return [...days].map(([day, list]) => {
-    const currencies = [...new Set(list.map((receipt) => receipt.currency))]
+    const currencies = [...new Set(list.map((receipt) => counted(receipt).currency))]
     return {
       day, label: dayLabel(day, today), receipts: list,
       totals: currencies.map((currency) => ({
         currency,
-        total: sumAmounts(list.filter((receipt) => receipt.currency === currency)
-          .map((receipt) => ({ amount: receipt.total, sign: receipt.operation === 'refund' ? -1 : 1 }))),
+        total: sumAmounts(list.filter((receipt) => counted(receipt).currency === currency)
+          .map((receipt) => ({ amount: counted(receipt).amount, sign: receipt.operation === 'refund' ? -1 : 1 }))),
       })),
     }
   })

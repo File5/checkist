@@ -1,4 +1,5 @@
 import { useCallback, useId, useMemo } from 'react'
+import { excludedNote } from '../../lib/base-currency'
 import type { ReceiptInterval, ReceiptSeriesCurrency } from '../../api/stats'
 import RequestState from '../../components/RequestState'
 import { useLocalRequestFocus } from '../../components/useLocalRequestFocus'
@@ -49,7 +50,7 @@ function TrendBody({ state, query, onRetry }: TrendBlockProps) {
     }
     case 'ok': {
       const { data } = state
-      if (data.currencies.length === 0) {
+      if (data.currencies.length === 0 && !data.excluded?.length) {
         return hasScope(query)
           ? <RequestState kind="empty" message="По выбранным стране, валюте и магазинам походов за это время нет."
             action={<Link className="action-link" to={receiptsStatsHref(withoutScope(query))}>Убрать фильтры</Link>} />
@@ -61,6 +62,7 @@ function TrendBody({ state, query, onRetry }: TrendBlockProps) {
         <>
           {data.currencies.length > 1 && <p className="stats-note">Валюты не складываются: у каждой валюты чеков свои графики.</p>}
           {data.currencies.map((block) => <CurrencyTrend key={block.currency} block={block} interval={data.interval} />)}
+          {data.excluded?.length ? <p className="stats-note">{excludedNote(data.excluded)}</p> : null}
         </>
       )
     }

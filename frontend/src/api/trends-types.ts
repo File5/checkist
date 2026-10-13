@@ -1,5 +1,6 @@
 /** Wire types of «Динамика» (`/api/stats/trends/*`, docs/api-contract.md). Money, prices and percents stay strings. */
 import type { CategoryRef, CurrencyCode, Decimal, NamedObject, Unit } from './types.ts'
+import type { InBase } from './base-currency.ts'
 
 /** `YYYY-MM`. */
 export type MonthLabel = string
@@ -56,7 +57,7 @@ export type TrendsMonthlyCurrency = {
   /** «Месяц к месяцу»: every top-level category, then its direct sub-categories with spending. */
   rows: TrendsCategoryRow[]
 }
-export type TrendsMonthly = TrendsWindow & { currencies: TrendsMonthlyCurrency[] }
+export type TrendsMonthly = TrendsWindow & InBase & { currencies: TrendsMonthlyCurrency[]; base?: TrendsMonthlyCurrency | null }
 
 export type TrendsCategoryOption = NamedObject & { path: string[]; depth: number }
 export type TrendsCategoryMonth = { month: MonthLabel; amount: Decimal; lines_count: number }
@@ -65,7 +66,8 @@ export type TrendsCategoryCurrency = {
   /** Direct sub-categories with spending and, last, the category's own lines (`direct`); empty without sub-categories. */
   parts: TrendsCategoryRow[]
 }
-export type TrendsCategory = TrendsWindow & {
+export type TrendsCategory = TrendsWindow & InBase & {
+  base?: TrendsCategoryCurrency | null
   /** The asked category, or the one the server suggests without `category`; `null` — nothing was spent in the window. */
   category: CategoryRef | null
   suggested: boolean
@@ -114,4 +116,5 @@ export type TrendsLimitMonth = {
 export type TrendsLimit = {
   id: number | null; category: CategoryRef | null; currency: CurrencyCode; amount: Decimal | null; months: TrendsLimitMonth[]
 }
-export type TrendsLimits = TrendsWindow & { limits: TrendsLimit[] }
+/** `base_limits` — the same limits in the family's base currency; `getTrendsLimits` reads them into `limits`. */
+export type TrendsLimits = TrendsWindow & InBase & { limits: TrendsLimit[]; base_limits?: TrendsLimit[] }

@@ -104,7 +104,11 @@ describe('«Динамика» screen (Vitest/SSR, not browser acceptance)', () 
 
   it('has loading, empty and error states in every block', () => {
     expect(html(<MonthlyBlock state={{ kind: 'loading' }} query={{}} onRetry={noop} />)).toContain('Загружаем траты по месяцам…')
-    expect(html(<MonthlyBlock state={ok({ ...monthlyFixture(), currencies: [] })} query={{}} onRetry={noop} />)).toContain('За это время трат нет.')
+    expect(html(<MonthlyBlock state={ok({ ...monthlyFixture(), currencies: [], excluded: [] })} query={{}} onRetry={noop} />)).toContain('За это время трат нет.')
+    // Spends only in a currency without a rate: they are named, not reported as no spends at all.
+    const unconverted = html(<MonthlyBlock state={ok({ ...monthlyFixture(), currencies: [] })} query={{}} onRetry={noop} />)
+    expect(unconverted).toContain('Нет курса Нацбанка на дату покупки — в итог не вошли:')
+    expect(unconverted).not.toContain('За это время трат нет.')
     expect(html(<PricesBlock state={ok({ ...pricesFixture(), currencies: [] })} onRetry={noop} />)).toContain('нет покупок товаров из чеков с фото')
     expect(html(<PricesBlock state={failure('network')} onRetry={noop} />)).toContain('data-request-retry')
     expect(html(<LimitsBlock state={failure('timeout')} onRetry={noop} />)).toContain('Сервер не ответил вовремя.')

@@ -5,6 +5,7 @@ import RecognitionIssues from '../../components/RecognitionIssues'
 import { useNarrow } from '../../lib/cards'
 import { imageLabels } from '../../lib/recognition-labels'
 import { formatObservedAt, formatPercent, formatPurchasedOn, formatQuantity } from '../../lib/format'
+import { baseTwin } from '../../lib/money'
 import { ownerName } from '../../lib/people'
 import { glue, numbered } from '../../lib/text'
 import { Link } from '../../navigation'
@@ -40,6 +41,8 @@ export function ReceiptHeader({ receipt, showOwner = false, photo, categories = 
   const manual = receipt.source === 'manual'
   // A spend imported from a bank statement names the statement in its note: the header says it as the source.
   const note = withoutSourceMark(receipt.note)
+  // Another currency than the family's base one: its amount in the base currency, as the totals count it.
+  const twin = baseTwin(receipt.currency, receipt.base_total, receipt.base_currency)
   return <div className="receipt-head">
     <div className="receipt-head-top">
       <div className="receipt-head-main">
@@ -55,7 +58,8 @@ export function ReceiptHeader({ receipt, showOwner = false, photo, categories = 
       {photo}
     </div>
     <p className="receipt-head-total"><span className="receipt-head-label">Итог</span>
-      <span className="ck-hero-figure">{money(receipt.total, receipt.currency)}</span></p>
+      <span className="ck-hero-figure">{money(receipt.total, receipt.currency)}</span>
+      {twin && <span className="receipt-head-twin">{twin} по курсу Нацбанка на день покупки</span>}</p>
     {categories.length > 0 && <ul className="receipt-head-chips" aria-label="Категории">
       {categories.map((category) => <li key={category.id}><CategoryChip category={category} /></li>)}
     </ul>}

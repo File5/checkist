@@ -7,7 +7,8 @@ from rest_framework.exceptions import ParseError, UnsupportedMediaType
 from rest_framework.response import Response
 
 from accounts.access import is_head, owner_q, request_user, visible_receipts_q
-from api.common import CategoryTree, get_or_404, utc_datetime
+from api import stats_common
+from api.common import CategoryTree, amount, get_or_404, utc_datetime
 from api.pagination import paginate
 from api.params import Params
 from api.recognition_serialization import (
@@ -73,12 +74,25 @@ def with_list_fields(receipts):
                              line_category_ids=Subquery(categories))
 
 
-def list_items(receipts):
-    """Объекты списка: ``receipt_object`` + ``category`` (общая категория верхнего уровня либо null) + ``first_line``.
+def base_total(receipt, converter):
+    """Поля чека в основной валюте семьи: ``base_currency`` и ``base_total`` (по курсу дня покупки; null — курса нет)."""
+    return {"base_currency": converter.base,
+            "base_total": amount(converter.convert(receipt.total, receipt.currency_id, receipt.purchased_on))}
+
+
+def receipt_converter(request, receipts):
+    """Курсы для чеков ``receipts`` одним запросом (и основная валюта семьи — ещё одним)."""
+    return stats_common.converter(request, {(receipt.currency_id, receipt.purchased_on) for receipt in receipts})
+
+
+def list_items(receipts, request):
+    """Объекты списка: ``receipt_object`` + ``category`` (общая категория верхнего уровня либо null) + ``first_line``
+    + сумма в основной валюте (``base_total``).
 
     Дерево категорий читается одним запросом и только если на странице есть строки с категорией.
     """
     tree = CategoryTree.load() if any(receipt.line_category_ids for receipt in receipts) else None
+    converter = receipt_converter(request, receipts) if receipts else None
     items = []
     for receipt in receipts:
         roots = {tree.path_ids(pk)[0] for pk in receipt.line_category_ids or () if pk in tree}
@@ -87,7 +101,8 @@ def list_items(receipts):
         leaves = sorted((pk for pk in receipt.line_category_ids or () if pk in tree), key=lambda pk: (tree.name(pk), pk))
         items.append({**receipt_object(receipt), "first_line": receipt.first_line or None,
                       "category": None if root is None else {"id": root, "name": tree.name(root)},
-                      "categories": [{"id": pk, "name": tree.name(pk)} for pk in leaves]})
+                      "categories": [{"id": pk, "name": tree.name(pk)} for pk in leaves],
+                      **base_total(receipt, converter)})
     return items
 
 
@@ -123,7 +138,7 @@ class ReceiptsView(LocalAPIView):
                                        | Q(store__name__icontains=search) | Q(note__icontains=search)
                                        | Q(Exists(matching_line)))
         data = paginate(with_list_fields(receipts).order_by(ordering, "-id" if ordering.startswith("-") else "id"), page)
-        data["results"] = list_items(list(data["results"]))
+        data["results"] = list_items(list(data["results"]), request)
         return Response(data)
 
 
@@ -246,7 +261,8 @@ class ReceiptView(LocalAPIView):
     parser_classes = [ManualBodyParser]
 
     def get(self, request, pk):
-        return Response(receipt_object(get_or_404(receipts_queryset(request, include_hidden=True), path_id(pk))))
+        receipt = get_or_404(receipts_queryset(request, include_hidden=True), path_id(pk))
+        return Response({**receipt_object(receipt), **base_total(receipt, receipt_converter(request, [receipt]))})
 
     def manual_receipt(self, request, pk):
         receipt = own_receipt(request, pk)

@@ -43,8 +43,9 @@ describe('special items of manual spends in the statistics', () => {
     lines_count: 2, receipts_count: 2, quantity: null, unit: null }
   const withItem = (groupBy: Spending['group_by'], kind: string) => {
     const body = statsFixture('spending-store.json') as Spending
-    return { ...body, group_by: groupBy, currencies: body.currencies.map((block) => ({
-      ...block, items: [...block.items.filter((item) => item.kind === groupBy), { ...special, kind }] })) }
+    const withSpecial = (block: Spending['currencies'][number]) => ({
+      ...block, items: [...block.items.filter((item) => item.kind === groupBy), { ...special, kind }] })
+    return { ...body, group_by: groupBy, currencies: body.currencies.map(withSpecial), base: body.base && withSpecial(body.base) }
   }
   it('accepts «Без места» only by store and «Траты без товара» only elsewhere', () => {
     expect(isSpending(withItem('store', 'no_store'))).toBe(true)

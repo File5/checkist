@@ -1,4 +1,5 @@
 import { useId, useMemo } from 'react'
+import { excludedNote } from '../../lib/base-currency'
 import type { MouseEvent } from 'react'
 import type { SpendingCurrency, SpendingGroupBy } from '../../api/stats'
 import { spendingGroupings } from '../../api/stats'
@@ -154,7 +155,7 @@ export default function SpendingResults({ query, state, retry, last, genericName
     </p>
     {state.kind === 'error' && <Failure failure={state} query={query} retry={retry} />}
     {loading && !shown && <RequestState kind="loading" message="Загружаем траты…" />}
-    {shown && (shown.data.currencies.length === 0
+    {shown && (shown.data.currencies.length === 0 && !shown.data.excluded?.length
       ? <RequestState kind="empty"
         message={hasFilters(shown.query) ? 'По выбранным фильтрам трат нет.' : 'Чеков пока нет: статистике не из чего считать. Загрузите первое фото чека.'}
         action={hasFilters(shown.query)
@@ -167,6 +168,8 @@ export default function SpendingResults({ query, state, retry, last, genericName
         {shown.data.currencies.length > 1 && <p className="spending-note spending-footnote">
           Суммы в разных валютах не складываются и не пересчитываются: у каждой валюты свой блок со своим итогом.
         </p>}
+        {/* In the family's base currency: what has no rate of the National Bank yet is named, never silently left out. */}
+        {shown.data.excluded?.length ? <p className="spending-note spending-footnote">{excludedNote(shown.data.excluded)}</p> : null}
       </div>)}
   </section>
 }

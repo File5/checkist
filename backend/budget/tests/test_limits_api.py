@@ -47,10 +47,12 @@ class LimitsLocalTests(CategoriesMixin, TestCase):
         self.assertEqual(created.status_code, 201, created.content)
         item = created.json()
         self.assertEqual(item, {"id": item["id"], "category_id": self.food.pk, "category_name": "Демо-продукты",
-                                "currency": "KZT", "amount": "120000.00"})
+                                "currency": "KZT", "amount": "120000.00", "base_currency": "KZT",
+                                "base_amount": "120000.00"})
         limit = BudgetLimit.objects.get(pk=item["id"])
         self.assertEqual((limit.user, limit.household), (local_user(), None))
-        self.assertEqual(self.create(category_id=self.transport.pk, currency="eur", amount=150.5).json()["currency"], "EUR")
+        # Только в основной валюте семьи (KZT без выбранной): код в любом регистре.
+        self.assertEqual(self.create(category_id=self.transport.pk, currency="kzt", amount=150.5).json()["currency"], "KZT")
 
         listed = self.client.get(LIMITS).json()
         self.assertEqual(listed["count"], 2)
@@ -93,7 +95,8 @@ class LimitsLocalTests(CategoriesMixin, TestCase):
         self.assertEqual(fields(duplicate), {"category_id": ["Лимит для этой категории и валюты уже есть."]})
         moved = self.client.patch(f"{LIMITS}{parent.json()['id']}/", {"category_id": self.dairy.pk}, format="json")
         self.assertEqual(fields(moved), {"category_id": ["Лимит для этой категории и валюты уже есть."]})
-        self.assertEqual(self.create(category_id=self.dairy.pk, currency="EUR").status_code, 201)
+        other = self.create(category_id=self.dairy.pk, currency="EUR")
+        self.assertEqual(fields(other), {"currency": ["Лимиты задаются в основной валюте семьи — KZT."]})
 
     def test_duplicate_category_currency(self):
         self.assertEqual(self.create().status_code, 201)

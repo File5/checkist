@@ -5,6 +5,7 @@ import type {
   BudgetLimit, BudgetLimitHistory, BudgetLimitHistoryParams, BudgetLimitInput, CategorySpends, Dashboard, MonthCode,
 } from './budget-types.ts'
 import type { LocalApiResult, RequestOptions } from './types.ts'
+import { resultInBase } from './base-currency.ts'
 
 export type * from './budget-types.ts'
 
@@ -12,7 +13,7 @@ export type * from './budget-types.ts'
 export async function getDashboard(month?: MonthCode, options: RequestOptions = {}): Promise<LocalApiResult<Dashboard>> {
   if (options.signal?.aborted) return { kind: 'aborted' }
   if (month !== undefined && !isMonthCode(month)) return { kind: 'error', reason: 'invalid_parameter', fields: ['month'] }
-  return getLocalJson('dashboard/', { month }, isDashboard, options)
+  return resultInBase(await getLocalJson('dashboard/', { month }, isDashboard, options))
 }
 
 /** What the money of a category (with its descendants) went on in a month: receipts and spends with their lines. */
@@ -20,14 +21,21 @@ export async function getCategorySpends(category: number, month?: MonthCode, opt
   if (options.signal?.aborted) return { kind: 'aborted' }
   if (!Number.isSafeInteger(category) || category < 1) return { kind: 'error', reason: 'invalid_parameter', fields: ['category'] }
   if (month !== undefined && !isMonthCode(month)) return { kind: 'error', reason: 'invalid_parameter', fields: ['month'] }
-  return getLocalJson('stats/category-spends/', { category, month }, isCategorySpends, options)
+  return resultInBase(await getLocalJson('stats/category-spends/', { category, month }, isCategorySpends, options))
 }
 
 /** Every limit the person may change: the family's, or one's own without a family. */
 export async function getBudgetLimits(options: RequestOptions = {}): Promise<LocalApiResult<BudgetLimit[]>> {
+  const result = await getBudgetLimitBook(options)
+  return result.kind === 'ok' ? { kind: 'ok', data: result.data.limits } : result
+}
+
+/** The limits and the family's base currency — new limits are set in it only (2026-10-13); an older server names none. */
+export async function getBudgetLimitBook(options: RequestOptions = {}): Promise<LocalApiResult<{ limits: BudgetLimit[]; baseCurrency?: string }>> {
   const result = await getLocalJson('budget/limits/', {}, isBudgetLimitList, options)
   if (result.kind !== 'ok') return result
-  return { kind: 'ok', data: Array.isArray(result.data) ? result.data : result.data.results }
+  return Array.isArray(result.data) ? { kind: 'ok', data: { limits: result.data } }
+    : { kind: 'ok', data: { limits: result.data.results, baseCurrency: result.data.base_currency } }
 }
 
 /** A new limit; the pair category + currency is unique, the category is top-level and the amount above zero. Never replayed implicitly. */
@@ -36,9 +44,10 @@ export async function createBudgetLimit(input: BudgetLimitInput, options: Reques
     ?? mutate('budget/limits/', JSON.stringify(input), isBudgetLimit, options)
 }
 
-export async function updateBudgetLimit(id: number, amount: string, options: RequestOptions = {}): Promise<LocalApiResult<BudgetLimit>> {
+/** A new amount; with `currency` the limit moves to it too — a limit of another currency becomes one in the base currency. */
+export async function updateBudgetLimit(id: number, amount: string, options: RequestOptions = {}, currency?: string): Promise<LocalApiResult<BudgetLimit>> {
   return invalidIds({ id }, options.signal)
-    ?? mutate(`budget/limits/${id}/`, JSON.stringify({ amount }), isBudgetLimit, options, false, undefined, { method: 'PATCH' })
+    ?? mutate(`budget/limits/${id}/`, JSON.stringify(currency ? { amount, currency } : { amount }), isBudgetLimit, options, false, undefined, { method: 'PATCH' })
 }
 
 export async function deleteBudgetLimit(id: number, options: RequestOptions = {}): Promise<LocalApiResult<null>> {
