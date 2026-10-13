@@ -11,7 +11,6 @@ from rest_framework.response import Response
 
 from catalog.models import Product
 from config.exceptions import RangeTooLarge
-from merges.visibility import visible
 from receipts.decimal_math import decimal_average
 from receipts.models import Receipt
 from receipts.prices import price_history
@@ -20,6 +19,7 @@ from stores.models import Store
 
 from .. import common
 from ..params import Params
+from ..projection import seen_products
 from ..stats_common import owner_product_id
 from .base import ReadOnlyAPIView
 from .prices import MAX_INTERVALS, PRICES, _product, _summary_rows
@@ -36,7 +36,7 @@ _STORE, _COUNTRY, _CURRENCY = "receipt__store_id", "receipt__store__country_id",
 _SOURCE = "receipt__source"  # траты вручную — свои ряды
 
 
-def _observations(params):
+def _observations(params, request):
     """Наблюдения всех товаров по фильтрам запроса с владельцем строки ``owner``.
 
     ``owner`` — оставляемый товар вместо поглощённого слиянием: «отбившаяся» строка
@@ -45,7 +45,7 @@ def _observations(params):
     date_from, date_to = params.date_range()
     countries = params.countries()
     currency = params.currency()
-    lines = price_history(date_from=date_from, date_to=date_to).annotate(owner=owner_product_id())
+    lines = price_history(date_from=date_from, date_to=date_to, request=request).annotate(owner=owner_product_id())
     if countries:
         lines = lines.filter(**{f"{_COUNTRY}__in": countries})
     if currency is not None:
@@ -109,13 +109,13 @@ def _own(lines, interval, value_field, unit_field):
     return _grouped(_summary_rows(lines, keys, interval, value_field), keys), truncated
 
 
-def _similar_products(lines, product, limit):
+def _similar_products(lines, product, limit, request):
     """Число похожих товаров с наблюдениями и первые ``limit`` из них. Два запроса.
 
     Похожие — видимые товары того же обобщённого продукта, кроме самого товара; порядок —
     по числу наблюдений в окне, затем ``name``, ``id``.
     """
-    candidates = visible(Product.objects.filter(generic=product.generic_id)).exclude(pk=product.pk)
+    candidates = seen_products(request, Product.objects.filter(generic=product.generic_id)).exclude(pk=product.pk)
     ranked = (
         lines.filter(owner__in=candidates.values("pk")).order_by()
         .annotate(owner_name=Subquery(Product.objects.filter(pk=OuterRef("owner")).values("name")[:1]))
@@ -128,9 +128,9 @@ class ProductPriceSeriesView(ReadOnlyAPIView):
     """``GET /api/products/{id}/prices/series/`` — ряды цен товара и похожих товаров."""
 
     def get(self, request, pk):
-        product = _product(pk)
+        product = _product(request, pk)
         params = Params(request.query_params)
-        lines = _observations(params)
+        lines = _observations(params, request)
         interval = params.choice("interval", INTERVALS, default="month")
         price = params.choice("price", PRICE_KINDS, default="paid")
         similar = params.choice("similar", SIMILAR, default="generic")
@@ -166,7 +166,7 @@ class ProductPriceSeriesView(ReadOnlyAPIView):
         elif generic.name.casefold() == UNASSIGNED_NAME.casefold():
             status = "generic_unassigned"
         else:
-            total, shown = _similar_products(lines, product, limit)
+            total, shown = _similar_products(lines, product, limit, request)
             if not total:
                 status = "none"
         if shown:

@@ -28,6 +28,7 @@ from merges.models import (
     ProductMerge, ProductMergeAlias, ProductMergeLine, ProductMergeMember, ProductMergeRejection,
 )
 from receipts.dedup import name_key
+from receipts.prices import private_products
 from receipts.models import ProductAlias, ReceiptLine
 
 logger = logging.getLogger(__name__)
@@ -270,7 +271,8 @@ def _load_candidates():
         merchants[owner.get(alias_id, product_id)].add(merchant_id)
     candidates = [
         _candidate(product, merchants.get(product.pk, ()))
-        for product in Product.objects.select_related("generic").order_by("pk")
+        # Товар только из трат вручную — личное название человека: в группы дублей он не попадает.
+        for product in Product.objects.select_related("generic").exclude(pk__in=private_products()).order_by("pk")
     ]
     return candidates, dict(existing)
 

@@ -6,7 +6,6 @@ from rest_framework.response import Response
 
 from catalog.models import Product
 from config.exceptions import ObjectNotFound, RangeTooLarge
-from merges.visibility import visible
 from receipts.decimal_math import change_percent, decimal_average, price_context
 from receipts.prices import is_manual, price_history
 from stores.models import Store
@@ -14,7 +13,7 @@ from stores.models import Store
 from .. import common
 from ..pagination import HISTORY_MAX_PAGE_SIZE, HISTORY_PAGE_SIZE, paginate
 from ..params import MAX_ID, Params
-from ..projection import own_annotation
+from ..projection import own_annotation, seen_products
 from .base import ReadOnlyAPIView
 
 # Порядок наблюдений: момент покупки, затем чек и позиция — стабилен при равных моментах.
@@ -44,18 +43,19 @@ _DEFERRED = (
 )
 
 
-def _product(pk):
-    """Товар с обобщённым продуктом либо ``404 not_found``; поглощённый слиянием — тоже ``404``."""
+def _product(request, pk):
+    """Товар с обобщённым продуктом либо ``404 not_found``; поглощённый слиянием и чужой личный
+    (``api.projection.seen_products``) — тоже ``404``."""
     if pk > MAX_ID:
         raise ObjectNotFound()
-    return common.get_or_404(visible(Product.objects.select_related("generic")), pk)
+    return common.get_or_404(seen_products(request, Product.objects.select_related("generic")), pk)
 
 
 def _product_brief(product):
     return {"id": product.pk, "name": product.name, "base_unit": product.generic.base_unit}
 
 
-def _observations(product, params):
+def _observations(product, params, request):
     """Наблюдения цены товара с общими фильтрами обоих эндпоинтов.
 
     Ошибки параметров копятся в ``params``; пока вызывающий код не вызвал
@@ -65,7 +65,8 @@ def _observations(product, params):
     country = params.country()
     currency = params.currency()
     store = params.object_id("store", Store.objects.all(), message="Магазин не найден.")
-    lines = price_history(product=product, store=store, country=country, date_from=date_from, date_to=date_to)
+    lines = price_history(product=product, store=store, country=country, date_from=date_from, date_to=date_to,
+                          request=request)
     if currency is not None:
         lines = lines.filter(receipt__currency=currency)
     return lines
@@ -103,9 +104,9 @@ class ProductPricesView(ReadOnlyAPIView):
     """``GET /api/products/{id}/prices/`` — точки истории цен товара."""
 
     def get(self, request, pk):
-        product = _product(pk)
+        product = _product(request, pk)
         params = Params(request.query_params)
-        lines = _observations(product, params)
+        lines = _observations(product, params, request)
         ordering = params.choice("ordering", tuple(ORDERINGS), default="observed_at")
         page = params.page(default=HISTORY_PAGE_SIZE, maximum=HISTORY_MAX_PAGE_SIZE)
         params.check()
@@ -208,9 +209,9 @@ class ProductPriceSummaryView(ReadOnlyAPIView):
     """``GET /api/products/{id}/prices/summary/`` — агрегаты цен товара по группам и интервалам."""
 
     def get(self, request, pk):
-        product = _product(pk)
+        product = _product(request, pk)
         params = Params(request.query_params)
-        lines = _observations(product, params)
+        lines = _observations(product, params, request)
         group_by = params.choice("group_by", tuple(GROUPS), default="country")
         interval = params.choice("interval", INTERVALS, default="none")
         price = params.choice("price", tuple(PRICES), default="paid")

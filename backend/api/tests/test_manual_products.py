@@ -14,7 +14,9 @@ from rest_framework.test import APIClient
 
 from api.tests.accounts_helpers import TwoUsers, accounts_mode, local_single_mode
 from api.tests.factories import make_product, make_receipt
+from accounts.models import Household, Membership
 from catalog.models import Brand, Category, GenericProduct, Product
+from classification.models import ProductClassification
 from merges import services as merges
 from merges.models import ProductMerge, ProductMergeMember
 from receipts.models import ProductAlias, Receipt, ReceiptLine
@@ -122,16 +124,16 @@ class NamedPurchaseTests(NamedMixin, TestCase):
                 self.assertEqual(response.status_code, 400)
                 self.assertEqual(response.json()["error"]["fields"], {"item_name": [message]})
 
-    def test_a_place_remembers_the_spelling_and_the_spelling_leads_to_its_product(self):
+    def test_the_spelling_of_the_place_leads_to_its_product_and_a_spend_writes_none(self):
         line = self.line(self.save(item_name="Claude Max", store_name="Anthropic"))
-        alias = ProductAlias.objects.get()
-        self.assertEqual((alias.merchant_id, alias.name_key, alias.store_item_code, alias.product_id),
-                         (line.receipt.store.merchant_id, "claude max", "", line.product_id))
+        self.assertFalse(ProductAlias.objects.exists())  # «Что купили» — личный текст: написанием не становится
         renamed = make_product(line.product.generic, "Подписка Claude Max 20x")
-        ProductAlias.objects.filter(pk=alias.pk).update(product=renamed)
+        ProductAlias.objects.create(merchant_id=line.receipt.store.merchant_id, product=renamed, name_key="claude max",
+                                    raw_name="CLAUDE MAX")  # как запомнил бы импорт чека с фото
         self.assertEqual(self.line(self.save(item_name="CLAUDE MAX", store_name="Anthropic")).product_id, renamed.pk)
         # Без места написаний нет: товар — по названию.
         self.assertEqual(self.line(self.save(item_name="Claude Max")).product_id, line.product_id)
+        self.assertEqual(line.product.scope, f"user:{local_user().pk}")
 
     def test_a_merged_duplicate_leads_to_the_kept_product(self):
         generic = GenericProduct.objects.create(name="Демо-подписка", category=self.subs, base_unit="pcs")
@@ -257,20 +259,109 @@ class ManualPriceTests(NamedMixin, TestCase):
 
 
 @tag("integration")
-class ManualPriceProjectionTests(TwoUsers, NamedMixin, TestCase):
-    """Чужая названная покупка: цена, день и признак ``manual`` общие, пять полей чека — ``null``."""
+class PrivatePurchaseTests(TwoUsers, NamedMixin, TestCase):
+    """«Что купили» — личный текст: товар только из чужих трат вручную и их цены другой семье не видны нигде.
 
-    def test_foreign_manual_point(self):
-        with accounts_mode():
-            receipt_id = self.save(self.client_of(self.first), item_name="Подписка Claude Max 20x")
-            product = ReceiptLine.objects.get(receipt_id=receipt_id).product
-            for account, own in ((self.first, True), (self.second, False)):
-                with self.subTest(account=account.username):
-                    [point] = self.client_of(account).get(f"/api/products/{product.pk}/prices/").json()["results"]
-                    self.assertEqual((point["own"], point["manual"], point["store"], point["paid_unit_price"]),
-                                     (own, True, None, "225.0000"))
-                    private = [point[key] for key in ("observed_at", "quantity", "discount_amount", "receipt_id", "position")]
-                    self.assertEqual(all(value is None for value in private), not own)
-                    [listed] = self.client_of(account).get(f"/api/products/?q={product.name}").json()["results"]
-                    self.assertEqual(listed["last_observed_at"] is None, not own)
-                    self.assertTrue(listed["prices"][0]["last"]["manual"])
+    ``first`` и ``second`` — разные «семьи» (без общей семьи каждый видит только своё); модератор — третий.
+    """
+
+    def setUp(self):
+        self.mode = accounts_mode()
+        self.mode.enable()
+        self.addCleanup(self.mode.disable)
+        self.private = self.line(self.save(self.client_of(self.first), item_name="Психотерапевт", total="30000",
+                                           currency="KZT")).product
+
+    def get(self, account, url):
+        return self.client_of(account).get(url)
+
+    def test_a_private_product_is_not_in_the_catalogue_of_another_family(self):
+        pk = self.private.pk
+        for account, seen in ((self.first, True), (self.second, False), (self.moderator, False)):
+            with self.subTest(account=account.username):
+                found = self.get(account, "/api/products/?q=Психотерапевт").json()["results"]
+                self.assertEqual([item["id"] for item in found], [pk] if seen else [])
+                self.assertEqual(self.get(account, "/api/products/").json()["count"], 1 if seen else 0)
+                for url in (f"/api/products/{pk}/", f"/api/products/{pk}/prices/", f"/api/products/{pk}/prices/series/",
+                            f"/api/products/{pk}/prices/summary/", f"/api/products/{pk}/alternatives/"):
+                    self.assertEqual(self.get(account, url).status_code, 200 if seen else 404, url)
+                generic = self.private.generic
+                [row] = [item for item in self.get(account, "/api/categories/").json()["results"]
+                         if item["id"] == generic.category_id]
+                self.assertEqual(row["products_count"], 1 if seen else 0)
+                self.assertEqual(self.get(account, f"/api/generic-products/{generic.pk}/").json()["products_count"],
+                                 1 if seen else 0)
+                comparison = self.get(account, f"/api/generic-products/{generic.pk}/comparison/").json()
+                self.assertEqual([item["product"]["id"] for item in comparison["results"]], [pk] if seen else [])
+
+    def test_a_shared_product_shows_no_foreign_manual_point(self):
+        store = samples.lidl_store()
+        generic = GenericProduct.objects.create(name="Демо-молоко", category=self.subs, base_unit="pcs")
+        milk = make_product(generic, "Молоко Демо 1 л")
+        receipt = make_receipt(store, "EUR", date(2026, 9, 1), owner=self.second, total=D("1.00"))
+        make_line(receipt, product=milk, raw_name="MILCH", unit_price=D("1.0000"), amount=D("1.00"))
+        own = self.save(self.client_of(self.first), item_name="молоко демо 1 л", total="3", currency="EUR")
+        self.assertEqual(self.line(own).product_id, milk.pk)
+        for account, manual_points in ((self.first, [True]), (self.second, [])):
+            with self.subTest(account=account.username):
+                points = self.get(account, f"/api/products/{milk.pk}/prices/").json()["results"]
+                self.assertEqual([point["manual"] for point in points if point["manual"]], manual_points)
+                self.assertEqual(len(points), 1 + len(manual_points))
+                [product] = self.get(account, "/api/products/?q=Молоко").json()["results"]
+                self.assertEqual([price["last"]["manual"] for price in product["prices"]], [False, *manual_points])
+                series = self.get(account, f"/api/products/{milk.pk}/prices/series/").json()["series"]
+                self.assertEqual([line["manual"] for line in series], [False, *manual_points])
+                summary = self.get(account, f"/api/products/{milk.pk}/prices/summary/?group_by=store").json()
+                self.assertEqual(sum(group["total"]["count"] for group in summary["groups"]), 1 + len(manual_points))
+                offers = self.get(account, f"/api/products/{milk.pk}/alternatives/").json()["results"][0]["offers"]
+                self.assertEqual([offer["last"]["manual"] for offer in offers], [False, *manual_points])
+                card = self.get(account, f"/api/products/{milk.pk}/").json()
+                self.assertEqual([item["id"] for item in card["stores"]], [store.pk])
+
+    def test_a_namesake_of_another_family_gets_a_product_of_its_own(self):
+        theirs = self.line(self.save(self.client_of(self.second), item_name="Психотерапевт", total="25000",
+                                     currency="KZT")).product
+        self.assertNotEqual(theirs.pk, self.private.pk)
+        self.assertEqual((theirs.name, theirs.scope, self.private.scope),
+                         ("Психотерапевт", f"user:{self.second.pk}", f"user:{self.first.pk}"))
+        for account, product in ((self.first, self.private), (self.second, theirs)):
+            with self.subTest(account=account.username):
+                found = self.get(account, "/api/products/?q=Психотерапевт").json()["results"]
+                self.assertEqual([item["id"] for item in found], [product.pk])
+                points = self.get(account, f"/api/products/{product.pk}/prices/").json()["results"]
+                self.assertEqual([point["own"] for point in points], [True])
+        # Свой тёзка находится: вторая трата той же семьи — тот же товар.
+        again = self.line(self.save(self.client_of(self.second), item_name="психотерапевт", currency="KZT"))
+        self.assertEqual(again.product_id, theirs.pk)
+
+    def test_the_family_sees_its_manual_points(self):
+        family = Household.objects.create(name="Демо-семья")
+        Membership.objects.create(user=self.first, household=family, role="head")
+        Membership.objects.create(user=self.second, household=family)
+        member_spend = self.save(self.client_of(self.second), item_name="Психотерапевт", total="35000", currency="KZT")
+        self.assertEqual(self.line(member_spend).product_id, self.private.pk)  # член семьи видит товар главного
+        for account in (self.first, self.second):
+            with self.subTest(account=account.username):
+                points = self.get(account, f"/api/products/{self.private.pk}/prices/").json()["results"]
+                self.assertEqual([(point["paid_unit_price"], point["manual"]) for point in points],
+                                 [("30000.0000", True), ("35000.0000", True)])
+
+    def test_duplicates_and_suggestions_do_not_show_a_private_product(self):
+        theirs = self.line(self.save(self.client_of(self.second), item_name="Психотерапевт", currency="KZT")).product
+        proposals = merges.detect(dry_run=True).proposals
+        self.assertFalse([proposal for proposal in proposals
+                          if {self.private.pk, theirs.pk} & set(proposal.get("product_ids", ()))])
+        shared = make_product(self.private.generic, "Психотерапевт (каталог)")
+        group = self.pending_merge(shared, self.private)
+        self.assertEqual(self.get(self.moderator, "/api/product-merges/").json()["count"], 0)
+        self.assertEqual(self.get(self.moderator, f"/api/product-merges/{group.pk}/").status_code, 404)
+        self.assertEqual(self.get(self.first, f"/api/product-merges/{group.pk}/").status_code, 200)
+        record = ProductClassification.objects.create(
+            product_ref=self.private.pk, active_product=self.private, product_name=self.private.name,
+            previous_generic_ref=self.private.generic_id, previous_generic_name="Не разобрано",
+            previous_generic_base_unit="pcs", suggested_generic_ref=self.private.generic_id,
+            suggested_generic_name="Психотерапия", suggested_base_unit="pcs", classifier_version=1, provider="fake",
+            prompt_version="v1", schema_version="v1")
+        self.assertEqual(self.get(self.second, "/api/product-classifications/").json()["count"], 0)
+        self.assertEqual(self.get(self.second, f"/api/product-classifications/{record.pk}/").status_code, 404)
+        self.assertEqual(self.get(self.first, "/api/product-classifications/").json()["count"], 1)

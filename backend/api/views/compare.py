@@ -6,11 +6,11 @@ from rest_framework.response import Response
 from api import common
 from api.pagination import COMPARE_MAX_PAGE_SIZE, COMPARE_PAGE_SIZE, paginate
 from api.params import MAX_ID, Params
+from api.projection import seen_products
 from api.rates import parse_conversion
 from catalog.models import GenericProduct, Product
 from catalog.units import Unit
 from config.exceptions import ObjectNotFound
-from merges.visibility import visible
 from receipts.decimal_math import change_percent, decimal_mean
 from receipts.models import ReceiptLine
 from receipts.prices import PriceGroup, is_manual, last_prices, price_groups
@@ -83,7 +83,7 @@ def _diff(value, reference):
     return common.percent(change_percent(reference, value))
 
 
-def _comparison(params, generic, base, products):
+def _comparison(params, generic, base, products, request):
     """Тело ответа сравнения товаров ``products``; ``base`` — исходный товар либо ``None``.
 
     Число запросов не зависит от числа товаров: состав набора, сводка групп и
@@ -96,7 +96,8 @@ def _comparison(params, generic, base, products):
     conversion = parse_conversion(params)
     page_params = params.page(default=COMPARE_PAGE_SIZE, maximum=COMPARE_MAX_PAGE_SIZE)
     params.check()
-    filters = dict(countries=countries, date_from=date_from, date_to=date_to)
+    # Траты вручную — только видимые запросу (receipts.prices.observation_q).
+    filters = dict(countries=countries, date_from=date_from, date_to=date_to, request=request)
     unit = generic.base_unit
     base_id = base and base.pk
 
@@ -248,13 +249,13 @@ class ProductAlternativesView(ReadOnlyAPIView):
     """``GET /api/products/{id}/alternatives/`` — исходный товар и его альтернативы."""
 
     def get(self, request, pk):
-        base = _get(visible(Product.objects.select_related("generic")), pk)
+        base = _get(seen_products(request, Product.objects.select_related("generic")), pk)
         params = Params(request.query_params)
         if params.choice("scope", SCOPES, default="generic") == "category":
-            products = visible(Product.objects.filter(generic__category_id=base.generic.category_id))
+            products = seen_products(request, Product.objects.filter(generic__category_id=base.generic.category_id))
         else:
-            products = visible(Product.objects.filter(generic_id=base.generic_id))
-        return Response(_comparison(params, base.generic, base, products))
+            products = seen_products(request, Product.objects.filter(generic_id=base.generic_id))
+        return Response(_comparison(params, base.generic, base, products, request))
 
 
 class GenericComparisonView(ReadOnlyAPIView):
@@ -262,4 +263,5 @@ class GenericComparisonView(ReadOnlyAPIView):
 
     def get(self, request, pk):
         generic = _get(GenericProduct.objects.all(), pk)
-        return Response(_comparison(Params(request.query_params), generic, None, visible(generic.products.all())))
+        return Response(_comparison(Params(request.query_params), generic, None,
+                                    seen_products(request, generic.products.all()), request))

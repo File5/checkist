@@ -21,9 +21,10 @@ import re
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from decimal import Decimal
+from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
-from django.db import connection, transaction
+from django.db import IntegrityError, connection, transaction
 from django.db.models import Count, F, Q
 from django.utils import timezone
 
@@ -260,20 +261,25 @@ def find_or_create_store(name, currency):
     )
 
 
-def find_or_create_products(names, store=None):
-    """Товары названных покупок: ``{name_key(название): Product | None}``.
+def find_or_create_products(names, owner, store=None):
+    """Товары названных покупок траты владельца ``owner``: ``{name_key(название): Product | None}``.
 
     Правило импорта чеков (``recognition.resolution.resolve_product``) для строки без кода, штрихкода,
     бренда и фасовки: написание продавца места (``ProductAlias``) → товар с тем же нормализованным
-    названием (``receipts.dedup.name_key``) → новый товар в «Не разобрано»; у места запоминается
-    написание. Два разных товара с таким названием — неоднозначно, товара нет (как у импорта).
-    Склеенный дубль ведёт к оставляемому: поглощённый ожидающим слиянием товар и название товара,
-    поглощённого подтверждённым слиянием (``merges``), отвечают оставляемым.
+    названием (``receipts.dedup.name_key``) → новый товар в «Не разобрано». Два разных товара с таким
+    названием — неоднозначно, товара нет (как у импорта). Склеенный дубль ведёт к оставляемому:
+    поглощённый ожидающим слиянием товар и название товара, поглощённого подтверждённым слиянием
+    (``merges``), отвечают оставляемым.
+
+    Название — личный текст человека: ищутся только товары, которые ``owner`` видит
+    (``receipts.prices.private_products``), — чужой личный товар-тёзка не находится, вместо него новый
+    (``Product.scope`` = «user:<id>», тёзки разных людей уживаются); написание у места не запоминается.
 
     Вызывается в транзакции записи: берёт мьютекс импорта (``recognition.importer.IMPORT_LOCK``), чтобы
     не пересекаться с импортом и слияниями дублей.
     """
     from merges.models import ProductMerge, ProductMergeMember
+    from receipts.prices import private_products
     from recognition.importer import IMPORT_LOCK  # lazy: the importer imports receipts
 
     spelled = {}
@@ -315,27 +321,29 @@ def find_or_create_products(names, store=None):
         return pk
 
     ids = {key: {survivor(pk) for pk in pks} for key, pks in found.items()}
-    existing = Product.objects.in_bulk({pk for pks in ids.values() for pk in pks})
+    existing = (Product.objects.exclude(pk__in=private_products(SimpleNamespace(user=owner)))
+                .in_bulk({pk for pks in ids.values() for pk in pks}))
     result = {}
     for key, name in spelled.items():
         products = [existing[pk] for pk in ids[key] if pk in existing]
-        if len(products) > 1:
-            result[key] = None
-            continue
-        product = products[0] if products else _new_product(name)
-        if merchant_id is not None:
-            ProductAlias.objects.get_or_create(merchant_id=merchant_id, name_key=key, store_item_code="",
-                                               defaults={"product": product, "raw_name": name})
-        result[key] = product
+        result[key] = None if len(products) > 1 else products[0] if products else _new_product(name, owner)
     return result
 
 
-def _new_product(name):
-    """Новый товар в «Не разобрано», как у импорта: категорию и обобщённый продукт потом предложит ``classification``."""
+def _new_product(name, owner):
+    """Новый товар в «Не разобрано», как у импорта: категорию и обобщённый продукт потом предложит ``classification``.
+
+    ``scope`` — «user:<id>» владельца траты: невидимый ему чужой товар-тёзка уникальности не мешает, а свой товар-тёзку
+    он бы нашёл."""
     category, _ = Category.objects.get_or_create(parent=None, name=UNASSIGNED)
     generic, _ = GenericProduct.objects.get_or_create(
         name__iexact=UNASSIGNED, defaults={"name": UNASSIGNED, "category": category, "base_unit": BaseUnit.PCS})
-    return Product.objects.create(generic=generic, name=name)
+    scope = f"user:{owner.pk}"
+    try:
+        with transaction.atomic():
+            return Product.objects.create(generic=generic, name=name, scope=scope)
+    except IntegrityError:  # свой тёзка, которого владелец сейчас не видит (его трата скрыта главным)
+        return Product.objects.get(brand=None, name=name, package_quantity=None, package_unit="", scope=scope)
 
 
 def _zone(store):
@@ -370,7 +378,7 @@ def _rows(lines, total, category, names, item_name=""):
 def _write_lines(receipt, rows):
     """Строки заново; названные — с товаром каталога (``find_or_create_products``)."""
     receipt.lines.all().delete()
-    products = find_or_create_products([row.name for row in rows if row.named], receipt.store)
+    products = find_or_create_products([row.name for row in rows if row.named], receipt.owner, receipt.store)
     with price_context():
         ReceiptLine.objects.bulk_create([
             ReceiptLine(

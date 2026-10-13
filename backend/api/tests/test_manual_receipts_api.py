@@ -4,6 +4,7 @@
 """
 from datetime import date, datetime, timezone as dt_timezone
 from decimal import Decimal
+from types import SimpleNamespace
 
 from django.db import IntegrityError, transaction
 from django.test import TestCase, override_settings, tag
@@ -345,11 +346,15 @@ class ManualStatsTests(ManualMixin, TestCase):
 
     def test_only_named_manual_lines_are_price_observations(self):
         # Строка «<категория>» без товара наблюдением не бывает; названная покупка — с признаком manual.
-        self.assertEqual(list(price_history(product=self.bun).values_list("receipt__source", flat=True)), ["photo"])
+        request = SimpleNamespace(user=local_user())
+        self.assertEqual(list(price_history(product=self.bun, request=request).values_list("receipt__source", flat=True)),
+                         ["photo"])
         self.post(self.client, {"total": "4", "category": self.food.pk, "currency": "EUR", "purchased_on": "2026-09-03",
                                 "item_name": "Демо-булка 1 шт"})
-        self.assertEqual(list(price_history(product=self.bun).values_list("receipt__source", flat=True)),
+        self.assertEqual(list(price_history(product=self.bun, request=request).values_list("receipt__source", flat=True)),
                          ["photo", "manual"])
+        # Без запроса (внутренние расчёты) ручных наблюдений нет: название и цена — личные.
+        self.assertEqual(list(price_history(product=self.bun).values_list("receipt__source", flat=True)), ["photo"])
         points = self.client.get(f"/api/products/{self.bun.pk}/prices/").json()["results"]
         self.assertEqual([(point["paid_unit_price"], point["manual"], point["store"] is None) for point in points],
                          [("3.0000", False, False), ("4.0000", True, True)])

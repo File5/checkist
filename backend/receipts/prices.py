@@ -2,10 +2,12 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from django.db.models import (
-    Avg, Case, CharField, Count, DecimalField, ExpressionWrapper, F, Max, Min, Q, Value, When,
+    Avg, Case, CharField, Count, DecimalField, Exists, ExpressionWrapper, F, Max, Min, OuterRef, Q, Value, When,
 )
 from django.db.models.functions import Round
 
+from accounts.access import visible_receipts_q
+from catalog.models import Product
 from catalog.units import Unit, to_base
 from receipts.decimal_math import round_decimal
 from receipts.models import Receipt, ReceiptLine
@@ -26,24 +28,45 @@ def _price(expression):
     return Round(ExpressionWrapper(expression, output_field=_PRICE), PRICE_DECIMAL_PLACES)
 
 
-def observation_q(prefix=""):
+def observation_q(prefix="", request=None):
     """Условие «строка — наблюдение цены»: товар, положительное количество, чек продажи.
 
-    Чек с фото — любая такая строка; трата, внесённая вручную (``source=manual``), — только
-    названная покупка, связанная с товаром каталога (``receipts.manual``, 2026-10-13): её цена —
-    введённая человеком (у позиции — сумма на количество, у «Что купили» — вся сумма), признак
-    ``manual`` в ответах API. Магазина у такой траты может не быть (``store`` NULL — «Без места»).
+    Чек с фото — любая такая строка, её цена общая для всех (проекция «своё / чужое» —
+    ``api.projection``). Трата, внесённая вручную (``source=manual``), — только названная покупка,
+    связанная с товаром каталога (``receipts.manual``, 2026-10-13), и только для того, кому видна сама
+    трата (``visible_receipts_q(request)``): название и цена — личные, чужих ручных наблюдений нет нигде.
+    Без ``request`` (внутренние расчёты) ручных наблюдений нет вовсе. Цена такой строки — введённая
+    человеком, признак ``manual`` в ответах API; магазина может не быть (``store`` NULL — «Без места»).
 
     ``prefix`` — путь до ``ReceiptLine`` от другой модели, например
     ``"receipt_lines__"`` для запросов от ``catalog.Product``.
     """
+    seen = Q(**{f"{prefix}receipt__source": Receipt.Source.PHOTO})
+    if request is not None:
+        seen |= Q(**{f"{prefix}product__isnull": False}) & visible_receipts_q(request, f"{prefix}receipt__")
     return Q(**{
         f"{prefix}kind": ReceiptLine.Kind.PRODUCT,
         f"{prefix}quantity__gt": 0,
         f"{prefix}receipt__operation": Receipt.Operation.SALE,
         # Скрытый платёж не наблюдение цены: он пропадает у всех и ни во что не входит.
         f"{prefix}receipt__hidden": False,
-    }) & (Q(**{f"{prefix}receipt__source": Receipt.Source.PHOTO}) | Q(**{f"{prefix}product__isnull": False}))
+    }) & seen
+
+
+def private_products(request=None):
+    """Подзапрос ``id`` товаров, которых запрос не видит: у товара есть строки трат вручную, и ни одна его строка
+    не из чека с фото и не из траты, видимой запросу (``visible_receipts_q``). Без ``request`` — товары, у которых
+    есть лишь строки трат вручную (поиск дублей их не трогает). Товар без строк виден всем, как прежде.
+
+    Название такого товара — личный текст человека («Что купили»): каталог, 13 GET, группы дублей, предположения
+    категорий и поиск товара при сохранении траты (``receipts.manual``) его не показывают и не находят.
+    """
+    lines = ReceiptLine.objects.filter(product=OuterRef("pk"))
+    seen = Q(receipt__source=Receipt.Source.PHOTO)
+    if request is not None:
+        seen |= visible_receipts_q(request, "receipt__")
+    return (Product.objects.filter(Exists(lines.filter(receipt__source=Receipt.Source.MANUAL)))
+            .exclude(Exists(lines.filter(seen))).values("pk"))
 
 
 def is_manual(line):
@@ -60,7 +83,7 @@ def comparable_q():
     return Q(normalized_unit=F("product__generic__base_unit"))
 
 
-def price_history(*, product=None, generic=None, store=None, country=None, date_from=None, date_to=None):
+def price_history(*, product=None, generic=None, store=None, country=None, date_from=None, date_to=None, request=None):
     """История цен: строки чеков с ценой за единицу, по возрастанию момента покупки.
 
     Отдельной таблицы наблюдений нет — цена выводится из строк. В выборке только
@@ -89,9 +112,9 @@ def price_history(*, product=None, generic=None, store=None, country=None, date_
       ``GenericProduct.base_unit`` здесь не проверяется — см. ``comparable_q``.
 
     Скидка на весь чек (``ReceiptDiscount.line IS NULL``) по строкам не
-    распределяется и в цену не входит.
+    распределяется и в цену не входит. ``request`` — чьи траты вручную видны (``observation_q``).
     """
-    lines = ReceiptLine.objects.filter(observation_q())
+    lines = ReceiptLine.objects.filter(observation_q(request=request))
     if product is not None:
         lines = lines.filter(product=product)
     if generic is not None:
@@ -155,8 +178,8 @@ class PriceGroup:
     last: ReceiptLine | None = None
 
 
-def _observations(products, *, countries=None, currency=None, store=None, date_from=None, date_to=None):
-    lines = price_history(store=store, date_from=date_from, date_to=date_to).filter(product__in=products)
+def _observations(products, *, countries=None, currency=None, store=None, date_from=None, date_to=None, request=None):
+    lines = price_history(store=store, date_from=date_from, date_to=date_to, request=request).filter(product__in=products)
     if countries is not None:
         lines = lines.filter(receipt__store__country__in=countries)
     if currency is not None:
@@ -164,7 +187,7 @@ def _observations(products, *, countries=None, currency=None, store=None, date_f
     return lines
 
 
-def price_groups(products, *, countries=None, currency=None, store=None, date_from=None, date_to=None):
+def price_groups(products, *, countries=None, currency=None, store=None, date_from=None, date_to=None, request=None):
     """Число наблюдений, мин / макс / средняя цена за базовую единицу по группам.
 
     Один сгруппированный запрос на весь набор ``products`` (объекты или ключи), группа —
@@ -180,6 +203,7 @@ def price_groups(products, *, countries=None, currency=None, store=None, date_fr
     rows = (
         _observations(
             products, countries=countries, currency=currency, store=store, date_from=date_from, date_to=date_to,
+            request=request,
         )
         .order_by()
         .values("product_id", "receipt__store__country_id", "currency_code")
@@ -209,7 +233,7 @@ def price_groups(products, *, countries=None, currency=None, store=None, date_fr
 
 def last_prices(
     products, *, countries=None, currency=None, store=None, date_from=None, date_to=None, comparable_only=False,
-    own=None,
+    own=None, request=None,
 ):
     """Последнее наблюдение каждой группы «товар, страна магазина, валюта чека».
 
@@ -228,6 +252,7 @@ def last_prices(
         return []
     lines = _observations(
         products, countries=countries, currency=currency, store=store, date_from=date_from, date_to=date_to,
+        request=request,
     )
     if comparable_only:
         lines = lines.filter(comparable_q())
@@ -242,7 +267,7 @@ def last_prices(
 
 
 def price_summary(
-    products, *, countries=None, currency=None, store=None, date_from=None, date_to=None, own=None,
+    products, *, countries=None, currency=None, store=None, date_from=None, date_to=None, own=None, request=None,
 ):
     """Сводка цен набора товаров: ``{product_id: [PriceGroup, ...]}``.
 
@@ -255,7 +280,8 @@ def price_summary(
     ``own`` — см. ``last_prices``: признак «своё» у ``last`` каждой группы (``last.own``);
     счётчики и агрегаты групп считаются по всем наблюдениям.
     """
-    filters = dict(countries=countries, currency=currency, store=store, date_from=date_from, date_to=date_to)
+    filters = dict(countries=countries, currency=currency, store=store, date_from=date_from, date_to=date_to,
+                   request=request)
     products = list(products)
     groups = price_groups(products, **filters)
     if not groups:

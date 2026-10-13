@@ -1033,12 +1033,17 @@ docker compose -p checkist_dev cp postgres:/tmp/checkist.dump ./checkist.dump
 - Схема прежняя, миграций нет. `ReceiptLine.product` у траты вручную теперь заполнен у названной покупки: строки «Что
   купили» (`item_name`) и каждой позиции; строка «<категория>» (трата без названия — выписки, регулярные платежи,
   «Продукты 12 000») остаётся `product=NULL`. Пишет только `receipts.manual` (`find_or_create_products`, правило — как
-  у импорта: написание продавца места → `name_key` названия → новый `Product` в «Не разобрано»; поглощённый слиянием —
-  оставляемый). У траты с местом добавляется `ProductAlias` продавца с `store_item_code=''`.
+  у импорта среди товаров, видимых владельцу траты: написание продавца места → `name_key` названия → новый `Product` в
+  «Не разобрано» со `scope = "user:<id>"`; поглощённый слиянием — оставляемый). Написаний трата вручную не создаёт.
+- `catalog.Product.scope` (миграция `catalog.0004_product_scope`): пусто — общий товар, `user:<id>` — товар из траты
+  вручную; поле входит в уникальность `catalog_product_brand_name_package_uniq`. Откат — `migrate catalog
+  0003_service_charge_category` (отказывает, пока есть товары, различающиеся только `scope`).
+- Личное название: `receipts.prices.observation_q(prefix, request)` пускает строку траты вручную только видимую запросу,
+  `private_products(request)` — товары только из чужих трат вручную; API скрывает их (`api.projection.seen_products`).
 - `ReceiptLine.category` важнее категории товара (`receipts.spending.line_category`, `category_spends.line_category`,
   `trends`, `budget.dashboard`, список «Трат», выгрузка): у строки чека с фото категории нет (кроме обслуживания без
   товара), поэтому прежние суммы не меняются.
 - `receipts.prices.observation_q` принимает строки трат вручную с товаром; `price_history` аннотирует `country_code`
   (`NULL` у траты без места), `is_manual(line)` — признак ответа API.
-- Старые траты не меняются; откат — возврат кода: строки с товаром у трат вручную безвредны для прежнего кода, кроме
-  того, что прежний `observation_q` их не видит.
+- Старые траты не меняются; откат кода — после отката `catalog.0004`: строки с товаром у трат вручную безвредны для
+  прежнего кода, прежний `observation_q` их не видит.

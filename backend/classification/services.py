@@ -1278,9 +1278,13 @@ def cancel_pending():
 # --- Reading --------------------------------------------------------------------------------------
 
 
-def get_record(record_id):
+def get_record(record_id, condition=None):
+    """Record by id; ``condition`` — an extra ``Q`` the record must match (the API's visibility), else not found."""
+    queryset = ProductClassification.objects.select_related("run")
+    if condition is not None:
+        queryset = queryset.filter(condition)
     try:
-        return ProductClassification.objects.select_related("run").get(pk=record_id)
+        return queryset.get(pk=record_id)
     except (ProductClassification.DoesNotExist, ValueError, TypeError):
         raise ClassificationNotFound() from None
 
