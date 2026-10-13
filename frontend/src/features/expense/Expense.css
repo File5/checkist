@@ -129,6 +129,9 @@ textarea.expense-row-input { resize: none; field-sizing: content; max-height: 12
 .expense-line-amount-field { grid-area: amount; }
 .expense-line-category-field { grid-area: category; }
 .expense-line-remove { grid-area: remove; }
+/* «Обслуживание N%» (2026-10-13): the percent in place of quantity · unit · price · discount; «＋ Обслуживание %» under the list. */
+.expense-line-percent-field { grid-column: quantity-start / discount-end; grid-row: quantity-start / quantity-end; }
+.expense-add-service { align-self: flex-start; margin: 8px 0 12px; }
 .expense-line-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .expense-line-label { color: var(--ck-text-muted); font-size: var(--ck-text-2xs); font-weight: 600; white-space: nowrap; }
 .expense-line-input { width: 100%; min-width: 0; height: 48px; min-height: 48px; padding: 0 10px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-surface); color: var(--ck-text); font-size: var(--ck-text-base); }
@@ -201,4 +204,5 @@ textarea.expense-row-input { resize: none; field-sizing: content; max-height: 12
   /* An unfolded line on a phone: the name, then quantity · unit · price, then discount · sum, then category. */
   .expense-line-fields { grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr) minmax(0, 1.3fr); grid-template-areas: "name name name" "quantity unit price" "discount amount amount" "category category category" "remove remove remove"; }
   .expense-line-remove { justify-self: start; width: auto; padding: 0 12px; border-radius: var(--ck-radius-pill); }
+  .expense-line-percent-field { grid-area: discount; }
 }

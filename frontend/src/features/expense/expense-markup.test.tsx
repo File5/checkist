@@ -8,7 +8,8 @@ import { ReceiptHeader, ReceiptLines } from '../receipts/ReceiptContent'
 import { ReceiptView } from '../receipts/ReceiptPage'
 import type { BlockRequest } from '../receipts/ReceiptPage'
 import { ReceiptList } from '../receipts/ReceiptsPage'
-import { emptyDraft, messages, newLine } from './expense-form'
+import { emptyDraft, messages, newLine, spendAsLine } from './expense-form'
+import { serviceLine } from './line-draft'
 import type { ExpenseDraft } from './expense-form'
 import { ExpenseForm } from './ExpensePage'
 import { DeleteSpend, ManualSpendActions } from './ManualSpendActions'
@@ -30,6 +31,19 @@ const loaded = <T,>(data: T): BlockRequest<T> => ({ state: { kind: 'ok', data },
 const pageOf = <T,>(results: T[]): Page<T> => ({ count: results.length, page: 1, page_size: 50, pages: 1, results })
 
 describe('«Добавить трату» form (Vitest/SSR, not browser visual acceptance)', () => {
+  it('offers «＋ Обслуживание %» under the positions until there is one; its line has a percent, not a price', () => {
+    const plainForm = form(emptyDraft('KZT', '2026-10-12'))
+    expect(plainForm).toContain('<button type="button" class="expense-add-line expense-add-service"><span aria-hidden="true">+</span> Обслуживание %</button>')
+    const served = form({ ...emptyDraft('KZT', '2026-10-12'), lines: [{ ...newLine(), name: 'Паста', amount: '3580' }, { ...serviceLine(null), amount: '358' }] })
+    expect(served).not.toContain('expense-add-service')
+    expect(served).toContain('<span class="expense-line-label">Процент</span>')
+    expect(served.match(/expense-line-price-field/g)).toHaveLength(1)
+  })
+  it('turns the typed sum of a spend without positions into its first position', () => {
+    expect(spendAsLine({ ...emptyDraft('KZT', '2026-10-12'), amount: '3 580', item: 'Ужин' })).toMatchObject({ name: 'Ужин', amount: '3580', price: '3580' })
+    expect(spendAsLine({ ...emptyDraft('KZT', '2026-10-12'), amount: '1200+350' })).toMatchObject({ name: 'Счёт', amount: '1550' })
+    expect(spendAsLine(emptyDraft('KZT', '2026-10-12'))).toBeUndefined()
+  })
   it('opens on a big decimal amount in a card, the currency pill, wrapping chips, today and the save bar', () => {
     const html = form(emptyDraft('KZT', '2026-10-12'))
     expect(html).toContain('<section class="expense-card expense-amount"><label for="expense-amount" class="expense-label">Сумма</label>')

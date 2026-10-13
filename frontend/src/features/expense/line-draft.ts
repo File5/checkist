@@ -28,6 +28,9 @@ export type LineDraft = {
   lead?: 'price' | 'amount'
   /** A saved line read with a zero or negative sum (a returned deposit): it keeps its sign. */
   signed?: boolean
+  /** «＋ Обслуживание %» (2026-10-13): the percent typed; the sum is that percent of the other positions (`withService`).
+   * A typed sum makes it an ordinary position. */
+  service?: string
 }
 export type LineField = 'name' | 'quantity' | 'price' | 'discount' | 'amount'
 export type LineErrors = Partial<Record<LineField, string>>
@@ -104,6 +107,37 @@ export function sumOf(line: LineDraft): bigint | undefined {
   }
   const value = scaled(line.amount, MONEY, line.signed)
   return value !== undefined && (value > 0n || line.signed) ? value : undefined
+}
+
+export const SERVICE_NAME = 'Обслуживание'
+export const SERVICE_PERCENT = '10'
+/** The name the line was given, «Обслуживание 10%»: it follows the percent; a name typed by hand stays. */
+const SERVICE_AUTO_NAME = /^Обслуживание(?: [0-9]+(?:[.,][0-9]+)?%)?$/
+const serviceName = (percent: string) => `${SERVICE_NAME} ${percent.trim().replace('.', ',')}%`
+
+/** A new «Обслуживание 10%» line in `category` («Обслуживание и чаевые», if the catalog has it); its sum comes from
+ * `withService` over the other positions. */
+export function serviceLine(category: number | null, percent = SERVICE_PERCENT): LineDraft {
+  return { ...newLine(), name: serviceName(percent), category, service: percent }
+}
+
+/**
+ * The sums of the «Обслуживание N%» lines: N % of the other positions, half up to a tiyn — the service of a café is
+ * charged on top of the bill. A percent that is not a number leaves the line as it is.
+ */
+export function withService(lines: LineDraft[]): LineDraft[] {
+  if (!lines.some((line) => line.service !== undefined)) return lines
+  const base = lines.reduce((total, line) => line.service === undefined ? total + (sumOf(line) ?? 0n) : total, 0n)
+  return lines.map((line) => {
+    if (line.service === undefined) return line
+    const percent = scaled(line.service, MONEY, false, 3)
+    if (percent === undefined) return line
+    const cents = base > 0n ? (base * percent + 5000n) / 10000n : 0n
+    const name = SERVICE_AUTO_NAME.test(line.name.trim()) ? serviceName(line.service) : line.name
+    const amount = cents > 0n ? moneyText(cents) : ''
+    if (amount === line.amount && name === line.name) return line
+    return { ...line, name, amount, price: amount ? decimalText(cents * 100n, PRICE) : '', quantity: '1', discount: '', lead: undefined }
+  })
 }
 
 /** quantity × price − discount, in cents. */
@@ -220,6 +254,7 @@ export function lineSummary(line: LineDraft, currency: string): { title: string;
   const parts = single || quantity === undefined || price === undefined ? []
     : [`${formatQuantity(decimalText(quantity, QUANTITY), line.unit)} × ${formatPrice(decimalText(price, PRICE), currency)}`]
   if (discount) parts.push(`скидка ${formatMoney(decimalText(discount, MONEY), currency)}`)
+  if (line.service !== undefined) parts.splice(0, parts.length, `${line.service.trim().replace('.', ',')} % от позиций`)
   return {
     title: line.name.trim() || 'Без названия', detail: parts.join(' · '),
     sum: sum === undefined ? '—' : formatMoney(decimalText(sum, MONEY), currency),

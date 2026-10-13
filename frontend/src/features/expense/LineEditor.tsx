@@ -3,7 +3,7 @@ import type { Category } from '../../api/types'
 import { formatMoney } from '../../lib/money'
 import { categoryTree, LINES_MAX, sentIndexes } from './expense-form'
 import type { ExpenseErrors } from './expense-form'
-import { editLine, lineSummary, newLine, settleLine, UNIT_LABELS, UNITS } from './line-draft'
+import { editLine, lineSummary, newLine, serviceLine, settleLine, UNIT_LABELS, UNITS, withService } from './line-draft'
 import type { LineDraft, LineField } from './line-draft'
 
 export type LineEditorProps = {
@@ -15,6 +15,13 @@ export type LineEditorProps = {
   defaultCategory: string
   /** Discounts of the whole receipt, as the API decimal: shown under the lines, already taken from the total. */
   extraDiscount?: string
+  /** The spend typed without positions as its first position, for «＋ Обслуживание %»; `undefined` — no sum typed. */
+  asLine?: () => LineDraft | undefined
+}
+
+/** «Кафе и рестораны» › «Обслуживание и чаевые» of the catalog (the migration `catalog.0003`), if it is there. */
+function serviceCategory(chips: Category[]): number | null {
+  return chips.find((category) => category.name === 'Обслуживание и чаевые' && category.path[0]?.name === 'Кафе и рестораны')?.id ?? null
 }
 
 const errorId = (name: string) => `expense-${name.replaceAll('.', '-')}-error`
@@ -29,20 +36,26 @@ function Chevron() {
  * (one form for every spend, 2026-10-13). A wide screen shows the fields of every line; a phone folds each line into a
  * card and unfolds the tapped one, a new one and any with a message.
  */
-export default function LineEditor({ lines, errors, chips, currency, onChange, narrow = false, defaultCategory, extraDiscount }: LineEditorProps) {
+export default function LineEditor({ lines, errors, chips, currency, onChange: change, narrow = false, defaultCategory, extraDiscount, asLine }: LineEditorProps) {
   const [open, setOpen] = useState<Set<number>>(() => new Set())
   const added = useRef<number | undefined>(undefined)
   // Errors name a position by its place among the sent ones: an untouched empty row is not sent.
   const sent = sentIndexes(lines)
   const tree = categoryTree(chips)
+  // Every change goes through `withService`: «Обслуживание N%» follows the other positions.
+  const onChange = (next: LineDraft[]) => change(withService(next))
   const update = (key: number, change: (line: LineDraft) => LineDraft) => onChange(lines.map((line) => line.key === key ? change(line) : line))
-  const type = (key: number, field: LineField, text: string) => update(key, (line) => editLine(line, field, text))
-  const add = () => {
-    const line = newLine()
+  // A typed sum makes «Обслуживание» an ordinary position: the person knows better than the percent.
+  const type = (key: number, field: LineField, text: string) =>
+    update(key, (line) => ({ ...editLine(line, field, text), ...(field === 'amount' && { service: undefined }) }))
+  const add = (line = newLine(), before: LineDraft[] = []) => {
     added.current = line.key
     setOpen((keys) => new Set(keys).add(line.key))
-    onChange([...lines, line])
+    onChange([...lines, ...before, line])
   }
+  // Without positions the typed sum of the spend becomes the first one: the service is counted on top of it.
+  const addService = () => add(serviceLine(serviceCategory(chips)), lines.length ? [] : [asLine?.()].filter((line): line is LineDraft => line !== undefined))
+  const hasService = lines.some((line) => line.service !== undefined)
   const toggle = (key: number) => setOpen((keys) => {
     const next = new Set(keys)
     if (!next.delete(key)) next.add(key)
@@ -58,7 +71,7 @@ export default function LineEditor({ lines, errors, chips, currency, onChange, n
   return <div className="expense-row-block expense-lines" role="group" aria-labelledby="expense-lines-heading">
     <div className="expense-row">
       <span id="expense-lines-heading" className="expense-row-label">Позиции</span>
-      {lines.length < LINES_MAX && <button type="button" className="expense-add-line" onClick={add}>
+      {lines.length < LINES_MAX && <button type="button" className="expense-add-line" onClick={() => add()}>
         <span aria-hidden="true">+</span> Добавить<span className="expense-visually-hidden"> позицию</span></button>}
     </div>
     {lines.length > 0 && <ol className="expense-line-list">{lines.map((line, index) => {
@@ -94,16 +107,24 @@ export default function LineEditor({ lines, errors, chips, currency, onChange, n
               aria-invalid={Boolean(errors[name('name')])} aria-describedby={described('name')}
               onChange={(event) => type(line.key, 'name', event.target.value)} />
           </label>
-          {number('quantity', 'Кол-во', '1')}
-          <label className="expense-line-field expense-line-unit-field" htmlFor={id('unit')}>
-            <span className="expense-line-label">Ед.</span>
-            <select id={id('unit')} className="expense-line-input expense-line-unit" value={line.unit}
-              onChange={(event) => update(line.key, (current) => ({ ...current, unit: event.target.value as LineDraft['unit'] }))}>
-              {UNITS.map((unit) => <option key={unit} value={unit}>{UNIT_LABELS[unit]}</option>)}
-            </select>
-          </label>
-          {number('price', 'Цена', '0')}
-          {number('discount', 'Скидка', '0')}
+          {line.service !== undefined
+            ? <label className="expense-line-field expense-line-percent-field" htmlFor={id('percent')}>
+              <span className="expense-line-label">Процент</span>
+              <input id={id('percent')} className="expense-line-input expense-line-percent" inputMode="decimal" autoComplete="off"
+                placeholder="10" value={line.service} onChange={(event) => update(line.key, (current) => ({ ...current, service: event.target.value }))} />
+            </label>
+            : <>
+              {number('quantity', 'Кол-во', '1')}
+              <label className="expense-line-field expense-line-unit-field" htmlFor={id('unit')}>
+                <span className="expense-line-label">Ед.</span>
+                <select id={id('unit')} className="expense-line-input expense-line-unit" value={line.unit}
+                  onChange={(event) => update(line.key, (current) => ({ ...current, unit: event.target.value as LineDraft['unit'] }))}>
+                  {UNITS.map((unit) => <option key={unit} value={unit}>{UNIT_LABELS[unit]}</option>)}
+                </select>
+              </label>
+              {number('price', 'Цена', '0')}
+              {number('discount', 'Скидка', '0')}
+            </>}
           {number('amount', 'Сумма', '0')}
           <label className="expense-line-field expense-line-category-field" htmlFor={id('category')}>
             <span className="expense-line-label">Категория</span>
@@ -123,6 +144,8 @@ export default function LineEditor({ lines, errors, chips, currency, onChange, n
         {failed.map((field) => <p key={field} className="expense-error" id={errorId(name(field))}>{errors[name(field)]}</p>)}
       </li>
     })}</ol>}
+    {!hasService && lines.length < LINES_MAX - 1 && <button type="button" className="expense-add-line expense-add-service" onClick={addService}>
+      <span aria-hidden="true">+</span> Обслуживание %</button>}
     {extraDiscount && <p className="expense-hint-note expense-extra-discount">
       Скидка на весь чек: −{formatMoney(extraDiscount, currency)}, уже вычтена из итога.</p>}
     {errors.lines && <p className="expense-error" id={errorId('lines')}>{errors.lines}</p>}

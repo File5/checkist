@@ -20,7 +20,7 @@ import TextHint from './TextHint'
 import { caretAfter, charsBefore, evaluateAmount, groupDigits, hasOperator, ungrouped } from './amount-calc'
 import {
   categoryChips, categoryTree, chipParent, chipToneId, dateChoice, sumText, dayBefore, draftBody, draftFromReceipt, emptyDraft, fieldScrollDelta,
-  itemizedTotal, filledLines, saveLabel, savedNotice, serverErrors, setExpenseNotice, shortDay, todayISO, updatedNotice, visibleChips,
+  itemizedTotal, filledLines, saveLabel, spendAsLine, savedNotice, serverErrors, setExpenseNotice, shortDay, todayISO, updatedNotice, visibleChips,
   draftFromIncome, incomeBody, incomeChip, withoutIds,
 } from './expense-form'
 import LineEditor from './LineEditor'
@@ -315,7 +315,7 @@ export function ExpenseForm({ draft, chips, errors, saving, failure, receiptId, 
         {fieldError(errors, 'note')}
       </div>
       {!income && <LineEditor lines={draft.lines} errors={errors} chips={chips} currency={draft.currency} narrow={narrow}
-        onChange={(lines) => set({ lines })} extraDiscount={draft.extraDiscount}
+        onChange={(lines) => set({ lines })} extraDiscount={draft.extraDiscount} asLine={() => spendAsLine(draft)}
         defaultCategory={draft.category !== null ? 'Как у траты' : photo ? 'Как у товара' : 'Без категории'} />}
     </section>
 

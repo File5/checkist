@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Line } from '../../api/receipts'
-import { decimalText, editLine, lineFromBody, lineFromSaved, lineInput, lineMessages, linesCents, lineSummary, newLine, scaled, settleLine } from './line-draft'
+import { decimalText, editLine, lineFromBody, lineFromSaved, lineInput, lineMessages, linesCents, lineSummary, newLine, scaled, serviceLine, settleLine, withService } from './line-draft'
 
 const nbsp = (text: string) => text.replace(/[\u00a0\u202f]/g, ' ')
 
@@ -71,5 +71,32 @@ describe('a line of the spend form is a line of a receipt', () => {
     expect([summary.title, nbsp(summary.detail), nbsp(summary.sum)]).toEqual(['Панини', '2 шт × 1 790,00 ₸', '3 580 ₸'])
     expect(lineSummary({ ...newLine(), amount: '450' }, 'KZT').detail).toBe('')
     expect(lineSummary({ ...newLine(), amount: '450' }, 'KZT').title).toBe('Без названия')
+  })
+})
+
+describe('«＋ Обслуживание %» (2026-10-13)', () => {
+  const pasta = { ...newLine(), name: 'Паста', amount: '3580' }
+  it('is 10 % of the other positions on top of them, half up to a tiyn, and follows them', () => {
+    let lines = withService([pasta, serviceLine(27)])
+    expect(lines[1]).toMatchObject({ name: 'Обслуживание 10%', amount: '358', category: 27, service: '10' })
+    expect(linesCents(lines)).toBe(393800n)
+    lines = withService([{ ...pasta, amount: '3585' }, lines[1]])
+    expect(lines[1].amount).toBe('358.50')
+    lines = withService([{ ...pasta, amount: '0,05' }, lines[1]])
+    expect(lines[1].amount).toBe('0.01')  // 0,5 тиына — вверх
+    expect(withService([lines[1]])[0].amount).toBe('')
+  })
+  it('renames itself with the percent, keeps a name typed by hand and leaves a percent that is not a number', () => {
+    const [, twelve] = withService([pasta, { ...serviceLine(null), service: '12.5' }])
+    expect(twelve).toMatchObject({ name: 'Обслуживание 12,5%', amount: '447.50' })
+    const [, tips] = withService([pasta, { ...serviceLine(null), name: 'Чаевые', service: '5' }])
+    expect(tips).toMatchObject({ name: 'Чаевые', amount: '179' })
+    const odd = { ...tips, service: 'abc' }
+    expect(withService([pasta, odd])[1]).toBe(odd)
+    expect(nbsp(lineSummary(twelve, 'KZT').detail)).toBe('12,5 % от позиций')
+  })
+  it('changes nothing without a service line', () => {
+    const lines = [pasta]
+    expect(withService(lines)).toBe(lines)
   })
 })

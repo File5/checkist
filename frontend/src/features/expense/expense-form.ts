@@ -5,7 +5,7 @@ import type { Category } from '../../api/types'
 import { formatMoney } from '../../lib/money'
 import type { PaymentMethodValue } from '../../lib/payment-methods'
 import { evaluateAmount, hasOperator } from './amount-calc'
-import { decimalText, isFilled, lineFromSaved, lineInput, lineMessages, linesCents, scaled, trimDecimal } from './line-draft'
+import { decimalText, isFilled, lineFromSaved, lineInput, lineMessages, linesCents, newLine, scaled, trimDecimal } from './line-draft'
 import type { LineDraft } from './line-draft'
 
 export { newLine } from './line-draft'
@@ -83,6 +83,13 @@ export function normalizeAmount(text: string): string | undefined {
   const value = text.replace(/[\s\u00a0\u202f]/g, '').replace(',', '.')
   if (!/^[0-9]{1,12}(?:\.[0-9]{1,2})?$/.test(value)) return undefined
   return /[1-9]/.test(value) ? value : undefined
+}
+
+/** The spend typed without positions as its first position («Что купили» or «Счёт», its sum), for «＋ Обслуживание %»;
+ * `undefined` — no sum typed yet. */
+export function spendAsLine(draft: ExpenseDraft): LineDraft | undefined {
+  const amount = normalizeAmount(draft.amount)
+  return amount === undefined ? undefined : { ...newLine(), name: draft.item?.trim() || 'Счёт', amount, price: amount, lead: 'amount' }
 }
 
 /** Positions with anything typed in them; an untouched empty row is not a position. */
