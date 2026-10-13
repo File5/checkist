@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import { getCategories } from '../../api/catalog'
+import { getIncomeCategories } from '../../api/incomes'
+import type { IncomeCategory } from '../../api/incomes'
 import { getManualDefaults } from '../../api/receipts'
 import {
   acceptSuggestion, createRecurring, decideRecurring, deleteRecurring, dismissSuggestion, getRecurringMonth, updateRecurring,
@@ -74,12 +76,14 @@ export type RecurringViewProps = {
   onDecide?: Decide
   onAccept?: (item: RecurringSuggestion) => void
   onDismiss?: (item: RecurringSuggestion) => void
-  onEdit?: (payment: RecurringPayment | null) => void
+  /** `kind` — of a new one: «Добавить доход» opens the form on a regular income. */
+  onEdit?: (payment: RecurringPayment | null, kind?: RecurringDraft['kind']) => void
 }
 
 /** `/recurring` without loading: the markup tests render it directly. */
 export function RecurringView({ data, busy = false, notice = null, onDecide = () => {}, onAccept = () => {}, onDismiss = () => {}, onEdit = () => {} }: RecurringViewProps) {
-  const active = data.payments.filter((row) => row.state !== 'inactive')
+  const active = data.payments.filter((row) => row.state !== 'inactive' && row.kind !== 'income')
+  const incomes = data.payments.filter((row) => row.state !== 'inactive' && row.kind === 'income')
   const off = data.payments.filter((row) => row.state === 'inactive')
   const left = data.totals.filter((total) => total.left !== null)
   const rows = counted(data)
@@ -107,6 +111,14 @@ export function RecurringView({ data, busy = false, notice = null, onDecide = ()
           осталось оплатить в месяце.</p>}
       <button type="button" className="rec-add" onClick={() => onEdit(null)} aria-haspopup="dialog">Добавить платёж</button>
     </section>
+    <section className="ck-panel rec-card" aria-labelledby="rec-income-heading">
+      <div className="ck-panel-head"><h2 id="rec-income-heading">Регулярный доход</h2></div>
+      {incomes.length
+        ? <ul className="ck-list rec-list">{incomes.map((row) => <PaymentItem key={row.id} row={row} today={data.today} onEdit={onEdit} />)}</ul>
+        : <p className="rec-note">Зарплата, аванс, проценты — на главной в свой день спрошу «внести?», одно касание вносит доход. Видят
+          его автор и главный в семье.</p>}
+      <button type="button" className="ck-button-secondary rec-add" onClick={() => onEdit(null, 'income')} aria-haspopup="dialog">Добавить доход</button>
+    </section>
     {off.length > 0 && <section className="ck-panel rec-card" aria-labelledby="rec-off-heading">
       <div className="ck-panel-head"><h2 id="rec-off-heading">Выключены</h2></div>
       <ul className="ck-list rec-list">{off.map((row) => <PaymentItem key={row.id} row={row} today={data.today} onEdit={onEdit} />)}</ul>
@@ -130,11 +142,15 @@ export type RecurringFormProps = {
   failure?: string | null
   onSubmit: (draft: RecurringDraft) => void
   onDelete?: () => void
+  /** A new regular income (`income`) takes the categories of incomes and has no place. */
+  kind?: RecurringDraft['kind']
+  incomeCategories?: IncomeCategory[]
 }
 
 /** The form of a new or a changed payment; a deletion asks once more. */
-export function RecurringForm({ payment, categories, currency, busy, failure = null, onSubmit, onDelete }: RecurringFormProps) {
-  const [draft, setDraft] = useState<RecurringDraft>(() => draftOf(payment, currency))
+export function RecurringForm({ payment, categories, currency, busy, failure = null, onSubmit, onDelete, kind = 'spend', incomeCategories = [] }: RecurringFormProps) {
+  const [draft, setDraft] = useState<RecurringDraft>(() => draftOf(payment, currency, kind))
+  const income = draft.kind === 'income'
   const [errors, setErrors] = useState<DraftErrors>({})
   const [confirming, setConfirming] = useState(false)
   const set = (patch: Partial<RecurringDraft>) => setDraft((before) => ({ ...before, ...patch }))
@@ -149,19 +165,20 @@ export function RecurringForm({ payment, categories, currency, busy, failure = n
   return <form className="rec-form" onSubmit={submit} noValidate>
     <div className="rec-fields">
       <Field id="rec-form-name" label="Название" error={errors.name}>
-        <input id="rec-form-name" value={draft.name} maxLength={100} placeholder="Аренда" aria-invalid={Boolean(errors.name)}
+        <input id="rec-form-name" value={draft.name} maxLength={100} placeholder={income ? 'Зарплата' : 'Аренда'} aria-invalid={Boolean(errors.name)}
           aria-describedby={described('name')} onChange={(event) => set({ name: event.target.value })} />
       </Field>
-      <Field id="rec-form-store" label="Кому">
+      {!income && <Field id="rec-form-store" label="Кому">
         <input id="rec-form-store" value={draft.store_name} maxLength={100} placeholder="необязательно" autoComplete="off"
           onChange={(event) => set({ store_name: event.target.value })} />
-      </Field>
+      </Field>}
       <Field id="rec-form-category_id" label="Категория" error={errors.category_id}>
         <select id="rec-form-category_id" value={draft.category_id ?? ''} aria-invalid={Boolean(errors.category_id)}
           aria-describedby={described('category_id')} onChange={(event) => set({ category_id: event.target.value ? Number(event.target.value) : null })}>
           <option value="">Выберите</option>
-          {categories.filter((category) => category.name !== UNASSIGNED).map((category) => <option key={category.id} value={category.id}>
-            {`${INDENT.repeat(category.depth)}${category.name}`}</option>)}
+          {income ? incomeCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)
+            : categories.filter((category) => category.name !== UNASSIGNED).map((category) => <option key={category.id} value={category.id}>
+              {`${INDENT.repeat(category.depth)}${category.name}`}</option>)}
         </select>
       </Field>
       <Field id="rec-form-amount" label="Сумма" error={errors.amount}>
@@ -184,10 +201,10 @@ export function RecurringForm({ payment, categories, currency, busy, failure = n
       </div>}
     </div>
     {failure && <p className="rec-field-error" role="alert">{failure}</p>}
-    <button type="submit" className="rec-save" aria-disabled={busy || undefined}>{payment ? 'Сохранить' : 'Добавить платёж'}</button>
+    <button type="submit" className="rec-save" aria-disabled={busy || undefined}>{payment ? 'Сохранить' : income ? 'Добавить доход' : 'Добавить платёж'}</button>
     {payment && onDelete && (confirming
       ? <div className="rec-confirm">
-        <p>Удалить «{payment.name}»? Ответы по месяцам удалятся вместе с ним, траты останутся.</p>
+        <p>Удалить «{payment.name}»? {income ? 'Внесённые доходы останутся.' : 'Ответы по месяцам удалятся вместе с ним, траты останутся.'}</p>
         <button type="button" className="ck-button-danger" aria-disabled={busy || undefined} onClick={busy ? undefined : onDelete}>Удалить</button>
         <button type="button" className="ck-button-secondary" onClick={() => setConfirming(false)}>Отмена</button>
       </div>
@@ -195,8 +212,8 @@ export function RecurringForm({ payment, categories, currency, busy, failure = n
   </form>
 }
 
-type Load = { kind: 'error'; message: string } | { kind: 'ok'; data: RecurringMonth; categories: Category[]; currency: string }
-type Editing = { payment: RecurringPayment | null } | null
+type Load = { kind: 'error'; message: string } | { kind: 'ok'; data: RecurringMonth; categories: Category[]; currency: string; incomeCategories: IncomeCategory[] }
+type Editing = { payment: RecurringPayment | null; kind?: RecurringDraft['kind'] } | null
 
 /** `/recurring`: the payments of this month with their state, the suggestions from history on top, the form in a sheet. */
 export default function RecurringPage() {
@@ -209,14 +226,16 @@ export default function RecurringPage() {
   useEffect(() => {
     const controller = new AbortController()
     const signal = controller.signal
-    void Promise.all([getRecurringMonth(undefined, { signal }), getCategories({}, { signal }), getManualDefaults({ signal })])
-      .then(([month, categories, defaults]) => {
+    void Promise.all([getRecurringMonth(undefined, { signal }), getCategories({}, { signal }), getManualDefaults({ signal }),
+      getIncomeCategories({ signal })])
+      .then(([month, categories, defaults, incomeCategories]) => {
         if (signal.aborted) return
         if (month.kind === 'error') { setLoad({ kind: 'error', message: dashboardErrorMessage(month) }); return }
         if (month.kind !== 'ok') return
         setLoad({
           kind: 'ok', data: month.data, categories: categories.kind === 'ok' ? categories.data.results : [],
           currency: defaults.kind === 'ok' ? defaults.data.currency : 'KZT',
+          incomeCategories: incomeCategories.kind === 'ok' ? incomeCategories.data : [],
         })
       })
     return () => controller.abort()
@@ -275,10 +294,12 @@ export default function RecurringPage() {
     <RecurringView data={load.data} busy={busy} notice={notice} onDecide={decide}
       onAccept={(item) => run(() => acceptSuggestion(item), (payment) => ({ text: `«${payment.name}» теперь в регулярных платежах.` }))}
       onDismiss={(item) => run(() => dismissSuggestion(item), () => ({ text: `«${item.name}» больше не предлагаю.` }))}
-      onEdit={(payment) => { setFailure(null); setEditing({ payment }) }} />
-    <Sheet open={editing !== null} onClose={() => setEditing(null)} title={editing?.payment ? editing.payment.name : 'Новый платёж'} id="rec-form-sheet">
-      {editing && <RecurringForm key={editing.payment?.id ?? 'new'} payment={editing.payment} categories={load.categories} currency={load.currency}
-        busy={busy} failure={failure} onSubmit={save} onDelete={remove} />}
+      onEdit={(payment, kind) => { setFailure(null); setEditing({ payment, kind }) }} />
+    <Sheet open={editing !== null} onClose={() => setEditing(null)} id="rec-form-sheet"
+      title={editing?.payment ? editing.payment.name : editing?.kind === 'income' ? 'Новый доход' : 'Новый платёж'}>
+      {editing && <RecurringForm key={editing.payment?.id ?? `new-${editing.kind ?? 'spend'}`} payment={editing.payment} categories={load.categories}
+        currency={load.currency} busy={busy} failure={failure} onSubmit={save} onDelete={remove} kind={editing.kind}
+        incomeCategories={load.incomeCategories} />}
     </Sheet>
   </>
 }

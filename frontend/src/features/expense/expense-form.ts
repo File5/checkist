@@ -1,4 +1,5 @@
 /** «Добавить трату»: the draft of the form and its pure rules. No network, no React. */
+import type { Income, IncomeCategory, IncomeInput } from '../../api/incomes'
 import type { Line, ManualSpendInput, Receipt } from '../../api/receipts'
 import type { Category } from '../../api/types'
 import { formatMoney } from '../../lib/money'
@@ -125,6 +126,34 @@ export function draftBody(draft: ExpenseDraft): { body: ManualSpendInput } | { e
   return Object.keys(errors).length ? { errors } : { body }
 }
 
+/** The body of `POST /api/incomes/` or `PATCH /api/incomes/{id}/` from the same draft (no place, no positions), or the
+ * messages of the fields. */
+export function incomeBody(draft: ExpenseDraft): { body: IncomeInput } | { errors: ExpenseErrors } {
+  const errors: ExpenseErrors = {}
+  const currency = draft.currency.trim().toUpperCase()
+  if (!/^[A-Z]{3}$/.test(currency)) errors.currency = messages.currency
+  if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(draft.date)) errors.date = messages.date
+  const note = draft.note.trim()
+  if ([...note].length > NOTE_MAX) errors.note = messages.note
+  const amount = normalizeAmount(draft.amount)
+  if (amount === undefined) errors.amount = messages.amount
+  if (draft.category === null) errors.category = messages.category
+  if (amount === undefined || draft.category === null || Object.keys(errors).length) return { errors }
+  return { body: { amount, currency, category: draft.category, received_on: draft.date, note } }
+}
+
+/** The draft of a saved income. */
+export function draftFromIncome(income: Income): ExpenseDraft {
+  return { amount: amountText(income.amount), currency: income.currency, category: income.category.id, date: income.received_on,
+    place: '', note: income.note, lines: [] }
+}
+
+/** A category of incomes as a chip of the form: a root of its own, without a path. */
+export function incomeChip(category: IncomeCategory): Category {
+  return { id: category.id, name: category.name, path: [], parent_id: null, depth: 0, children_count: 0,
+    generic_products_count: 0, products_count: 0, products_total: 0 }
+}
+
 /** Server field names of a refused save, as messages of this form: the server's own texts never reach the screen. */
 export function serverErrors(fields: string[]): ExpenseErrors {
   const errors: ExpenseErrors = {}
@@ -133,7 +162,7 @@ export function serverErrors(fields: string[]): ExpenseErrors {
     if (line) errors[`lines.${line[1]}.${line[2] === 'name' ? 'name' : 'amount'}`] = line[2] === 'name' ? messages.lineName
       : line[2] === 'category' ? messages.category : messages.lineAmount
     else if (field === 'total') errors.amount = messages.total
-    else if (field === 'purchased_on') errors.date = messages.date
+    else if (field === 'purchased_on' || field === 'received_on') errors.date = messages.date
     else if (field === 'store_name') errors.place = messages.place
     else if (field in messages) errors[field] = messages[field as keyof typeof messages]
     else errors.form = messages.unknown

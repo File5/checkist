@@ -78,7 +78,7 @@ const mainNav = (html: string) => {
 }
 const navLink = (html: string, text: string) => noIcons(html).match(new RegExp(`<a\\b[^>]*>${text}</a>`))?.[0] ?? ''
 /** The links of the header row; «Добавить трату» lives in the «＋» sheet, which a server render draws closed. */
-const fullMenu = ['Главная', 'Траты', 'Статистика', 'Платежи', 'Каталог', 'Магазины', 'Обработка', 'Выгрузка', 'Правила выписок', 'Состояние сервисов']
+const fullMenu = ['Главная', 'Траты', 'Статистика', 'Платежи', 'Доходы', 'Каталог', 'Магазины', 'Обработка', 'Выгрузка', 'Правила выписок', 'Состояние сервисов']
 
 const fetchMock = vi.fn<typeof fetch>()
 beforeEach(() => { fetchMock.mockReset(); vi.stubGlobal('fetch', fetchMock) })

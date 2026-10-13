@@ -17,10 +17,12 @@ import type { Recognition } from './voice'
 export type TextHintViewProps = {
   text: string; view: ParseView; onText: (text: string) => void; onSubmit: () => void; voice?: { listening: boolean; onToggle: () => void }
   suggestions?: ManualSuggestion[]; frequent?: ManualSuggestion[]; onRepeat?: (spend: ManualSuggestion) => void; today?: string
+  /** The example in the empty field: «такси до аэропорта 4500», on «Доход» — «зарплата 650 000». */
+  placeholder?: string
 }
 
 /** The hint itself, without the network: the markup tests render it directly. */
-export function TextHintView({ text, view, onText, onSubmit, voice, suggestions = [], frequent = [], onRepeat = () => {}, today = todayISO() }: TextHintViewProps) {
+export function TextHintView({ text, view, onText, onSubmit, voice, suggestions = [], frequent = [], onRepeat = () => {}, today = todayISO(), placeholder = parseTexts.placeholder }: TextHintViewProps) {
   const working = view.kind === 'working'
   const submit = (event: FormEvent) => { event.preventDefault(); onSubmit() }
   const listed = !working && hasSearchWords(text) ? suggestions : []
@@ -29,7 +31,7 @@ export function TextHintView({ text, view, onText, onSubmit, voice, suggestions 
     <label htmlFor="expense-hint-text" className="expense-hint-label">{parseTexts.label}</label>
     <div className="expense-hint-row">
       <input id="expense-hint-text" type="text" autoComplete="off" enterKeyHint="go" maxLength={PARSE_TEXT_MAX}
-        placeholder={parseTexts.placeholder} value={text} readOnly={working} aria-describedby="expense-hint-status"
+        placeholder={placeholder} value={text} readOnly={working} aria-describedby="expense-hint-status"
         onChange={(event) => onText(event.target.value)} />
       {voice && <button type="button" className="expense-hint-mic" aria-pressed={voice.listening} disabled={working}
         aria-label={voice.listening ? 'Остановить запись' : 'Сказать голосом'} onClick={voice.onToggle}>
@@ -93,8 +95,8 @@ function useSuggestions(text: string, enabled: boolean) {
 }
 
 /** POST the text, poll the request, hand the draft to the form. Nothing is saved here. Under the field: past spends to
- * repeat with one tap (`onRepeat`). */
-export default function TextHint({ onFill, onRepeat }: { onFill: (draft: ManualParseDraft) => void; onRepeat: (spend: ManualSuggestion) => void }) {
+ * repeat with one tap (`onRepeat`); on «Доход» (`income`) past spends are not offered. */
+export default function TextHint({ onFill, onRepeat, income = false }: { onFill: (draft: ManualParseDraft) => void; onRepeat: (spend: ManualSuggestion) => void; income?: boolean }) {
   const [text, setText] = useState('')
   const [view, setView] = useState<ParseView>({ kind: 'idle' })
   // After a fill the list hides until the text changes again.
@@ -186,5 +188,6 @@ export default function TextHint({ onFill, onRepeat }: { onFill: (draft: ManualP
     onRepeat(spend)
   }
   return <TextHintView text={text} view={view} onText={(value) => { setText(value); setTyped(true) }} onSubmit={() => { void submit() }}
-    voice={canListen ? { listening, onToggle: toggleVoice } : undefined} suggestions={suggestions} frequent={frequent} onRepeat={repeat} />
+    voice={canListen ? { listening, onToggle: toggleVoice } : undefined} suggestions={income ? [] : suggestions} frequent={income ? [] : frequent}
+    onRepeat={repeat} placeholder={income ? 'зарплата 650 000' : undefined} />
 }

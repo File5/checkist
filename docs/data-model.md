@@ -942,3 +942,18 @@ docker compose -p checkist_dev cp postgres:/tmp/checkist.dump ./checkist.dump
   запроса), для многих сумм — `rates.convert.converter(base, {(валюта, день)})` (курсы одним запросом, дальше
   `convert(amount, currency, day)` без БД).
 - `budget`: миграций нет; лимиты прежних валют не переносились.
+
+## Доходы (`incomes`, 2026-10-13, ветка `feature/incomes`)
+
+- `incomes.IncomeCategory` — `name` (до 60), `household` / `user` — оба пусты у встроенных, иначе один из них (владелец
+  как у лимита, `budget.access.limit_owner`). Встроенные «Зарплата · Подработка · Подарки · Кэшбэк и проценты · Продажа
+  вещей · Прочее» заводит миграция `incomes.0001_initial` (`get_or_create`). В дерево категорий трат не входит.
+- `incomes.Income` — `owner` (кто внёс, `PROTECT`), `received_on`, `amount` (`Decimal(14, 2)`, `> 0`), `currency`
+  (`PROTECT`), `category` (`IncomeCategory`, `PROTECT`), `note`, `created_at`/`updated_at`; индекс `(owner, received_on)`.
+  Видимость — `incomes.access.visible_q` (автор и главный в семье); общий доход семьи считается по `owner_q`.
+- `recurring.0002_income_kind`: у `RecurringPayment` — `kind` (`spend` | `income`, по умолчанию `spend`),
+  `income_category` (FK на `IncomeCategory`, `PROTECT`), `category` стал необязательным; ограничение
+  `recurring_payment_kind_category` — у платежа категория траты, у дохода категория дохода и нет магазина. Прежние
+  платежи — `spend`, данные не менялись.
+- Откат: удалить шаблоны дохода (`RecurringPayment.objects.filter(kind="income").delete()` — с ними откат упадёт на
+  `NOT NULL category`), `migrate recurring 0001_initial`, потом `migrate incomes zero` (доходы и свои категории теряются).

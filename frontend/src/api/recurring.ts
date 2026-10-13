@@ -16,6 +16,9 @@ export type RecurringDecisionKind = 'added' | 'skipped' | 'elsewhere'
 
 export type RecurringPayment = {
   id: number
+  /** `income` — a regular income («Зарплата»): `category` is a category of incomes, no `store`, `paid` — received
+   * (`paid.receipt_id` is `null`). Seen by its author and the head of the family only. */
+  kind: 'spend' | 'income'
   name: string
   store: { id: number; name: string } | null
   category: { id: number; name: string }
@@ -30,8 +33,8 @@ export type RecurringPayment = {
 export type RecurringMonthPayment = RecurringPayment & {
   state: RecurringState
   due_date: ISODate
-  /** The spend found for the month (or added by «по средней»). */
-  paid: { receipt_id: number; purchased_on: ISODate; total: Decimal } | null
+  /** The spend found for the month (or added by «по средней»); of an income — the income, without a receipt. */
+  paid: { receipt_id: number | null; purchased_on: ISODate; total: Decimal } | null
   added: boolean
   /** The average of the payments found in the 12 months up to this one. */
   average: Decimal | null
@@ -60,6 +63,8 @@ export type RecurringMonth = {
 /** The body of a new payment; `store_name` — the place by its name, empty — none. */
 export type RecurringInput = {
   name: string; store_name: string | null; category_id: number; currency: CurrencyCode; amount: Decimal; due_day: number; active?: boolean
+  /** Only of a new one: `income` takes a category of incomes. */
+  kind?: 'spend' | 'income'
 }
 export type SuggestionKey = Pick<RecurringSuggestion, 'store_id' | 'category_id' | 'currency'>
 export type RecurringDecisionResult = { payment_id: number; month: string; decision: RecurringDecisionKind; receipt_id: number | null }
@@ -68,13 +73,13 @@ const state = choice(...recurringStates)
 const dueDay: Check = (value) => Number.isSafeInteger(value) && (value as number) >= 1 && (value as number) <= 31
 const named = object<{ id: number; name: string }>({ id: isId, name: text })
 const paymentShape = {
-  id: isId, name: text, store: nullable(named), category: named, currency, amount, due_day: dueDay, active: bool,
+  id: isId, kind: choice('spend', 'income'), name: text, store: nullable(named), category: named, currency, amount, due_day: dueDay, active: bool,
   created_by: nullable(isPerson),
 }
 export const isRecurringPayment = object<RecurringPayment>(paymentShape)
 const isMonthPayment = object<RecurringMonthPayment>({
   ...paymentShape, state, due_date: isISODate,
-  paid: nullable(object<NonNullable<RecurringMonthPayment['paid']>>({ receipt_id: isId, purchased_on: isISODate, total: amount })),
+  paid: nullable(object<NonNullable<RecurringMonthPayment['paid']>>({ receipt_id: nullable(isId), purchased_on: isISODate, total: amount })),
   added: bool, average: nullable(amount), last_amount: nullable(amount), previous_amount: nullable(amount),
   history: array(object<RecurringMonthPayment['history'][number]>({ month: isMonthCode, state })),
 })

@@ -6,6 +6,7 @@ import { CategoryBlock, MonthlyBlock, PricesBlock } from './trends-blocks'
 import { LimitsBlock, MonthToMonthBlock, SummaryStrip } from './trends-dashboard'
 import { monthOfDate } from './trends-period'
 import TrendsPeriodPicker from './trends-period-picker'
+import IncomeTrend from '../incomes/IncomeTrend'
 import { categoryParams, windowParams } from './trends-state'
 
 const loadRange = (signal: AbortSignal) => getTrendsRange({ signal })
@@ -51,6 +52,7 @@ export default function TrendsPage({ query }: TrendsPageProps) {
       <TrendsPeriodPicker query={query} current={current} first={first} />
       <SummaryStrip monthly={monthly.state} prices={prices.state} />
       <MonthlyBlock state={monthly.state} query={query} onRetry={monthly.retry} />
+      <IncomeTrend query={query} />
       <MonthToMonthBlock state={monthly.state} query={query} onRetry={monthly.retry} />
       <LimitsBlock state={limits.state} onRetry={limits.retry} />
       <CategoryBlock state={category.state} query={query} onRetry={category.retry} />

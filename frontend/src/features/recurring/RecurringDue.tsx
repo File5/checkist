@@ -1,14 +1,46 @@
 import { useEffect, useState } from 'react'
+import type { FormEvent } from 'react'
+import { announceIncome, createIncome } from '../../api/incomes'
 import { decideRecurring, getRecurringMonth } from '../../api/recurring'
 import type { RecurringDecisionKind, RecurringMonth, RecurringMonthPayment, RecurringQuestion } from '../../api/recurring'
 import { formatMoney } from '../../lib/money'
 import { Link } from '../../navigation'
 import { capitalize, dayAndMonth, inMonth } from '../dashboard/dashboard-state'
-import { counted, decisionNotice, forMonth, foundText, isOpen, paymentsText, recurringFailure, stateText } from './recurring-state'
+import { amountValue, counted, decisionNotice, forMonth, foundText, incomeDue, isOpen, paymentsText, recurringFailure, stateText } from './recurring-state'
 import type { Notice } from './recurring-state'
+import '../incomes/Incomes.css'
 import './Recurring.css'
 
 export type Decide = (question: RecurringQuestion, decision: RecurringDecisionKind) => void
+/** «Внести» of a regular income: the amount as typed in its field (the expected one unless corrected). */
+export type AddIncome = (row: RecurringMonthPayment, amount: string) => void
+
+/** One regular income of the month: «Зарплата 650 000 ₸ — внести?»; one tap enters it, the field corrects the amount. */
+function IncomeDueItem({ row, busy, onAdd }: { row: RecurringMonthPayment; busy: boolean; onAdd: AddIncome }) {
+  const [amount, setAmount] = useState(row.amount.replace(/\.00$/, ''))
+  const valid = amountValue(amount) !== null
+  const submit = (event: FormEvent) => {
+    event.preventDefault()
+    if (!busy && valid) onAdd(row, amountValue(amount) as string)
+  }
+  return <li className="inc-due-row">
+    <span className="inc-due-name">{row.name} {formatMoney(row.amount, row.currency)} — внести?</span>
+    <span className="ck-row-meta">{dayAndMonth(row.due_date)}</span>
+    <form className="inc-due-form" onSubmit={submit} noValidate>
+      <input inputMode="decimal" autoComplete="off" value={amount} aria-label={`Сумма «${row.name}», ${row.currency}`} aria-invalid={!valid}
+        onChange={(event) => setAmount(event.target.value)} />
+      <button type="submit" aria-disabled={busy || !valid || undefined}>Внести</button>
+    </form>
+  </li>
+}
+
+export function IncomeDueCard({ rows, busy, onAdd }: { rows: RecurringMonthPayment[]; busy: boolean; onAdd: AddIncome }) {
+  if (!rows.length) return null
+  return <section className="ck-panel rec-card" aria-labelledby="inc-due-heading">
+    <div className="ck-panel-head"><h2 id="inc-due-heading">Регулярный доход</h2></div>
+    <ul className="ck-list">{rows.map((row) => <IncomeDueItem key={row.id} row={row} busy={busy} onAdd={onAdd} />)}</ul>
+  </section>
+}
 
 /** The day of the due date in a badge; the colour says paid / open / overdue, the words of the row say it too. */
 export function DueBadge({ row }: { row: Pick<RecurringMonthPayment, 'due_date' | 'state'> }) {
@@ -59,22 +91,28 @@ export function NoticeLine({ notice }: { notice: Notice | null }) {
     {notice.receiptId ? <> <Link className="rec-inline-link" to={`/receipts/${notice.receiptId}`}>Открыть трату</Link></> : null}</p>
 }
 
-export type RecurringDueViewProps = { data: RecurringMonth; busy?: boolean; notice?: Notice | null; onDecide?: Decide }
+export type RecurringDueViewProps = { data: RecurringMonth; busy?: boolean; notice?: Notice | null; onDecide?: Decide; onAddIncome?: AddIncome }
 
 /** The block of «Главная» without loading: the markup tests render it directly. Nothing without payments and
- * suggestions; only a quiet line with suggestions alone. */
-export function RecurringDueView({ data, busy = false, notice = null, onDecide = () => {} }: RecurringDueViewProps) {
+ * suggestions; only a quiet line with suggestions alone. A regular income of the month asks to be entered on top. */
+export function RecurringDueView({ data, busy = false, notice = null, onDecide = () => {}, onAddIncome = () => {} }: RecurringDueViewProps) {
   const rows = counted(data)
   const open = rows.filter(isOpen)
   const closed = rows.filter((row) => !isOpen(row))
+  const incomes = incomeDue(data)
   const hint = data.suggestions.length > 0 && <Link className="rec-hint-link" to="/recurring">{foundText(data.suggestions.length)} — посмотреть</Link>
   if (!rows.length && !data.questions.length) {
-    return hint ? <p className="ck-panel rec-card rec-hint">{hint}</p> : null
+    return <>
+      <IncomeDueCard rows={incomes} busy={busy} onAdd={onAddIncome} />
+      <NoticeLine notice={notice} />
+      {hint ? <p className="ck-panel rec-card rec-hint">{hint}</p> : null}
+    </>
   }
   const past = data.month < data.today.slice(0, 7)
   const heading = open.length ? (past ? `Не оплачено ${inMonth(data.month)}` : 'Осталось оплатить') : 'Регулярные платежи'
   const left = data.totals.filter((total) => total.left !== null)
   return <>
+    <IncomeDueCard rows={incomes} busy={busy} onAdd={onAddIncome} />
     <QuestionsCard questions={data.questions} today={data.today} busy={busy} onDecide={onDecide} />
     <NoticeLine notice={notice} />
     {rows.length > 0 && <section className="ck-panel rec-card rec-due" aria-labelledby="rec-due-heading">
@@ -123,7 +161,20 @@ export default function RecurringDue({ month }: { month: string }) {
       setAttempt((value) => value + 1)
     })
   }
+  const addIncome: AddIncome = (row, amount) => {
+    if (busy) return
+    setBusy(true)
+    setNotice(null)
+    void createIncome({ amount, currency: row.currency, category: row.category.id, note: row.name }).then((result) => {
+      setBusy(false)
+      if (result.kind === 'ok') {
+        announceIncome()
+        setNotice({ text: `Внёс доход «${row.name}» — ${formatMoney(result.data.amount, result.data.currency)}.` })
+      } else if (result.kind === 'error') setNotice({ text: recurringFailure(result) })
+      setAttempt((value) => value + 1)
+    })
+  }
   // Another month on «Главная»: the block of the month before goes away until its own answer comes.
   if (!loaded || loaded.month !== month) return null
-  return <RecurringDueView data={loaded.data} busy={busy} notice={notice} onDecide={decide} />
+  return <RecurringDueView data={loaded.data} busy={busy} notice={notice} onDecide={decide} onAddIncome={addIncome} />
 }

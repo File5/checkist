@@ -153,10 +153,13 @@ export const isReviewConfirmInput: Guard<ReviewConfirmInput> = (value): value is
 const draftMoney = (value: unknown) => typeof value === 'string' && /^[0-9]{1,12}(?:\.[0-9]{1,2})?$/.test(value)
 const draftQuantity = (value: unknown) => typeof value === 'string' && /^[0-9]{1,9}(?:\.[0-9]{1,3})?$/.test(value)
 const isParseLine = object<ManualParseLine>({ name: text, amount: draftMoney, quantity: nullable(draftQuantity), category: nullable(isId) })
-const isParseDraft = object<ManualParseDraft>({
+const parseDraftShape = object<Omit<ManualParseDraft, 'kind'>>({
   total: nullable(draftMoney), currency, category: nullable(isId), purchased_on: isISODate,
   store_name: nullable(text), note: text, lines: array(isParseLine),
 })
+/** `kind` comes only with an income («зарплата 650 000»); a spend draft is the body of the manual save as it is. */
+const isParseDraft: Guard<ManualParseDraft> = (value): value is ManualParseDraft => parseDraftShape(value)
+  && (!Object.hasOwn(value, 'kind') || choice('spend', 'income')((value as Record<string, unknown>).kind))
 const isParseError = object<{ code: string; message: string }>({ code: text, message: text })
 const manualParseShape = object<ManualParse>({
   id: isId, status: choice('queued', 'running', 'succeeded', 'failed'), draft: nullable(isParseDraft),

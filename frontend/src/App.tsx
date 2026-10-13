@@ -20,6 +20,7 @@ import { SpendingPage, ReceiptsStatsPage, TrendsPage } from './features/stats'
 import { LoginPage, AccountPage } from './features/auth'
 import { ExportPage } from './features/export'
 import { RecurringPage } from './features/recurring'
+import { IncomesPage } from './features/incomes'
 import { StoresPage } from './features/stores'
 import { FamilyPage, NewFamilyPage, NewFamilySignedIn } from './features/family'
 import { StatementPage, StatementRulesPage, UploadStatementPage } from './features/statements'
@@ -50,8 +51,10 @@ function pageTitle(route: Route) {
     case 'health': return 'Состояние сервисов'
     case 'receipts': return 'Траты'
     case 'upload': return 'Загрузка фото чеков'
-    case 'expense-new': return 'Новая трата'
+    case 'expense-new': return route.income ? 'Новый доход' : 'Новая трата'
     case 'expense-edit': return 'Изменить трату'
+    case 'incomes': return 'Доходы'
+    case 'income-edit': return 'Изменить доход'
     case 'receipt': return 'Чек'
     case 'jobs': return 'Обработка'
     case 'job': return 'Задание обработки'
@@ -102,8 +105,10 @@ function pageContent({ route, returnTo }: NavigationSnapshot, username: string) 
     case 'health': return <HealthPage />
     case 'receipts': return <ReceiptsPage query={route.query} />
     case 'upload': return <UploadPage />
-    case 'expense-new': return <ExpensePage key={`new-${route.repeat ?? ''}`} repeat={route.repeat} />
+    case 'expense-new': return <ExpensePage key={`new-${route.income ? 'income' : route.repeat ?? ''}`} repeat={route.repeat} income={route.income} />
     case 'expense-edit': return <ExpensePage key={route.receiptId} receiptId={route.receiptId} />
+    case 'incomes': return <IncomesPage month={route.month} />
+    case 'income-edit': return <ExpensePage key={`income-${route.incomeId}`} incomeId={route.incomeId} />
     case 'receipt': return <ReceiptPage receiptId={route.receiptId} returnTo={returnTo} />
     case 'jobs': return <JobsPage query={route.query} />
     case 'job': return <JobPage jobId={route.jobId} returnTo={returnTo} />

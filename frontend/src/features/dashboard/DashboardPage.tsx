@@ -11,6 +11,7 @@ import type { Person } from '../../lib/people'
 import { Link } from '../../navigation'
 import { useQuickShot } from '../recognition/QuickShot'
 import RecurringDue from '../recurring/RecurringDue'
+import IncomeSummary from '../incomes/IncomeSummary'
 import {
   badgeLetter, capitalize, categoryIds, categoryTone, cents, compareMonths, currencyName, daysLeftText, dashboardErrorMessage, dashboardPeople, deviceDate, deviceMonth,
   formatMoney, formatNumber, hasLimit, initials, inMonth, monthIsEmpty, monthSlide, monthTitle, progress, recentMeta, shiftMonth,
@@ -311,6 +312,7 @@ export function DashboardView({ data, today = deviceMonth(), family = data.membe
       {!empty && others.length > 0 && <OtherCurrencies blocks={others} data={data} />}
       {unconverted.length > 0 && <Unconverted items={unconverted} />}
       <Actions />
+      <IncomeSummary month={data.month} />
       <RecurringDue month={data.month} />
       <section className="ck-panel dash-card dash-recent" aria-labelledby="dash-recent-heading">
         <div className="ck-panel-head">
