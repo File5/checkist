@@ -15,7 +15,7 @@ const chips = [category(1, 'Еда')]
 /** The real form of a spend; non-breaking spaces become plain ones to keep the expectations readable. */
 const form = (draft: ExpenseDraft, narrow: boolean) => renderToStaticMarkup(
   <ExpenseForm draft={draft} chips={chips} errors={{}} saving={false} onChange={noop} onSubmit={noop} today="2026-10-12" narrow={narrow} />,
-).replace(/[  ]/g, ' ')
+).replace(/[\xa0\u202f]/g, ' ')
 const inputs = (html: string) => html.match(/<(?:input|textarea|select)\b[^>]*>/g) ?? []
 const field = (html: string, id: string) => inputs(html).find((tag) => tag.includes(`id="${id}"`)) ?? ''
 
@@ -70,20 +70,20 @@ describe('«Суммы» on a real screen: the form of a spend (Vitest/SSR, not 
   })
 
   it('words «Сохранить · сумма» by the choice', () => {
-    const typed = (amount: string) => saveLabel({ ...emptyDraft('KZT', '2026-10-12'), amount }).replace(/ /g, ' ')
+    const typed = (amount: string) => saveLabel({ ...emptyDraft('KZT', '2026-10-12'), amount }).replace(/\xa0/g, ' ')
     expect([typed('4500'), typed('12 500,01'), typed('1200+350'), typed(''), typed('0')])
       .toEqual(['Сохранить · 4 500 ₸', 'Сохранить · 12 501 ₸', 'Сохранить · 1 550 ₸', 'Сохранить', 'Сохранить'])
-    expect(saveLabel(draft).replace(/ /g, ' ')).toBe('Сохранить · 9 822 ₸')
+    expect(saveLabel(draft).replace(/\xa0/g, ' ')).toBe('Сохранить · 9 822 ₸')
     setMoneyDigits('cents')
     expect([typed('4500'), typed('12 500,01'), typed('1200+350'), typed(''), typed('0')])
       .toEqual(['Сохранить · 4 500,00 ₸', 'Сохранить · 12 500,01 ₸', 'Сохранить · 1 550,00 ₸', 'Сохранить', 'Сохранить'])
-    expect(saveLabel(draft).replace(/ /g, ' ')).toBe('Сохранить · 9 821,47 ₸')
+    expect(saveLabel(draft).replace(/\xa0/g, ' ')).toBe('Сохранить · 9 821,47 ₸')
   })
 
   it('takes a stored choice of the device on a fresh page', () => {
     vi.stubGlobal('window', { localStorage: { getItem: (key: string) => key === 'checkist.moneyDigits' ? 'cents' : null, setItem: noop } })
     // `test-setup.ts` forgot the choice before this test: the first read asks the storage.
-    expect(saveLabel(draft).replace(/ /g, ' ')).toBe('Сохранить · 9 821,47 ₸')
+    expect(saveLabel(draft).replace(/\xa0/g, ' ')).toBe('Сохранить · 9 821,47 ₸')
   })
 
   it('is followed by the shell itself, with no key on the root', () => {
