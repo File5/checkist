@@ -2,6 +2,7 @@
 
 Сегодня в тестах — 13 октября 2026. Люди и суммы вымышленные.
 """
+import time
 from datetime import date, timedelta
 from decimal import Decimal
 from unittest import mock
@@ -213,3 +214,108 @@ class GoalVisibilityTests(TestCase):
         client = APIClient()
         for response in (client.get(URL), client.post(URL, {"name": "x", "amount": "1"}, format="json")):
             self.assertEqual((response.status_code, response.json()), (401, NOT_AUTHENTICATED))
+
+
+@tag("integration")
+@local_single_mode()
+class DepositApiTests(TestCase):
+    """Депозит 12 % с ежемесячной капитализацией: 100 000 внесено 15 января, сегодня — 1 марта 2026."""
+
+    def setUp(self):
+        self.client = APIClient()
+
+    def post(self, url, body, day=date(2026, 3, 1)):
+        with today(day):
+            return self.client.post(url, body, format="json")
+
+    def test_deposit_interest_forecast_and_reconciliation(self):
+        created = self.post(URL, {"name": "Kaspi Депозит", "amount": "200000", "deadline": "2027-03-01", "kind": "deposit",
+                                  "rate": "12"})
+        goal = created.json()
+        self.assertEqual((created.status_code, goal["kind"], goal["rate"], goal["capitalization"], goal["series"]),
+                         (201, "deposit", "12.00", "monthly", []))
+        detail = self.post(f"{URL}{goal['id']}/contributions/", {"amount": "100000", "date": "2026-01-15"}).json()
+        # 100 000 × (1 + 17d) × (1 + 28d), d = 12 / 100 / 365 — 17 дней января, 1 февраля и 1 марта капитализация.
+        self.assertEqual((detail["saved"], detail["percent"], detail["remaining"]), ("101484.60", 50, "98515.40"))
+        # Темп — 100 000 за два месяца с первого взноса; с процентами 1 % в месяц до 200 000 — два месяца.
+        self.assertEqual(detail["pace"], {"per_month": "50000.00", "months_left": 2})
+        # До срока 12 месяцев: (200 000 − 101 484,60 × 1,01¹²) / ((1,01¹² − 1) / 0,01).
+        self.assertEqual(detail["need_per_month"], "6752.97")
+        self.assertEqual(detail["deposit"], {
+            "deposits": "100000.00", "interest": "1484.60", "in_a_year": "114355.38",
+            "at_deadline": {"total": "748480.53", "interest": "48480.53"}, "by_interest": False})
+        self.assertEqual([(point["month"], point["total"], point["forecast"]) for point in detail["series"][:4]],
+                         [("2026-01", "100558.90", False), ("2026-02", "101484.60", False), ("2026-03", "101484.60", False),
+                          ("2026-04", "152499.44", True)])
+        self.assertEqual((len(detail["series"]), detail["series"][-1]["deposits"]), (15, "700000.00"))
+
+        url = f"{URL}{goal['id']}/reconcile/"
+        up = self.post(url, {"balance": "101600"}).json()
+        self.assertEqual((up["saved"], up["deposit"]["interest"], up["contributions_count"], up["pace"]["per_month"]),
+                         ("101600.00", "1600.00", 1, "50000.00"))
+        item = up["contributions"][0]
+        self.assertEqual((item["kind"], item["amount"], item["date"]), ("interest", "115.40", "2026-03-01"))
+        down = self.post(url, {"balance": "101500,00", "date": "2026-03-01"}).json()
+        self.assertEqual((down["saved"], down["contributions"][0]["amount"]), ("101500.00", "-100.00"))
+        # Дальше — от сверенного остатка: месяц спустя 101 500 × (1 + 31d).
+        with today(date(2026, 4, 1)):
+            later = self.client.get(f"{URL}{goal['id']}/").json()
+        self.assertEqual(later["saved"], "102534.46")
+        # Сверку не правят, только удаляют.
+        edit = f"{URL}{goal['id']}/contributions/{item['id']}/"
+        with today():
+            self.assertEqual(set(fields(self.client.patch(edit, {"amount": "1"}, format="json"))), {"kind"})
+            self.assertEqual(self.client.delete(edit).json()["contributions"][0]["amount"], "-100.00")
+
+    def test_interest_alone_reaches_the_goal_and_saving_keeps_rate_zero(self):
+        goal = self.post(URL, {"name": "Подушка", "amount": "110000", "deadline": "2027-03-01", "kind": "deposit",
+                               "rate": "12", "capitalization": "none"}).json()
+        detail = self.post(f"{URL}{goal['id']}/contributions/", {"amount": "100000", "date": "2026-03-01"}).json()
+        # Без капитализации за год: 100 000 + 12 × 1 000 = 112 000 ≥ 110 000.
+        self.assertEqual((detail["need_per_month"], detail["deposit"]["by_interest"], detail["deposit"]["in_a_year"]),
+                         ("0.00", True, "112000.00"))
+        # Копилка: ставка хранится, но не считается; графика и блока депозита нет.
+        with today(date(2026, 3, 1)):
+            saving = self.client.patch(f"{URL}{goal['id']}/", {"kind": "saving"}, format="json").json()
+        self.assertEqual((saving["kind"], saving["rate"], saving["deposit"], saving["series"], saving["need_per_month"]),
+                         ("saving", "12.00", None, None, "833.33"))
+
+    def test_refusals(self):
+        cases = [
+            ({"kind": "deposit"}, {"rate"}),
+            ({"kind": "deposit", "rate": "101", "capitalization": "daily"}, {"rate", "capitalization"}),
+            ({"kind": "bond", "rate": "-1"}, {"kind", "rate"}),
+        ]
+        for body, names in cases:
+            with self.subTest(body=body):
+                response = self.post(URL, {"name": "Депозит", "amount": "1000", **body})
+                self.assertEqual((response.status_code, set(fields(response))), (400, names))
+        saving = self.post(URL, {"name": "Копилка", "amount": "1000"}).json()
+        self.assertEqual(set(fields(self.client.patch(f"{URL}{saving['id']}/", {"kind": "deposit"}, format="json"))), {"rate"})
+        self.assertEqual(set(fields(self.post(f"{URL}{saving['id']}/reconcile/", {"balance": "1"}))), {"kind"})
+        deposit = self.post(URL, {"name": "Депозит", "amount": "1000", "kind": "deposit", "rate": "0"}).json()
+        url = f"{URL}{deposit['id']}/reconcile/"
+        self.assertEqual(set(fields(self.post(url, {"balance": "0", "date": "2026-03-02", "x": 1}))), {"balance", "date", "x"})
+        # Взносов по эту дату нет — сверять не с чем.
+        self.assertEqual(fields(self.post(url, {"balance": "10"}))["date"], ["По эту дату взносов нет — сверять не с чем."])
+        self.assertFalse(Contribution.objects.exists())
+
+    def test_dates_stay_in_a_sane_window_and_the_count_is_fast(self):
+        # Сегодня 1 марта 2026: срок — не дальше 1 марта 2076, даты — не раньше 2000 года.
+        body = {"name": "Депозит", "amount": "100000000", "kind": "deposit", "rate": "12"}
+        self.assertEqual(set(fields(self.post(URL, {**body, "deadline": "2076-03-02"}))), {"deadline"})
+        goal = self.post(URL, {**body, "deadline": "2076-03-01"}).json()
+        gifts = f"{URL}{goal['id']}/contributions/"
+        self.assertEqual(set(fields(self.post(gifts, {"amount": "1", "date": "1999-12-31"}))), {"date"})
+        self.assertEqual(set(fields(self.post(gifts, {"amount": "1", "date": "2076-03-02"}))), {"date"})
+        self.assertEqual(set(fields(self.post(f"{URL}{goal['id']}/reconcile/", {"balance": "1", "date": "1999-12-31"}))), {"date"})
+        self.assertEqual(self.post(gifts, {"amount": "1000", "date": "2000-01-01"}).status_code, 201)
+        self.assertEqual(self.post(gifts, {"amount": "1000", "date": "2026-02-01"}).status_code, 201)
+        # 26 лет начисления и 50 лет прогноза — шаги по месяцам, а не по дням.
+        started = time.perf_counter()
+        services.progress([Goal.objects.get(pk=goal["id"])], date(2026, 3, 1))
+        self.assertLess(time.perf_counter() - started, 0.2)
+        with today(date(2026, 3, 1)):
+            detail = self.client.get(f"{URL}{goal['id']}/").json()
+            listed = self.client.get(URL).json()
+        self.assertEqual((len(detail["series"]), listed["results"][0]["saved"]), (315 + 60, detail["saved"]))

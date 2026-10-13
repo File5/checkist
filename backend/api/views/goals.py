@@ -3,10 +3,12 @@
 Доступ — как у лимитов и регулярных платежей: ``accounts`` — вход, ``local_single`` — DEBUG +
 флаг + loopback; запись — с CSRF. Видимость — только ``goals.access.goals_q``: общая цель —
 вся семья, личная — владелец и главный семьи; чужая — ``404``. Взнос отвечает целью целиком
-(``goal_detail``), чтобы экран сразу показал новый прогресс.
+(``goal_detail``), чтобы экран сразу показал новый прогресс. Депозит (``kind=deposit``) — со ставкой и
+капитализацией; «Сверить с банком» (``reconcile/``) пишет разницу с расчётом записью «проценты».
 """
 import re
 from datetime import date
+from decimal import Decimal, InvalidOperation
 
 from django.contrib.auth import get_user_model
 from django.db.models import Case, IntegerField, Value, When
@@ -32,7 +34,7 @@ from .recognition_base import JsonObjectParser, LocalAPIView
 
 NAME_MAX = 100
 NOTE_MAX = 200
-GOAL_FIELDS = ("name", "amount", "currency", "deadline", "shared")
+GOAL_FIELDS = ("name", "amount", "currency", "deadline", "shared", "kind", "rate", "capitalization")
 CONTRIBUTION_FIELDS = ("amount", "currency", "date", "user", "note")
 MESSAGES = {
     "unknown_field": "Неизвестное поле.",
@@ -41,11 +43,19 @@ MESSAGES = {
     "name": f"Название — от 1 до {NAME_MAX} символов.",
     "amount": "Сумма больше нуля, не больше двух знаков после запятой.",
     "currency": "Валюта не найдена.",
-    "date": "Дата в формате ГГГГ-ММ-ДД.",
+    "date": "Дата — ГГГГ-ММ-ДД, не раньше 2000 года и не дальше 50 лет вперёд.",
     "shared": "Ожидается true или false.",
     "no_household": "Общая цель — только у семьи.",
     "user": "Это не член семьи.",
     "note": f"Комментарий — строка не длиннее {NOTE_MAX} символов.",
+    "kind": "Вид — saving или deposit.",
+    "rate": "Ставка — от 0 до 100 % годовых, не больше двух знаков после запятой.",
+    "rate_required": "У депозита укажите ставку.",
+    "capitalization": "Капитализация — monthly или none.",
+    "not_deposit": "Сверка с банком — только у депозита.",
+    "reconcile_date": "Дата сверки — ГГГГ-ММ-ДД, не раньше 2000 года и не позже сегодня.",
+    "no_deposits": "По эту дату взносов нет — сверять не с чем.",
+    "interest_edit": "Сверку можно только удалить.",
 }
 
 
@@ -59,13 +69,39 @@ def _currency(value):
     return None
 
 
-def _date(value):
+# Даты взносов, сверок и срока: расчёт депозита идёт по месяцам от первого взноса до сегодня, прогноз — до срока,
+# поэтому даты держатся в разумном окне (с 2000 года, не дальше 50 лет вперёд).
+EARLIEST = date(2000, 1, 1)
+YEARS_AHEAD = 50
+
+
+def _latest(today):
+    return date(today.year + YEARS_AHEAD, today.month, min(today.day, 28))
+
+
+def _date(value, latest):
+    """``ГГГГ-ММ-ДД`` в окне ``EARLIEST`` … ``latest``; иначе ``None``."""
     if not (isinstance(value, str) and len(value) == 10):
         return None
     try:
-        return date.fromisoformat(value)
+        day = date.fromisoformat(value)
     except ValueError:
         return None
+    return day if EARLIEST <= day <= latest else None
+
+
+def _rate(value):
+    """% годовых: строка (запятая допустима) либо число JSON; 0–100, два знака."""
+    if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+        return None
+    text = repr(value) if isinstance(value, float) else str(value).strip().replace(",", ".")
+    if not re.fullmatch(r"\d{1,3}(?:\.\d{1,2})?", text):
+        return None
+    try:
+        result = Decimal(text)
+    except InvalidOperation:
+        return None
+    return result if result <= 100 else None
 
 
 def _check_fields(data, allowed, errors):
@@ -74,8 +110,8 @@ def _check_fields(data, allowed, errors):
             errors[key] = [MESSAGES["unknown_field"]]
 
 
-def read_goal(request, data, *, partial):
-    """Проверенные поля цели; без ``currency`` новая цель берёт основную валюту семьи."""
+def read_goal(request, data, *, partial, goal=None):
+    """Проверенные поля цели; без ``currency`` новая цель берёт основную валюту семьи; у депозита — ставка."""
     errors, values = {}, {}
     _check_fields(data, GOAL_FIELDS, errors)
     for key in ("name", "amount"):
@@ -95,7 +131,7 @@ def read_goal(request, data, *, partial):
         if values["currency_id"] is None:
             errors["currency"] = [MESSAGES["currency"]]
     if "deadline" in data:
-        values["deadline"] = None if data["deadline"] in (None, "") else _date(data["deadline"])
+        values["deadline"] = None if data["deadline"] in (None, "") else _date(data["deadline"], _latest(timezone.localdate()))
         if data["deadline"] not in (None, "") and values["deadline"] is None:
             errors["deadline"] = [MESSAGES["date"]]
     if "shared" in data:
@@ -105,6 +141,19 @@ def read_goal(request, data, *, partial):
             errors["shared"] = [MESSAGES["no_household"]]
         else:
             values["shared"] = data["shared"]
+    choices = {"kind": Goal.Kind.values, "capitalization": Goal.Capitalization.values}
+    for key, allowed in choices.items():
+        if key in data:
+            values[key] = data[key]
+            if data[key] not in allowed:
+                errors[key] = [MESSAGES[key]]
+    if "rate" in data:
+        values["rate"] = None if data["rate"] in (None, "") else _rate(data["rate"])
+        if data["rate"] not in (None, "") and values["rate"] is None:
+            errors["rate"] = [MESSAGES["rate"]]
+    deposit = values.get("kind", goal.kind if goal else Goal.Kind.SAVING) == Goal.Kind.DEPOSIT
+    if deposit and "rate" not in errors and values.get("rate", goal.rate if goal and "rate" not in data else None) is None:
+        errors["rate"] = [MESSAGES["rate_required"]]
     if partial and not errors and not values:
         errors["body"] = [MESSAGES["empty"]]
     if errors:
@@ -134,7 +183,7 @@ def read_contribution(request, goal, data, *, partial):
         if values["currency_id"] is None:
             errors["currency"] = [MESSAGES["currency"]]
     if "date" in data or not partial:
-        values["date"] = _date(data["date"]) if "date" in data else timezone.localdate()
+        values["date"] = _date(data["date"], _latest(timezone.localdate())) if "date" in data else timezone.localdate()
         if values["date"] is None:
             errors["date"] = [MESSAGES["date"]]
     if "user" in data or not partial:
@@ -157,6 +206,19 @@ def read_contribution(request, goal, data, *, partial):
     return values
 
 
+def deposit_object(goal, progress):
+    """Депозит: взносов всего, ≈ заработано процентами, без взносов через год, к сроку при нынешнем темпе."""
+    if goal.kind != Goal.Kind.DEPOSIT:
+        return None
+    return {
+        "deposits": common.amount(progress.deposits), "interest": common.amount(progress.saved - progress.deposits),
+        "in_a_year": common.amount(progress.year),
+        "at_deadline": None if progress.at_deadline is None else dict(
+            zip(("total", "interest"), map(common.amount, progress.at_deadline))),
+        "by_interest": progress.need == services.ZERO,
+    }
+
+
 def goal_object(goal, progress):
     shared = goal.household_id is not None
     percent = int(progress.saved * 100 // goal.amount) if progress.saved > 0 else 0
@@ -173,13 +235,15 @@ def goal_object(goal, progress):
         "pace": None if progress.pace is None else {
             "per_month": common.amount(progress.pace), "months_left": progress.months_left},
         "need_per_month": common.amount(progress.need), "overdue": progress.overdue,
+        "kind": goal.kind, "rate": None if goal.rate is None else common.decimal_string(goal.rate, 2),
+        "capitalization": goal.capitalization, "deposit": deposit_object(goal, progress),
     }
 
 
 def contribution_object(item):
     return {
         "id": item.pk, "amount": common.amount(item.amount), "currency": item.currency_id, "date": common.iso_date(item.date),
-        "user": person(item.user) if item.user else None, "note": item.note,
+        "user": person(item.user) if item.user else None, "note": item.note, "kind": item.kind,
     }
 
 
@@ -190,8 +254,10 @@ def visible_goals(request):
 def goal_detail(request, goal):
     progress = services.progress([goal], timezone.localdate())[goal.pk]
     contributions = goal.contributions.select_related("user").order_by("-date", "-pk")
+    series = [{"month": month.isoformat()[:7], "total": common.amount(total), "deposits": common.amount(saved),
+               "forecast": ahead} for month, total, saved, ahead in progress.points]
     return {**goal_object(goal, progress), "contributions": [contribution_object(item) for item in contributions],
-            "people": people(request)}
+            "people": people(request), "series": series if goal.kind == Goal.Kind.DEPOSIT else None}
 
 
 class GoalsView(LocalAPIView):
@@ -229,7 +295,7 @@ class GoalView(LocalAPIView):
 
     def patch(self, request, pk):
         goal = common.get_or_404(visible_goals(request), path_id(pk))
-        apply_goal(request, goal, read_goal(request, manual_body(request), partial=True)).save()
+        apply_goal(request, goal, read_goal(request, manual_body(request), partial=True, goal=goal)).save()
         return Response(goal_detail(request, goal))
 
     def delete(self, request, pk):
@@ -262,6 +328,8 @@ class ContributionView(LocalAPIView):
 
     def patch(self, request, pk, item):
         goal, contribution = self._item(request, pk, item)
+        if contribution.kind == Contribution.Kind.INTEREST:
+            raise InvalidParameter({"kind": [MESSAGES["interest_edit"]]})
         for name, value in read_contribution(request, goal, manual_body(request), partial=True).items():
             setattr(contribution, name, value)
         contribution.save()
@@ -271,3 +339,34 @@ class ContributionView(LocalAPIView):
         goal, contribution = self._item(request, pk, item)
         contribution.delete()
         return Response(goal_detail(request, goal))
+
+
+class ReconcileView(LocalAPIView):
+    """``POST {"balance", "date"?}`` — «Сверить с банком»: разница фактического остатка депозита с расчётом на эту
+    дату (по умолчанию сегодня) — запись «проценты» (``kind=interest``, может быть отрицательной), дальше расчёт
+    идёт от сверенного остатка. Ответ — цель целиком."""
+
+    http_method_names = ["post", "options"]
+    parser_classes = [GoalBodyParser]
+
+    def post(self, request, pk):
+        goal = common.get_or_404(visible_goals(request), path_id(pk))
+        data, errors, today = manual_body(request), {}, timezone.localdate()
+        _check_fields(data, ("balance", "date"), errors)
+        balance = _amount(data.get("balance"))
+        day = _date(data["date"], today) if "date" in data else today
+        if balance is None:
+            errors["balance"] = [MESSAGES["required"] if "balance" not in data else MESSAGES["amount"]]
+        if day is None:
+            errors["date"] = [MESSAGES["reconcile_date"]]
+        if goal.kind != Goal.Kind.DEPOSIT:
+            errors["kind"] = [MESSAGES["not_deposit"]]
+        if errors:
+            raise InvalidParameter(errors)
+        estimate = services.estimate(goal, day)
+        if estimate is None:
+            raise InvalidParameter({"date": [MESSAGES["no_deposits"]]})
+        user = request_user(request)
+        Contribution.objects.create(goal=goal, kind=Contribution.Kind.INTEREST, amount=balance - estimate,
+                                    currency_id=goal.currency_id, date=day, user=user, created_by=user)
+        return Response(goal_detail(request, goal), status=status.HTTP_201_CREATED)

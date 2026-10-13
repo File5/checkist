@@ -1068,3 +1068,19 @@ docker compose -p checkist_dev cp postgres:/tmp/checkist.dump ./checkist.dump
   откат `AddField`). Новые категории значок сами не получают — его ставит модератор.
 - Меняют: модератор каталога на экране категории в каталоге (`POST /api/categories/{id}/icon/`) и администратор в
   `/admin/` (форма категории, поле «Icon»).
+
+## Цель-депозит (`goals`, 2026-10-13, ветка `feature/goal-deposit`)
+
+- `Goal.kind` — `saving` (по умолчанию, все прежние цели) | `deposit`; `Goal.rate` — `Decimal(5, 2)` NULL, % годовых,
+  ограничение `goals_goal_rate_range` (NULL либо 0–100); `Goal.capitalization` — `monthly` (по умолчанию) | `none`. У копилки
+  ставка хранится, но не считается.
+- `Contribution.kind` — `deposit` (по умолчанию: прежние взносы и взносы из выписки по правилу «→ цель») | `interest` —
+  «проценты»: разница «Сверить с банком», в валюте цели, может быть отрицательной или нулём; ограничение
+  `goals_contribution_amount_positive` теперь `amount > 0 OR kind = 'interest'`. Запись `interest` — не взнос: в темп
+  «откладываете» и в счёт взносов не входит; «накоплено» депозита и его прогнозы её учитывают. Поиск дубля взноса выписки
+  (`statements.drafts.mark_goal_duplicates`) не менялся.
+- Сумма на депозите не хранится — её считает `goals/forecast.py` при чтении (`goals.services.progress` / `estimate`).
+- Миграция `goals.0002_goal_deposit` (`AddField` ×4 со значениями по умолчанию, замена ограничения, новое ограничение
+  ставки, `RunPython` только на откат). Откат — `migrate goals 0001_initial`; при записях «проценты» он отказывает с их числом:
+  сначала удалить их (`DELETE /api/goals/{id}/contributions/{item}/`, админка либо
+  `Contribution.objects.filter(kind='interest').delete()` в `manage.py shell`). Вид и ставка целей при откате теряются.

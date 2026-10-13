@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { createGoal, getGoals } from '../../api/goals'
 import type { Goal, GoalList } from '../../api/goals'
 import Icon from '../../components/Icon'
@@ -19,7 +19,8 @@ export function GoalRow({ goal, household }: { goal: Goal; household: boolean })
         <span className="ck-row-title">{goal.name}</span>
         <span className="ck-row-meta ck-figures goal-row-sum">{savedOf(goal)}</span>
         <span className="ck-bar goal-bar" aria-hidden="true"><span style={{ width: `${barShare(goal)}%` }} /></span>
-        {goalMeta(goal, household) && <span className="ck-row-meta">{goalMeta(goal, household)}</span>}
+        {goalMeta(goal, household) && <span className="ck-row-meta goal-row-meta">{goalMeta(goal, household).split(' · ').map((part, index) =>
+          <Fragment key={index}>{index > 0 && ' · '}<span>{part}</span></Fragment>)}</span>}
       </span>
       <span className="ck-row-amount ck-figures">{goal.percent}&nbsp;%</span>
     </Link>
