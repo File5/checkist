@@ -130,7 +130,7 @@ class ExtractTests(SimpleTestCase):
         text = extract.pdf_text(demo.pdf_bytes(lines))
         bank, rows = parsers.parse(text)
         self.assertEqual(bank, parsers.KASPI)
-        self.assertEqual(len(rows), 19)
+        self.assertEqual(len(rows), 20)
         self.assertEqual((rows[0].merchant, rows[0].amount), ("MAGNUM CASH&CARRY", Decimal("-18450.00")))
         self.assertIn("₸", text)
 

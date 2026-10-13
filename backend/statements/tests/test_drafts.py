@@ -222,7 +222,7 @@ class DuplicateTests(DraftFixture, TestCase):
 @tag("integration")
 class SaveTests(DraftFixture, TestCase):
     def saved(self, statement, *items):
-        return drafts.save(statement.pk, {"rows": list(items)}, rule_owner=owner_of(self.owner), actor=self.owner)
+        return drafts.save(statement.pk, {"rows": list(items)}, rule_owner=owner_of(self.owner), actor=self.owner)[:2]
 
     def test_spends_are_created_for_the_uploader_with_the_statement_note(self):
         statement, rows = self.draft(
@@ -337,5 +337,5 @@ class AcceptTests(DraftFixture, TestCase):
         again, created_again = drafts.accept(self.owner, data, rule_scope=scope_of(self.owner))
         self.assertEqual((created, created_again, again.pk), (True, False, first.pk))
         self.assertEqual(StatementImport.objects.count(), 1)
-        self.assertEqual(first.rows.count(), 19)
+        self.assertEqual(first.rows.count(), 20)
         self.assertEqual(len(first.sha256), 64)

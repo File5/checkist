@@ -1,7 +1,8 @@
 """Импорт выписок: загрузка PDF, черновик, «Сохранить N трат» и правила получателей.
 
 Черновик — личный: виден и сохраняется только тем, кто загрузил выписку (чужой — ``404``);
-траты создаются на него. Правила — общие на семью, как лимиты (``budget.access``).
+траты создаются на него. Правила — общие на семью, как лимиты (``budget.access``); правило
+«→ цель» — личное, на видимую цель (``statements.rules.visible_q``).
 """
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Q
@@ -14,15 +15,17 @@ from api.common import CategoryTree, get_or_404, iso_date, store_name, utc_datet
 from api.pagination import paginate
 from api.params import Params
 from api.recognition_serialization import executor_object
-from budget.access import limit_owner, limits_q
+from budget.access import limit_owner
 from catalog.models import Category
 from config.exceptions import ApiError, InvalidParameter, InvalidRequest
+from goals.access import goals_q
+from goals.models import Goal
 from receipts import manual
 from statements import drafts
 from statements.extract import MAX_BYTES, StatementError
 from statements.models import StatementAsk, StatementImport, StatementRow, StatementRule
 from statements.parsers import BANK_LABELS
-from statements.rules import normalize
+from statements.rules import normalize, visible_q
 
 from .recognition import path_id
 from .recognition_base import BoundedMultiPartParser, JsonObjectParser, LocalAPIView
@@ -67,6 +70,8 @@ MESSAGES = {
     "taken": "Правило для этого получателя уже есть.",
     "choice": "Неизвестное значение.",
     "category_action": "Категория нужна только правилу «категория».",
+    "goal_action": "Цель нужна только правилу «→ цель».",
+    "not_transfer": "Взносом в цель становится только перевод, который ещё не сохранён.",
 }
 
 
@@ -93,7 +98,12 @@ def row_object(row, tree):
         "kind": row.kind, "state": row.state, "reason": row.reason or None,
         "category": category_object(tree, row.category_id), "store_name": row.store_name or None,
         "source": row.source or None, "ai": row.ai or None, "duplicate_of": duplicate, "receipt_id": row.receipt_id,
+        "goal": goal_ref(row.goal), "contribution_id": row.contribution_id,
     }
+
+
+def goal_ref(goal):
+    return None if goal is None else {"id": goal.pk, "name": goal.name}
 
 
 def summary_object(statement):
@@ -111,7 +121,7 @@ def annotated(queryset):
 
 def detail_object(statement):
     tree = CategoryTree.load()
-    rows = list(statement.rows.select_related("duplicate_of__store__merchant").order_by("position"))
+    rows = list(statement.rows.select_related("duplicate_of__store__merchant", "goal").order_by("position"))
     asks = statement.asks.values_list("status", flat=True)
     waiting = sum(1 for row in rows if row.ai == StatementRow.Ai.WAITING)
     return {
@@ -155,7 +165,7 @@ class StatementsView(LocalAPIView):
             raise StatementApiError("upload_too_large")
         content = upload.read()
         try:
-            statement, created = drafts.accept(request_user(request), content, rule_scope=limits_q(request))
+            statement, created = drafts.accept(request_user(request), content, rule_scope=visible_q(request))
         except StatementError as error:
             raise StatementApiError(error.code) from None
         statement = annotated(StatementImport.objects.filter(pk=statement.pk)).get()
@@ -200,27 +210,69 @@ class StatementSaveView(LocalAPIView):
         except ParseError:
             raise InvalidRequest() from None
         try:
-            created, learned = drafts.save(statement.pk, data, rule_owner=limit_owner(request), actor=request_user(request))
+            created, learned, contributed = drafts.save(statement.pk, data, rule_owner=limit_owner(request),
+                                                        actor=request_user(request), goal_scope=goals_q(request))
         except drafts.SaveInvalid as error:
             raise invalid(error.fields) from None
         statement = annotated(StatementImport.objects.filter(pk=statement.pk)).get()
-        return Response({"created": created, "learned": learned, "statement": detail_object(statement)})
+        return Response({"created": created, "learned": learned, "contributed": contributed,
+                         "statement": detail_object(statement)})
+
+
+class StatementGoalView(LocalAPIView):
+    """``POST {"row", "goal"}`` — «это взнос в цель»: личное правило получателя строки «→ цель» и его
+    применение к несохранённым переводам черновика. Ответ: ``applied`` (строк стало взносами) и черновик.
+    """
+
+    http_method_names = ["post", "options"]
+    parser_classes = [JsonObjectParser]
+
+    def post(self, request, pk):
+        statement = get_or_404(own_statements(request), path_id(pk))
+        try:
+            data = request.data
+        except ParseError:
+            raise InvalidRequest() from None
+        if not isinstance(data, dict):
+            raise invalid({"body": "body"})
+        errors = {key: "unknown_field" for key in data if key not in ("row", "goal")}
+        for key in ("row", "goal"):
+            value = data.get(key)
+            if value is None:
+                errors[key] = "required"
+            elif isinstance(value, bool) or not isinstance(value, int) or not 0 < value < 2 ** 63:
+                errors[key] = "type"
+        goal = None
+        if "goal" not in errors:
+            goal = Goal.objects.filter(goals_q(request), pk=data["goal"]).first()
+            if goal is None:
+                errors["goal"] = "unknown"
+        if errors:
+            raise invalid(errors)
+        try:
+            applied = drafts.assign_goal(statement.pk, data["row"], goal, user=request_user(request),
+                                         actor=request_user(request))
+        except drafts.SaveInvalid as error:
+            raise invalid(error.fields) from None
+        statement = annotated(StatementImport.objects.filter(pk=statement.pk)).get()
+        return Response({"applied": applied, "statement": detail_object(statement)})
 
 
 # --- правила ---
 
-RULE_FIELDS = ("pattern", "action", "category", "store_name")
+RULE_FIELDS = ("pattern", "action", "category", "store_name", "goal")
 
 
 def rule_object(rule, tree):
     return {
         "id": rule.pk, "pattern": rule.pattern, "action": rule.action, "category": category_object(tree, rule.category_id),
-        "store_name": rule.store_name or None, "origin": rule.origin, "updated_at": utc_datetime(rule.updated_at),
+        "store_name": rule.store_name or None, "goal": goal_ref(rule.goal), "origin": rule.origin,
+        "updated_at": utc_datetime(rule.updated_at),
     }
 
 
-def rule_values(data, current=None):
-    """Проверенные поля правила; без ``current`` — новое (``pattern`` обязателен)."""
+def rule_values(request, data, current=None):
+    """Проверенные поля правила; без ``current`` — новое (``pattern`` обязателен). Цель — только видимая запросу."""
     if not isinstance(data, dict):
         raise invalid({"body": "body"})
     errors = {key: "unknown_field" for key in data if key not in RULE_FIELDS}
@@ -256,8 +308,23 @@ def rule_values(data, current=None):
             errors["store_name"] = "too_long"
         else:
             values["store_name"] = (store or "").strip()
+    if "goal" in data:
+        goal = data["goal"]
+        if goal is not None and (isinstance(goal, bool) or not isinstance(goal, int)):
+            errors["goal"] = "type"
+        elif goal is not None and not Goal.objects.filter(goals_q(request), pk=goal).exists():
+            errors["goal"] = "unknown"
+        else:
+            values["goal_id"] = goal
     action = values.get("action", current.action if current else StatementRule.Action.CATEGORY)
     category = values.get("category_id", current.category_id if current else None)
+    if action == StatementRule.Action.GOAL:
+        if values.get("goal_id", current.goal_id if current else None) is None and "goal" not in errors:
+            errors["goal"] = "required"
+    else:
+        if "goal" in data and data["goal"] is not None and "goal" not in errors:
+            errors["goal"] = "goal_action"
+        values["goal_id"] = None
     if action == StatementRule.Action.CATEGORY and category is None and "category" not in errors:
         errors["category"] = "required"
     if action != StatementRule.Action.CATEGORY:
@@ -268,6 +335,17 @@ def rule_values(data, current=None):
     if errors:
         raise invalid(errors)
     return values
+
+
+def rule_owner(request, rule):
+    """Владелец правила: «→ цель» — сам пользователь (личное), остальные — как лимиты (семья либо свой)."""
+    if rule.action == StatementRule.Action.GOAL:
+        return {"household": None, "user": request_user(request)}
+    return limit_owner(request)
+
+
+def visible_rules(request):
+    return StatementRule.objects.filter(visible_q(request)).select_related("goal")
 
 
 def save_rule(rule):
@@ -286,7 +364,7 @@ class RulesView(LocalAPIView):
 
     def get(self, request):
         tree = CategoryTree.load()
-        rules = StatementRule.objects.filter(limits_q(request)).order_by("key", "pk")
+        rules = visible_rules(request).order_by("key", "pk")
         return Response({"results": [rule_object(rule, tree) for rule in rules]})
 
     def post(self, request):
@@ -294,9 +372,9 @@ class RulesView(LocalAPIView):
             data = request.data
         except ParseError:
             raise InvalidRequest() from None
-        values = rule_values(data)
-        rule = StatementRule(**limit_owner(request), **values, origin=StatementRule.Origin.MANUAL,
-                             created_by=request_user(request))
+        rule = StatementRule(**rule_values(request, data), origin=StatementRule.Origin.MANUAL, created_by=request_user(request))
+        for name, value in rule_owner(request, rule).items():
+            setattr(rule, name, value)
         save_rule(rule)
         return Response(rule_object(rule, CategoryTree.load()), status=status.HTTP_201_CREATED)
 
@@ -308,16 +386,19 @@ class RuleView(LocalAPIView):
     parser_classes = [JsonObjectParser]
 
     def patch(self, request, pk):
-        rule = get_or_404(StatementRule.objects.filter(limits_q(request)), path_id(pk))
+        rule = get_or_404(visible_rules(request), path_id(pk))
         try:
             data = request.data
         except ParseError:
             raise InvalidRequest() from None
-        for name, value in rule_values(data, rule).items():
+        for name, value in rule_values(request, data, rule).items():
+            setattr(rule, name, value)
+        # Правило, ставшее «→ цель» или переставшее им быть, переходит к своему владельцу.
+        for name, value in rule_owner(request, rule).items():
             setattr(rule, name, value)
         save_rule(rule)
         return Response(rule_object(rule, CategoryTree.load()))
 
     def delete(self, request, pk):
-        get_or_404(StatementRule.objects.filter(limits_q(request)), path_id(pk)).delete()
+        get_or_404(visible_rules(request), path_id(pk)).delete()
         return Response(status=status.HTTP_204_NO_CONTENT)

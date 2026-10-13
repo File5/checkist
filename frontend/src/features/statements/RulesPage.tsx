@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { getCategories } from '../../api/catalog'
+import { getGoals } from '../../api/goals'
+import type { Goal } from '../../api/goals'
 import { createStatementRule, deleteStatementRule, getStatementRules, updateStatementRule } from '../../api/statements'
 import type { StatementRule, StatementRuleAction, StatementRuleInput } from '../../api/statements'
 import type { Category } from '../../api/types'
@@ -10,21 +12,26 @@ import { actionLabels, categoryOptions, ruleMeta } from './statement-state'
 import { statementFailure, statementTexts } from './statement-texts'
 import './Statements.css'
 
-type Draft = { pattern: string; action: StatementRuleAction; category: number | null; store: string }
-const emptyDraft: Draft = { pattern: '', action: 'category', category: null, store: '' }
-const draftOf = (rule: StatementRule): Draft => ({ pattern: rule.pattern, action: rule.action, category: rule.category?.id ?? null, store: rule.store_name ?? '' })
+type Draft = { pattern: string; action: StatementRuleAction; category: number | null; store: string; goal: number | null }
+const emptyDraft: Draft = { pattern: '', action: 'category', category: null, store: '', goal: null }
+const draftOf = (rule: StatementRule): Draft => ({
+  pattern: rule.pattern, action: rule.action, category: rule.category?.id ?? null, store: rule.store_name ?? '', goal: rule.goal?.id ?? null,
+})
 const bodyOf = (draft: Draft): StatementRuleInput => draft.action === 'category'
   ? { pattern: draft.pattern.trim(), action: 'category', category: draft.category, store_name: draft.store.trim() }
-  : { pattern: draft.pattern.trim(), action: draft.action, category: null }
+  : draft.action === 'goal'
+    ? { pattern: draft.pattern.trim(), action: 'goal', category: null, goal: draft.goal }
+    : { pattern: draft.pattern.trim(), action: draft.action, category: null }
 
-type EditorProps = { id: string; initial: Draft; options: { id: number; label: string }[]; busy: boolean; submit: string
+type EditorProps = { id: string; initial: Draft; options: { id: number; label: string }[]; goals: Goal[]; busy: boolean; submit: string
   onSubmit: (draft: Draft) => void; onDelete?: () => void; onCancel: () => void }
 
 /** The fields of a rule: the payee as the bank writes it, what to do, and for a category its name and the place. */
-function RuleEditor({ id, initial, options, busy, submit, onSubmit, onDelete, onCancel }: EditorProps) {
+function RuleEditor({ id, initial, options, goals, busy, submit, onSubmit, onDelete, onCancel }: EditorProps) {
   const [draft, setDraft] = useState(initial)
   const set = (patch: Partial<Draft>) => setDraft((current) => ({ ...current, ...patch }))
   const ready = draft.pattern.trim() !== '' && (draft.action !== 'category' || draft.category !== null)
+    && (draft.action !== 'goal' || draft.goal !== null)
   const send = (event: FormEvent) => { event.preventDefault(); if (ready && !busy) onSubmit(draft) }
   return <form className="statement-rule-form" onSubmit={send} noValidate>
     <label className="statement-field">
@@ -53,6 +60,17 @@ function RuleEditor({ id, initial, options, busy, submit, onSubmit, onDelete, on
           onChange={(event) => set({ store: event.target.value })} />
       </label>
     </>}
+    {draft.action === 'goal' && <>
+      <label className="statement-field">
+        <span>Цель</span>
+        <select value={draft.goal ?? ''} onChange={(event) => set({ goal: event.target.value ? Number(event.target.value) : null })}>
+          <option value="">Выберите цель</option>
+          {goals.map((goal) => <option key={goal.id} value={goal.id}>{goal.name}</option>)}
+        </select>
+      </label>
+      <p className="statement-note statement-small">Переводы этому получателю станут взносами в цель, а не тратами. Правило личное: только
+        для ваших выписок.</p>
+    </>}
     <div className="statement-rule-buttons">
       <button type="submit" disabled={!ready || busy}>{submit}</button>
       <button type="button" className="ck-button-secondary" disabled={busy} onClick={onCancel}>Отмена</button>
@@ -64,6 +82,7 @@ function RuleEditor({ id, initial, options, busy, submit, onSubmit, onDelete, on
 export type RulesViewProps = {
   rules: StatementRule[]
   categories: Category[]
+  goals?: Goal[]
   open: number | 'new' | null
   busy: boolean
   message: string | null
@@ -76,7 +95,7 @@ export type RulesViewProps = {
 }
 
 /** The rules without the network: the markup tests render it directly. */
-export function RulesView({ rules, categories, open, busy, message, search, onSearch, onOpen, onCreate, onUpdate, onDelete }: RulesViewProps) {
+export function RulesView({ rules, categories, goals = [], open, busy, message, search, onSearch, onOpen, onCreate, onUpdate, onDelete }: RulesViewProps) {
   const options = useMemo(() => categoryOptions(categories), [categories])
   const byId = useMemo(() => new Map(categories.map((category) => [category.id, category])), [categories])
   const words = search.trim().toLocaleLowerCase('ru')
@@ -90,7 +109,7 @@ export function RulesView({ rules, categories, open, busy, message, search, onSe
         {open !== 'new' && <button type="button" className="ck-button-secondary statement-add" onClick={() => onOpen('new')}>
           <Icon name="plus" size={18} />Добавить</button>}
       </div>
-      {open === 'new' && <RuleEditor id="statement-rule-new" initial={emptyDraft} options={options} busy={busy} submit="Добавить правило"
+      {open === 'new' && <RuleEditor id="statement-rule-new" initial={emptyDraft} options={options} goals={goals} busy={busy} submit="Добавить правило"
         onSubmit={(draft) => onCreate(bodyOf(draft))} onCancel={() => onOpen(null)} />}
     </section>
     <section className="ck-panel" aria-labelledby="statement-rules-heading">
@@ -110,7 +129,7 @@ export function RulesView({ rules, categories, open, busy, message, search, onSe
               </span>
               {rule.origin === 'learned' && <span className="statement-learned">выучено</span>}
             </button>
-            {open === rule.id && <RuleEditor id={`statement-rule-${rule.id}`} initial={draftOf(rule)} options={options} busy={busy}
+            {open === rule.id && <RuleEditor id={`statement-rule-${rule.id}`} initial={draftOf(rule)} options={options} goals={goals} busy={busy}
               submit="Сохранить" onSubmit={(draft) => onUpdate(rule.id, bodyOf(draft))} onDelete={() => onDelete(rule.id)}
               onCancel={() => onOpen(null)} />}
           </li>)}
@@ -123,6 +142,7 @@ export function RulesView({ rules, categories, open, busy, message, search, onSe
 export default function RulesPage() {
   const [state, setState] = useState<{ kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'ok'; rules: StatementRule[] }>({ kind: 'loading' })
   const [categories, setCategories] = useState<Category[]>([])
+  const [goals, setGoals] = useState<Goal[]>([])
   const [open, setOpen] = useState<number | 'new' | null>(null)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
@@ -135,6 +155,7 @@ export default function RulesPage() {
       else if (result.kind === 'error') setState({ kind: 'error', message: statementFailure(result) })
     })
     void getCategories({}, { signal: abort.signal }).then((result) => { if (result.kind === 'ok') setCategories(result.data.results) })
+    void getGoals({ signal: abort.signal }).then((result) => { if (result.kind === 'ok') setGoals(result.data.results) })
     return () => abort.abort()
   }, [attempt])
   if (state.kind === 'loading') return <RequestState kind="loading" message="Загружаем правила…" />
@@ -151,7 +172,7 @@ export default function RulesPage() {
     else if (result.kind === 'error') setMessage(result.reason === 'invalid_parameter' && result.fields?.includes('pattern')
       ? 'Правило для этого получателя уже есть или получатель пуст.' : statementFailure(result))
   }
-  return <RulesView rules={rules} categories={categories} open={open} busy={busy} message={message} search={search} onSearch={setSearch} onOpen={setOpen}
+  return <RulesView rules={rules} categories={categories} goals={goals} open={open} busy={busy} message={message} search={search} onSearch={setSearch} onOpen={setOpen}
     onCreate={(input) => { void run(() => createStatementRule(input), (rule: StatementRule) => {
       setState({ kind: 'ok', rules: sorted([...rules, rule]) }); setOpen(null); setMessage('Правило добавлено.') }) }}
     onUpdate={(id, input) => { void run(() => updateStatementRule(id, input), (rule: StatementRule) => {

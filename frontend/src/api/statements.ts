@@ -11,8 +11,9 @@ export type StatementBank = 'kaspi_gold' | 'forte'
 /** What the money was: a purchase or payment, a transfer to a person, cash, a move between own accounts or in the family,
  * an incoming (kept for later, never a spend), a refund netted against a purchase of the same day. */
 export type StatementRowKind = 'spend' | 'transfer' | 'cash' | 'own_move' | 'income' | 'refund'
-/** What the draft does with it: a spend (checked), questionable (highlighted), already entered, skipped. */
-export type StatementRowState = 'spend' | 'review' | 'duplicate' | 'skipped'
+/** What the draft does with it: a spend (checked), questionable (highlighted), already entered, skipped, or a
+ * contribution to a goal (a transfer to one's own deposit by a rule «→ цель»). */
+export type StatementRowState = 'spend' | 'review' | 'duplicate' | 'skipped' | 'goal'
 export type StatementRowAi = 'waiting' | 'done' | 'unknown' | 'failed' | 'off'
 export type StatementRowSource = 'rule' | 'builtin' | 'mcc' | 'model'
 
@@ -32,24 +33,35 @@ export type StatementRow = {
   duplicate_of: StatementDuplicate | null
   /** The spend made of this row; `null` — not saved yet. */
   receipt_id: number | null
+  /** The goal of a contribution row (and of a contribution already there, `reason: goal_duplicate`). */
+  goal: GoalRef | null
+  /** The contribution made of this row; `null` — not saved as one. */
+  contribution_id: number | null
 }
+export type GoalRef = { id: number; name: string }
 export type StatementDetail = StatementSummary & {
   /** `waiting` rows wait for the model; `active` — a question is queued or running. */
   ai: { waiting: number; active: boolean; executor: Executor }
   rows: StatementRow[]
 }
 export type StatementUpload = { reused: boolean; statement: StatementSummary }
-export type StatementSaveRow = { id: number; category: number; store_name: string }
-export type StatementSaveResult = { created: number; learned: number; statement: StatementDetail }
+/** A spend with its category and place, or a contribution to a goal. */
+export type StatementSaveRow = { id: number; category: number; store_name: string } | { id: number; goal: number }
+export type StatementSaveResult = { created: number; learned: number; contributed: number; statement: StatementDetail }
+export type StatementGoalResult = { applied: number; statement: StatementDetail }
 
-export type StatementRuleAction = 'category' | 'skip' | 'own'
+/** `goal` — a transfer to the payee is a contribution to a goal: personal, it applies to one's own statements only. */
+export type StatementRuleAction = 'category' | 'skip' | 'own' | 'goal'
 export type StatementRule = {
   id: number; pattern: string; action: StatementRuleAction; category: CategoryRef | null; store_name: string | null
-  origin: 'manual' | 'learned'; updated_at: string
+  goal: GoalRef | null; origin: 'manual' | 'learned'; updated_at: string
 }
-export type StatementRuleInput = { pattern?: string; action?: StatementRuleAction; category?: number | null; store_name?: string }
+export type StatementRuleInput = {
+  pattern?: string; action?: StatementRuleAction; category?: number | null; store_name?: string; goal?: number | null
+}
 
 const categoryRef = object<CategoryRef>({ id: isId, name: text, path: array(named) })
+const goalRef = object<GoalRef>({ id: isId, name: text })
 const isSummary = object<StatementSummary>({
   id: isId, bank: choice('kaspi_gold', 'forte'), bank_name: text, date_from: nullable(isISODate), date_to: nullable(isISODate),
   created_at: isISODateTime, saved_at: nullable(isISODateTime), rows_count: nonNegativeInteger, saved_count: nonNegativeInteger,
@@ -57,21 +69,24 @@ const isSummary = object<StatementSummary>({
 const isRow = object<StatementRow>({
   id: isId, date: isISODate, amount, currency, operation: text, details: text, merchant: text, mcc: nullable(text),
   refund: amount, spend: amount,
-  kind: choice('spend', 'transfer', 'cash', 'own_move', 'income', 'refund'), state: choice('spend', 'review', 'duplicate', 'skipped'),
+  kind: choice('spend', 'transfer', 'cash', 'own_move', 'income', 'refund'), state: choice('spend', 'review', 'duplicate', 'skipped', 'goal'),
   reason: nullable(text), category: nullable(categoryRef), store_name: nullable(text),
   source: nullable(choice('rule', 'builtin', 'mcc', 'model')), ai: nullable(choice('waiting', 'done', 'unknown', 'failed', 'off')),
   duplicate_of: nullable(object<StatementDuplicate>({ id: isId, purchased_on: isISODate, total: amount, currency, store_name: nullable(text) })),
-  receipt_id: nullable(isId),
+  receipt_id: nullable(isId), goal: nullable(goalRef), contribution_id: nullable(isId),
 })
 const isDetailPart = object<Pick<StatementDetail, 'ai' | 'rows'>>({
   ai: object<StatementDetail['ai']>({ waiting: nonNegativeInteger, active: bool, executor: isExecutor }), rows: array(isRow),
 })
 export const isStatementDetail: Guard<StatementDetail> = (value): value is StatementDetail => isSummary(value) && isDetailPart(value)
 const isUpload = object<StatementUpload>({ reused: bool, statement: isSummary })
-const isSaveResult = object<StatementSaveResult>({ created: nonNegativeInteger, learned: nonNegativeInteger, statement: isStatementDetail })
+const isSaveResult = object<StatementSaveResult>({
+  created: nonNegativeInteger, learned: nonNegativeInteger, contributed: nonNegativeInteger, statement: isStatementDetail,
+})
+const isGoalResult = object<StatementGoalResult>({ applied: nonNegativeInteger, statement: isStatementDetail })
 const isRule = object<StatementRule>({
-  id: isId, pattern: text, action: choice('category', 'skip', 'own'), category: nullable(categoryRef), store_name: nullable(text),
-  origin: choice('manual', 'learned'), updated_at: isISODateTime,
+  id: isId, pattern: text, action: choice('category', 'skip', 'own', 'goal'), category: nullable(categoryRef), store_name: nullable(text),
+  goal: nullable(goalRef), origin: choice('manual', 'learned'), updated_at: isISODateTime,
 })
 const isRules = object<{ results: StatementRule[] }>({ results: array(isRule) })
 const isEmpty = (value: unknown): value is null => value === null
@@ -91,6 +106,10 @@ export async function getStatement(id: number, options: RequestOptions = {}): Pr
 /** Spends of the checked rows; a row saved before is skipped. Never replayed implicitly. */
 export async function saveStatement(id: number, rows: StatementSaveRow[], options: RequestOptions = {}): Promise<LocalApiResult<StatementSaveResult>> {
   return invalidIds({ id }, options.signal) ?? mutate(`statements/${id}/save/`, JSON.stringify({ rows }), isSaveResult, options)
+}
+/** «Это взнос в цель»: a personal rule «payee → goal» from the row and the transfers of the draft that follow it. */
+export async function assignStatementGoal(id: number, row: number, goal: number, options: RequestOptions = {}): Promise<LocalApiResult<StatementGoalResult>> {
+  return invalidIds({ id, row, goal }, options.signal) ?? mutate(`statements/${id}/goal/`, JSON.stringify({ row, goal }), isGoalResult, options)
 }
 /** The draft goes; the spends saved from it stay. */
 export async function deleteStatement(id: number, options: RequestOptions = {}): Promise<LocalApiResult<null>> {

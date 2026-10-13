@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { isStatementDetail, saveStatement, uploadStatement } from '../../api/statements'
-import { ruleFixture, statementFixture } from '../../api/statements-test-support'
+import { rowFixture, ruleFixture, statementFixture } from '../../api/statements-test-support'
 import { clearRecognitionCsrf } from '../../api/local'
 import { publicFixture } from '../../api/recognition-test-support'
 import type { Category } from '../../api/types'
@@ -58,6 +58,30 @@ describe('statement draft screen', () => {
     expect(html).toContain('<span>Покупка</span> ТОО &quot;MAGNUM CASH&amp;CARRY&quot;')
   })
 
+  it('shows contributions to goals apart and lets a transfer become one', () => {
+    const deposit = rowFixture({ id: 40, date: '2026-10-06', amount: '-100000.00', spend: '100000.00', operation: 'Перевод',
+      details: 'На Kaspi Депозит', merchant: 'На Kaspi Депозит', kind: 'own_move', state: 'goal', category: null, store_name: null,
+      source: 'rule', goal: { id: 30, name: 'Отпуск' } })
+    const base = statementFixture()
+    const detail = { ...base, rows: [...base.rows, deposit] }
+    const html = view({ detail, open: 40 }).replaceAll(String.fromCharCode(0xa0), ' ')
+    expect(html).toContain('<h2 id="statement-goals-heading">Взносы в цели</h2>')
+    expect(html).toContain('<strong>1</strong> в цели')
+    expect(html).toContain('aria-label="Сохранить взносом: На Kaspi Депозит, 100 000 ₸"')
+    expect(html).toContain('6 окт. · в цель «Отпуск»')
+    expect(html).toContain('href="/goals/30">«Отпуск»</a> — не трата.')
+    expect(html).not.toContain('placeholder="Без места" value=""')
+    expect(html).toContain('Сохранить 4 траты и 1 взнос')
+    const goals = [{ id: 30, name: 'Отпуск' }].map((goal) => ({ ...goal, amount: '1.00', currency: 'KZT', deadline: null, shared: true,
+      owner: null, created_by: null, saved: '0.00', percent: 0, remaining: '1.00', reached: false, excluded: [], contributions_count: 0,
+      pace: null, need_per_month: null, overdue: false }))
+    const transfer = view({ open: 9, goals })
+    expect(transfer).toContain('<span>Это взнос в цель</span>')
+    expect(transfer).toContain('<option value="30" selected="">Отпуск</option>')
+    expect(transfer).toContain('Это взнос — запомнить')
+    expect(view({ open: 9 })).toContain('href="/goals">заведите цель</a>')
+  })
+
   it('says when the worker is absent, after a save, and why a save failed', () => {
     const detail = statementFixture({ ai: { waiting: 1, active: true, executor: { available: false, state: 'absent', last_seen_at: null } } })
     expect(view({ detail })).toContain('Исполнитель не запущен — модель сейчас не ответит. Выберите категории сами.')
@@ -90,6 +114,9 @@ describe('upload screen and rules', () => {
     expect(html).toContain('<span class="statement-learned">выучено</span>')
     expect(ruleMeta(rules[0], new Map())).toBe('→ Аренда · Съёмное жильё')
     expect(ruleMeta(rules[1], new Map())).toBe('пропускать')
+    expect(ruleMeta(ruleFixture({ action: 'goal', category: null, store_name: null, goal: { id: 30, name: 'Отпуск' } }), new Map()))
+      .toBe('→ взнос в «Отпуск»')
+    expect(html).toContain('aria-pressed="false">Взнос в цель</button>')
     expect(renderToStaticMarkup(<RulesView {...props} rules={[]} open={null} />)).toContain('Правил пока нет.')
   })
 
@@ -138,7 +165,7 @@ describe('statements on the wire', () => {
 
   it('saves the rows as JSON', async () => {
     fetchMock.mockResolvedValueOnce(json(publicFixture('csrf.json')))
-    fetchMock.mockResolvedValueOnce(json({ created: 1, learned: 0, statement: statementFixture() }))
+    fetchMock.mockResolvedValueOnce(json({ created: 1, learned: 0, contributed: 0, statement: statementFixture() }))
     const result = await saveStatement(4, [{ id: 1, category: 1, store_name: 'MAGNUM' }])
     expect(result.kind).toBe('ok')
     const [url, init] = fetchMock.mock.calls[1]

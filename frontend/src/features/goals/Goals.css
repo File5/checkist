@@ -1,0 +1,63 @@
+/* «Цели» (`/goals`, `/goals/{id}`) in the language of the artifact: cards of `.ck-panel`, rows of `.ck-list` / `.ck-row`,
+   the progress as `.ck-bar`, the main action filled with `--ck-primary` (a plain button of App.css). Colours are tokens
+   only, sizes from the text scale; a phone (≤ 540 px) — one column without a scroll to the side. */
+.goals { max-width: 720px; }
+.goals h2 { font-size: var(--ck-text-lg); font-weight: 800; }
+.goal-note { margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-sm); }
+.goal-count { color: var(--ck-text-muted); font-size: var(--ck-text-sm); font-weight: 700; }
+.goal-notice { margin: 0; padding: 10px 14px; border: 1px solid var(--ck-success-border); border-radius: var(--ck-radius-sm); background: var(--ck-success-bg); color: var(--ck-success-text); font-size: var(--ck-text-sm); }
+
+/* A goal of the list: the badge, the name, «saved of amount», the bar and whose it is; the per cent on the right. */
+.goal-row { min-height: 84px; }
+.goal-row:hover .ck-row-title { text-decoration: underline; }
+.goal-badge { background: var(--ck-accent-bg); color: var(--ck-accent-text); }
+.goal-badge-done { background: var(--ck-success-bg); color: var(--ck-success-text); }
+.goal-row-sum { font-size: var(--ck-text-xs); }
+/* The per cent keeps one width: the bars of the list end on one line. */
+.goal-row > .ck-row-amount { min-width: 4.5em; text-align: right; }
+.goal-bar { margin-block: 4px 2px; }
+.goal-bar-done > span, .goal-badge-done + .ck-row-main .goal-bar > span { background: var(--ck-success-text); }
+.goal-empty { gap: 8px; }
+.goal-add { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 52px; }
+
+/* The card of one goal: whose it is, the saved sum large, «из … · %», a thick bar, the forecast in words. */
+.goal-hero { gap: 8px; }
+.goal-kind { margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-sm); font-weight: 700; }
+.goal-hero-sum { margin: 0; }
+.goal-of { margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-base); font-weight: 600; }
+.goal-of .ck-figures { color: var(--ck-text); }
+.goal-bar-big { height: 12px; margin-block: 6px; border-radius: 6px; }
+.goal-reached { margin: 0; color: var(--ck-success-text); font-size: var(--ck-text-base); font-weight: 800; }
+.goal-line { margin: 0; font-size: var(--ck-text-sm); }
+.goal-overdue { color: var(--ck-error-text); font-weight: 700; }
+.goal-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
+.goal-actions > button { min-height: 48px; padding-inline: 8px; }
+
+/* A contribution: who in the badge, the amount, the day and where it came from; the whole row opens it. */
+.goal-gift { width: 100%; margin: 0; padding: 12px 0; border: 0; border-radius: 0; background: transparent; color: var(--ck-text); font-weight: inherit; text-align: left; }
+.goal-gift:hover, .goal-gift:active { border: 0; background: transparent; color: var(--ck-text); }
+.goal-gift:hover .ck-row-title { text-decoration: underline; }
+.goal-person { background: var(--ck-neutral-bg); color: var(--ck-neutral-text); }
+
+/* The forms in a sheet: rows of 56 px — the words on the left, the field on the right — like «Регулярные платежи». */
+.goal-form { display: grid; gap: 16px; padding-bottom: 4px; }
+.goal-fields { display: grid; border-top: 1px solid var(--ck-divider); }
+.goal-field-wrap { border-bottom: 1px solid var(--ck-divider); }
+.goal-field { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; min-height: 56px; cursor: text; }
+.goal-field > span { flex: none; font-size: var(--ck-text-sm); font-weight: 600; }
+.goal-field input, .goal-field select { flex: 1; width: 100%; min-width: 0; min-height: 48px; padding: 0 2px; border: 0; border-radius: var(--ck-radius-sm); background: transparent; color: var(--ck-text); font-size: var(--ck-text-base); text-align: right; text-align-last: right; }
+.goal-field input::placeholder { color: var(--ck-text-muted); opacity: 1; }
+.goal-field input[aria-invalid="true"] { box-shadow: inset 0 -2px 0 var(--ck-error-border); }
+.goal-field-error { margin: 0 0 10px; color: var(--ck-error-text); font-size: var(--ck-text-xs); font-weight: 600; }
+.goal-kind-choice { display: grid; gap: 8px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.goal-kind-choice > legend { margin-bottom: 8px; padding: 0; font-size: var(--ck-text-sm); font-weight: 600; }
+.goal-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.goal-chips .ck-chip { font-size: var(--ck-text-sm); }
+.goal-submit { width: 100%; min-height: 52px; }
+.goal-confirm { display: grid; gap: 10px; }
+.goal-confirm p { margin: 0; font-size: var(--ck-text-sm); }
+.goal-form button[aria-disabled="true"] { border-color: var(--ck-disabled-border); background: var(--ck-disabled-bg); color: var(--ck-disabled-text); cursor: default; }
+
+@media (forced-colors: active) {
+  .goal-bar > span, .goal-bar-big > span { background: CanvasText; }
+}

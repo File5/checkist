@@ -186,6 +186,9 @@ export type NavigableRoute = CatalogRoute
   /** «Разбор месяца» (`/review?month=`; no `month` — the one before the current) and «Вопрос о тратах» (`/ask?q=`). */
   | { kind: 'review'; month?: string }
   | { kind: 'ask'; q?: string }
+  /** «Цели»: накопления семьи и свои, одна цель — прогресс, темп и взносы. */
+  | { kind: 'goals' }
+  | { kind: 'goal'; goalId: number }
 
 export type Route = NavigableRoute
   | { kind: 'not-found'; path: string }
@@ -583,6 +586,8 @@ export function buildRoute(route: NavigableRoute): string {
     case 'statement-rules': return '/statements/rules'
     case 'review': return parseMonthParam(route.month) ? `/review?month=${route.month}` : '/review'
     case 'ask': return route.q?.trim() ? `/ask?${new URLSearchParams({ q: route.q.trim() })}` : '/ask'
+    case 'goals': return '/goals'
+    case 'goal': return `/goals/${buildId(route.goalId)}`
   }
 }
 
@@ -656,6 +661,13 @@ export function parseRoute(input: string | URL): Route {
     let id: number | undefined
     try { id = positiveInteger(decodeURIComponent(statement[1])) } catch { /* Invalid path encoding. */ }
     return id === undefined ? { kind: 'not-found', path } : { kind: 'statement', statementId: id }
+  }
+  if (normalizedPath === '/goals') return { kind: 'goals' }
+  const goal = /^\/goals\/([^/]+)$/.exec(normalizedPath)
+  if (goal) {
+    let id: number | undefined
+    try { id = positiveInteger(decodeURIComponent(goal[1])) } catch { /* Invalid path encoding. */ }
+    return id === undefined ? { kind: 'not-found', path } : { kind: 'goal', goalId: id }
   }
   if (normalizedPath === '/family/join') {
     const token = url.searchParams.get('token') ?? ''

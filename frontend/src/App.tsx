@@ -25,6 +25,7 @@ import { StoresPage } from './features/stores'
 import { FamilyPage, NewFamilyPage, NewFamilySignedIn } from './features/family'
 import { StatementPage, StatementRulesPage, UploadStatementPage } from './features/statements'
 import { AskPage, ReviewPage } from './features/insights'
+import { GoalPage, GoalsPage } from './features/goals'
 import { pageKey, shellView, watchSession } from './features/auth/auth-state'
 import type { ShellView } from './features/auth/auth-state'
 import { moderatorOnlyText } from './features/auth/labels'
@@ -74,6 +75,8 @@ function pageTitle(route: Route) {
     case 'statement-rules': return 'Правила выписок'
     case 'review': return 'Разбор месяца'
     case 'ask': return 'Вопрос о тратах'
+    case 'goals': return 'Цели'
+    case 'goal': return 'Цель'
     case 'invalid-query': return 'Некорректная ссылка'
     case 'not-found': return 'Страница не найдена'
   }
@@ -131,6 +134,8 @@ function pageContent({ route, returnTo }: NavigationSnapshot, username: string) 
     case 'statement-rules': return <StatementRulesPage />
     case 'review': return <ReviewPage key={route.month ?? ''} month={route.month} />
     case 'ask': return <AskPage q={route.q} />
+    case 'goals': return <GoalsPage />
+    case 'goal': return <GoalPage key={route.goalId} goalId={route.goalId} />
     case 'invalid-query': return <RequestState kind="empty" message="В адресе указаны некорректные фильтры или номер страницы. Сбросьте параметры и попробуйте снова." action={<Link className="action-link" to={route.resetTo} replace>Сбросить параметры</Link>} />
     case 'not-found': return notFound
   }

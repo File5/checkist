@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
 import { getCategories } from '../../api/catalog'
-import { deleteStatement, getStatement, saveStatement } from '../../api/statements'
+import { getGoals } from '../../api/goals'
+import type { Goal } from '../../api/goals'
+import { assignStatementGoal, deleteStatement, getStatement, saveStatement } from '../../api/statements'
 import type { StatementDetail, StatementRow } from '../../api/statements'
 import type { Category } from '../../api/types'
 import RequestState from '../../components/RequestState'
@@ -12,8 +14,8 @@ import { formatMoney } from '../../lib/money'
 import { glue } from '../../lib/text'
 import { createPollingRequest } from '../recognition/polling'
 import {
-  categoryOptions, isQuestionable, keepsPolling, missingCategory, periodText, reasonText, reviewNote, rowMeta, rowWord,
-  ruleWord, saveable, saveLabel, saveRows, sections, setCategory, setStore, spendWord, syncEdits, toggleRow,
+  asGoal, canBeGoal, categoryOptions, giftWord, isQuestionable, keepsPolling, missingCategory, periodText, reasonText, reviewNote,
+  rowMeta, rowWord, ruleWord, saveable, saveLabel, saveRows, sections, setCategory, setStore, spendWord, syncEdits, toggleRow,
 } from './statement-state'
 import type { Edits } from './statement-state'
 import { statementFailure, statementTexts } from './statement-texts'
@@ -23,6 +25,8 @@ export type StatementViewProps = {
   detail: StatementDetail
   edits: Edits
   categories: Category[]
+  /** Goals the person sees: «Это взнос в цель» of a transfer picks one. */
+  goals?: Goal[]
   /** The row whose editor is open. */
   open: number | null
   saving: boolean
@@ -33,6 +37,8 @@ export type StatementViewProps = {
   onToggle: (id: number, checked: boolean) => void
   onCategory: (id: number, category: number | null) => void
   onStore: (id: number, store: string) => void
+  /** «Это взнос в цель»: the transfers of this payee become contributions to the goal, now and in the next statements. */
+  onGoal?: (id: number, goal: number) => void
   onSave: () => void
   onDelete: () => void
 }
@@ -44,22 +50,42 @@ function amountText(row: StatementRow): string {
   return formatMoney(row.spend !== '0.00' ? row.spend : row.amount.slice(1), row.currency)
 }
 
-type RowProps = Pick<StatementViewProps, 'edits' | 'onOpen' | 'onToggle' | 'onCategory' | 'onStore'> & {
-  row: StatementRow; open: boolean; options: { id: number; label: string }[]; byId: Map<number, Category>
+type RowProps = Pick<StatementViewProps, 'edits' | 'onOpen' | 'onToggle' | 'onCategory' | 'onStore' | 'onGoal'> & {
+  row: StatementRow; open: boolean; options: { id: number; label: string }[]; byId: Map<number, Category>; goals: Goal[]
 }
 
-function RowItem({ row, open, edits, options, byId, onOpen, onToggle, onCategory, onStore }: RowProps) {
+/** «Это взнос в цель» of a transfer: a goal and one button; no goals yet — a link to make one. */
+function GoalPick({ row, goals, onGoal }: { row: StatementRow; goals: Goal[]; onGoal?: (id: number, goal: number) => void }) {
+  const [picked, setGoal] = useState(0)
+  // The goals may arrive after the editor opened: until a pick, the first one.
+  const goal = goals.some((item) => item.id === picked) ? picked : goals[0]?.id ?? 0
+  if (!goals.length) {
+    return <p className="statement-details">Перевод на свой депозит можно считать взносом в цель — <Link to="/goals">заведите цель</Link>.</p>
+  }
+  return <div className="statement-goal-pick">
+    <label className="statement-field">
+      <span>Это взнос в цель</span>
+      <select value={goal} onChange={(event) => setGoal(Number(event.target.value))}>
+        {goals.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+      </select>
+    </label>
+    <button type="button" className="ck-button-secondary" onClick={() => onGoal?.(row.id, goal)}>Это взнос — запомнить</button>
+  </div>
+}
+
+function RowItem({ row, open, edits, options, byId, goals, onOpen, onToggle, onCategory, onStore, onGoal }: RowProps) {
   const edit = edits[row.id]
   const title = edit?.store.trim() || row.store_name || row.merchant || row.operation
   const questionable = isQuestionable(row)
   const note = row.receipt_id !== null ? '' : questionable ? reviewNote(row, edit) : reasonText(row)
   const editable = saveable(row)
+  const gift = asGoal(row)
   const editorId = `statement-row-${row.id}-edit`
   return <li className={`statement-row${questionable && !edit?.touched ? ' statement-row-review' : ''}`} data-state={row.state} data-kind={row.kind}>
     <div className="statement-row-line">
       {editable
         ? <label className="statement-check-box">
-          <input type="checkbox" className="statement-check" checked={edit?.checked ?? false} aria-label={`Сохранить тратой: ${title}, ${amountText(row)}`}
+          <input type="checkbox" className="statement-check" checked={edit?.checked ?? false} aria-label={`${gift ? 'Сохранить взносом' : 'Сохранить тратой'}: ${title}, ${amountText(row)}`}
             onChange={(event) => onToggle(row.id, event.target.checked)} />
         </label>
         : <span className="statement-check-box" aria-hidden="true" />}
@@ -77,7 +103,10 @@ function RowItem({ row, open, edits, options, byId, onOpen, onToggle, onCategory
       <p className="statement-details"><span>{row.operation}</span> {row.details}{row.mcc ? ` · MCC ${row.mcc}` : ''}</p>
       {row.refund !== '0.00' && <p className="statement-details">С учётом возврата {formatMoney(row.refund, row.currency)}</p>}
       {row.receipt_id !== null && <Link className="statement-saved-link" to={`/receipts/${row.receipt_id}`}>Открыть трату</Link>}
-      {editable && <>
+      {row.goal && (gift || row.contribution_id) && <p className="statement-details">Взнос в цель{' '}
+        <Link className="statement-saved-link" to={`/goals/${row.goal.id}`}>«{row.goal.name}»</Link> — не трата.</p>}
+      {canBeGoal(row) && <GoalPick row={row} goals={goals} onGoal={onGoal} />}
+      {editable && !gift && <>
         <label className="statement-field">
           <span>Категория</span>
           <select value={edit?.category ?? ''} onChange={(event) => onCategory(row.id, event.target.value ? Number(event.target.value) : null)}>
@@ -120,7 +149,10 @@ export function StatementView(props: StatementViewProps) {
   const chosen = saveRows(detail.rows, edits)
   const missing = missingCategory(detail.rows, edits)
   const questionable = parts.toSave.filter(isQuestionable).length
-  const rowProps = { edits, options, byId, openId: open, onOpen: props.onOpen, onToggle: props.onToggle, onCategory: props.onCategory, onStore: props.onStore }
+  const rowProps = {
+    edits, options, byId, goals: props.goals ?? [], openId: open, onOpen: props.onOpen, onToggle: props.onToggle,
+    onCategory: props.onCategory, onStore: props.onStore, onGoal: props.onGoal,
+  }
   const waiting = detail.ai.waiting > 0 && detail.ai.active
   return <div className="statements ck-stack">
     <section className="ck-panel statement-summary" aria-label="Выписка">
@@ -128,6 +160,7 @@ export function StatementView(props: StatementViewProps) {
       <ul className="statement-counts">
         {(parts.toSave.length > 0 || parts.saved.length === 0) && <li><strong>{parts.toSave.length}</strong> к сохранению</li>}
         {questionable > 0 && <li className="statement-count-review"><strong>{questionable}</strong> спорных</li>}
+        {parts.goals.length > 0 && <li><strong>{parts.goals.length}</strong> в цели</li>}
         {parts.duplicates.length > 0 && <li><strong>{parts.duplicates.length}</strong> уже внесены</li>}
         {parts.saved.length > 0 && <li><strong>{parts.saved.length}</strong> сохранено</li>}
       </ul>
@@ -139,6 +172,11 @@ export function StatementView(props: StatementViewProps) {
     {parts.toSave.length > 0 && <section className="ck-panel" aria-labelledby="statement-spends-heading">
       <div className="ck-panel-head"><h2 id="statement-spends-heading">Траты</h2></div>
       <Rows rows={parts.toSave} {...rowProps} />
+    </section>}
+    {parts.goals.length > 0 && <section className="ck-panel" aria-labelledby="statement-goals-heading">
+      <div className="ck-panel-head"><h2 id="statement-goals-heading">Взносы в цели</h2></div>
+      <p className="statement-note statement-small">Переводы на свой депозит по вашему правилу: сохранятся взносами в цель, тратами не станут.</p>
+      <Rows rows={parts.goals} {...rowProps} />
     </section>}
     {parts.duplicates.length > 0 && <section className="ck-panel" aria-labelledby="statement-duplicates-heading">
       <div className="ck-panel-head"><h2 id="statement-duplicates-heading">Уже внесены</h2></div>
@@ -174,6 +212,7 @@ export default function StatementPage({ statementId }: { statementId: number }) 
   const state = useSyncExternalStore(request.subscribe, request.getSnapshot, request.getServerSnapshot)
   const [edits, setEdits] = useState<Edits>({})
   const [categories, setCategories] = useState<Category[]>([])
+  const [goals, setGoals] = useState<Goal[]>([])
   const [open, setOpen] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
@@ -185,6 +224,7 @@ export default function StatementPage({ statementId }: { statementId: number }) 
   useEffect(() => {
     const abort = new AbortController()
     void getCategories({}, { signal: abort.signal }).then((result) => { if (result.kind === 'ok') setCategories(result.data.results) })
+    void getGoals({ signal: abort.signal }).then((result) => { if (result.kind === 'ok') setGoals(result.data.results) })
     return () => abort.abort()
   }, [])
   const detail = state.kind === 'ok' ? state.data : undefined
@@ -208,8 +248,28 @@ export default function StatementPage({ statementId }: { statementId: number }) 
     const result = await saveStatement(current.id, rows)
     setSaving(false)
     if (result.kind === 'ok') {
-      const { created, learned } = result.data
-      setNotice(`Сохранено: ${glue(created, spendWord(created))}.${learned ? ` Запомнил ${glue(learned, ruleWord(learned))} для следующих выписок.` : ''}`)
+      const { created, learned, contributed } = result.data
+      const saved = [created || !contributed ? glue(created, spendWord(created)) : '', contributed ? glue(contributed, giftWord(contributed)) : '']
+      setNotice(`Сохранено: ${saved.filter(Boolean).join(' и ')}.${learned ? ` Запомнил ${glue(learned, ruleWord(learned))} для следующих выписок.` : ''}`)
+      setOpen(null)
+      request.setData(result.data.statement)
+      request.resume(false)
+      return
+    }
+    request.resume()
+    if (result.kind === 'error') setFailure(statementFailure(result))
+  }
+  const assign = async (id: number, goal: number) => {
+    if (saving) return
+    const row = current.rows.find((item) => item.id === id)
+    setSaving(true)
+    setFailure(null)
+    request.pause()
+    const result = await assignStatementGoal(current.id, id, goal)
+    setSaving(false)
+    if (result.kind === 'ok') {
+      const name = goals.find((item) => item.id === goal)?.name ?? ''
+      setNotice(`Запомнил: переводы «${row?.merchant ?? ''}» — взносы в цель «${name}». В этой выписке — ${glue(result.data.applied, rowWord(result.data.applied))}.`)
       setOpen(null)
       request.setData(result.data.statement)
       request.resume(false)
@@ -230,7 +290,7 @@ export default function StatementPage({ statementId }: { statementId: number }) 
     setNotice(followers ? `Та же категория — ещё у ${glue(followers, rowWord(followers))} этого получателя.` : null)
   }
   return <>
-    <StatementView detail={current} edits={edits} categories={categories} open={open} saving={saving} notice={notice} failure={failure}
+    <StatementView detail={current} edits={edits} categories={categories} goals={goals} onGoal={(id, goal) => { void assign(id, goal) }} open={open} saving={saving} notice={notice} failure={failure}
       onOpen={setOpen} onToggle={(id, checked) => setEdits((previous) => toggleRow(previous, id, checked))}
       onCategory={choose} onStore={(id, store) => setEdits((previous) => setStore(previous, id, store))}
       onSave={() => { void save() }} onDelete={() => setConfirm(true)} />
