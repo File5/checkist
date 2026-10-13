@@ -21,6 +21,7 @@ FILES = {
     "Dockerfile": ROOT / "Dockerfile", ".dockerignore": ROOT / ".dockerignore",
     "compose.prod.yaml": ROOT / "compose.prod.yaml", "Caddyfile": DOCKER / "Caddyfile",
     "checkist.env.example": DOCKER / "checkist.env.example", "ck": DOCKER / "ck", "deploy.sh": DOCKER / "deploy.sh",
+    "compose.observability.yaml": ROOT / "compose.observability.yaml",
 }
 SITE = "{$CHECKIST_SITE_ADDRESS}"
 DOCKER_UPSTREAM = "web:8000"
@@ -40,6 +41,7 @@ VOLUMES = {"postgres_data", "redis_data", "data", "ocr_scratch", "codex_home", "
 COMPOSE_ONLY = {
     "COMPOSE_PROJECT_NAME", "COMPOSE_PROFILES", "CHECKIST_SITE_ADDRESS", "CHECKIST_HTTP_BIND",
     "CHECKIST_HTTPS_BIND", "CHECKIST_BACKUP_DIR", "CHECKIST_ENV_FILE", "CODEX_HOME",
+    "CHECKIST_OBSERVABILITY_NETWORK", "CHECKIST_COMMIT",
 }
 
 
@@ -164,7 +166,7 @@ class DockerDeployFilesTests(SimpleTestCase):
         self.assertEqual(
             set(commented),
             {"CHECKIST_HTTP_BIND", "CHECKIST_HTTPS_BIND", "CHECKIST_BACKUP_DIR", "COMPOSE_PROFILES",
-             "COMPOSE_PROJECT_NAME"},
+             "COMPOSE_PROJECT_NAME", "CHECKIST_OBSERVABILITY_NETWORK"},
         )
         for name in (*env_example(), *commented):
             with self.subTest(name=name):
@@ -259,6 +261,10 @@ class DockerDeployFilesTests(SimpleTestCase):
 
         self.assertEqual(paths(code("Caddyfile")), paths(uncommented("Caddyfile")))
         self.assertEqual(paths(code("Caddyfile")), {"/api/*", "/admin", "/admin/*", "/media/*", "/robots.txt"})
+
+    def test_caddy_hides_the_metrics_of_django(self):
+        # Prometheus scrapes web:8000 over the observability network; through Caddy the path is a 404.
+        self.assertEqual(caddy_block(code("Caddyfile"), "handle /metrics*").split(), ["respond", "404"])
 
     def test_caddy_never_reads_media_or_scratch_from_disk(self):
         caddy, variables = code("Caddyfile"), env_example()
@@ -382,6 +388,20 @@ class DockerDeployFilesTests(SimpleTestCase):
                     ["postgres", "redis"],
                 )
         self.assertIn("      web:\n        condition: service_healthy", services["proxy"])
+
+    def test_observability_override_joins_web_and_postgres_to_an_external_network(self):
+        source = code("compose.observability.yaml")
+        self.assertEqual(re.findall(r"^  ([a-z_]+):$", source, flags=re.MULTILINE), ["web", "postgres", "observability"])
+        # Each service keeps the project network: the override adds one, it does not replace it.
+        self.assertEqual(source.count("    networks: [default, observability]\n"), 2)
+        self.assertIn("    external: true\n    name: ${CHECKIST_OBSERVABILITY_NETWORK:-observability}", source)
+        for forbidden in ("ports:", "volumes:", "image:", "command:", "env_file"):
+            self.assertNotIn(forbidden, source)
+        # ck adds it only when the environment file names the network; QA without the network is unchanged.
+        ck = code("ck")
+        self.assertIn("if grep -Eq '^CHECKIST_OBSERVABILITY_NETWORK=.+' \"$env_file\"; then\n"
+                      "    compose+=(-f compose.observability.yaml)", ck)
+        self.assertNotIn("CHECKIST_OBSERVABILITY_NETWORK=", "\n".join(code("checkist.env.example").splitlines()))
 
     # Dockerfile
 

@@ -1,0 +1,711 @@
+{
+  "uid": "checkist-spending",
+  "title": "Checkist · Траты",
+  "description": "Траты, доходы, места и способы оплаты семьи из базы; валюты не складываются — выберите валюту",
+  "tags": [
+    "checkist"
+  ],
+  "timezone": "Asia/Almaty",
+  "editable": false,
+  "graphTooltip": 1,
+  "refresh": "5m",
+  "schemaVersion": 41,
+  "time": {
+    "from": "now-180d",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "household",
+        "label": "Семья",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "checkist-postgres"
+        },
+        "multi": true,
+        "includeAll": true,
+        "refresh": 1,
+        "sort": 1,
+        "query": "SELECT 'Без семьи' AS __text, '0' AS __value UNION ALL SELECT name, id::text FROM accounts_household",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "currency",
+        "label": "Валюта",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "checkist-postgres"
+        },
+        "refresh": 1,
+        "sort": 1,
+        "query": "SELECT DISTINCT currency_id FROM receipts_receipt WHERE NOT hidden",
+        "current": {
+          "text": "KZT",
+          "value": "KZT"
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Потрачено",
+      "description": "Σ итогов трат в выбранной валюте; скрытые платежи не входят",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "checkist-postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "checkist-postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT COALESCE(sum(r.total), 0) FROM receipts_receipt r LEFT JOIN accounts_membership m ON m.user_id = r.owner_id WHERE NOT r.hidden AND r.currency_id = '$currency' AND COALESCE(m.household_id, 0)::text IN ($household) AND $__timeFilter(r.purchased_on)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#d95926"
+          },
+          "unit": "short",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "id": 1
+    },
+    {
+      "type": "stat",
+      "title": "Трат",
+      "description": "",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "checkist-postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "checkist-postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT count(*) FROM receipts_receipt r LEFT JOIN accounts_membership m ON m.user_id = r.owner_id WHERE NOT r.hidden AND r.currency_id = '$currency' AND COALESCE(m.household_id, 0)::text IN ($household) AND $__timeFilter(r.purchased_on)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "id": 2
+    },
+    {
+      "type": "stat",
+      "title": "Доход",
+      "description": "Доходы, внесённые людьми",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "checkist-postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "checkist-postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT COALESCE(sum(income), 0) FROM (SELECT date_trunc('month', i.received_on) AS month, sum(i.amount) AS income FROM incomes_income i LEFT JOIN accounts_membership m ON m.user_id = i.owner_id WHERE i.currency_id = '$currency' AND COALESCE(m.household_id, 0)::text IN ($household) AND $__timeFilter(i.received_on) GROUP BY 1) i"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#199e70"
+          },
+          "unit": "short",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "id": 3
+    },
+    {
+      "type": "stat",
+      "title": "Отложено",
+      "description": "Доход минус потрачено; пусто — дохода нет",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "checkist-postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "checkist-postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT (SELECT sum(income) FROM (SELECT date_trunc('month', i.received_on) AS month, sum(i.amount) AS income FROM incomes_income i LEFT JOIN accounts_membership m ON m.user_id = i.owner_id WHERE i.currency_id = '$currency' AND COALESCE(m.household_id, 0)::text IN ($household) AND $__timeFilter(i.received_on) GROUP BY 1) i) - COALESCE((SELECT sum(spent) FROM (SELECT date_trunc('month', r.purchased_on) AS month, sum(r.total) AS spent FROM receipts_receipt r LEFT JOIN accounts_membership m ON m.user_id = r.owner_id WHERE NOT r.hidden AND r.currency_id = '$currency' AND COALESCE(m.household_id, 0)::text IN ($household) AND $__timeFilter(r.purchased_on) GROUP BY 1) s), 0)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#d03b3b",
+                "value": null
+              },
+              {
+                "color": "#0ca30c",
+                "value": 0
+              }
+            ]
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "id": 4
+    },
+    {
+      "type": "timeseries",
+      "title": "Траты по дням",
+      "description": "",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "checkist-postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "checkist-postgres"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT r.purchased_on::timestamp AS time, sum(r.total) AS \"Потрачено\" FROM receipts_receipt r LEFT JOIN accounts_membership m ON m.user_id = r.owner_id WHERE NOT r.hidden AND r.currency_id = '$currency' AND COALESCE(m.household_id, 0)::text IN ($household) AND $__timeFilter(r.purchased_on) GROUP BY 1 ORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 70,
+            "drawStyle": "bars",
+            "showPoints": "never",
+            "axisSoftMin": 0,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 24,
+        "h": 8
+      },
+      "id": 5
+    },
+    {
+      "type": "timeseries",
+      "title": "По месяцам и категориям",
+      "description": "Строки чеков по корневой категории товара (у строки без товара — своя категория); скидка на весь чек не распределена",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "checkist-postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "checkist-postgres"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "WITH RECURSIVE roots AS (SELECT id, name FROM catalog_category WHERE parent_id IS NULL UNION ALL SELECT c.id, roots.name FROM catalog_category c JOIN roots ON c.parent_id = roots.id) SELECT date_trunc('month', r.purchased_on)::timestamp AS time, COALESCE(roots.name, 'Без категории') AS metric, sum(l.amount - l.discount_amount) AS value FROM receipts_receiptline l JOIN receipts_receipt r ON r.id = l.receipt_id LEFT JOIN accounts_membership m ON m.user_id = r.owner_id LEFT JOIN catalog_product p ON p.id = l.product_id LEFT JOIN catalog_genericproduct g ON g.id = p.generic_id LEFT JOIN roots ON roots.id = COALESCE(g.category_id, l.category_id) WHERE NOT r.hidden AND r.currency_id = '$currency' AND COALESCE(m.household_id, 0)::text IN ($household) AND $__timeFilter(r.purchased_on) GROUP BY 1, 2 ORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 70,
+            "drawStyle": "bars",
+            "showPoints": "never",
+            "axisSoftMin": 0,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 16,
+        "h": 9
+      },
+      "id": 6
+    },
+    {
+      "type": "piechart",
+      "title": "Корневые категории",
+      "description": "",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "checkist-postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "checkist-postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "WITH RECURSIVE roots AS (SELECT id, name FROM catalog_category WHERE parent_id IS NULL UNION ALL SELECT c.id, roots.name FROM catalog_category c JOIN roots ON c.parent_id = roots.id) SELECT COALESCE(roots.name, 'Без категории') AS category, sum(l.amount - l.discount_amount) AS spent FROM receipts_receiptline l JOIN receipts_receipt r ON r.id = l.receipt_id LEFT JOIN accounts_membership m ON m.user_id = r.owner_id LEFT JOIN catalog_product p ON p.id = l.product_id LEFT JOIN catalog_genericproduct g ON g.id = p.generic_id LEFT JOIN roots ON roots.id = COALESCE(g.category_id, l.category_id) WHERE NOT r.hidden AND r.currency_id = '$currency' AND COALESCE(m.household_id, 0)::text IN ($household) AND $__timeFilter(r.purchased_on) GROUP BY 1 ORDER BY 2 DESC"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "pieType": "donut",
+        "displayLabels": [
+          "percent"
+        ],
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "values": [
+            "value",
+            "percent"
+          ],
+          "showLegend": true
+        },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 12,
+        "w": 8,
+        "h": 9
+      },
+      "id": 7
+    },
+    {
+      "type": "timeseries",
+      "title": "Доход, потрачено и отложено по месяцам",
+      "description": "Месяц без дохода — пропуск, а не ноль",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "checkist-postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "checkist-postgres"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "WITH i AS (SELECT date_trunc('month', i.received_on) AS month, sum(i.amount) AS income FROM incomes_income i LEFT JOIN accounts_membership m ON m.user_id = i.owner_id WHERE i.currency_id = '$currency' AND COALESCE(m.household_id, 0)::text IN ($household) AND $__timeFilter(i.received_on) GROUP BY 1), s AS (SELECT date_trunc('month', r.purchased_on) AS month, sum(r.total) AS spent FROM receipts_receipt r LEFT JOIN accounts_membership m ON m.user_id = r.owner_id WHERE NOT r.hidden AND r.currency_id = '$currency' AND COALESCE(m.household_id, 0)::text IN ($household) AND $__timeFilter(r.purchased_on) GROUP BY 1) SELECT COALESCE(i.month, s.month)::timestamp AS time, i.income AS \"Доход\", COALESCE(s.spent, 0) AS \"Потрачено\", i.income - COALESCE(s.spent, 0) AS \"Отложено\" FROM i FULL JOIN s ON s.month = i.month ORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 70,
+            "drawStyle": "bars",
+            "showPoints": "never",
+            "axisSoftMin": 0,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 21,
+        "w": 24,
+        "h": 9
+      },
+      "id": 8
+    },
+    {
+      "type": "bargauge",
+      "title": "Топ мест",
+      "description": "Склеенные места — под главным",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "checkist-postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "checkist-postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT COALESCE(NULLIF(mm.brand_name, ''), NULLIF(st.name, ''), 'Магазин №' || st.id, 'Без места') AS place, sum(r.total) AS spent FROM receipts_receipt r LEFT JOIN accounts_membership m ON m.user_id = r.owner_id LEFT JOIN stores_store s0 ON s0.id = r.store_id LEFT JOIN stores_store st ON st.id = COALESCE(s0.merged_into_id, s0.id) LEFT JOIN stores_merchant mm ON mm.id = st.merchant_id WHERE NOT r.hidden AND r.currency_id = '$currency' AND COALESCE(m.household_id, 0)::text IN ($household) AND $__timeFilter(r.purchased_on) GROUP BY 1 ORDER BY 2 DESC LIMIT 15"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#d95926"
+          },
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true,
+        "valueMode": "text",
+        "namePlacement": "left",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 30,
+        "w": 12,
+        "h": 12
+      },
+      "id": 9
+    },
+    {
+      "type": "piechart",
+      "title": "Способы оплаты",
+      "description": "",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "checkist-postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "checkist-postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT CASE r.payment_method WHEN '' THEN 'Не указан' WHEN 'kaspi_gold' THEN 'Kaspi Gold' WHEN 'forte' THEN 'ForteBank' WHEN 'cash' THEN 'Наличные' WHEN 'crypto' THEN 'Криптовалюта' WHEN 'card' THEN 'Другая карта' ELSE r.payment_method END AS method, sum(r.total) AS spent FROM receipts_receipt r LEFT JOIN accounts_membership m ON m.user_id = r.owner_id WHERE NOT r.hidden AND r.currency_id = '$currency' AND COALESCE(m.household_id, 0)::text IN ($household) AND $__timeFilter(r.purchased_on) GROUP BY 1 ORDER BY 2 DESC"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "pieType": "donut",
+        "displayLabels": [
+          "percent"
+        ],
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "values": [
+            "value",
+            "percent"
+          ],
+          "showLegend": true
+        },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 30,
+        "w": 12,
+        "h": 6
+      },
+      "id": 10
+    },
+    {
+      "type": "piechart",
+      "title": "Источники",
+      "description": "Выписка — по комментарию « · Выписка …», как в выгрузке",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "checkist-postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "checkist-postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT CASE WHEN r.source = 'photo' THEN 'Фото чека' WHEN r.note ~ '·\\s*Выписка[^·]*$' THEN 'Выписка' ELSE 'Вручную' END AS source, sum(r.total) AS spent FROM receipts_receipt r LEFT JOIN accounts_membership m ON m.user_id = r.owner_id WHERE NOT r.hidden AND r.currency_id = '$currency' AND COALESCE(m.household_id, 0)::text IN ($household) AND $__timeFilter(r.purchased_on) GROUP BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "pieType": "donut",
+        "displayLabels": [
+          "percent"
+        ],
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "values": [
+            "value",
+            "percent"
+          ],
+          "showLegend": true
+        },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 42,
+        "w": 12,
+        "h": 6
+      },
+      "id": 11
+    }
+  ],
+  "links": [
+    {
+      "title": "Checkist",
+      "type": "dashboards",
+      "tags": [
+        "checkist"
+      ],
+      "asDropdown": false,
+      "includeVars": false,
+      "keepTime": true
+    }
+  ]
+}

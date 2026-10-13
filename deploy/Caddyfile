@@ -22,6 +22,11 @@ checkist.example {
 		defer
 	}
 
+	# Prometheus reads /metrics of Django directly (docs/observability.md); from outside it does not exist.
+	handle /metrics* {
+		respond 404
+	}
+
 	# Django: API, admin, robots.txt and uploaded files. Uploaded files are never read from
 	# disk by Caddy: only Django knows whose file it is.
 	@django path /api/* /admin /admin/* /media/* /robots.txt

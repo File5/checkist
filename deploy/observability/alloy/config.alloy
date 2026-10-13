@@ -1,0 +1,170 @@
+// Checkist on observ → grafana.suslicketeam.com (docs/observability.md), as cave-alloy does for Cave.
+//   logs of the containers of the Compose project `checkist` (+ the cron log of `push tick`)
+//       → suslicketeam Loki :3102, cluster="checkist"
+//   CPU / memory / network of those containers (cAdvisor) → observ Prometheus, cluster="checkist"
+// /metrics of Django and the uptime probes are scraped by observ Prometheus itself (prometheus.yml).
+
+logging {
+  level  = "warn"
+  format = "logfmt"
+}
+
+// ---------------------------------------------------------------------------
+// Logs
+// ---------------------------------------------------------------------------
+
+discovery.docker "checkist" {
+  host             = "unix:///var/run/docker.sock"
+  refresh_interval = "5s"
+  filter {
+    name   = "label"
+    values = ["com.docker.compose.project=checkist"]
+  }
+}
+
+// Labels as the platform logs have them: job, container, project, service.
+discovery.relabel "checkist" {
+  targets = []
+  rule {
+    target_label = "job"
+    replacement  = "docker"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+    target_label  = "project"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service"
+  }
+}
+
+loki.source.docker "checkist" {
+  host          = "unix:///var/run/docker.sock"
+  targets       = discovery.docker.checkist.targets
+  relabel_rules = discovery.relabel.checkist.rules
+  forward_to    = [loki.process.checkist.receiver]
+}
+
+// Cron `push tick` writes into /var/log/checkist/push-tick.log (docs/observability.md).
+local.file_match "push" {
+  path_targets = [{ "__path__" = "/var/log/checkist/push-tick.log", "job" = "cron", "service" = "push-tick" }]
+}
+
+loki.source.file "push" {
+  targets    = local.file_match.push.targets
+  forward_to = [loki.process.checkist.receiver]
+}
+
+loki.process "checkist" {
+  // Python: a traceback is one entry with the line that logged it. A new entry starts with the level of
+  // settings.LOGGING («ERROR django.request: …») or the time of gunicorn and celery («[2026-…»).
+  stage.match {
+    selector = "{service=~\"web|celery|recognition|push-tick\"}"
+
+    stage.multiline {
+      firstline     = "^(\\[\\d{4}-\\d{2}-\\d{2}|(DEBUG|INFO|WARNING|ERROR|CRITICAL) )"
+      max_wait_time = "3s"
+    }
+
+    // The level of each format; at most one of the three matches.
+    stage.regex {
+      expression = "^(?P<level>DEBUG|INFO|WARNING|ERROR|CRITICAL) "
+    }
+    stage.regex {
+      expression = "^\\[[^\\]]+\\] \\[\\d+\\] \\[(?P<level>[A-Z]+)\\]"
+    }
+    stage.regex {
+      expression = "^\\[[^\\]]+: (?P<level>[A-Z]+)/"
+    }
+  }
+
+  // Caddy: JSON lines. The healthcheck asks the admin endpoint every 15 s — not kept.
+  // Client addresses are cut out unconditionally, as cave-alloy does.
+  stage.match {
+    selector = "{service=\"proxy\"}"
+
+    stage.json {
+      expressions = { level = "", logger = "", msg = "" }
+    }
+
+    stage.drop {
+      source = "logger"
+      value  = "admin.api"
+    }
+
+    stage.replace {
+      expression = "((?:\\d{1,3}\\.){3}\\d{1,3})"
+      replace    = "-"
+    }
+  }
+
+  // Python and gunicorn write ERROR, Caddy error: one label value. No level — no label.
+  stage.template {
+    source   = "level"
+    template = "{{ ToLower .Value }}"
+  }
+
+  stage.labels {
+    values = { level = "" }
+  }
+
+  forward_to = [loki.write.suslicketeam.receiver]
+}
+
+loki.write "suslicketeam" {
+  endpoint {
+    url                 = "http://suslicketeam-loki:3102/loki/api/v1/push"
+    max_backoff_period  = "30s"
+    max_backoff_retries = 10
+  }
+  external_labels = { cluster = "checkist", host = "observ" }
+}
+
+// ---------------------------------------------------------------------------
+// Containers (cAdvisor inside Alloy; the box's own monitoring-cadvisor v0.50 sees no container
+// under the containerd image store of Docker 29)
+// ---------------------------------------------------------------------------
+
+prometheus.exporter.cadvisor "containers" {
+  docker_host                  = "unix:///var/run/docker.sock"
+  docker_only                  = true
+  storage_duration             = "2m"
+  store_container_labels       = false
+  allowlisted_container_labels = ["com.docker.compose.project", "com.docker.compose.service"]
+  // Only what the dashboard draws (CPU, memory, network).
+  disabled_metrics = ["advtcp", "cpu_topology", "cpuset", "disk", "diskIO", "hugetlb", "memory_numa",
+                      "percpu", "process", "referenced_memory", "resctrl", "sched", "tcp", "udp"]
+}
+
+prometheus.scrape "containers" {
+  targets         = prometheus.exporter.cadvisor.containers.targets
+  job_name        = "cadvisor"
+  scrape_interval = "30s"
+  forward_to      = [prometheus.relabel.checkist.receiver]
+}
+
+prometheus.relabel "checkist" {
+  forward_to = [prometheus.remote_write.observ.receiver]
+  rule {
+    source_labels = ["container_label_com_docker_compose_project"]
+    regex         = "checkist"
+    action        = "keep"
+  }
+  rule {
+    target_label = "instance"
+    replacement  = "observ"
+  }
+}
+
+prometheus.remote_write "observ" {
+  endpoint {
+    url = "http://observ-prometheus:9090/api/v1/write"
+  }
+  external_labels = { cluster = "checkist" }
+}

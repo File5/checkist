@@ -1,0 +1,32 @@
+# Checkist additions to /opt/suslicketeam-grafana (docs/observability.md). Copied there as
+# docker-compose.override.yml: `docker compose up -d` in that directory merges it with
+# docker-compose.yml by itself, so the main file stays as it is. Removing it and running
+# `docker compose up -d --remove-orphans` takes Checkist out again.
+services:
+  grafana:
+    environment:
+      # Password of the role checkist_grafana; .env of /opt/suslicketeam-grafana.
+      - CHECKIST_PG_PASSWORD=${CHECKIST_PG_PASSWORD:?set CHECKIST_PG_PASSWORD in .env}
+    volumes:
+      - ./dashboards-checkist:/var/lib/grafana/dashboards-checkist:ro
+
+  # Checkist: its own filtered view of observ-prometheus — series of the `checkist` scrape jobs and of
+  # checkist-alloy carry cluster="checkist".
+  checkist-prom-proxy:
+    image: quay.io/prometheuscommunity/prom-label-proxy:v0.11.0
+    container_name: checkist-prom-proxy
+    command:
+      - --label=cluster
+      - --label-value=checkist
+      - --upstream=http://observ-prometheus:9090
+      - --insecure-listen-address=0.0.0.0:8080
+      - --enable-label-apis
+    # The anchor of docker-compose.yml does not reach this file: the same values written out.
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+    networks:
+      - observability
+    restart: always

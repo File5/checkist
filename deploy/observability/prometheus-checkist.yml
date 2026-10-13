@@ -1,0 +1,33 @@
+
+  # --- Checkist (checkist.suslicketeam.com): app metrics + uptime, cluster="checkist" ---
+  # Appended to scrape_configs of /opt/observability/prometheus/prometheus.yml (docs/observability.md);
+  # __METRICS_TOKEN__ is replaced by METRICS_TOKEN of /opt/checkist/.env.prod on the server.
+  - job_name: 'checkist'
+    metrics_path: /metrics
+    scrape_interval: 60s
+    scrape_timeout: 10s
+    authorization:
+      type: Bearer
+      credentials: '__METRICS_TOKEN__'
+    static_configs:
+      - targets: ['checkist-web-1:8000']
+        labels: { cluster: 'checkist', service: 'web' }
+
+  - job_name: 'checkist-pages'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets: ['https://checkist.suslicketeam.com/']
+        labels: { cluster: 'checkist', check: 'site' }
+      - targets: ['https://checkist.suslicketeam.com/api/health/']
+        labels: { cluster: 'checkist', check: 'health' }
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+    scrape_interval: 30s
+    scrape_timeout: 20s

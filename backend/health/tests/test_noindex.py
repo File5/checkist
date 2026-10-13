@@ -37,6 +37,7 @@ class NoIndexHeaderTests(SimpleTestCase):
     def test_middleware_is_the_first_line_and_the_only_change(self):
         self.assertEqual(settings.MIDDLEWARE, [
             "config.robots.NoIndexMiddleware",
+            "health.metrics.MetricsMiddleware",
             "django.middleware.security.SecurityMiddleware",
             "django.contrib.sessions.middleware.SessionMiddleware",
             "config.requests.ApiCommonMiddleware",

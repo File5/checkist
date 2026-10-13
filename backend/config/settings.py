@@ -122,6 +122,7 @@ INSTALLED_APPS = [
 ]
 MIDDLEWARE = [
     "config.robots.NoIndexMiddleware",
+    "health.metrics.MetricsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "config.requests.ApiCommonMiddleware",
@@ -148,14 +149,27 @@ LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
     "filters": {"safe_api_target": {"()": "config.requests.SafeApiTargetFilter"}},
-    "formatters": {"django.server": {
-        "()": "django.utils.log.ServerFormatter", "format": "[{server_time}] {message}", "style": "{",
-    }},
-    "handlers": {"django.server": {
-        "class": "logging.StreamHandler", "level": "INFO", "formatter": "django.server",
-        "filters": ["safe_api_target"],
-    }},
-    "loggers": {"django.server": {"handlers": ["django.server"], "level": "INFO", "propagate": False}},
+    "formatters": {
+        "django.server": {
+            "()": "django.utils.log.ServerFormatter", "format": "[{server_time}] {message}", "style": "{",
+        },
+        "plain": {"format": "{levelname} {name}: {message}", "style": "{"},
+    },
+    "handlers": {
+        "django.server": {
+            "class": "logging.StreamHandler", "level": "INFO", "formatter": "django.server",
+            "filters": ["safe_api_target"],
+        },
+        "stderr": {"class": "logging.StreamHandler", "formatter": "plain"},
+    },
+    # The container log (docs/observability.md): warnings and errors of the code with their level, and of
+    # django.request only a 5xx with its traceback — without DEBUG Django prints none of them by itself.
+    # A 4xx is not logged: request paths carry receipt and product ids.
+    "root": {"handlers": ["stderr"], "level": "WARNING"},
+    "loggers": {
+        "django.server": {"handlers": ["django.server"], "level": "INFO", "propagate": False},
+        "django.request": {"handlers": ["stderr"], "level": "ERROR", "propagate": False},
+    },
 }
 
 DATABASES = {"default": {
@@ -373,3 +387,6 @@ RATES_AUTO_FETCH = env_flag("RATES_AUTO_FETCH", "1")
 WEBPUSH_VAPID_PUBLIC_KEY = os.environ.get("WEBPUSH_VAPID_PUBLIC_KEY", "").strip()
 WEBPUSH_VAPID_PRIVATE_KEY = os.environ.get("WEBPUSH_VAPID_PRIVATE_KEY", "").strip()
 WEBPUSH_VAPID_SUBJECT = os.environ.get("WEBPUSH_VAPID_SUBJECT", "").strip()
+
+# Bearer token of GET /metrics (health.metrics) for Prometheus of the server; empty — the path is a 404.
+METRICS_TOKEN = os.environ.get("METRICS_TOKEN", "").strip()
