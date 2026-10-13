@@ -10,7 +10,7 @@ from rest_framework.test import APIClient
 
 from accounts.models import Household, Membership
 from catalog.models import Category
-from api.tests.accounts_helpers import NOT_AUTHENTICATED, NOT_FOUND, TwoUsers, accounts_mode, local_single_mode
+from api.tests.accounts_helpers import NOT_AUTHENTICATED, NOT_FOUND, TwoUsers, accounts_mode, allow_ai, local_single_mode
 from receipts import manual_parse
 from receipts.models import ManualParseRequest, Receipt
 
@@ -99,6 +99,11 @@ class ManualParseLocalTests(TestCase):
 @tag("integration")
 @accounts_mode()
 class ManualParseAccountsTests(TwoUsers, TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        allow_ai(cls.first, cls.second)
+
     def test_anonymous_is_refused(self):
         self.assertEqual(APIClient().post(PARSE, {"text": "кофе"}, format="json").json(), NOT_AUTHENTICATED)
         self.assertEqual(APIClient().get(f"{PARSE}1/").json(), NOT_AUTHENTICATED)

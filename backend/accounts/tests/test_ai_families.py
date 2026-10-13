@@ -179,12 +179,13 @@ class NewFamilyInviteTests(IsolationMixin, TestCase):
 @tag("integration")
 @accounts_mode()
 class FamilyAiTests(IsolationMixin, TestCase):
-    """``first`` — главный, ``third`` — член семьи; ``second`` — без семьи."""
+    """``first`` — главный, ``third`` — член семьи; ``second`` и ``staff`` (администратор сервера) — без семьи."""
 
     @classmethod
     def setUpTestData(cls):
         super().setUpTestData()
         cls.third = make_user("synthetic-user-three")
+        cls.staff = make_user("synthetic-staff", is_staff=True)
         cls.family = Household.objects.create(name="Демо-семья", ai_daily_limit=3)
         Membership.objects.create(user=cls.first, household=cls.family, role="head")
         Membership.objects.create(user=cls.third, household=cls.family)
@@ -208,7 +209,7 @@ class FamilyAiTests(IsolationMixin, TestCase):
         self.assertEqual(response.status_code, 200, response.content)
         return response.json()
 
-    def test_new_household_starts_with_ai_off(self):
+    def test_new_household_starts_with_ai_off_and_a_limit(self):
         self.assertFalse(Household.objects.create(name="Ещё одна").ai_enabled)
         self.assertEqual(Household.objects.create(name="Ещё одна").ai_daily_limit, 50)
 
@@ -252,14 +253,29 @@ class FamilyAiTests(IsolationMixin, TestCase):
         self.assertEqual(ManualParseRequest.objects.count(), 2)
         self.assertEqual(self.client_of(self.third).get("/api/family/").json()["ai"]["used_today"], 3)
         self.assertFalse(ai.ai_allowed(self.first))
-        # Пользователь без семьи квоты не имеет и ничего не считает.
-        self.assertEqual(self.parse(self.second).status_code, 202)
+        # Администратор сервера без семьи квоты не имеет и ничего не считает.
+        self.assertEqual(self.parse(self.staff).status_code, 202)
         self.assertEqual(AiUsage.objects.get().count, 3)
         with mock.patch("django.utils.timezone.localdate", return_value=tomorrow):
             self.assertTrue(ai.ai_allowed(self.first))
             self.assertEqual(self.client_of(self.first).get("/api/family/").json()["ai"]["used_today"], 0)
             self.assertEqual(self.parse(self.first).status_code, 202)
         self.assertEqual(sorted(AiUsage.objects.values_list("count", flat=True)), [1, 3])
+
+    def test_family_without_a_limit_is_counted_but_never_refused(self):
+        """``ai_daily_limit = NULL`` — семьи, заведённые до ``accounts.0004``: много фото за день проходят."""
+        self.switch(True)
+        Household.objects.filter(pk=self.family.pk).update(ai_daily_limit=None)
+        AiUsage.objects.create(household=self.family, day=timezone.localdate(), count=500)
+        self.assertEqual(self.parse(self.first).status_code, 202)
+        self.assertEqual(self.photo(self.third).status_code, 202)
+        self.assertTrue(ai.ai_allowed(self.first))
+        self.assertEqual(AiUsage.objects.get().count, 502)
+        body = self.client_of(self.first).get("/api/family/").json()["ai"]
+        self.assertEqual((body["daily_limit"], body["used_today"]), (None, 502))
+        # Выключатель действует и без предела.
+        self.switch(False)
+        self.assertEqual(self.parse(self.first).json()["error"]["code"], "ai_disabled")
 
     def test_refusals_after_the_check_do_not_spend_the_quota(self):
         self.switch(True)
@@ -284,11 +300,37 @@ class FamilyAiTests(IsolationMixin, TestCase):
         self.assertEqual(client.post(f"/api/recognition/jobs/{job}/retry/", {}, format="json").status_code, 202)
         self.assertEqual(AiUsage.objects.get().count, 2)
 
-    def test_users_without_family_are_not_affected(self):
-        self.assertTrue(ai.ai_allowed(self.second))
-        self.assertEqual(self.parse(self.second).status_code, 202)
-        self.assertEqual(self.photo(self.second).status_code, 202)
+    def test_without_family_only_the_server_owner_uses_ai(self):
+        self.assertTrue(ai.ai_allowed(self.staff))
+        self.assertEqual(self.parse(self.staff).status_code, 202)
+        self.assertEqual(self.photo(self.staff).status_code, 202)
+        self.assertFalse(ai.ai_allowed(self.second))
+        for response in (self.parse(self.second), self.photo(self.second)):
+            self.assertEqual((response.status_code, response.json()["error"]["code"]), (403, "ai_disabled"))
         self.assertIsNone(self.client_of(self.second).get("/api/family/").json()["ai"])
+        self.assertEqual(ManualParseRequest.objects.filter(owner=self.second).count(), 0)
+        self.assertFalse(AiUsage.objects.exists())
+        # Выключенный администратор — уже не администратор.
+        get_user_model().objects.filter(pk=self.staff.pk).update(is_active=False)
+        self.staff.refresh_from_db()
+        self.assertFalse(ai.ai_allowed(self.staff))
+
+    def test_head_cannot_get_ai_by_moving_people_out_of_the_family(self):
+        """ИИ семьи выключен: человек, которого главный завёл и убрал (или кто вышел), ИИ не получает."""
+        made = self.call(self.first, "post", "/api/family/members/", {"username": "synthetic-proxy", "password": STRONG})
+        self.assertEqual(made.status_code, 201, made.content)
+        proxy = get_user_model().objects.get(username="synthetic-proxy")
+        self.assertEqual(self.parse(proxy).json()["error"]["code"], "ai_disabled")
+        self.assertEqual(self.call(self.first, "delete", "/api/family/members/synthetic-proxy/").status_code, 204)
+        for response in (self.parse(proxy), self.photo(proxy)):
+            self.assertEqual((response.status_code, response.json()["error"]["code"]), (403, "ai_disabled"))
+        # Передать роль члену семьи и выйти самому — тот же отказ.
+        self.assertEqual(self.call(self.first, "post", "/api/family/head/", {"username": self.third.username}).status_code, 200)
+        self.assertEqual(self.call(self.first, "post", "/api/family/leave/").status_code, 200)
+        self.assertEqual(self.parse(self.first).json()["error"]["code"], "ai_disabled")
+        self.assertFalse(ai.ai_allowed(self.first))
+        self.assertFalse(ManualParseRequest.objects.exists())
+        self.assertFalse(SourcePhoto.objects.exists())
         self.assertFalse(AiUsage.objects.exists())
 
 
@@ -321,8 +363,10 @@ class FamilyAiMigrationTests(TransactionTestCase):
             old.get_model("accounts", "Household").objects.create(name="Прежняя семья")
             new = self.migrate(("accounts", "0004_families_ai_invites"))
             Household = new.get_model("accounts", "Household")
-            self.assertTrue(Household.objects.get(name="Прежняя семья").ai_enabled)
-            self.assertFalse(Household.objects.create(name="Новая семья").ai_enabled)
+            old_family = Household.objects.get(name="Прежняя семья")
+            self.assertEqual((old_family.ai_enabled, old_family.ai_daily_limit), (True, None))  # без предела
+            new_family = Household.objects.create(name="Новая семья")
+            self.assertEqual((new_family.ai_enabled, new_family.ai_daily_limit), (False, 50))
             new.get_model("accounts", "Invite").objects.create(
                 kind="new_family", token_hash="f" * 64, expires_at=timezone.now())
             self.migrate(("accounts", "0003_profile_head_invite"))

@@ -29,13 +29,14 @@ class Household(models.Model):
 
     ИИ семьи (``accounts.ai``): ``ai_enabled`` — фото и тексты семьи уходят внешней модели
     (у семей до ``0004`` — включено, у новых — выключено, меняет главный); ``ai_daily_limit`` —
-    запросов к модели на семью за сутки (меняет администратор).
+    запросов к модели на семью за сутки, ``NULL`` — без предела (у семей до ``0004``; у новых — 50;
+    меняет администратор).
     """
 
     name = models.CharField(max_length=100)
     created_at = models.DateTimeField(auto_now_add=True)
     ai_enabled = models.BooleanField(default=False)
-    ai_daily_limit = models.PositiveIntegerField(default=50)
+    ai_daily_limit = models.PositiveIntegerField(null=True, blank=True, default=50)
 
     class Meta:
         verbose_name = "household"

@@ -74,7 +74,9 @@ function InviteRow({ invite, label, onRevoke }: { invite: FamilyInvite; label: s
 
 /** ИИ of the family: the switch of the head (a member sees the state), what it means, the requests of today. */
 function AiPanel({ ai, head, busy, onAi }: { ai: FamilyAi; head: boolean; busy: boolean; onAi?: (enabled: boolean) => void }) {
-  const share = ai.daily_limit > 0 ? Math.min(100, Math.round((ai.used_today / ai.daily_limit) * 100)) : 100
+  // Without a limit there is nothing to fill: the count of today only, no bar.
+  const limit = ai.daily_limit
+  const share = limit === null ? null : limit > 0 ? Math.min(100, Math.round((ai.used_today / limit) * 100)) : 100
   return <section className="ck-auth-panel family-ai" aria-labelledby="family-ai-heading" data-family-ai={ai.enabled ? 'on' : 'off'}>
     <div className="family-ai-head">
       <h2 id="family-ai-heading">Распознавание и подсказки ИИ</h2>
@@ -87,7 +89,7 @@ function AiPanel({ ai, head, busy, onAi }: { ai: FamilyAi; head: boolean; busy: 
     <p id="family-ai-note" className="family-note family-sub">{familyTexts.aiNote}{head ? '' : ` ${familyTexts.aiHeadOnly}`}</p>
     <div className="family-ai-usage">
       <p data-family-ai-usage>{aiUsageText(ai)}</p>
-      <div className="ck-bar" aria-hidden="true"><span style={{ width: `${share}%` }} /></div>
+      {share !== null && <div className="ck-bar" aria-hidden="true"><span style={{ width: `${share}%` }} /></div>}
     </div>
   </section>
 }

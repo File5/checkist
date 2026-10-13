@@ -7,8 +7,9 @@ import type { LocalApiResult, RequestOptions } from './types.ts'
 /** «Семья» (`/api/family/`, only with accounts). `is_me` — the person of the request. */
 export type FamilyMember = { username: string; display_name: string; role: 'head' | 'member'; is_me: boolean }
 export type FamilyInvite = { id: number; created_at: string; expires_at: string }
-/** ИИ of the family: photos and texts go to an external model; the head switches it, the server owner sets the limit. */
-export type FamilyAi = { enabled: boolean; daily_limit: number; used_today: number; resets_at: string }
+/** ИИ of the family: photos and texts go to an external model; the head switches it, the server owner sets the limit.
+ * `daily_limit: null` — no limit (families from before the invites of new families): requests are counted, never refused. */
+export type FamilyAi = { enabled: boolean; daily_limit: number | null; used_today: number; resets_at: string }
 export type Family = {
   household: { id: number; name: string; members: FamilyMember[] } | null
   /** The family head; a user without a family heads their own data. */
@@ -30,7 +31,7 @@ export type NewInvite = FamilyInvite & { token: string; path: string }
 const isMember = object<FamilyMember>({ username: text, display_name: text, role: choice('head', 'member'), is_me: bool })
 const isInvite = object<FamilyInvite>({ id: isId, created_at: isISODateTime, expires_at: isISODateTime })
 const count = (value: unknown) => Number.isSafeInteger(value) && (value as number) >= 0
-const isAi = object<FamilyAi>({ enabled: bool, daily_limit: count, used_today: count, resets_at: isISODateTime })
+const isAi = object<FamilyAi>({ enabled: bool, daily_limit: nullable(count), used_today: count, resets_at: isISODateTime })
 /** A field an older server leaves out: missing passes, anything else must pass `check`. */
 const optional = (value: unknown, key: string, check: (item: unknown) => boolean) => !Object.hasOwn(value as object, key)
   || check((value as Record<string, unknown>)[key])

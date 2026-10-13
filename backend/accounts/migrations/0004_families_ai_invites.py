@@ -29,10 +29,16 @@ class Migration(migrations.Migration):
                 'verbose_name_plural': 'AI usage',
             },
         ),
+        # Семьи, заведённые до этой миграции, — без предела запросов (NULL), новые — 50 в сутки.
         migrations.AddField(
             model_name='household',
             name='ai_daily_limit',
-            field=models.PositiveIntegerField(default=50),
+            field=models.PositiveIntegerField(blank=True, null=True),
+        ),
+        migrations.AlterField(
+            model_name='household',
+            name='ai_daily_limit',
+            field=models.PositiveIntegerField(blank=True, default=50, null=True),
         ),
         # Семьи, заведённые до этой миграции, ИИ уже пользуются: у них включено. Новые — выключено.
         migrations.AddField(

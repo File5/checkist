@@ -39,6 +39,14 @@ describe('ИИ of the family', () => {
     expect(view(family({ ai: { ...ai, enabled: false } }))).toMatch(/role="switch" class="family-switch" aria-checked="false"/)
   })
 
+  it('shows only the count of today for a family without a limit', () => {
+    const html = view(family({ ai: { ...ai, daily_limit: null, used_today: 140 } }))
+    expect(html).toContain('<p data-family-ai-usage="true">Сегодня использовано 140</p>')
+    expect(html).not.toContain('ck-bar')
+    expect(html).not.toContain(`${NBSP}из${NBSP}`)
+    expect(isFamily(family({ ai: { ...ai, daily_limit: null } }))).toBe(true)
+  })
+
   it('shows a member the state in words, without the switch', () => {
     const html = view(family({ is_head: false, ai: { ...ai, enabled: false } }))
     expect(html).toContain('data-family-ai="off"')

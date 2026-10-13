@@ -25,8 +25,9 @@ export const familyTexts = {
   aiHeadOnly: 'Включить или выключить может главный.',
 }
 
-/** «Сегодня использовано 3 из 50»: the numbers glued to their words. */
-export const aiUsageText = (ai: FamilyAi) => `Сегодня использовано ${glue(ai.used_today, 'из', ai.daily_limit)}`
+/** «Сегодня использовано 3 из 50», the numbers glued to their words; without a limit — «Сегодня использовано 3». */
+export const aiUsageText = (ai: FamilyAi) => `Сегодня использовано ${ai.daily_limit === null
+  ? ai.used_today : glue(ai.used_today, 'из', ai.daily_limit)}`
 
 /** The text of a refused family action; field errors are shown next to the fields. */
 export function familyFailure(action: FamilyAction, result: LocalApiResult<unknown>): string | null {
