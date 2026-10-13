@@ -51,17 +51,17 @@ class StatementApiTests(Categories, TestCase):
         self.assertFalse(body["reused"])
         summary = body["statement"]
         self.assertEqual((summary["bank"], summary["bank_name"], summary["rows_count"], summary["saved_count"]),
-                         ("kaspi_gold", "Kaspi Gold", 19, 0))
+                         ("kaspi_gold", "Kaspi Gold", 20, 0))
         again = self.upload()
         self.assertEqual((again.status_code, again.json()["reused"], again.json()["statement"]["id"]), (200, True, summary["id"]))
         detail = self.client.get(f"{LIST}{summary['id']}/").json()
         self.assertEqual(set(detail["ai"]), {"waiting", "active", "executor"})
         self.assertTrue(detail["ai"]["active"])
         rows = detail["rows"]
-        self.assertEqual(len(rows), 19)
+        self.assertEqual(len(rows), 20)
         self.assertEqual(set(rows[0]), {"id", "date", "amount", "currency", "operation", "details", "merchant", "mcc",
                                         "refund", "spend", "kind", "state", "reason", "category", "store_name", "source",
-                                        "ai", "duplicate_of", "receipt_id"})
+                                        "ai", "duplicate_of", "receipt_id", "goal", "contribution_id"})
         magnum = rows[0]
         self.assertEqual((magnum["kind"], magnum["state"], magnum["amount"], magnum["spend"], magnum["store_name"]),
                          ("spend", "spend", "-18450.00", "18450.00", "MAGNUM"))

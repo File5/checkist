@@ -47,6 +47,9 @@ class StatementRow(models.Model):
 
     ``category`` и ``store_name`` — предложение (правило, встроенный образец, MCC либо
     модель); человек меняет их при сохранении, правка учит правило.
+
+    ``goal`` — перевод на свой депозит по правилу «→ цель» (``state = goal``): «Сохранить»
+    делает из такой строки взнос в цель (``contribution``), а не трату.
     """
 
     class Kind(models.TextChoices):
@@ -62,6 +65,7 @@ class StatementRow(models.Model):
         REVIEW = "review"
         DUPLICATE = "duplicate"
         SKIPPED = "skipped"
+        GOAL = "goal"
 
     class Ai(models.TextChoices):
         NONE = ""
@@ -94,6 +98,9 @@ class StatementRow(models.Model):
     ai = models.CharField(max_length=16, choices=Ai.choices, blank=True, default="")
     duplicate_of = models.ForeignKey("receipts.Receipt", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     receipt = models.ForeignKey("receipts.Receipt", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    goal = models.ForeignKey("goals.Goal", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    contribution = models.ForeignKey(
+        "goals.Contribution", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
 
     class Meta:
         verbose_name = "statement row"
@@ -106,7 +113,7 @@ class StatementRow(models.Model):
                 name="statements_row_kind_check",
             ),
             models.CheckConstraint(
-                condition=Q(state__in=["spend", "review", "duplicate", "skipped"]), name="statements_row_state_check"),
+                condition=Q(state__in=["spend", "review", "duplicate", "skipped", "goal"]), name="statements_row_state_check"),
         ]
 
     def __str__(self):
@@ -114,19 +121,23 @@ class StatementRow(models.Model):
 
 
 class StatementRule(models.Model):
-    """«Получатель → категория (+ магазин)», «пропускать» либо «свои счета / семья».
+    """«Получатель → категория (+ магазин)», «пропускать», «свои счета / семья» либо «→ цель».
 
     Владелец — как у лимитов (``budget.access``): семья, если она есть, иначе пользователь.
     ``key`` — нормализованный ``pattern`` (``statements.rules.normalize``): правило
     подходит, когда его слова стоят подряд в получателе строки; из нескольких — самое
     длинное. ``origin`` — заведено человеком на экране правил либо выучено по правке
     категории в черновике.
+
+    «→ цель» (``goal``) — перевод на свой депозит как взнос в цель: такое правило личное
+    (``user``, даже у члена семьи) и применяется только к его выпискам (``rules.visible_q``).
     """
 
     class Action(models.TextChoices):
         CATEGORY = "category"
         SKIP = "skip"
         OWN = "own"
+        GOAL = "goal"
 
     class Origin(models.TextChoices):
         MANUAL = "manual"
@@ -143,6 +154,7 @@ class StatementRule(models.Model):
     category = models.ForeignKey(
         "catalog.Category", null=True, blank=True, on_delete=models.PROTECT, related_name="statement_rules")
     store_name = models.CharField(max_length=100, blank=True, default="")
+    goal = models.ForeignKey("goals.Goal", null=True, blank=True, on_delete=models.CASCADE, related_name="statement_rules")
     origin = models.CharField(max_length=16, choices=Origin.choices, default=Origin.MANUAL)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
@@ -158,8 +170,13 @@ class StatementRule(models.Model):
                 name="statements_rule_one_owner",
             ),
             models.CheckConstraint(
-                condition=(Q(action="category", category__isnull=False) | Q(action__in=["skip", "own"], category__isnull=True)),
+                condition=(Q(action="category", category__isnull=False)
+                           | Q(action__in=["skip", "own", "goal"], category__isnull=True)),
                 name="statements_rule_category_action",
+            ),
+            models.CheckConstraint(
+                condition=(Q(action="goal", goal__isnull=False) | Q(action__in=["category", "skip", "own"], goal__isnull=True)),
+                name="statements_rule_goal_action",
             ),
             models.CheckConstraint(condition=~Q(key=""), name="statements_rule_key_not_blank"),
             models.UniqueConstraint(fields=["household", "key"], condition=Q(household__isnull=False),

@@ -128,6 +128,7 @@ def demo_kaspi_lines(end, duplicates=()):
         kaspi_line(day(18), -6400, "Покупка", 'ТОО "MAGNUM CASH&CARRY"'),
         kaspi_line(day(18), 1200, "Покупка", 'ТОО "MAGNUM CASH&CARRY"'),
         kaspi_line(day(16), -4700, "Покупка", "ИП Аптека Здоровье"),
+        kaspi_line(day(15), -100000, "Перевод", "На Kaspi Депозит"),
         kaspi_line(day(14), -8900, "Покупка", "Студия йоги Лотос"),
         kaspi_line(day(12), -990, "Разное", "Комиссия за перевод"),
         kaspi_line(day(10), 412, "Разное", "Kaspi Бонус: кэшбэк"),

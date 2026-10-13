@@ -11,6 +11,11 @@
 Траты создаёт только ``receipts.manual.create`` — на того, кто загрузил выписку; комментарий
 кончается « · Выписка Kaspi Gold» / « · Выписка ForteBank» (по нему выгрузка и «Траты»
 узнают трату из выписки).
+
+Перевод или движение между своими счетами, подходящее под личное правило «→ цель», — строка
+``goal``: «Сохранить» делает из неё взнос в цель (``goals.Contribution``) на того же человека, а
+не трату; взнос, который у цели уже есть (та же сумма и валюта ±1 день), — дубль
+(``mark_goal_duplicates``). Строка помнит взнос: повтор сохранения его не задваивает.
 """
 import hashlib
 import math
@@ -22,13 +27,14 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from catalog.models import Category
+from goals.models import Contribution, Goal
 from receipts import manual
 from receipts.models import Receipt, ReceiptLine
 
 from . import ask, defaults, parsers
 from .extract import StatementError, pdf_text
 from .models import StatementImport, StatementRow, StatementRule
-from .rules import RuleBook, learn, normalize
+from .rules import RuleBook, learn, normalize, remember_goal
 
 Kind, State = StatementRow.Kind, StatementRow.State
 MAX_ROWS = parsers.MAX_ROWS
@@ -38,7 +44,8 @@ BILL_DAYS = 10
 # в пределах BILL_DAYS дней и рубля округления (как в первом импорте Kaspi).
 BILL_ROOTS = ("Жильё",)
 SOURCE_NOTE = {parsers.KASPI: "Выписка Kaspi Gold", parsers.FORTE: "Выписка ForteBank"}
-SAVE_FIELDS = ("id", "category", "store_name")
+SAVE_FIELDS = ("id", "category", "store_name", "goal")
+GOAL_KINDS = (StatementRow.Kind.TRANSFER, StatementRow.Kind.OWN_MOVE)
 
 
 class SaveInvalid(Exception):
@@ -108,6 +115,7 @@ def import_text(owner, text, *, sha256, rule_scope):
                 owner=owner, bank=bank, sha256=sha256,
                 date_from=min(row.date for row in rows), date_to=max(row.date for row in rows))
             mark_duplicates(owner, rows, categories)
+            mark_goal_duplicates(rows)
             for row in rows:
                 row.statement = statement
             waiting = [row for row in rows if row.state == State.REVIEW]
@@ -148,9 +156,29 @@ def _skip(row, kind, reason):
     row.kind, row.state, row.reason = kind, State.SKIPPED, reason
 
 
+def goal_kind(row):
+    """Вид строки, которую правило «→ цель» делает взносом: перевод либо движение между своими; иначе ``None``."""
+    if row.amount >= 0 or not defaults.TRANSFER_OPERATIONS.match(row.operation):
+        return None
+    return Kind.OWN_MOVE if defaults.OWN_MOVE.search(f"{row.merchant} {row.details}") else Kind.TRANSFER
+
+
+def as_goal(row, goal_id):
+    row.state, row.reason, row.source, row.goal_id = State.GOAL, "", "rule", goal_id
+    row.category_id, row.store_name, row.duplicate_of_id = None, "", None
+
+
 def decide(row, rule, categories):
     """Вид и состояние одной строки по правилу, операции банка, образцам и MCC."""
     operation, text = row.operation, f"{row.merchant} {row.details}"
+    if rule is not None and rule.action == StatementRule.Action.GOAL:
+        # «→ цель» — только переводу и движению между своими; покупку у того же получателя решают как без правила.
+        kind = goal_kind(row)
+        if kind is not None:
+            row.kind = kind
+            as_goal(row, rule.goal_id)
+            return
+        rule = None
     own_rule = rule is not None and rule.action == StatementRule.Action.OWN
     if row.amount > 0:
         # Деньги пришли: правило решает только «свои счета / семья», категория поступлению не нужна.
@@ -267,6 +295,50 @@ def mark_duplicates(owner, rows, categories):
             row.state, row.reason, row.duplicate_of_id = State.DUPLICATE, reason, match
 
 
+def mark_goal_duplicates(rows):
+    """Взнос, который у цели уже есть (та же сумма и валюта ±1 день), снимается с отметки; один взнос — одна строка."""
+    candidates = sorted((row for row in rows if row.state == State.GOAL), key=lambda row: (row.date, row.position))
+    if not candidates:
+        return
+    existing = list(Contribution.objects.filter(
+        goal_id__in={row.goal_id for row in candidates},
+        date__range=(candidates[0].date - timedelta(days=DUPLICATE_DAYS), candidates[-1].date + timedelta(days=DUPLICATE_DAYS)),
+    ).values_list("pk", "goal_id", "amount", "currency_id", "date"))
+    used = set()
+    for row in candidates:
+        amount = spend_amount(row)
+        found = [(abs((day - row.date).days), pk) for pk, goal_id, total, currency, day in existing
+                 if pk not in used and goal_id == row.goal_id and currency == row.currency and total == amount
+                 and abs((day - row.date).days) <= DUPLICATE_DAYS]
+        if found:
+            used.add(min(found)[1])
+            row.state, row.reason = State.DUPLICATE, "goal_duplicate"
+
+
+def assign_goal(statement_id, row_id, goal, *, user, actor):
+    """«Это взнос в цель»: личное правило получателя строки и его применение к несохранённым переводам черновика.
+
+    Возвращает число строк, ставших взносами; ``SaveInvalid`` — строка не перевод или уже сохранена.
+    """
+    with transaction.atomic():
+        statement = StatementImport.objects.select_for_update().get(pk=statement_id)
+        row = statement.rows.filter(pk=row_id).first()
+        if row is None:
+            raise SaveInvalid({"row": "unknown"})
+        if row.kind not in GOAL_KINDS or row.amount >= 0 or row.receipt_id or row.contribution_id:
+            raise SaveInvalid({"row": "not_transfer"})
+        rule = remember_goal(user, merchant=row.merchant, goal_id=goal.pk, actor=actor)
+        book = RuleBook([rule])
+        changed = [other for other in statement.rows.filter(kind__in=GOAL_KINDS, amount__lt=0, receipt__isnull=True,
+                                                            contribution__isnull=True)
+                   if book.match(other.merchant) is not None]
+        for other in changed:
+            as_goal(other, goal.pk)
+        StatementRow.objects.bulk_update(
+            changed, ["state", "reason", "source", "goal", "category", "store_name", "duplicate_of"])
+    return len(changed)
+
+
 # --- сохранение ---
 
 def _id(value):
@@ -293,13 +365,20 @@ def parse_items(data):
         for key in item:
             if key not in SAVE_FIELDS:
                 errors[prefix + key] = "unknown_field"
-        pk, category = _id(item.get("id")), _id(item.get("category"))
+        pk, category, goal = _id(item.get("id")), _id(item.get("category")), _id(item.get("goal"))
         if pk is None:
             errors[prefix + "id"] = "required" if item.get("id") is None else "type"
         elif pk in seen:
             errors[prefix + "id"] = "repeated"
         seen.add(pk)
-        if category is None:
+        if "goal" in item:
+            # Взнос в цель: категории и места у него нет.
+            if goal is None:
+                errors[prefix + "goal"] = "type"
+            for key in ("category", "store_name"):
+                if key in item:
+                    errors[prefix + key] = "unknown_field"
+        elif category is None:
             errors[prefix + "category"] = "required" if item.get("category") is None else "type"
         store = item.get("store_name")
         if store is not None and not isinstance(store, str):
@@ -308,7 +387,7 @@ def parse_items(data):
         store = (store or "").strip()
         if len(store) > manual.STORE_NAME_MAX:
             errors[prefix + "store_name"] = "too_long"
-        items.append({"index": index, "id": pk, "category": category, "store_name": store})
+        items.append({"index": index, "id": pk, "category": category, "store_name": store, "goal": goal})
     if errors:
         raise SaveInvalid(errors)
     return items
@@ -325,17 +404,22 @@ def note_for(row, bank, store):
     return f"{body} · {SOURCE_NOTE[bank]}" if body else f"· {SOURCE_NOTE[bank]}"
 
 
-def save(statement_id, data, *, rule_owner, actor):
-    """Отмеченные строки → траты владельца черновика; ``(создано, выучено правил)``.
+def save(statement_id, data, *, rule_owner, actor, goal_scope=None):
+    """Отмеченные строки → траты и взносы владельца черновика; ``(создано трат, выучено правил, взносов)``.
 
-    Строки сохраняются одной транзакцией; уже сохранённая строка пропускается (повтор
-    нажатия безопасен). Выбор категории или места, отличный от предложения, учит правило
-    получателя (``rules.learn``).
+    Строки сохраняются одной транзакцией; уже сохранённая строка (трата или взнос)
+    пропускается — повтор нажатия безопасен. Строка с ``goal`` становится взносом в цель
+    из ``goal_scope`` (Q видимых запросу целей), а не тратой. Выбор категории или места,
+    отличный от предложения, учит правило получателя (``rules.learn``).
     """
     items = parse_items(data)
     with transaction.atomic():
         statement = StatementImport.objects.select_for_update().get(pk=statement_id)
         rows = {row.pk: row for row in statement.rows.filter(pk__in=[item["id"] for item in items])}
+        wanted = {item["goal"] for item in items if item["goal"]}
+        goals = {}
+        if wanted and goal_scope is not None:
+            goals = {goal.pk: goal for goal in Goal.objects.filter(goal_scope, pk__in=wanted)}
         errors = {}
         for item in items:
             row = rows.get(item["id"])
@@ -343,14 +427,23 @@ def save(statement_id, data, *, rule_owner, actor):
                 errors[f"rows.{item['index']}.id"] = "unknown"
             elif row.amount >= 0:
                 errors[f"rows.{item['index']}.id"] = "income"
-            elif row.receipt_id is None and spend_amount(row) <= 0:
+            elif row.receipt_id is None and row.contribution_id is None and spend_amount(row) <= 0:
                 errors[f"rows.{item['index']}.id"] = "refunded"
+            if item["goal"] and item["goal"] not in goals:
+                errors[f"rows.{item['index']}.goal"] = "unknown"
         if errors:
             raise SaveInvalid(errors)
-        created, learned = 0, 0
+        created, learned, contributed = 0, 0, 0
         for item in items:
             row = rows[item["id"]]
-            if row.receipt_id is not None:
+            if row.receipt_id is not None or row.contribution_id is not None:
+                continue
+            if item["goal"]:
+                row.contribution = Contribution.objects.create(
+                    goal=goals[item["goal"]], amount=spend_amount(row), currency_id=row.currency, date=row.date,
+                    user=statement.owner, note=SOURCE_NOTE[statement.bank], created_by=actor)
+                row.save(update_fields=["contribution"])
+                contributed += 1
                 continue
             store = item["store_name"]
             body = {"total": f"{spend_amount(row):.2f}", "currency": row.currency, "category": item["category"],
@@ -367,7 +460,7 @@ def save(statement_id, data, *, rule_owner, actor):
             if item["category"] != row.category_id or store != row.store_name:
                 learned += learn(rule_owner, merchant=row.merchant, category_id=item["category"],
                                  store_name=store, actor=actor)
-        if created:
+        if created or contributed:
             statement.saved_at = timezone.now()
             statement.save(update_fields=["saved_at"])
-    return created, learned
+    return created, learned, contributed
