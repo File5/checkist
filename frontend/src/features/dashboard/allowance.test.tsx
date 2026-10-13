@@ -94,7 +94,7 @@ describe('the budget panel of «Лимиты»', () => {
     expect(html).toContain('<h2 id="limits-budget-heading" class="limits-small-heading">Бюджет месяца</h2>')
     expect(html).toContain(`<span class="limits-current ck-figures">${nb('700 000 ₸')}</span>`)
     expect(html).toContain('value="700000"')
-    expect(html).toContain('<button type="submit" class="limits-budget-save">Сохранить</button>')
+    expect(html).toContain('<button type="submit" class="limits-budget-save">Сохранить бюджет</button>')
     expect(html).toContain('>Убрать</button>')
     const none = renderToStaticMarkup(<MonthBudgetPanel family={false} onSave={save}
       state={{ kind: 'ok', budget: { amount: null, currency: null, base_currency: 'KZT' } }} />)

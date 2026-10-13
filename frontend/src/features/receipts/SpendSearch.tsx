@@ -29,7 +29,7 @@ export default function SpendSearch({ query, failure }: { query: ReceiptsQuery; 
         <Icon name="search" size={20} />
         <span className="spends-hidden">Найти трату</span>
         <input id={`${id}-q`} name="q" type="search" value={text} autoComplete="off" enterKeyHint="search"
-          placeholder="Место, комментарий, позиция или сумма" aria-invalid={error}
+          placeholder="Место, товар, комментарий, сумма" aria-invalid={error}
           aria-describedby={error ? `${id}-error` : undefined}
           onChange={(event) => {
             const value = event.target.value

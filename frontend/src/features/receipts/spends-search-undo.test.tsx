@@ -21,7 +21,7 @@ describe('the search line of «Траты» (2026-10-13)', () => {
     const empty = renderToStaticMarkup(<SpendSearch query={{ page: 1 }} />)
     expect(empty).toContain('<form role="search" class="spends-search"')
     expect(empty).toContain('type="search"')
-    expect(empty).toContain('placeholder="Место, комментарий, позиция или сумма"')
+    expect(empty).toContain('placeholder="Место, товар, комментарий, сумма"')
     expect(empty).not.toContain('Спросить')
     const asked = renderToStaticMarkup(<SpendSearch query={{ page: 1, q: 'сколько на кафе?' }} />)
     expect(asked).toContain('name="q" value="сколько на кафе?"')

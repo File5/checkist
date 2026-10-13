@@ -221,6 +221,10 @@
 .limits-savebar { display: flex; }
 .limits-save { flex: 1 1 auto; min-height: 56px; font-size: var(--ck-text-base); font-weight: 800; white-space: nowrap; }
 .limits-delete, .limits-budget-save { flex: 0 0 auto; min-height: 44px; }
+/* «Бюджет месяца»: the field keeps room for a big amount; on a phone the two buttons go under it, half and half. */
+.limits-budget .limits-controls { flex-wrap: wrap; }
+.limits-budget .limits-input { flex-basis: 12rem; }
+.limits-budget .limits-controls > button { flex: 1 0 auto; }
 .limits-done { margin: 0; color: var(--ck-success-text); font-size: var(--ck-text-sm); }
 .limits-row .receipt-field-error { margin: 0; }
 /* Подкатегория: отступ по глубине (до четырёх уровней) внутри строки, цвет — цвет её корня. */

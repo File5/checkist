@@ -12,7 +12,7 @@ import { useSession } from '../../session'
 import { categoryTone, dashboardErrorMessage, formatMoney } from './dashboard-state'
 import { currencySymbol, formatMoneyWithBase } from '../../lib/money'
 import {
-  amountInput, changedRows, filterHistory, historyCategories, historyEntries, isDuplicateCreate, legacyLimit, limitCurrencies, limitFailureMessage, limitFor, parseLimitAmount,
+  amountInput, changedRows, filterHistory, historyCategories, historyEntries, isDuplicateCreate, legacyLimit, limitCurrencies, limitFailureMessage, limitFor, limitMessages, parseLimitAmount,
   limitTree, openByDefault, parseCurrency, rowAction, saveBarLabel, subCategoriesText, visibleRows, withLimit, withoutLimit,
 } from './limits-state'
 import ChipScroller from '../../components/ChipScroller'
@@ -120,13 +120,15 @@ export function MonthBudgetPanel({ state, family, onSave }: {
   const submit = (event: FormEvent) => {
     event.preventDefault()
     const parsed = parseLimitAmount(value)
-    if ('error' in parsed) { setStatus({ kind: 'error', text: parsed.error }); return }
+    // The words of a limit, said of the budget.
+    const budgetWords: Record<string, string> = { [limitMessages.empty]: 'Введите сумму бюджета.', [limitMessages.zero]: 'Бюджет должен быть больше нуля.' }
+    if ('error' in parsed) { setStatus({ kind: 'error', text: budgetWords[parsed.error] ?? parsed.error }); return }
     void save(parsed.amount)
   }
   return <section className="ck-panel dash-card limits-budget" aria-labelledby="limits-budget-heading">
     {heading}
     <p className="dash-note">{`Сколько ${family ? 'семья готова' : 'вы готовы'} потратить за месяц на всё. От него Главная считает «можно `
-      + 'тратить в день»; без бюджета — от суммы лимитов. Прошлые месяцы сохраняют свой бюджет.'}</p>
+      + 'тратить в день»; без бюджета — от суммы лимитов.'}</p>
     <form className="limits-form" noValidate aria-busy={busy} onSubmit={submit}>
       <div className="limits-row-head">
         <label className="limits-name" htmlFor="limits-budget">Сумма на месяц</label>
@@ -139,7 +141,7 @@ export function MonthBudgetPanel({ state, family, onSave }: {
             onChange={(event) => { setDraft(event.target.value); setStatus(idle) }} />
           <span className="limits-input-currency" aria-hidden="true">{currencySymbol(base)}</span>
         </span>
-        <button type="submit" className="limits-budget-save" disabled={busy}>Сохранить</button>
+        <button type="submit" className="limits-budget-save" disabled={busy}>Сохранить бюджет</button>
         {amount && <button type="button" className="ck-button-danger limits-delete" disabled={busy} onClick={() => { void save(null) }}>Убрать</button>}
       </div>
       {status.kind === 'error' && <p className="receipt-field-error" id="limits-budget-message" role="alert">{status.text}</p>}

@@ -200,7 +200,7 @@
 .spends-row-delete:hover:not(:disabled), .spends-row-delete:active:not(:disabled) { background: var(--ck-swipe-delete-bg); color: var(--ck-swipe-delete-text); }
 .spends-row-delete:focus-visible { outline-offset: -3px; }
 /* «Удалено · Сбербанк  Отменить» above the bottom bar while the deletion waits (undo-delete.ts). */
-.spends-undo { position: fixed; right: 16px; bottom: calc(var(--ck-bottom-occupied) + 12px); left: 16px; z-index: var(--ck-z-toast); display: flex; align-items: center; gap: 8px; max-width: 520px; min-height: 52px; margin: 0 auto; padding: 4px 4px 4px 16px; border-radius: var(--ck-radius-button); background: var(--ck-toast-bg); color: var(--ck-toast-text); box-shadow: 0 8px 24px var(--ck-popover-shadow); }
+.spends-undo { position: fixed; right: 16px; bottom: calc(var(--ck-bottom-occupied) + 12px); left: 16px; z-index: var(--ck-z-toast); display: flex; align-items: center; gap: 8px; max-width: 520px; min-height: 52px; margin: 0 auto; padding: 4px 4px 4px 16px; border: 1px solid var(--ck-toast-border); border-radius: var(--ck-radius-button); background: var(--ck-toast-bg); color: var(--ck-toast-text); box-shadow: 0 8px 24px var(--ck-popover-shadow); }
 .spends-undo-text { flex: 1 1 auto; min-width: 0; overflow: hidden; font-size: var(--ck-text-sm); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .spends-undo-action { flex: none; min-height: 44px; padding: 0 14px; border: 0; border-radius: var(--ck-radius-sm); background: transparent; color: var(--ck-toast-action); font-size: var(--ck-text-sm); font-weight: 800; }
 .spends-undo-action:hover:not(:disabled), .spends-undo-action:active:not(:disabled) { background: transparent; color: var(--ck-toast-action); text-decoration: underline; text-underline-offset: 3px; }

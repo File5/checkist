@@ -33,8 +33,9 @@ export function BaseTwin({ receipt }: { receipt: Pick<ReceiptListItem, 'currency
   return twin ? <span className="spends-row-twin">{twin}</span> : null
 }
 
-/** Deletes a spend by hand from «Траты»: `button` — by its «Удалить» (a keyboard, a screen reader), not by a swipe. */
-export type SpendDelete = (receipt: ReceiptListItem, button: boolean) => void
+/** Deletes a spend by hand from «Траты»: `keyboard` — by its «Удалить» from a keyboard or a screen reader (a click without a
+ * pointer), not by a swipe or a tap: then the focus goes to «Отменить» and the time waits for it. */
+export type SpendDelete = (receipt: ReceiptListItem, keyboard: boolean) => void
 
 /** A row that follows a finger (or a mouse) to the left: let go past `swipeEnd` — deleted, past half of the button —
  * open on «Удалить» behind it. A vertical move stays the scroll of the page (`touch-action: pan-y`). A tap after a move
@@ -112,7 +113,7 @@ function SpendRow({ receipt, showOwner, onDelete }: { receipt: ReceiptListItem; 
   // «Удалить» lies behind the row: a swipe shows it, the Tab key slides the row aside to it (Receipts.css).
   return <li className="spends-swipe" data-open={swipe.open ? '' : undefined}>
     {row}
-    <button type="button" className="spends-row-delete" onClick={() => deletable(receipt, true)}>
+    <button type="button" className="spends-row-delete" onClick={(event) => deletable(receipt, event.detail === 0)}>
       <Icon name="trash" size={20} /><span>Удалить<span className="spends-hidden">: {rowTitle(receipt)}</span></span>
     </button>
   </li>

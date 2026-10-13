@@ -85,7 +85,7 @@ export function FiltersToggle({ count, open, sheetId, onOpen }: { count: number;
  * The live region is always there so that its text is announced; the focus inside it stops the time. */
 export function UndoBar({ pending, onUndo, onHold, onRelease, focus = false }: {
   pending: Deletion | null; onUndo: () => void; onHold?: () => void; onRelease?: () => void
-  /** The deletion came from a button: the focus moves to «Отменить». */
+  /** The deletion came from a keyboard: the focus moves to «Отменить» (and the time waits while it is there). */
   focus?: boolean
 }) {
   const button = useRef<HTMLButtonElement>(null)
@@ -190,7 +190,7 @@ export default function ReceiptsPage({ query }: ReceiptsPageProps) {
   const [notice] = useState(getReceiptsNotice)
   useEffect(clearReceiptsNotice, [])
   const removal = useSyncExternalStore(undoDelete.subscribe, undoDelete.getSnapshot, undoDelete.getSnapshot)
-  const [byButton, setByButton] = useState(false)
+  const [byKeyboard, setByKeyboard] = useState(false)
   // A deletion waits for its time only while the person is here: leaving the screen, hiding the tab or closing the page
   // sends it at once (keepalive), so it is never lost on the way out.
   useEffect(() => {
@@ -214,6 +214,6 @@ export default function ReceiptsPage({ query }: ReceiptsPageProps) {
   return <ReceiptsView notice={notice} query={query} state={request.state} retry={request.retry} showOwner={ownerShown(session)} narrow={narrow}
     chips={chips} head={isHead(session)} review={review.state.kind === 'ok' ? review.state.data.count : undefined} pending={<PendingSpends />}
     hidden={hiddenIds(removal)} failure={removal.failure?.message}
-    onDelete={(receipt, button) => { setByButton(button); undoDelete.schedule({ id: receipt.id, title: rowTitle(receipt) }) }}
-    undo={<UndoBar pending={removal.pending} focus={byButton} onUndo={undo} onHold={undoDelete.hold} onRelease={undoDelete.release} />} />
+    onDelete={(receipt, keyboard) => { setByKeyboard(keyboard); undoDelete.schedule({ id: receipt.id, title: rowTitle(receipt) }) }}
+    undo={<UndoBar pending={removal.pending} focus={byKeyboard} onUndo={undo} onHold={undoDelete.hold} onRelease={undoDelete.release} />} />
 }
