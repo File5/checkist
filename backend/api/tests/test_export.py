@@ -16,6 +16,7 @@ from api.tests.accounts_helpers import TwoUsers, accounts_mode, local_single_mod
 from api.tests.factories import make_product, make_receipt
 from budget.models import BudgetLimit
 from catalog.models import Category, GenericProduct
+from incomes.models import Income, IncomeCategory
 from receipts.models import Receipt
 from receipts.ownership import local_user
 from receipts.tests import samples
@@ -73,6 +74,14 @@ class ExportData:
         BudgetLimit.objects.create(user=cls.second, category=cls.food, currency_id="EUR", amount=D("7.00"))
         job = ProcessingJob.objects.create(photo=make_photo(owner=cls.first))
         cls.image = make_image(job, status="imported", receipt_id=cls.photo.pk, import_effect="created")
+        # Доходы: свой у первого и у третьего (оба — члены семьи без главного), чужой у второго.
+        salary = IncomeCategory.objects.get_or_create(name="Зарплата", household=None, user=None)[0]
+        cls.income = Income.objects.create(owner=cls.first, received_on=date(2026, 10, 5), amount=D("650000"),
+                                           currency_id="KZT", category=salary)
+        cls.liza_income = Income.objects.create(owner=cls.third, received_on=date(2026, 10, 6), amount=D("300000"),
+                                                currency_id="KZT", category=salary, note="Аванс Лизы")
+        Income.objects.create(owner=cls.second, received_on=date(2026, 10, 5), amount=D("1"), currency_id="KZT",
+                              category=salary, note="Чужой доход")
 
     def get(self, query="", account=None, status=200):
         response = self.client_of(account or self.first).get(f"/api/export/{query}")
@@ -104,7 +113,12 @@ class ExportDocumentTests(ExportData, TwoUsers, TestCase):
         self.assertTrue(doc["exported_at"].endswith("Z"))
         self.assertEqual(doc["people"], [{"username": "synthetic-user-one", "display_name": "synthetic-user-one"},
                                          {"username": "synthetic-user-three", "display_name": "Лиза"}])
-        self.assertEqual(doc["filters"]["include"], ["receipts", "lines", "categories", "stores", "limits", "summary"])
+        self.assertEqual(doc["filters"]["include"],
+                         ["receipts", "lines", "categories", "stores", "limits", "summary", "incomes"])
+        # Члену семьи — только свои доходы; общий доход семьи — на /api/incomes/.
+        self.assertEqual(doc["incomes"], [{
+            "id": self.income.pk, "received_on": "2026-10-05", "currency": "KZT", "amount": "650000.00",
+            "category": "Зарплата", "note": "", "owner": "synthetic-user-one", "owner_name": "synthetic-user-one"}])
         self.assertEqual([item["id"] for item in doc["receipts"]], [self.photo.pk, self.statement.pk, self.lunch.pk])
         photo = doc["receipts"][0]
         self.assertEqual({key: photo[key] for key in ("source", "purchased_on", "store_id", "currency", "total", "owner")},
@@ -146,6 +160,15 @@ class ExportDocumentTests(ExportData, TwoUsers, TestCase):
                                            {"month": "2026-10", "receipts_count": 1, "total": "1234.56"}])
         self.assertEqual((kzt["currency"], kzt["total"], kzt["by_month"][0]["month"]), ("KZT", "2500.00", "2026-10"))
 
+    def test_head_exports_incomes_of_the_family(self):
+        Membership.objects.filter(user=self.first).update(role="head")
+        self.assertEqual([item["id"] for item in self.doc()["incomes"]], [self.income.pk, self.liza_income.pk])
+        self.assertEqual([item["id"] for item in self.doc("?owner=synthetic-user-three")["incomes"]], [self.liza_income.pk])
+        self.assertEqual(self.doc("?to=2026-10-04")["incomes"], [])
+        self.assertEqual(self.doc("?currency=EUR")["incomes"], [])
+        # Член семьи по-прежнему видит только свои.
+        self.assertEqual([item["id"] for item in self.doc(account=self.third)["incomes"]], [self.liza_income.pk])
+
     def test_outsider_sees_nothing_of_the_family(self):
         doc = self.doc(account=self.second)
         self.assertEqual([item["id"] for item in doc["receipts"]], [self.foreign.pk])
@@ -153,7 +176,7 @@ class ExportDocumentTests(ExportData, TwoUsers, TestCase):
         self.assertEqual([limit["amount"] for limit in doc["limits"]], ["7.00"])
         self.assertEqual(doc["summary"]["receipts_count"], 1)
         text = json.dumps(doc, ensure_ascii=False)
-        for secret in ("Кофе", "Обед", "MILCH", "synthetic-user-one", "Лиза"):
+        for secret in ("Кофе", "Обед", "MILCH", "synthetic-user-one", "Лиза", "650000"):
             self.assertNotIn(secret, text)
         # The family does not see the outsider either, and cannot ask for them by name.
         self.assertNotIn("Секрет", json.dumps(self.doc(), ensure_ascii=False))
@@ -340,7 +363,9 @@ class ExportFixtureTests(TestCase):
         example = json.loads(FIXTURE.read_text(encoding="utf-8"))
         self.assertEqual((example["format"], example["version"]), (export.FORMAT, export.VERSION))
         self.assertEqual(set(example), {"format", "version", "exported_at", "filters", "people", "categories", "stores",
-                                        "receipts", "limits", "summary"})
+                                        "receipts", "limits", "summary", "incomes"})
+        self.assertEqual(set(example["incomes"][0]), {"id", "received_on", "currency", "amount", "category", "note",
+                                                      "owner", "owner_name"})
         self.assertEqual(set(example["filters"]), {"from", "to", "category", "source", "owner", "store", "currency", "q",
                                                    "min_total", "max_total", "include"})
         receipt = example["receipts"][0]

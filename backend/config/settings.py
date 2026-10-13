@@ -115,6 +115,7 @@ INSTALLED_APPS = [
     "recurring.apps.RecurringConfig",
     "statements.apps.StatementsConfig",
     "rates.apps.RatesConfig",
+    "incomes.apps.IncomesConfig",
 ]
 MIDDLEWARE = [
     "config.robots.NoIndexMiddleware",

@@ -140,10 +140,22 @@ def signals(plan, spend, parents):
     return int(same_store) + int(same_category) + int(close)
 
 
-def assign(plans, spends, months, parents, fixed=None):
+def income_signals(plan, income, parents):
+    """Регулярный доход: категория дохода обязательна (считается за два признака), сумма ±25 % — третий.
+
+    Магазина у дохода нет, а сумму при внесении можно поправить: «Зарплата» той же категории в окне месяца —
+    полученная зарплата, даже если пришло меньше обычного.
+    """
+    if income.category_id != plan.category_id:
+        return 0
+    return 2 + int(_relative(income.total, plan.amount) <= AMOUNT_TOLERANCE)
+
+
+def assign(plans, spends, months, parents, fixed=None, score=signals):
     """``{(plan_id, Month): Spend}`` — оплата каждого платежа в каждом месяце ``months``.
 
-    ``fixed`` — ``{(plan_id, Month): spend_id}``: траты, добавленные ответом «по средней».
+    ``fixed`` — ``{(plan_id, Month): spend_id}``: траты, добавленные ответом «по средней». ``score`` — правило
+    признаков (у регулярного дохода — ``income_signals``, «траты» — доходы месяца).
     """
     months = set(months)
     by_id = {spend.id: spend for spend in spends}
@@ -163,10 +175,10 @@ def assign(plans, spends, months, parents, fixed=None):
             month = month_of(spend.day, plan.due_day)
             if month not in months or (plan.id, month) in result:
                 continue
-            score = signals(plan, spend, parents)
-            if score >= 2:
+            found = score(plan, spend, parents)
+            if found >= 2:
                 late = abs((spend.day - due_date(month, plan.due_day)).days)
-                candidates.append(((-score, _relative(spend.total, plan.amount), late, spend.id, plan.id), plan.id, month, spend))
+                candidates.append(((-found, _relative(spend.total, plan.amount), late, spend.id, plan.id), plan.id, month, spend))
     candidates.sort(key=lambda item: item[0])
     for _, plan_id, month, spend in candidates:
         if spend.id in used or (plan_id, month) in result:

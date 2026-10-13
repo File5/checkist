@@ -12,6 +12,7 @@ from django.utils import timezone
 
 from accounts.models import Household, Membership
 from catalog.models import Category
+from incomes.models import IncomeCategory
 from receipts import manual, manual_parse
 from receipts.manual_parse import CodexTextParser, FakeTextParser, ParseOutputError, draft_from_output
 from receipts.models import ManualParseRequest, Receipt
@@ -24,7 +25,7 @@ TODAY = date(2026, 10, 12)
 
 def answer(**fields):
     """Ответ модели по схеме: все ключи, по умолчанию пустые."""
-    base = {"total": None, "currency": None, "category": None, "purchased_on": None,
+    base = {"kind": "spend", "total": None, "currency": None, "category": None, "purchased_on": None,
             "store_name": None, "note": None, "lines": []}
     return {**base, **fields}
 
@@ -79,11 +80,23 @@ class DraftValidationTests(ParseFixture, TestCase):
             answer(lines=[{"name": " ", "amount": "1", "quantity": None, "category": None}]),
             answer(lines=[{"name": "a", "amount": "0", "quantity": None, "category": None}]),
             answer(extra=1),
+            answer(kind="gift"),
+            answer(kind="income", total="1", category=999999),  # not one of income_categories
             "not an object",
         ]
         for data in bad:
             with self.subTest(data=data), self.assertRaises(ParseOutputError):
                 draft_from_output(data, self.payload())
+
+
+    def test_income_answer_is_a_draft_of_an_income(self):
+        payload = {**self.payload(), "income_categories": [{"id": 7, "name": "Зарплата"}]}
+        draft = draft_from_output(answer(kind="income", total="650000", category=7, store_name="Работа",
+                                         lines=[{"name": "x", "amount": "1", "quantity": None, "category": None}]), payload)
+        self.assertEqual(draft, {"kind": "income", "total": "650000", "currency": "KZT", "category": 7,
+                                 "purchased_on": "2026-10-12", "store_name": None, "note": "", "lines": []})
+        with self.assertRaises(ParseOutputError):
+            draft_from_output(answer(kind="income", total="0", category=7), payload)
 
 
 @tag("integration")
@@ -145,6 +158,15 @@ class ExecuteTests(ParseFixture, TestCase):
         })
         self.assertEqual(Receipt.objects.count(), receipts)  # the parse saves nothing
 
+    def test_fake_takes_a_salary_as_an_income_with_grouped_digits(self):
+        salary = IncomeCategory.objects.get_or_create(name="Зарплата", household=None, user=None)[0]
+        IncomeCategory.objects.get_or_create(name="Кэшбэк и проценты", household=None, user=None)
+        row = self.run_one(FakeTextParser(), "зарплата 650 000")
+        self.assertEqual(row.draft, {"kind": "income", "total": "650000", "currency": "KZT", "category": salary.pk,
+                                     "purchased_on": "2026-10-12", "store_name": None, "note": "", "lines": []})
+        cashback = IncomeCategory.objects.get(name="Кэшбэк и проценты", household=None, user=None)
+        self.assertEqual(self.run_one(FakeTextParser(), "кэшбэк 3 200").draft["category"], cashback.pk)
+
     def test_fake_without_a_number_leaves_the_total_empty(self):
         self.assertIsNone(self.run_one(FakeTextParser(), "такси").draft["total"])
 
@@ -172,6 +194,7 @@ class ExecuteTests(ParseFixture, TestCase):
         self.assertIn('"today": "2026-10-12"', call["prompt"])
         self.assertIn(f'"id": {self.taxi.pk}, "name": "Демо-такси", "parent_id": {self.transport.pk}', call["prompt"])
         self.assertNotIn('"Не разобрано"', call["prompt"])
+        self.assertIn('"income_categories": [', call["prompt"])
 
     def test_codex_errors_and_invalid_answers(self):
         provider = Mock()

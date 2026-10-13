@@ -2,8 +2,9 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "required": ["total", "currency", "category", "purchased_on", "store_name", "note", "lines"],
+  "required": ["kind", "total", "currency", "category", "purchased_on", "store_name", "note", "lines"],
   "properties": {
+    "kind": {"type": "string", "enum": ["spend", "income"]},
     "total": {"type": ["string", "null"], "maxLength": 15, "pattern": "^[0-9]{1,12}(\\.[0-9]{1,2})?$"},
     "currency": {"type": ["string", "null"], "maxLength": 3, "pattern": "^[A-Z]{3}$"},
     "category": {"type": ["integer", "null"], "minimum": 1},

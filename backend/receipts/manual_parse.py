@@ -7,6 +7,10 @@ Codex CLI со входом есть только рядом с ``recognition_wo
 клиент опрашивает строку. Ответ модели проверяется схемой и правилами ``manual.parse``;
 черновик — тело ``POST /api/receipts/manual/``. Чеки и каталог разбор не трогает.
 
+Доход (2026-10-13): «зарплата 650 000» модель отмечает ``kind: "income"`` — черновик тех же
+полей с ``"kind": "income"``, ``category`` — id категории дохода из ``income_categories`` входа,
+без места и позиций; у траты ключа ``kind`` в черновике нет.
+
 Переходы: ``queued → running`` (``claim``), ``running → succeeded | failed`` (``execute``,
 сверка по ``run_token``), ``running → failed / worker_lost`` (истёкшая lease,
 ``recover_expired``; повтора нет — человек отправит текст ещё раз), ``queued → failed /
@@ -51,6 +55,8 @@ PROMPT_PATH = Path(__file__).resolve().parent / "prompts" / "manual_parse.txt"
 INPUT_MARKER = "INPUT JSON:"
 FAKE_SCENARIOS = ("simple", "invalid_output", "provider_error", "timeout")
 FAKE_SCENARIO_ENV = "MANUAL_PARSE_FAKE_SCENARIO"
+# Fake-исполнитель считает текст доходом по этим словам (модель решает сама, по промпту).
+INCOME_WORDS = re.compile(r"зарплат|аванс|преми|подработ|кэшб|кешб|процент|доход|продал", re.IGNORECASE)
 
 
 class ParseLimit(Exception):
@@ -137,10 +143,15 @@ def family_receipts(owner):
 
 def build_input(row):
     """Вход модели: сегодня, валюта по умолчанию, валюты и категории каталога, до 10 похожих прошлых трат
-    семьи (``history``), места семьи — частые сначала, с вариантами написания (``stores``), текст."""
+    семьи (``history``), места семьи — частые сначала, с вариантами написания (``stores``), категории доходов
+    (``income_categories``), текст."""
+    from incomes.access import categories_q
+    from incomes.models import IncomeCategory
+
     categories = (Category.objects.exclude(name=UNASSIGNED).order_by("pk")
                   .values("pk", "name", "parent_id")[:CATEGORIES_MAX])
     receipts = family_receipts(row.owner)
+    incomes = IncomeCategory.objects.filter(categories_q(SimpleNamespace(user=row.owner))).order_by("pk")
     return {
         "today": row.today.isoformat(),
         "default_currency": manual.default_currency(Receipt.objects.filter(owner_id=row.owner_id, hidden=False), row.owner),
@@ -148,6 +159,7 @@ def build_input(row):
         "categories": [{"id": item["pk"], "name": item["name"], "parent_id": item["parent_id"]} for item in categories],
         "history": history.similar(receipts, row.text),
         "stores": history.store_names(receipts),
+        "income_categories": [{"id": pk, "name": name} for pk, name in incomes.values_list("pk", "name")],
         "text": row.text,
     }
 
@@ -160,12 +172,15 @@ def schema():
 def draft_from_output(data, payload):
     """Черновик — тело ``POST /api/receipts/manual/``, либо ``ParseOutputError``.
 
-    Пустые валюта и дата получают значения входа; с позициями итог — их сумма.
+    Пустые валюта и дата получают значения входа; с позициями итог — их сумма. Доход — те же поля с
+    ``"kind": "income"`` и категорией из ``income_categories`` входа, без места и позиций.
     """
     try:
         _bounded(data, schema())
     except SchemaValidationError:
         raise ParseOutputError() from None
+    if data["kind"] == "income":
+        return _income_draft(data, payload)
     lines = [{"name": line["name"].strip(), "amount": line["amount"], "quantity": line["quantity"],
               "category": line["category"]} for line in data["lines"]]
     body = {
@@ -183,13 +198,28 @@ def draft_from_output(data, payload):
     return body
 
 
+def _income_draft(data, payload):
+    known = {item["id"] for item in payload.get("income_categories", ())}
+    body = {"kind": "income", "total": data["total"], "currency": data["currency"] or payload["default_currency"],
+            "category": data["category"], "purchased_on": data["purchased_on"] or payload["today"],
+            "store_name": None, "note": (data["note"] or "").strip(), "lines": []}
+    if body["category"] is not None and body["category"] not in known:
+        raise ParseOutputError()
+    try:
+        manual.parse({key: body[key] for key in ("total", "currency", "purchased_on", "note")})
+    except manual.ManualInvalid:
+        raise ParseOutputError() from None
+    return body
+
+
 # --- исполнители ---
 
 class FakeTextParser:
     """Детерминированный ответ без модели: последнее число текста — сумма, первая категория входа, сегодня.
 
     С похожей прошлой тратой (первая в ``history``) — как модель по промпту: её место, категория и валюта,
-    без числа в тексте — её сумма.
+    без числа в тексте — её сумма. Слово дохода («зарплата», «аванс», «кэшбэк», …) — доход: число с
+    разрядами («650 000») целиком, категория дохода по первым буквам названия, иначе первая.
     """
 
     name = "fake"
@@ -207,19 +237,31 @@ class FakeTextParser:
             raise ProviderError("timeout")
         if self.scenario == "invalid_output":
             return {"total": "много"}
+        if INCOME_WORDS.search(payload["text"]):
+            return self._income(payload)
         numbers = re.findall(r"[0-9]+(?:[.,][0-9]{1,2})?", payload["text"])
         total = numbers[-1].replace(",", ".") if numbers else None
         same = (payload.get("history") or [None])[0]
         if same is not None and same["category"] is not None:
             return {
-                "total": total or same["total"], "currency": same["currency"], "category": same["category"],
+                "kind": "spend", "total": total or same["total"], "currency": same["currency"], "category": same["category"],
                 "purchased_on": None, "store_name": same["store_name"], "note": None, "lines": [],
             }
         return {
-            "total": total, "currency": None,
+            "kind": "spend", "total": total, "currency": None,
             "category": payload["categories"][0]["id"] if payload["categories"] else None,
             "purchased_on": None, "store_name": None, "note": None, "lines": [],
         }
+
+    @staticmethod
+    def _income(payload):
+        text = re.sub(r"(?<=[0-9])[ \u00a0](?=[0-9]{3}(?![0-9]))", "", payload["text"])
+        numbers = re.findall(r"[0-9]+(?:[.,][0-9]{1,2})?", text)
+        lower = text.lower()
+        options = payload.get("income_categories") or []
+        chosen = next((item for item in options if item["name"][:5].lower() in lower), options[0] if options else None)
+        return {"kind": "income", "total": numbers[-1].replace(",", ".") if numbers else None, "currency": None,
+                "category": chosen and chosen["id"], "purchased_on": None, "store_name": None, "note": None, "lines": []}
 
 
 class CodexTextParser:

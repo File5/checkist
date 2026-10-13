@@ -17,6 +17,9 @@
 **Категория строки** — категория обобщённого продукта её товара (поглощённый
 слиянием товар заменён оставляемым, как в статистике), у строки без товара —
 собственная ``ReceiptLine.category``, иначе ``null``.
+
+**Доходы** (2026-10-13, раздел ``incomes``) — записи, видимые запросу (``incomes.access.visible_q``:
+свои, а главному — всей семьи); из фильтров к ним относятся только период, валюта и человек.
 """
 import re
 from dataclasses import dataclass
@@ -33,6 +36,8 @@ from budget.access import limits_q
 from budget.models import BudgetLimit
 from catalog.models import Product
 from config.exceptions import ApiError
+from incomes.access import visible_q as visible_incomes_q
+from incomes.models import Income
 from receipts import spending
 from receipts.decimal_math import price_context
 from receipts.models import Receipt, ReceiptLine
@@ -49,8 +54,8 @@ FORMAT = "checkist-export"
 VERSION = 1
 MAX_RECEIPTS = 20_000
 MAX_VALUES = 50
-SECTIONS = ("receipts", "lines", "categories", "stores", "limits", "summary", "media")
-DEFAULT_SECTIONS = ("receipts", "lines", "categories", "stores", "limits", "summary")
+SECTIONS = ("receipts", "lines", "categories", "stores", "limits", "summary", "media", "incomes")
+DEFAULT_SECTIONS = ("receipts", "lines", "categories", "stores", "limits", "summary", "incomes")
 # Разделы внутри чека: без ``receipts`` им негде стоять.
 NESTED_SECTIONS = ("lines", "media")
 SOURCES = ("photo", "manual", "statement")
@@ -329,6 +334,21 @@ def _limits(request, filters, tree):
              "currency": limit.currency_id, "amount": common.amount(limit.amount)} for limit in limits]
 
 
+def _incomes(request, filters):
+    """Доходы, видимые запросу, по периоду, валюте и людям фильтров; один запрос."""
+    incomes = Income.objects.filter(visible_incomes_q(request)).select_related("category", "owner")
+    for field, value in (("received_on__gte", filters.date_from), ("received_on__lte", filters.date_to),
+                         ("currency_id", filters.currency)):
+        if value is not None:
+            incomes = incomes.filter(**{field: value})
+    if filters.owners:
+        incomes = incomes.filter(owner__username__in=filters.owners)
+    return [{"id": income.pk, "received_on": common.iso_date(income.received_on), "currency": income.currency_id,
+             "amount": common.amount(income.amount), "category": income.category.name, "note": income.note,
+             "owner": income.owner.get_username(), "owner_name": display_name(income.owner)}
+            for income in incomes.order_by("received_on", "pk")]
+
+
 def _summary(selected, filters, tree):
     """Итоги по валютам: чеки, строки, сумма, верхние категории строк и месяцы; пять запросов.
 
@@ -410,6 +430,8 @@ def build(request, filters, tree, family_people):
         document["limits"] = _limits(request, filters, tree)
     if "summary" in include:
         document["summary"] = _summary(selected, filters, tree)
+    if "incomes" in include:
+        document["incomes"] = _incomes(request, filters)
     return document
 
 
