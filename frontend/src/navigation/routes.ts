@@ -153,8 +153,9 @@ export type NavigableRoute = CatalogRoute
   | { kind: 'health' }
   | { kind: 'receipts'; query: ReceiptsQuery }
   | { kind: 'upload' }
-  /** «Добавить трату» — a spend without a receipt; `expense-edit` changes a manual spend with the same form. */
-  | { kind: 'expense-new' }
+  /** «Добавить трату» — a spend without a receipt; `repeat` — a manual spend whose copy with today's date starts the form
+   * («Повторить»). `expense-edit` changes a manual spend with the same form. */
+  | { kind: 'expense-new'; repeat?: number }
   | { kind: 'expense-edit'; receiptId: number }
   | { kind: 'receipt'; receiptId: number }
   | { kind: 'jobs'; query: JobsQuery }
@@ -169,6 +170,8 @@ export type NavigableRoute = CatalogRoute
   | { kind: 'export'; query: ExportQuery }
   /** «Семья» (only with accounts): members, invites, the head role; `token` — an invite opened from its link. */
   | { kind: 'family'; token?: string }
+  /** «Магазины»: places of the family, the ones that look like one payee, the merge. */
+  | { kind: 'stores' }
 
 export type Route = NavigableRoute
   | { kind: 'not-found'; path: string }
@@ -543,7 +546,7 @@ export function buildRoute(route: NavigableRoute): string {
     case 'health': return '/health'
     case 'receipts': return `/receipts${buildReceiptsQuery(route.query)}`
     case 'upload': return '/receipts/upload'
-    case 'expense-new': return '/receipts/new'
+    case 'expense-new': return route.repeat === undefined ? '/receipts/new' : `/receipts/new?repeat=${buildId(route.repeat)}`
     case 'expense-edit': return `/receipts/${buildId(route.receiptId)}/edit`
     case 'receipt': return `/receipts/${buildId(route.receiptId)}`
     case 'jobs': return `/recognition/jobs${buildJobsQuery(route.query)}`
@@ -555,6 +558,7 @@ export function buildRoute(route: NavigableRoute): string {
     case 'account': return '/account'
     case 'export': return exportHref(route.query)
     case 'family': return route.token ? `/family/join?${new URLSearchParams({ token: route.token })}` : '/family'
+    case 'stores': return '/stores'
   }
 }
 
@@ -585,7 +589,11 @@ export function parseRoute(input: string | URL): Route {
   }
   if (normalizedPath === '/login') return { kind: 'login' }
   if (normalizedPath === '/receipts/upload') return { kind: 'upload' }
-  if (normalizedPath === '/receipts/new') return { kind: 'expense-new' }
+  if (normalizedPath === '/receipts/new') {
+    // A wrong `repeat` is dropped: the form opens empty.
+    const repeat = positiveInteger(url.searchParams.get('repeat') ?? '')
+    return repeat === undefined ? { kind: 'expense-new' } : { kind: 'expense-new', repeat }
+  }
   const edit = /^\/receipts\/([^/]+)\/edit$/.exec(normalizedPath)
   if (edit) {
     let id: number | undefined
@@ -593,6 +601,7 @@ export function parseRoute(input: string | URL): Route {
     return id === undefined ? { kind: 'not-found', path } : { kind: 'expense-edit', receiptId: id }
   }
   if (normalizedPath === '/account') return { kind: 'account' }
+  if (normalizedPath === '/stores') return { kind: 'stores' }
   if (normalizedPath === '/family') return { kind: 'family' }
   if (normalizedPath === '/family/join') {
     const token = url.searchParams.get('token') ?? ''

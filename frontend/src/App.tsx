@@ -20,6 +20,7 @@ import { SpendingPage, ReceiptsStatsPage, TrendsPage } from './features/stats'
 import { LoginPage, AccountPage } from './features/auth'
 import { ExportPage } from './features/export'
 import { FamilyPage } from './features/family'
+import { StoresPage } from './features/stores'
 import { pageKey, shellView, watchSession } from './features/auth/auth-state'
 import type { ShellView } from './features/auth/auth-state'
 import { moderatorOnlyText } from './features/auth/labels'
@@ -59,6 +60,7 @@ function pageTitle(route: Route) {
     case 'account': return 'Аккаунт'
     case 'export': return 'Выгрузка'
     case 'family': return 'Семья'
+    case 'stores': return 'Магазины'
     case 'invalid-query': return 'Некорректная ссылка'
     case 'not-found': return 'Страница не найдена'
   }
@@ -92,7 +94,7 @@ function pageContent({ route, returnTo }: NavigationSnapshot, username: string) 
     case 'health': return <HealthPage />
     case 'receipts': return <ReceiptsPage query={route.query} />
     case 'upload': return <UploadPage />
-    case 'expense-new': return <ExpensePage key="new" />
+    case 'expense-new': return <ExpensePage key={`new-${route.repeat ?? ''}`} repeat={route.repeat} />
     case 'expense-edit': return <ExpensePage key={route.receiptId} receiptId={route.receiptId} />
     case 'receipt': return <ReceiptPage receiptId={route.receiptId} returnTo={returnTo} />
     case 'jobs': return <JobsPage query={route.query} />
@@ -105,6 +107,7 @@ function pageContent({ route, returnTo }: NavigationSnapshot, username: string) 
     case 'account': return <AccountPage username={username} />
     case 'export': return <ExportPage query={route.query} />
     case 'family': return <FamilyPage joinToken={route.token} />
+    case 'stores': return <StoresPage />
     case 'invalid-query': return <RequestState kind="empty" message="В адресе указаны некорректные фильтры или номер страницы. Сбросьте параметры и попробуйте снова." action={<Link className="action-link" to={route.resetTo} replace>Сбросить параметры</Link>} />
     case 'not-found': return notFound
   }

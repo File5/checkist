@@ -2,6 +2,7 @@
 import type { Line, ManualSpendInput, Receipt } from '../../api/receipts'
 import type { Category } from '../../api/types'
 import { formatMoney } from '../../lib/money'
+import { evaluateAmount, hasOperator } from './amount-calc'
 
 export type LineDraft = { key: number; name: string; amount: string; category: number | null }
 export type ExpenseDraft = {
@@ -50,8 +51,10 @@ export function emptyDraft(currency: string, today = todayISO()): ExpenseDraft {
   return { amount: '', currency, category: null, date: today, place: '', note: '', lines: [] }
 }
 
-/** A typed amount as the API decimal: spaces dropped, a comma is the decimal point. `undefined` — not a positive amount. */
+/** A typed amount as the API decimal: spaces dropped, a comma is the decimal point; «1200+350» is counted
+ * (`amount-calc.ts`). `undefined` — not a positive amount. */
 export function normalizeAmount(text: string): string | undefined {
+  if (hasOperator(text)) return evaluateAmount(text)
   const value = text.replace(/[\s\u00a0\u202f]/g, '').replace(',', '.')
   if (!/^[0-9]{1,12}(?:\.[0-9]{1,2})?$/.test(value)) return undefined
   return /[1-9]/.test(value) ? value : undefined

@@ -32,8 +32,8 @@ describe('markup of the main menu (SSR only: the bar, touches and keys are check
   })
 
   it.each<[string, Session, string[]]>([
-    ['seven items in local_single', local, ['Каталог', 'Обработка', 'Выгрузка', 'Состояние сервисов']],
-    ['nine items in accounts', reader, ['Каталог', 'Обработка', 'Выгрузка', 'Состояние сервисов', 'Семья', 'synthetic-reader']],
+    ['eight items in local_single', local, ['Каталог', 'Магазины', 'Обработка', 'Выгрузка', 'Состояние сервисов']],
+    ['ten items in accounts', reader, ['Каталог', 'Магазины', 'Обработка', 'Выгрузка', 'Состояние сервисов', 'Семья', 'synthetic-reader']],
   ])('keeps the links after the third one behind «Ещё» with %s', (_name, session, more) => {
     const html = render(session, { kind: 'not-found', path: '/missing' })
     // The same nav: «Главная · Траты · ＋ · Статистика · Ещё»; the sections are its direct children, with no new attributes.
@@ -55,8 +55,8 @@ describe('markup of the main menu (SSR only: the bar, touches and keys are check
   it('draws a picture over each word of the bar and before each row of «Ещё», hidden from the screen reader', () => {
     const html = raw(reader, catalog)
     const pictures = html.match(/<svg\b[^>]*>/g) ?? []
-    // Six links of «Ещё», three of the bar, «Ещё» itself and «＋» (26 px); the theme switch keeps its own picture.
-    expect(pictures.filter((tag) => tag.includes('class="ck-icon"'))).toHaveLength(3 + 6 + 1 + 1)
+    // Seven links of «Ещё», three of the bar, «Ещё» itself and «＋» (26 px); the theme switch keeps its own picture.
+    expect(pictures.filter((tag) => tag.includes('class="ck-icon"'))).toHaveLength(3 + 7 + 1 + 1)
     for (const tag of pictures) expect(tag).toContain('aria-hidden="true"')
     expect(html).toMatch(/<a href="\/"><svg class="ck-icon" viewBox="0 0 24 24" width="22" height="22"[^>]*>.*?<\/svg>Главная<\/a>/)
     expect(html).toMatch(/<button type="button" class="main-add-toggle"[^>]*><svg class="ck-icon" viewBox="0 0 24 24" width="26" height="26"/)

@@ -14,7 +14,7 @@ from api.recognition_serialization import (
     discount_object, executor_object, line_object, receipt_object, receipts_queryset, tax_object,
 )
 from config.exceptions import InvalidParameter, InvalidRequest, ObjectNotFound, RecognitionApiError
-from receipts import deletion, manual, manual_parse
+from receipts import deletion, history, manual, manual_parse
 from receipts.models import ManualParseRequest, Receipt, ReceiptLine
 
 from .recognition import path_id
@@ -177,6 +177,23 @@ class ManualReceiptView(LocalAPIView):
         except manual.ManualInvalid as error:
             raise manual_invalid(error) from None
         return Response(receipt_object(get_or_404(receipts_queryset(request), receipt.pk)), status=status.HTTP_201_CREATED)
+
+
+class ManualSuggestView(LocalAPIView):
+    """``GET ?q=`` — прошлые траты семьи для повтора одним касанием, без модели (``receipts.history``).
+
+    Со словами в ``q`` — до 5 трат, где каждое слово есть в месте (с вариантами написания), комментарии или
+    позициях; без слов (пусто, одна буква, только числа) — до 4 частых повторяющихся трат. Скрытые платежи
+    не видны (``visible_receipts_q``). Запросов постоянное число.
+    """
+
+    def get(self, request):
+        params = Params(request.query_params)
+        text = (params.raw("q") or "")[:manual_parse.TEXT_MAX]
+        params.check()
+        receipts = Receipt.objects.filter(visible_receipts_q(request))
+        found = history.suggest(receipts, text) if history.words(text) else history.frequent(receipts)
+        return Response({"results": found})
 
 
 # Коды сбоя разбора -> фиксированные тексты; сырой ответ модели в API не попадает.

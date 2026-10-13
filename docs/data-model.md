@@ -865,3 +865,23 @@ docker compose -p checkist_dev cp postgres:/tmp/checkist.dump ./checkist.dump
 - `accounts.Invite` — `household`, `token_hash` (SHA-256, уникален), `created_by`, `created_at`, `expires_at` (+7 дней), `used_at`, `used_by`; сам токен не хранится.
 - `receipts.Receipt.hidden` (bool, по умолчанию `false`), `hidden_by` (FK пользователь, NULL, `SET_NULL`), `hidden_at`. Скрытый платёж не виден членам семьи и не входит ни в какие суммы; правило — `accounts.access.visible_receipts_q`.
 - Миграции: `accounts.0003_profile_head_invite` (Profile, Invite, `role`, ограничение), `receipts.0008_receipt_hidden` — схема без данных. Откат: `migrate receipts 0007_manual_parse_request`, `migrate accounts 0002_household_membership` (роли, настройки и приглашения теряются; скрытые платежи снова видны всем).
+
+## Склейка магазинов (2026-10-13, ветка `feature/smart-expense`)
+
+- `stores.Store.merged_into` — FK на главный магазин (NULL, `PROTECT`, `related_name="aliases"`). Склеенный магазин —
+  вариант написания: чеков у него нет, его вывеска и название ведут к главному. Указывает всегда прямо на главный:
+  склейка главного переносит и его варианты. В админке поле только для чтения.
+- `stores.StoreMerge` — журнал: `store` (главный), `merged`, `receipt_ids` и `alias_ids` (JSON: какие чеки и варианты
+  перенесены), `created_by` (`SET_NULL`), `created_at`, `reverted_at`.
+- `stores.StoreMergeSuggestion` — `store_ids` (JSON, отсортированные id), `source` `similar` | `model`, `status`
+  `pending` | `dismissed`, `created_at`: группы модели и отказы человека («Не то»). Пары похожих названий не хранятся.
+- Правила — только `stores/merging.py` (`merge`, `revert`, `dismiss`, `suggestions`, `name_key`); группы модели —
+  `stores/grouping.py`, команда `manage.py store_merges suggest [--dry-run] [--limit N] | list | revert ID`.
+  Магазин по названию — по-прежнему только `receipts.manual.find_or_create_store` (теперь находит главный по
+  варианту); импорт фото (`recognition.importer`) тоже переходит от склеенного магазина к главному, `resolution.py`
+  не менялся. Склейка — одна транзакция с блокировкой строк магазинов; одинаковые чеки с фото одного владельца
+  (ограничения дедупликации) отменяют её целиком (`MergeConflict`).
+- Миграция `stores.0005_store_merge` — только схема. Откат — `migrate stores 0004_more_currencies`: варианты и журнал
+  стираются, перенесённые чеки остаются у главного; чтобы вернуть их, до отката — `store_merges revert` по журналу.
+- История трат для «Новой траты» (`receipts/history.py`) моделей не добавляет: подсказки, частые и похожие траты
+  считаются при чтении из видимых чеков.

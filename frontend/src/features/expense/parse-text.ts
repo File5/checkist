@@ -16,6 +16,7 @@ export const parseTexts = {
   button: 'Заполнить',
   working: 'Разбираю…',
   filled: 'Заполнено по тексту — проверьте и сохраните.',
+  repeated: 'Заполнено как в прошлый раз, с сегодняшней датой — проверьте и сохраните.',
   unavailable: 'Разбор текста сейчас недоступен: исполнитель не запущен. Заполните форму вручную.',
   slow: 'Разбор затянулся. Заполните форму вручную или попробуйте позже.',
   failed: 'Не удалось разобрать текст. Заполните форму вручную.',
@@ -30,6 +31,8 @@ export type ParseView =
   | { kind: 'idle' }
   | { kind: 'working' }
   | { kind: 'filled' }
+  /** The form was filled from a past spend (a row or a chip under the field). */
+  | { kind: 'repeated' }
   | { kind: 'failed'; message: string }
 
 /** The message of a failed request by its code; the server's own text never reaches the screen. */

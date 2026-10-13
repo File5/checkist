@@ -49,6 +49,14 @@ export type ReceiptLineParams = PageParams & { kind?: LineKind; matching?: Match
 
 /** Defaults of the «Добавить трату» form: the currency of the last receipt and the categories of manual spends by use. */
 export type ManualDefaults = { currency: CurrencyCode; frequent_categories: number[] }
+/** A past manual spend of the family to repeat with one tap (`GET /api/receipts/manual/suggest/`): the last of its kind
+ * (place, currency, category or names of positions) and how many there were. `lines` — positions of an itemized spend,
+ * empty for one amount in `category`. */
+export type ManualSuggestionLine = { name: string; amount: Decimal; category: number | null }
+export type ManualSuggestion = {
+  receipt_id: number; store_name: string | null; category: { id: number; name: string } | null; currency: CurrencyCode
+  total: Decimal; note: string; purchased_on: ISODate; lines: ManualSuggestionLine[]; uses: number
+}
 export type ManualLineInput = { name: string; amount: Decimal; quantity?: Decimal; category?: number | null }
 /** Body of `POST /api/receipts/manual/` and of `PATCH /api/receipts/{id}/`. Without lines `total` and `category` are required. */
 export type ManualSpendInput = {
