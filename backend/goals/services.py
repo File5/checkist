@@ -109,7 +109,7 @@ def _one(goal, rows, convert, today):
     recent = sum((value for day, value in deposits if start < day <= today), ZERO)
     remaining = goal.amount - result.saved
     ahead = goal.deadline is not None and goal.deadline >= today
-    left = months(max(1, (goal.deadline - today).days)) if ahead else None
+    left = min(months(max(1, (goal.deadline - today).days)), forecast.HORIZON) if ahead else None
     if recent > 0:
         first = min(day for day, _value in deposits)
         span = 3 if first <= start else min(3, months((today - first).days + 1))

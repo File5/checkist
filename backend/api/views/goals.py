@@ -43,7 +43,7 @@ MESSAGES = {
     "name": f"Название — от 1 до {NAME_MAX} символов.",
     "amount": "Сумма больше нуля, не больше двух знаков после запятой.",
     "currency": "Валюта не найдена.",
-    "date": "Дата в формате ГГГГ-ММ-ДД.",
+    "date": "Дата — ГГГГ-ММ-ДД, не раньше 2000 года и не дальше 50 лет вперёд.",
     "shared": "Ожидается true или false.",
     "no_household": "Общая цель — только у семьи.",
     "user": "Это не член семьи.",
@@ -53,7 +53,7 @@ MESSAGES = {
     "rate_required": "У депозита укажите ставку.",
     "capitalization": "Капитализация — monthly или none.",
     "not_deposit": "Сверка с банком — только у депозита.",
-    "reconcile_date": "Дата сверки — ГГГГ-ММ-ДД, не позже сегодня.",
+    "reconcile_date": "Дата сверки — ГГГГ-ММ-ДД, не раньше 2000 года и не позже сегодня.",
     "no_deposits": "По эту дату взносов нет — сверять не с чем.",
     "interest_edit": "Сверку можно только удалить.",
 }
@@ -69,13 +69,25 @@ def _currency(value):
     return None
 
 
-def _date(value):
+# Даты взносов, сверок и срока: расчёт депозита идёт по месяцам от первого взноса до сегодня, прогноз — до срока,
+# поэтому даты держатся в разумном окне (с 2000 года, не дальше 50 лет вперёд).
+EARLIEST = date(2000, 1, 1)
+YEARS_AHEAD = 50
+
+
+def _latest(today):
+    return date(today.year + YEARS_AHEAD, today.month, min(today.day, 28))
+
+
+def _date(value, latest):
+    """``ГГГГ-ММ-ДД`` в окне ``EARLIEST`` … ``latest``; иначе ``None``."""
     if not (isinstance(value, str) and len(value) == 10):
         return None
     try:
-        return date.fromisoformat(value)
+        day = date.fromisoformat(value)
     except ValueError:
         return None
+    return day if EARLIEST <= day <= latest else None
 
 
 def _rate(value):
@@ -119,7 +131,7 @@ def read_goal(request, data, *, partial, goal=None):
         if values["currency_id"] is None:
             errors["currency"] = [MESSAGES["currency"]]
     if "deadline" in data:
-        values["deadline"] = None if data["deadline"] in (None, "") else _date(data["deadline"])
+        values["deadline"] = None if data["deadline"] in (None, "") else _date(data["deadline"], _latest(timezone.localdate()))
         if data["deadline"] not in (None, "") and values["deadline"] is None:
             errors["deadline"] = [MESSAGES["date"]]
     if "shared" in data:
@@ -171,7 +183,7 @@ def read_contribution(request, goal, data, *, partial):
         if values["currency_id"] is None:
             errors["currency"] = [MESSAGES["currency"]]
     if "date" in data or not partial:
-        values["date"] = _date(data["date"]) if "date" in data else timezone.localdate()
+        values["date"] = _date(data["date"], _latest(timezone.localdate())) if "date" in data else timezone.localdate()
         if values["date"] is None:
             errors["date"] = [MESSAGES["date"]]
     if "user" in data or not partial:
@@ -342,10 +354,10 @@ class ReconcileView(LocalAPIView):
         data, errors, today = manual_body(request), {}, timezone.localdate()
         _check_fields(data, ("balance", "date"), errors)
         balance = _amount(data.get("balance"))
-        day = _date(data["date"]) if "date" in data else today
+        day = _date(data["date"], today) if "date" in data else today
         if balance is None:
             errors["balance"] = [MESSAGES["required"] if "balance" not in data else MESSAGES["amount"]]
-        if day is None or day > today:
+        if day is None:
             errors["date"] = [MESSAGES["reconcile_date"]]
         if goal.kind != Goal.Kind.DEPOSIT:
             errors["kind"] = [MESSAGES["not_deposit"]]

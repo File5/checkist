@@ -78,3 +78,12 @@ class ForecastTests(SimpleTestCase):
         self.assertEqual(forecast.months_to(State(), 0, True, Decimal(301000), Decimal(100000)), 4)
         self.assertEqual(forecast.months_to(State(Decimal(5)), RATE, True, Decimal(5), 0), 0)
         self.assertIsNone(forecast.months_to(State(), 0, True, Decimal(1), 0))
+
+    def test_every_loop_is_bounded(self):
+        # Прогноз — не дальше HORIZON месяцев, сколько бы ни попросили.
+        far = forecast.project(State(Decimal(1)), RATE, True, 10 ** 9)
+        self.assertEqual(far, forecast.project(State(Decimal(1)), RATE, True, forecast.HORIZON))
+        # Начисление — отрезками: 26 лет с одним взносом считаются по месяцам.
+        state, _deposits, points = forecast.daily([(date(2000, 1, 1), Decimal(1000), True)], RATE, True, date(2026, 3, 1))
+        self.assertEqual(len(points), 315)
+        self.assertGreater(state.total, Decimal(1000))

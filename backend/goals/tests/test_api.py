@@ -2,6 +2,7 @@
 
 Сегодня в тестах — 13 октября 2026. Люди и суммы вымышленные.
 """
+import time
 from datetime import date, timedelta
 from decimal import Decimal
 from unittest import mock
@@ -298,3 +299,23 @@ class DepositApiTests(TestCase):
         # Взносов по эту дату нет — сверять не с чем.
         self.assertEqual(fields(self.post(url, {"balance": "10"}))["date"], ["По эту дату взносов нет — сверять не с чем."])
         self.assertFalse(Contribution.objects.exists())
+
+    def test_dates_stay_in_a_sane_window_and_the_count_is_fast(self):
+        # Сегодня 1 марта 2026: срок — не дальше 1 марта 2076, даты — не раньше 2000 года.
+        body = {"name": "Депозит", "amount": "100000000", "kind": "deposit", "rate": "12"}
+        self.assertEqual(set(fields(self.post(URL, {**body, "deadline": "2076-03-02"}))), {"deadline"})
+        goal = self.post(URL, {**body, "deadline": "2076-03-01"}).json()
+        gifts = f"{URL}{goal['id']}/contributions/"
+        self.assertEqual(set(fields(self.post(gifts, {"amount": "1", "date": "1999-12-31"}))), {"date"})
+        self.assertEqual(set(fields(self.post(gifts, {"amount": "1", "date": "2076-03-02"}))), {"date"})
+        self.assertEqual(set(fields(self.post(f"{URL}{goal['id']}/reconcile/", {"balance": "1", "date": "1999-12-31"}))), {"date"})
+        self.assertEqual(self.post(gifts, {"amount": "1000", "date": "2000-01-01"}).status_code, 201)
+        self.assertEqual(self.post(gifts, {"amount": "1000", "date": "2026-02-01"}).status_code, 201)
+        # 26 лет начисления и 50 лет прогноза — шаги по месяцам, а не по дням.
+        started = time.perf_counter()
+        services.progress([Goal.objects.get(pk=goal["id"])], date(2026, 3, 1))
+        self.assertLess(time.perf_counter() - started, 0.2)
+        with today(date(2026, 3, 1)):
+            detail = self.client.get(f"{URL}{goal['id']}/").json()
+            listed = self.client.get(URL).json()
+        self.assertEqual((len(detail["series"]), listed["results"][0]["saved"]), (315 + 60, detail["saved"]))

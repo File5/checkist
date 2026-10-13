@@ -45,6 +45,8 @@ def daily(events, rate, monthly, until):
     with localcontext() as context:
         context.prec = 34
         day = events[0][0] if events else until
+        # Отрезками: между событием, 1-м числом и ``until`` остаток постоянен — проценты отрезка = остаток × дни × ставка
+        # в день. Шагов — событий плюс месяцев, а не дней.
         while True:
             if monthly and day.day == 1:
                 balance, accrued = balance + accrued, ZERO
@@ -54,9 +56,10 @@ def daily(events, rate, monthly, until):
                 index += 1
             if day == until:
                 break
-            accrued += balance * per_day
-            following = day + timedelta(days=1)
-            if following.month != day.month:
+            month_end = (day.replace(day=28) + timedelta(days=4)).replace(day=1)
+            following = min(month_end, until, events[index][0] if index < len(events) else until)
+            accrued += balance * per_day * (following - day).days
+            if following == month_end:
                 points.append((day.replace(day=1), balance + accrued, deposits))
             day = following
         for _day, amount, deposit in later:
@@ -68,12 +71,13 @@ def daily(events, rate, monthly, until):
 
 
 def project(state, rate, monthly, months, payment=ZERO):
-    """State через ``months`` месяцев: проценты месяца на остаток, затем взнос ``payment`` в конце месяца."""
+    """State через ``months`` месяцев (не больше ``HORIZON``): проценты месяца на остаток, затем взнос ``payment`` в конце
+    месяца."""
     per_month = Decimal(rate) / 100 / 12
     balance, accrued = state.balance, state.accrued
     with localcontext() as context:
         context.prec = 34
-        for _ in range(months):
+        for _ in range(min(months, HORIZON)):
             if monthly:
                 balance, accrued = balance + accrued + balance * per_month, ZERO
             else:
