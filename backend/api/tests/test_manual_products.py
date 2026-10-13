@@ -193,9 +193,23 @@ class NamedPurchaseTests(NamedMixin, TestCase):
         by_product = self.client.get("/api/stats/spending/?date_from=2026-10-01&date_to=2026-10-31&group_by=product")
         self.assertEqual([item["name"] for item in by_product.json()["currencies"][0]["items"]], ["Подписка Claude Max 20x"])
         [listed] = self.client.get("/api/receipts/").json()["results"]
-        self.assertEqual((listed["id"], listed["category"]), (receipt_id, {"id": self.subs.pk, "name": "Демо-подписки"}))
+        self.assertEqual((listed["id"], listed["category"]),
+                         (receipt_id, {"id": self.subs.pk, "name": "Демо-подписки", "icon": None}))
         dashboard = self.client.get("/api/dashboard/?month=2026-10").json()
         self.assertEqual([item["category_name"] for item in dashboard["recent"]], ["Демо-подписки"])
+
+    def test_the_icon_of_a_spend_comes_from_the_category_of_the_line(self):
+        # Волна 4: значок строки — как сумма, от категории строки, а не от категории товара.
+        Category.objects.filter(pk=self.subs.pk).update(icon="phone")
+        Category.objects.filter(pk=self.beauty.pk).update(icon="beauty")
+        generic = GenericProduct.objects.create(name="Демо-кроссовки", category=self.beauty, base_unit="pcs")
+        make_product(generic, "Кроссовки Nike Pegasus")
+        receipt_id = self.save(item_name="Кроссовки Nike Pegasus", total="225", currency="KZT")
+        [listed] = self.client.get("/api/receipts/").json()["results"]
+        self.assertEqual((listed["id"], listed["category"]["icon"], [item["icon"] for item in listed["categories"]]),
+                         (receipt_id, "phone", ["phone"]))
+        [recent] = self.client.get("/api/dashboard/?month=2026-10").json()["recent"]
+        self.assertEqual((recent["category_name"], recent["category_icon"]), ("Демо-подписки", "phone"))
 
 
 @tag("integration")
