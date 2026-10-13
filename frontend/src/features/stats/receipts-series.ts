@@ -4,6 +4,8 @@ import type { ReceiptBucket, ReceiptInterval, ReceiptSeriesCurrency } from '../.
 import type { Decimal } from '../../api/types'
 import { formatPurchasedOn, formatQuantity } from '../../lib/format'
 import { formatMoney } from '../../lib/money'
+import { moneyDigits } from '../../lib/money-digits'
+import type { MoneyDigits } from '../../lib/money-digits'
 import type { LineChartPoint, LineChartSeries } from '../../lib/charts'
 import { formatAxisTick } from '../../lib/charts/scale'
 
@@ -37,8 +39,8 @@ export interface TrendCharts {
   lines: LineChartSeries[]
 }
 /** One currency is one pair of panels; currencies are never drawn on a shared axis. */
-export function trendCharts(block: ReceiptSeriesCurrency): TrendCharts {
-  const money = (value: Decimal) => formatMoney(value, block.currency)
+export function trendCharts(block: ReceiptSeriesCurrency, digits: MoneyDigits = moneyDigits()): TrendCharts {
+  const money = (value: Decimal) => formatMoney(value, block.currency, digits)
   return {
     receipts: [
       { key: 'avg', label: 'Средний чек', shortLabel: 'средний', points: points(block.buckets, (bucket) => bucket.avg_receipt, money) },

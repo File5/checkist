@@ -88,6 +88,8 @@
 .ck-pie-legend tbody th { min-width: 160px; font-size: var(--ck-text-sm); }
 .ck-pie-legend tbody td { font-size: var(--ck-text-sm); font-weight: 700; }
 .ck-pie-legend tbody td:last-child { color: var(--ck-chart-muted); font-size: var(--ck-text-xs); font-weight: 600; }
+/* The share once more, inside the cell of the sum: shown only on a phone, where the column of shares is hidden. */
+.ck-pie-share-under { display: none; }
 .ck-pie-legend tbody tr { transition: background-color 0.12s; }
 .ck-pie-legend tbody tr[data-state="active"] { background: var(--ck-chart-highlight); }
 .ck-pie-legend a { text-underline-offset: 3px; }
@@ -168,8 +170,13 @@
 
 @media (max-width: 540px) {
   .ck-chart th, .ck-chart td { padding: 8px 6px; }
-  /* Narrower than on a wide screen, so that the three columns with ordinary sums fit a phone without scrolling. */
+  /* Narrower than on a wide screen, so that the name and the sums fit a phone without scrolling. */
   .ck-pie-legend tbody th { min-width: 104px; }
+  /* Суммы с копейками (2026-10-13): the share goes under its sum, the third column is not drawn — the name and a sum
+     of any usual length fit a phone without scrolling the legend sideways. */
+  .ck-pie-legend tr > :nth-child(3) { display: none; }
+  .ck-chart .ck-pie-legend tr > :nth-child(2) { padding-right: 0; }
+  .ck-pie-share-under { display: block; color: var(--ck-chart-muted); font-size: var(--ck-text-xs); font-weight: 600; }
   .ck-pie-child .ck-pie-name, .ck-pie-child-status-body { margin-left: 12px; }
   /* Three short words share one row of a phone. */
   .ck-line-steps { grid-template-columns: repeat(3, minmax(0, 1fr)); justify-content: stretch; }

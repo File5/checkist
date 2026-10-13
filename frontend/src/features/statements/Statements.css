@@ -90,6 +90,9 @@ span.statement-check-box { cursor: default; }
   .statement-row-edit { padding-left: 0; }
   .statement-row-note { padding-left: 34px; }
   .statement-rule-buttons > button { flex: 1 1 auto; }
+  /* Суммы с копейками (2026-10-13): narrower side paddings keep «Сохранить 12 трат · 245 300,00 ₸» on one line; a
+     longer label breaks at «·» into two even lines that still fit the 56 px of the button — the dock does not grow. */
+  .statement-save { padding: 4px 12px; line-height: 1.25; text-wrap: balance; }
 }
 
 /* A phone that pins the dock (components/ActionBar.css): a floating card just above the bottom bar, not a strip. */

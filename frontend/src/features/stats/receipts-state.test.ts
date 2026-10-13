@@ -198,7 +198,7 @@ describe('chart series from the server fixtures', () => {
   it('keeps each currency of the yearly answer apart with its own money text', () => {
     const data = series('series-year.json')
     expect(data.currencies.map((block) => block.currency)).toEqual(['EUR', 'KZT'])
-    const [eur, kzt] = data.currencies.map(trendCharts)
+    const [eur, kzt] = data.currencies.map((block) => trendCharts(block))
     expect(eur.receipts[0].points.map((point) => point.x)).toEqual(data.currencies[0].buckets.map((bucket) => bucket.period_start))
     expect(eur.receipts[0].points.every((point) => point.valueText.endsWith('€'))).toBe(true)
     expect(kzt.receipts[0].points.every((point) => point.valueText.endsWith('₸'))).toBe(true)

@@ -7,6 +7,7 @@ import { applyMe, isHead, useSession } from '../../session'
 import { useTheme } from '../../theme'
 import type { Theme } from '../../theme'
 import { listIconsNames, setListIcons, useListIcons } from '../../lib/list-icons'
+import { moneyDigitsNames, setMoneyDigits, useMoneyDigits } from '../../lib/money-digits'
 import SettingsSection from './SettingsSection'
 import PushSection from '../push/PushSection'
 import { checkPassword, useAuthForm } from './auth-state'
@@ -58,6 +59,15 @@ function ListIconsChoice() {
   </div>
 }
 
+/** How money amounts are shown, in the same segments: whole units, rounded up, or exactly with cents (lib/money-digits). */
+function MoneyDigitsChoice() {
+  const mode = useMoneyDigits()
+  return <div className="ck-auth-segments" role="group" aria-labelledby="account-money-label">
+    {moneyDigitsNames.map(([value, name]) => <button key={value} type="button" className="ck-auth-segment" aria-pressed={mode === value}
+      onClick={() => setMoneyDigits(value)}>{name}</button>)}
+  </div>
+}
+
 export function AccountView({ username, displayName, family, password, values, onChange, onPassword, signOut, onSignOut, settings }: AccountViewProps) {
   const saving = password.kind === 'pending'
   const leaving = signOut.kind === 'pending'
@@ -94,6 +104,10 @@ export function AccountView({ username, displayName, family, password, values, o
           <li className="ck-auth-row">
             <span id="account-icons-label" className="ck-auth-row-label">Значки</span>
             <ListIconsChoice />
+          </li>
+          <li className="ck-auth-row">
+            <span id="account-money-label" className="ck-auth-row-label">Суммы</span>
+            <MoneyDigitsChoice />
           </li>
           <li>
             <Link className="ck-auth-row" to="/family" data-auth-family>

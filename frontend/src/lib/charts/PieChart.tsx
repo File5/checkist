@@ -166,7 +166,7 @@ const ChildRows = memo(function ChildRows({ parentKey, rows, prefix, swatchClass
           </span>
         </span>
       </th>
-      <td className="ck-chart-number">{child.valueText}</td>
+      <td className="ck-chart-number">{child.valueText}<span className="ck-pie-share-under">{child.shareText}</span></td>
       <td className="ck-chart-number">{child.shareText}</td>
     </tr>
   ))
@@ -300,7 +300,7 @@ export default function PieChart({
                       </span>
                     </span>
                   </th>
-                  <td className="ck-chart-number">{item.valueText}</td>
+                  <td className="ck-chart-number">{item.valueText}<span className="ck-pie-share-under">{item.shareText}</span></td>
                   <td className="ck-chart-number">{item.shareText}</td>
                 </tr>
               )

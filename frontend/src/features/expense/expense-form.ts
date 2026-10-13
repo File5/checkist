@@ -305,8 +305,8 @@ export function sumText(value: string): string {
   return fraction === undefined ? grouped : `${grouped},${fraction}`
 }
 
-/** «Сохранить · 4 501 KZT»: the amount that will be saved, rounded up to whole units like every amount on screen
- * (`lib/money.ts`); just «Сохранить» while there is no valid amount yet. */
+/** «Сохранить · 4 501 KZT»: the amount that will be saved, shown like every amount on screen —
+ * whole units or with cents, the device setting «Суммы» (`lib/money.ts`); just «Сохранить» while there is no valid amount yet. */
 export function saveLabel(draft: ExpenseDraft): string {
   const itemized = filledLines(draft.lines).length > 0
   const amount = itemized ? itemizedTotal(draft) : normalizeAmount(draft.amount)
