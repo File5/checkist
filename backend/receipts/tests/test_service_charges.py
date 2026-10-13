@@ -154,3 +154,35 @@ class StatisticsTests(ReceiptTestCase):
     def test_by_generic_product_it_is_a_line_without_product(self):
         self.assertEqual(self.items("group_by=generic"), {("no_product", None): "500.00",
                                                           ("service", None): "5000.00"})
+
+
+@tag("integration")
+class SpendFormTests(ReceiptTestCase):
+    """Единая форма траты: обслуживание в самом «Кафе и рестораны» уходит в «Обслуживание и чаевые»."""
+
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        from django.contrib.auth import get_user_model
+        cls.owner = get_user_model().objects.create(username="demo-service")
+        cls.service = service_category()
+        cls.cafe = cls.service.parent
+        cls.home = Category.objects.create(name="Демо-жильё")
+
+    def categories(self, receipt):
+        return dict(receipt.lines.values_list("raw_name", "category_id"))
+
+    def test_lines_of_the_cafe_root_go_to_service_and_tips(self):
+        from receipts import manual
+        receipt = manual.create(self.owner, {"currency": "XTS", "category": self.cafe.pk, "lines": [
+            {"name": "Паста", "amount": "3580"}, {"name": "Обслуживание 10%", "amount": "358"}]})
+        self.assertEqual(self.categories(receipt), {"Паста": self.cafe.pk, "Обслуживание 10%": self.service.pk})
+        # A saved line placed in the root on purpose moves too; another category is kept.
+        line = receipt.lines.get(raw_name="Обслуживание 10%")
+        ReceiptLine.objects.filter(pk=line.pk).update(category=self.cafe)
+        manual.update(receipt.pk, {"lines": [
+            {"id": receipt.lines.get(raw_name="Паста").pk, "name": "Паста", "amount": "3580", "category": self.cafe.pk},
+            {"id": line.pk, "name": "Обслуживание 10%", "amount": "358", "category": self.cafe.pk},
+            {"name": "Обслуживание дома", "amount": "9904", "category": self.home.pk}]})
+        self.assertEqual(self.categories(receipt), {"Паста": self.cafe.pk, "Обслуживание 10%": self.service.pk,
+                                                    "Обслуживание дома": self.home.pk})

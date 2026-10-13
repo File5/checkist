@@ -32,24 +32,21 @@ describe('«Главная» markup (Vitest/SSR, not browser visual acceptance)'
     expect(source).toContain('<HeaderSlot side="start">')
     expect(source).toContain('<HeaderSlot side="end">')
   })
-  it('shows what the family spent, the comparison, the overall limit and the days in the hero card', () => {
-    const spent = noIcons(between(view(), 'dash-hero', '</section>'))
+  it('shows what the family spent, the comparison, the budget of the month and the days in the hero card', () => {
+    const spent = noIcons(between(view({ ...dashboardFixture(), budget: { amount: '400000.00', currency: 'KZT', spent: '287450.00' } }), 'dash-hero', '</section>'))
     expect(spent).toContain('<div class="ck-panel-head"><p class="dash-label">Потрачено семьёй</p><a class="dash-card-link" href="/stats/trends">Динамика</a></div>')
     expect(spent).toContain(`<p class="dash-total ck-hero-figure">${nb('287 450 ₸')}</p>`)
     expect(spent).toContain(`<p class="dash-compare dash-compare-less">на\u00a012\u00a0% меньше, чем ${nb('в сентябре')}</p>`)
-    expect(spent).toContain('role="progressbar" aria-label="Потрачено 71% общего лимита" aria-valuemin="0" aria-valuemax="100" aria-valuenow="71"')
+    expect(spent).toContain('role="progressbar" aria-label="Потрачено 71% бюджета месяца" aria-valuemin="0" aria-valuemax="100" aria-valuenow="71"')
     expect(spent).toContain('<span class="dash-bar-fill" style="width:71%"></span>')
     expect(spent).toContain(`<span>Осталось <span class="dash-value dash-strong">${nb('112 550 ₸')}</span> из <span class="dash-value">${nb('400 000 ₸')}</span></span>`)
     expect(spent).toContain(`<span class="dash-days">${nb('ещё 19 дней')}</span>`)
-    // Everything spent is in a limited category: nothing to explain under the bar.
-    expect(spent).not.toContain('Категории с лимитом')
   })
-  it('says the overall overspend and drops the days left of a past month', () => {
-    const data = dashboardFixture()
-    const over = { ...data, currencies: [{ ...data.currencies[0], spent: '410000.00', limited_spent: '410000.00' }] }
-    const html = view(over, '2026-11')
+  it('says the overspend of the budget and drops the days left of a past month', () => {
+    const over = { ...dashboardFixture(), budget: { amount: '400000.00', currency: 'KZT', spent: '410000.00' } }
+    const html = between(view(over, '2026-11'), 'dash-hero', '</section>')
     expect(html).toContain('dash-bar dash-bar-over')
-    expect(html).toContain(`<span class="dash-over">Сверх лимита на <span class="dash-value">${nb('10 000 ₸')}</span></span>`)
+    expect(html).toContain(`<span class="dash-over">Сверх бюджета на <span class="dash-value">${nb('10 000 ₸')}</span></span>`)
     expect(html).not.toContain('dash-days')
   })
   it('has the two big actions of the artifact, in the page and not pinned: the camera of «Снять чек» and «＋ Добавить» (a spend or an income)', () => {
@@ -62,14 +59,14 @@ describe('«Главная» markup (Vitest/SSR, not browser visual acceptance)'
     expect(actions).not.toContain('Из галереи')
     expect(html).not.toContain('ck-action-bar')
   })
-  it('compares the overall limit with the spending of limited categories only, not the whole month', () => {
+  it('draws no bar of the limits in the hero card: one limit on the flat is not the budget of the family', () => {
     const data = dashboardFixture()
-    // October 2026 on the server: 472 273 spent in all, 245 015 of it in «Жильё», the only limit is 250 000.
-    const real = { ...data, currencies: [{ ...data.currencies[0], spent: '472272.10', limit_total: '250000.00', limited_spent: '245014.02' }] }
+    // October 2026 on the server: 578 345 spent in all, 251 692 of it in «Жильё», the only limit is 260 000.
+    const real = { ...data, budget: null, currencies: [{ ...data.currencies[0], spent: '578345.00', limit_total: '260000.00', limited_spent: '251691.20' }] }
     const hero = between(view(real, '2026-10'), 'dash-hero', '</section>')
-    expect(hero).not.toContain('Сверх лимита на')
-    expect(hero).toContain(`Осталось <span class="dash-value dash-strong">${nb('4 986 ₸')}</span>`)
-    expect(hero).toContain(`Категории с лимитом: <span class="dash-value">${nb('245 015 ₸')}</span>`)
+    expect(hero).not.toContain('dash-bar')
+    expect(hero).not.toContain('Осталось')
+    expect(hero).not.toContain('Категории с лимитом')
   })
   it('lists the limited categories with bars and «spent / limit» on one line, the others below without bars', () => {
     const limits = between(view(), 'dash-limits', '</section>')

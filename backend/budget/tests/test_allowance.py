@@ -47,7 +47,6 @@ class DailyTests(TestCase):
     def setUpTestData(cls):
         cls.owner = local_user()
         cls.food = Category.objects.create(name="Демо-еда")
-        cls.dairy = Category.objects.create(name="Демо-молочное", parent=cls.food)
         cls.home = Category.objects.create(name="Демо-дом")
         cls.rent = Category.objects.create(name="Демо-аренда", parent=cls.home)
         spend(cls.owner, cls.food, "30000", date(2026, 10, 2))
@@ -60,49 +59,47 @@ class DailyTests(TestCase):
     def limit(self, category, amount, currency="KZT"):
         return BudgetLimit.objects.create(user=self.owner, category=category, currency_id=currency, amount=D(amount))
 
-    def test_nothing_without_budget_limits_and_income(self):
+    def test_nothing_without_budget_and_income(self):
+        # Лимиты категорий основой не бывают: лимит одной квартиры давал «остаток аренды на дни месяца».
+        self.limit(self.rent, "260000")
         self.assertIsNone(self.daily())
 
     def test_only_the_current_month(self):
-        self.limit(self.food, "100000")
-        self.assertIsNone(allowance.daily(self.owner, Month(2026, 9), today=TODAY))
-        self.assertIsNone(allowance.daily(self.owner, Month(2026, 11), today=TODAY))
-        self.assertIsNotNone(allowance.daily(self.owner, date(2026, 10, 31), today=TODAY))
+        income = D("100000")
+        self.assertIsNone(allowance.daily(self.owner, Month(2026, 9), today=TODAY, income=income))
+        self.assertIsNone(allowance.daily(self.owner, Month(2026, 11), today=TODAY, income=income))
+        self.assertIsNotNone(allowance.daily(self.owner, date(2026, 10, 31), today=TODAY, income=income))
 
-    def test_limits_of_the_top_level(self):
-        # Лимит подкатегории при лимите предка — часть его; без лимита предка — входит сам (как limit_total).
+    def test_limits_are_not_a_basis(self):
+        # С лимитами — по-прежнему доход месяца минус все траты (и те, что вне лимитов).
         self.limit(self.food, "150000")
-        self.limit(self.dairy, "20000")
         self.limit(self.rent, "100000")
-        value = self.daily()
+        value = self.daily(income=D("250000"))
         self.assertEqual((value.basis, value.amount, value.spent, value.unpaid, value.days_left),
-                         ("limits", D("250000.00"), D("100000.00"), D("0.00"), 19))
+                         ("income", D("250000"), D("100000.00"), D("0.00"), 19))
         self.assertEqual((value.per_day, value.overspent), (D("7894.73"), None))  # 150 000 / 19, вниз до копейки
 
-    def test_budget_wins_over_limits(self):
-        self.limit(self.food, "150000")
+    def test_budget_wins_over_income(self):
         with today():
             history.set_budget({"household": None, "user": self.owner}, "KZT", D("500000"))
-        value = self.daily()
+        value = self.daily(income=D("400000"))
         self.assertEqual((value.basis, value.amount, value.per_day), ("budget", D("500000"), D("21052.63")))
 
-    def test_removed_budget_falls_back_to_limits(self):
-        self.limit(self.food, "150000")
+    def test_removed_budget_falls_back_to_income(self):
         with today():
             history.set_budget({"household": None, "user": self.owner}, "KZT", D("500000"))
             history.set_budget({"household": None, "user": self.owner}, "KZT", None)
-        self.assertEqual(self.daily().basis, "limits")
+        self.assertEqual(self.daily(income=D("400000")).basis, "income")
 
-    def test_income_only_without_budget_and_limits(self):
+    def test_income_without_budget(self):
         value = self.daily(income=D("400000"))
         self.assertEqual((value.basis, value.amount, value.per_day), ("income", D("400000"), D("15789.47")))
-        self.limit(self.food, "150000")
-        self.assertEqual(self.daily(income=D("400000")).basis, "limits")
 
-    def test_income_function_is_called_only_without_budget_and_limits(self):
-        self.limit(self.food, "150000")
+    def test_income_function_is_called_only_without_budget(self):
+        with today():
+            history.set_budget({"household": None, "user": self.owner}, "KZT", D("500000"))
         income = mock.Mock(return_value=D("400000"))
-        self.assertEqual(self.daily(income=income).basis, "limits")
+        self.assertEqual(self.daily(income=income).basis, "budget")
         income.assert_not_called()
 
     def test_dashboard_takes_the_income_of_the_month(self):
@@ -115,27 +112,24 @@ class DailyTests(TestCase):
         self.assertEqual((body["allowance"]["basis"], body["allowance"]["amount"]), ("income", "400000.00"))
 
     def test_overspent_instead_of_a_negative_day(self):
-        self.limit(self.food, "60000")
-        value = self.daily()
+        value = self.daily(income=D("60000"))
         self.assertEqual((value.per_day, value.overspent), (None, D("40000.00")))
 
-    def test_dashboard_with_limits_counts_the_spends_under_the_limits(self):
-        # Лимит только на еду: 70 000 на дом без лимита не делают «перерасхода» рядом с «осталось» полосы лимитов.
-        self.limit(self.food, "60000")
+    def test_dashboard_with_only_limits_says_nothing(self):
+        # Лимит только на жильё, ни бюджета, ни дохода — «можно тратить в день» нет.
+        self.limit(self.rent, "260000")
         with today():
             body = APIClient().get(DASHBOARD, {"month": "2026-10"}).json()
-        self.assertEqual({key: body["allowance"][key] for key in ("basis", "spent", "per_day", "overspent")},
-                         {"basis": "limits", "spent": "30000.00", "per_day": "1578.94", "overspent": None})
+        self.assertIsNone(body["allowance"])
 
     def test_unpaid_recurring_payments_are_set_aside(self):
-        self.limit(self.food, "200000")
         rent = RecurringPayment.objects.create(user=self.owner, name="Демо-аренда", category=self.rent, currency_id="KZT",
                                                amount=D("50000"), due_day=25)
         sub = RecurringPayment.objects.create(user=self.owner, name="Демо-подписка", category=self.food, currency_id="USD",
                                               amount=D("10"), due_day=20)
         RecurringPayment.objects.filter(pk__in=[rent.pk, sub.pk]).update(created_at=LONG_AGO)
         Rate.objects.create(currency="USD", day=TODAY, value=D("500"))
-        value = self.daily()
+        value = self.daily(income=D("200000"))
         self.assertEqual((value.unpaid, value.unpaid_count), (D("55000.00"), 2))
         self.assertEqual(value.per_day, D("2368.42"))  # (200 000 − 100 000 − 55 000) / 19
 
@@ -143,8 +137,7 @@ class DailyTests(TestCase):
         Rate.objects.create(currency="USD", day=date(2026, 10, 3), value=D("480"))
         Rate.objects.create(currency="USD", day=TODAY, value=D("500"))
         spend(self.owner, self.food, "10", date(2026, 10, 3), currency="USD")
-        self.limit(self.food, "100", currency="USD")  # лимит другой валюты — по сегодняшнему курсу
-        value = self.daily()
+        value = self.daily(income=D("50000"))
         self.assertEqual((value.currency, value.amount, value.spent), ("KZT", D("50000.00"), D("104800.00")))
         self.assertEqual(value.overspent, D("54800.00"))
 

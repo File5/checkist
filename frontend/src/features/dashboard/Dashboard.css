@@ -58,7 +58,6 @@
 .dash-hero-limit { display: grid; gap: 8px; margin-top: 4px; }
 .dash-left { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 12px; margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-xs); }
 .dash-days { margin-left: auto; white-space: nowrap; }
-.dash-hero-note { font-size: var(--ck-text-xs); }
 .dash-over { margin: 0; color: var(--ck-over-text); font-size: var(--ck-text-xs); font-weight: 700; }
 /* «Можно тратить в день» (2026-10-13): под суммой-героем за чертой; перерасход — цветом «сверх лимита». */
 .dash-allowance { display: grid; gap: 4px; padding-top: 12px; border-top: 1px solid var(--ck-divider); }

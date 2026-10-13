@@ -27,8 +27,6 @@ describe('«Можно тратить в день» (2026-10-13)', () => {
       label: 'Можно тратить в день', amount: '20449.47', over: false,
       note: 'Бюджет месяца 700 000 ₸ минус траты и 2 платежа к оплате (23 000 ₸), поровну на 19 дней',
     })
-    expect(plain(allowanceView({ ...allowance, basis: 'limits', unpaid: '0.00', unpaid_count: 0, days_left: 1, amount: '400000.00' }).note))
-      .toBe('Сумма лимитов 400 000 ₸ минус траты, поровну на 1 день')
     expect(plain(allowanceView({ ...allowance, basis: 'income', unpaid: '0.00', unpaid_count: 0, days_left: 3 }).note))
       .toBe('Доход месяца 700 000 ₸ минус траты, поровну на 3 дня')
   })
@@ -37,8 +35,8 @@ describe('«Можно тратить в день» (2026-10-13)', () => {
     expect(seen(allowanceView({ ...allowance, per_day: null, overspent: '51437.63', unpaid: '0.00', unpaid_count: 0 }))).toEqual({
       label: 'Перерасход', amount: '51437.63', over: true, note: 'Траты больше бюджета месяца 700 000 ₸',
     })
-    expect(plain(allowanceView({ ...allowance, basis: 'limits', per_day: null, overspent: '10.00', unpaid_count: 1 }).note))
-      .toBe('Траты и 1 платёж к оплате больше суммы лимитов 700 000 ₸')
+    expect(plain(allowanceView({ ...allowance, basis: 'income', per_day: null, overspent: '10.00', unpaid_count: 1 }).note))
+      .toBe('Траты и 1 платёж к оплате больше дохода месяца 700 000 ₸')
   })
 
   it('stands in the hero card of the current month only', () => {
@@ -54,14 +52,12 @@ describe('«Можно тратить в день» (2026-10-13)', () => {
 })
 
 describe('«Бюджет месяца» over the limits (2026-10-13)', () => {
-  it('draws its bar at the top of the limits card of its currency', () => {
+  it('is the bar of the hero card, not a second row in «Лимиты»', () => {
     const html = view({ budget: { amount: '400000.00', currency: 'KZT', spent: '287450.00' } })
-    const card = html.slice(html.indexOf('dash-limits'))
-    expect(card.indexOf('dash-budget')).toBeGreaterThan(-1)
-    expect(card.indexOf('dash-budget')).toBeLessThan(card.indexOf('dash-limit-list'))
-    expect(words(card)).toContain('Бюджет месяца287 450 / 400 000 ₸')
-    expect(words(card)).toContain('Осталось 112 550 ₸')
-    expect(card).toContain('aria-label="Потрачено 71% бюджета месяца"')
+    const hero = html.slice(html.indexOf('dash-hero'), html.indexOf('</section>', html.indexOf('dash-hero')))
+    expect(hero).toContain('aria-label="Потрачено 71% бюджета месяца"')
+    expect(words(hero)).toContain('Осталось 112 550 ₸ из 400 000 ₸')
+    expect(html.slice(html.indexOf('dash-limits'))).not.toContain('dash-budget')
     const over = view({ budget: { amount: '200000.00', currency: 'KZT', spent: '287450.00' } })
     expect(words(over)).toContain('Сверх бюджета на 87 450 ₸')
   })

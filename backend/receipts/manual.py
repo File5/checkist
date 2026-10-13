@@ -41,6 +41,7 @@ from catalog.models import Category, GenericProduct, Product
 from catalog.units import BaseUnit, Unit
 from receipts.decimal_math import price_context, round_decimal
 from receipts.dedup import name_key
+from receipts import service_charges
 from receipts.models import ProductAlias, Receipt, ReceiptDiscount, ReceiptLine
 from stores.models import Country, Currency, Merchant, Store
 
@@ -465,6 +466,7 @@ def _rows(lines, total, category, names, item_name=""):
         return [LineInput(names[category], total, _ONE, category, named=False)]
     for line in lines:
         line.category = line.category or category
+    service_charges.retarget(lines)
     return lines
 
 

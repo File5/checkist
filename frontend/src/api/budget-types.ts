@@ -46,7 +46,7 @@ export type DashboardBudget = { amount: Decimal; currency: CurrencyCode; spent: 
 /** «Можно тратить в день» (2026-10-13, the current month only): (`amount` − `spent` − `unpaid`) / `days_left`.
  * `basis` — the month budget, else the top-level limits, else the income; `per_day` null — `overspent` instead. */
 export type DashboardAllowance = {
-  currency: CurrencyCode; basis: 'budget' | 'limits' | 'income'; amount: Decimal; spent: Decimal; unpaid: Decimal
+  currency: CurrencyCode; basis: 'budget' | 'income'; amount: Decimal; spent: Decimal; unpaid: Decimal
   unpaid_count: number; days_left: number; per_day: Decimal | null; overspent: Decimal | null
 }
 export type Dashboard = InBase & {

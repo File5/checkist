@@ -177,7 +177,7 @@ export function daysLeftText(days: number): string {
 }
 
 const allowanceBasis = {
-  budget: ['Бюджет месяца', 'бюджета месяца'], limits: ['Сумма лимитов', 'суммы лимитов'], income: ['Доход месяца', 'дохода месяца'],
+  budget: ['Бюджет месяца', 'бюджета месяца'], income: ['Доход месяца', 'дохода месяца'],
 } as const
 
 export type AllowanceView = { label: string; amount: Decimal; over: boolean; note: string }

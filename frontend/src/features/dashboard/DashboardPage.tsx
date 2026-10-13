@@ -55,10 +55,10 @@ function MonthHeader({ month, today, people, family }: { month: string; today: s
   </>
 }
 
-/** «Осталось 112 550 ₸ из 400 000 ₸» or the overspend; `limited` is what the categories with a limit spent. */
-function LimitLeft({ value, total, currency }: { value: Progress; total: string; currency: string }) {
+/** «Осталось 112 550 ₸ из 400 000 ₸» or the overspend («Сверх лимита на …», of the budget — `over`). */
+function LimitLeft({ value, total, currency, over = 'Сверх лимита на' }: { value: Progress; total: string; currency: string; over?: string }) {
   return value.over
-    ? <span className="dash-over">Сверх лимита на <span className="dash-value">{formatMoney(value.overBy, currency)}</span></span>
+    ? <span className="dash-over">{over} <span className="dash-value">{formatMoney(value.overBy, currency)}</span></span>
     : <span>Осталось <span className="dash-value dash-strong">{formatMoney(value.remaining, currency)}</span> из <span className="dash-value">{formatMoney(total, currency)}</span></span>
 }
 
@@ -89,12 +89,12 @@ function BudgetRow({ budget }: { budget: DashboardBudget }) {
   </div>
 }
 
-/** The first currency of the month: the hero figure of the screen, the comparison, the overall limit and its days. */
+/** The first currency of the month: the hero figure of the screen, the comparison, the budget of the month and its
+ * days. The limits of categories are no bar here (2026-10-13): one limit on the flat read as the budget of the family. */
 function HeroCard({ block, data, family, current }: { block: DashboardCurrency; data: Dashboard; family: boolean; current: boolean }) {
   const comparison = compareMonths(block.spent, block.previous_spent, data.previous_month)
-  // The overall limit covers only the categories that have one: compare it with their spending, not the whole month.
-  const total = block.limited_spent != null ? progress(block.limited_spent, block.limit_total) : undefined
-  const partial = block.limited_spent != null && cents(block.limited_spent) !== cents(block.spent)
+  const budget = data.budget?.currency === block.currency ? data.budget : null
+  const total = budget ? progress(budget.spent, budget.amount) : undefined
   return <section className="ck-panel dash-card dash-hero" aria-label={`Потрачено, ${block.currency}`}>
     <div className="ck-panel-head">
       <p className="dash-label">{family ? 'Потрачено семьёй' : 'Потрачено'}</p>
@@ -102,13 +102,12 @@ function HeroCard({ block, data, family, current }: { block: DashboardCurrency; 
     </div>
     <p className="dash-total ck-hero-figure">{formatMoney(block.spent, block.currency)}</p>
     {comparison && <p className={`dash-compare dash-compare-${comparison.tone}`}>{comparison.text}</p>}
-    {total && block.limit_total && block.limited_spent != null && <div className="dash-hero-limit">
-      <Bar value={total} label={`Потрачено ${total.percent}% общего лимита`} />
+    {total && budget && <div className="dash-hero-limit">
+      <Bar value={total} label={`Потрачено ${total.percent}% бюджета месяца`} />
       <p className="dash-left">
-        <LimitLeft value={total} total={block.limit_total} currency={block.currency} />
+        <LimitLeft value={total} total={budget.amount} currency={budget.currency} over="Сверх бюджета на" />
         {current && data.days_left > 0 && <span className="dash-days">{daysLeftText(data.days_left)}</span>}
       </p>
-      {partial && <p className="dash-note dash-hero-note">Категории с лимитом: <span className="dash-value">{formatMoney(block.limited_spent, block.currency)}</span></p>}
     </div>}
     {current && data.allowance && <AllowanceRow value={data.allowance} />}
   </section>
@@ -327,6 +326,8 @@ export function DashboardView({ data, today = deviceMonth(), family = data.membe
   }
   const spent = data.currencies.filter((block) => cents(block.spent) !== 0n || block.limit_total !== null)
   const [hero, ...others] = spent
+  // The budget of the month is the bar of the hero card; only without that card does it stand in «Лимиты».
+  const budget = !empty && hero && data.budget?.currency === hero.currency ? null : data.budget
   // The main currency always gets its limits card; another one only when it has limits (its spends are in «Другие валюты»).
   const limits = data.currencies.filter((block, index) => block.limit_total !== null || (index === 0 && block.categories.length))
   // Two columns on a wide screen: the month and the spends, the limits beside them. A phone reads them as one column:
@@ -358,10 +359,10 @@ export function DashboardView({ data, today = deviceMonth(), family = data.membe
       </section>
     </div>
     <div className="dash-column dash-column-side">
-      {limits.map((block) => <LimitsCard key={block.currency} block={block} several={several} month={data.month} fold={fold} budget={data.budget} />)}
-      {(!data.currencies.length || (data.budget && !limits.length)) && <section className="ck-panel dash-card dash-limits" aria-label="Лимиты">
+      {limits.map((block) => <LimitsCard key={block.currency} block={block} several={several} month={data.month} fold={fold} budget={budget} />)}
+      {(!data.currencies.length || (budget && !limits.length)) && <section className="ck-panel dash-card dash-limits" aria-label="Лимиты">
         <div className="ck-panel-head"><h2>Лимиты</h2><Link className="dash-card-link" to="/budget/limits">Изменить</Link></div>
-        {data.budget ? <BudgetRow budget={data.budget} />
+        {budget ? <BudgetRow budget={budget} />
           : <p className="dash-note">Лимиты на месяц помогают видеть, сколько ещё можно потратить.</p>}
       </section>}
     </div>

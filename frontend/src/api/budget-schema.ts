@@ -41,7 +41,7 @@ const dashboardShape = object<Omit<Dashboard, 'people' | 'base' | 'budget' | 'al
 })
 const dashboardBudget = object<DashboardBudget>({ amount, currency, spent: amount })
 const dashboardAllowance = object<DashboardAllowance>({
-  currency, basis: choice('budget', 'limits', 'income'), amount, spent: amount, unpaid: amount, unpaid_count: nonNegativeInteger,
+  currency, basis: choice('budget', 'income'), amount, spent: amount, unpaid: amount, unpaid_count: nonNegativeInteger,
   days_left: nonNegativeInteger, per_day: nullable(amount), overspent: nullable(amount),
 })
 /** The month in the base currency too when the server sends it; an older server without it passes. */

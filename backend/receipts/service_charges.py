@@ -7,7 +7,8 @@
 
 Правило применяет импорт распознанного чека (и подтверждение вырезки — тот же импорт)
 только к новому чеку; уже сохранённые строки меняет лишь ``manage.py service_charges
-backfill``. Категорию создаёт миграция ``catalog.0003_service_charge_category``; если её
+backfill``. Единая форма траты (``receipts.manual``) — ``retarget``: позиция с таким названием,
+поставленная в сам корень «Кафе и рестораны», уходит в его «Обслуживание и чаевые». Категорию создаёт миграция ``catalog.0003_service_charge_category``; если её
 нет (удалена либо переименована), правило ничего не делает.
 """
 from catalog.models import Category
@@ -93,3 +94,20 @@ def backfill(*, dry_run=False):
             pk__in=fresh, category__isnull=True, product__isnull=True,
         ).update(category_id=target)
     return {"category_id": target, "matched": len(matched), "updated": updated, "kept": kept}
+
+
+def retarget(lines):
+    """Позиции формы траты (``receipts.manual.LineInput``) с названием обслуживания или чаевых, стоящие в самом
+    «Кафе и рестораны» (своей категорией либо категорией траты), — в «Обслуживание и чаевые», как строка чека с
+    фото. Другие категории не трогает: «Обслуживание дома» в «Жилье» остаётся. Запрос — только при такой позиции."""
+    found = [line for line in lines if line.category is not None and is_service_charge(line.name)]
+    if not found:
+        return
+    pair = (Category.objects.filter(name=CATEGORY_NAME, parent__name=PARENT_NAME, parent__parent=None)
+            .values_list("pk", "parent_id").first())
+    if pair is None:
+        return
+    child, parent = pair
+    for line in found:
+        if line.category == parent:
+            line.category = child
