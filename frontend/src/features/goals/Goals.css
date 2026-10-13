@@ -13,6 +13,8 @@
 .goal-badge { background: var(--ck-accent-bg); color: var(--ck-accent-text); }
 .goal-badge-done { background: var(--ck-success-bg); color: var(--ck-success-text); }
 .goal-row-sum { font-size: var(--ck-text-xs); }
+/* The per cent keeps one width: the bars of the list end on one line. */
+.goal-row > .ck-row-amount { min-width: 4.5em; text-align: right; }
 .goal-bar { margin-block: 4px 2px; }
 .goal-bar-done > span, .goal-badge-done + .ck-row-main .goal-bar > span { background: var(--ck-success-text); }
 .goal-empty { gap: 8px; }

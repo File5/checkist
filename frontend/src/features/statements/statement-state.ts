@@ -91,7 +91,7 @@ function cents(value: string): bigint {
   return match[1] ? -absolute : absolute
 }
 
-/** «Сохранить 12 трат и 1 взнос · 245 300 ₸»: the sum only when every row is in one currency. */
+/** «Сохранить 12 трат · 245 300 ₸»: the sum only when every row is a spend in one currency; «Сохранить 12 трат и 1 взнос». */
 export function saveLabel(rows: StatementRow[], edits: Edits): string {
   const chosen = saveRows(rows, edits)
   const byId = new Map(rows.map((row) => [row.id, row]))
@@ -101,7 +101,7 @@ export function saveLabel(rows: StatementRow[], edits: Edits): string {
   const spends = count - gifts
   const parts = [spends ? glue(spends, spendWord(spends)) : '', gifts ? glue(gifts, giftWord(gifts)) : ''].filter(Boolean)
   const words = count === 0 ? 'Нечего сохранить' : `Сохранить ${parts.join(' и ')}`
-  if (count === 0 || currencies.size !== 1) return words
+  if (count === 0 || gifts > 0 || currencies.size !== 1) return words
   const total = chosen.reduce((sum, item) => sum + cents(byId.get(item.id)?.spend ?? '0'), 0n)
   return `${words} · ${formatCents(total, [...currencies][0] as string)}`
 }
@@ -181,7 +181,7 @@ export function rowMeta(row: StatementRow, edit: RowEdit | undefined, categories
   const category = edit?.category ?? null
   if (row.receipt_id !== null || row.contribution_id) parts.push('сохранено')
   // Without a category the note under the row says what is going on with it.
-  if (row.goal && asGoal(row)) parts.push(`взнос в цель «${row.goal.name}»`)
+  if (row.goal && asGoal(row)) parts.push(`в цель «${row.goal.name}»`)
   else if (category !== null) parts.push(categoryLabel(categories.get(category)) ?? row.category?.name ?? '')
   return parts.filter(Boolean).join(' · ')
 }
@@ -256,7 +256,7 @@ export const actionLabels: Record<StatementRuleAction, string> = {
 export function ruleMeta(rule: StatementRule, byId: Map<number, Category>): string {
   if (rule.action === 'skip') return 'пропускать'
   if (rule.action === 'own') return 'свои счета и семья — не трата'
-  if (rule.action === 'goal') return `→ взнос в цель «${rule.goal?.name ?? ''}» · только ваши выписки`
+  if (rule.action === 'goal') return `→ взнос в «${rule.goal?.name ?? ''}»`
   const category = rule.category ? categoryLabel(byId.get(rule.category.id)) ?? rule.category.name : ''
   return [category && `→ ${category}`, rule.store_name].filter(Boolean).join(' · ')
 }

@@ -32,12 +32,12 @@ export function kindText(goal: Goal): string {
   return goal.shared ? 'Общая' : ['Личная', goal.owner?.display_name].filter(Boolean).join(' · ')
 }
 
-/** The line under a goal of the list: whose it is, the deadline. */
-export function goalMeta(goal: Goal): string {
-  const parts = [kindText(goal)]
+/** The line under a goal of the list: whose a personal goal is (in a family; the section says «общая»), the deadline. */
+export function goalMeta(goal: Goal, household: boolean): string {
+  const parts = [household && !goal.shared ? goal.owner?.display_name ?? '' : '']
   if (goal.reached) parts.push('цель достигнута')
   else if (goal.deadline) parts.push(goal.overdue ? `срок ${dayText(goal.deadline)} прошёл` : `до ${dayText(goal.deadline)}`)
-  return parts.join(' · ')
+  return parts.filter(Boolean).join(' · ')
 }
 
 /** «В среднем откладываете 40 000 ₸ в месяц — до цели ~12 месяцев»; without contributions of three months — none. */

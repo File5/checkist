@@ -942,3 +942,21 @@ docker compose -p checkist_dev cp postgres:/tmp/checkist.dump ./checkist.dump
   запроса), для многих сумм — `rates.convert.converter(base, {(валюта, день)})` (курсы одним запросом, дальше
   `convert(amount, currency, day)` без БД).
 - `budget`: миграций нет; лимиты прежних валют не переносились.
+
+## Цели накоплений (`goals`, 2026-10-13, ветка `feature/goals`)
+
+- `goals.Goal` — владелец ровно один (`goals_goal_one_owner`): общая цель — `household` (видят и правят все члены
+  семьи), личная — `user` (видят владелец и главный его семьи); `name`, `amount > 0`, `currency` (PROTECT), `deadline`
+  (необязателен), `created_by`. Правило видимости — только `goals.access.goals_q` (поверх `accounts.access`).
+- `goals.Contribution` — взнос: `goal` (CASCADE), `amount > 0`, `currency` (у взноса своя валюта; в валюту цели — по
+  курсу дня взноса, `rates.convert`), `date`, `user` (кто отложил, SET_NULL), `note`, `created_by`; индекс
+  `(goal, date)`. «Накоплено», темп и прогноз не хранятся — `goals/services.py` при чтении.
+- Миграция `goals.0001_initial`, откат — `migrate goals zero` (сам откатывает и `statements.0002_goal_rules`; цели и
+  взносы теряются, траты не трогаются; проверено на пустой базе).
+- `statements.0002_goal_rules`: `StatementRule.action` += `goal` и `StatementRule.goal` (CASCADE: удаление цели удаляет
+  её правила; ограничение `statements_rule_goal_action` — цель ровно у `goal`, категория у `goal` пуста);
+  `StatementRow.state` += `goal`, `StatementRow.goal` (SET_NULL) и `StatementRow.contribution` (SET_NULL, как
+  `receipt`: удалённый взнос снова открывает строку). Откат — `migrate statements 0001_initial`; на базе с данными
+  до него удалить правила `action=goal` и вернуть строки `state=goal` в `skipped`: старые ограничения их не пропустят.
+- Демо-выписка (`statements.demo.demo_kaspi_lines`, `seed_statement_demo`) получила перевод «На Kaspi Депозит» на
+  100 000 ₸ — 20 строк вместо 19.

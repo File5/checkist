@@ -42,10 +42,11 @@ function detail(patch: Partial<GoalDetail> = {}): GoalDetail {
 describe('words of a goal', () => {
   it('tells the progress, the pace and the deadline', () => {
     expect(plain(savedOf(goal()))).toBe('252 000 из 600 000 ₸')
-    expect(plain(goalMeta(goal()))).toBe('Общая · до 30 апр. 2027')
-    expect(plain(goalMeta(goal({ shared: false, owner: liza, deadline: null })))).toBe('Личная · Лиза')
-    expect(plain(goalMeta(goal({ reached: true })))).toBe('Общая · цель достигнута')
-    expect(plain(goalMeta(goal({ overdue: true })))).toBe('Общая · срок 30 апр. 2027 прошёл')
+    expect(plain(goalMeta(goal(), true))).toBe('до 30 апр. 2027')
+    expect(plain(goalMeta(goal({ shared: false, owner: liza, deadline: null }), true))).toBe('Лиза')
+    expect(goalMeta(goal({ shared: false, owner: liza, deadline: null }), false)).toBe('')
+    expect(plain(goalMeta(goal({ reached: true }), true))).toBe('цель достигнута')
+    expect(plain(goalMeta(goal({ overdue: true }), true))).toBe('срок 30 апр. 2027 прошёл')
     expect(plain(paceText(goal()) ?? '')).toBe('В среднем откладываете 40 000 ₸ в месяц — до цели ~9 месяцев.')
     expect(plain(paceText(goal({ pace: { per_month: '40000.00', months_left: 1 } })) ?? '')).toContain('~1 месяц.')
     expect(paceText(goal({ pace: null }))).toBe('За последние три месяца взносов не было — прогноза пока нет.')

@@ -56,7 +56,9 @@ type RowProps = Pick<StatementViewProps, 'edits' | 'onOpen' | 'onToggle' | 'onCa
 
 /** «Это взнос в цель» of a transfer: a goal and one button; no goals yet — a link to make one. */
 function GoalPick({ row, goals, onGoal }: { row: StatementRow; goals: Goal[]; onGoal?: (id: number, goal: number) => void }) {
-  const [goal, setGoal] = useState(goals[0]?.id ?? 0)
+  const [picked, setGoal] = useState(0)
+  // The goals may arrive after the editor opened: until a pick, the first one.
+  const goal = goals.some((item) => item.id === picked) ? picked : goals[0]?.id ?? 0
   if (!goals.length) {
     return <p className="statement-details">Перевод на свой депозит можно считать взносом в цель — <Link to="/goals">заведите цель</Link>.</p>
   }

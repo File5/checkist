@@ -11,7 +11,7 @@ import type { GoalDraft } from './goals-state'
 import './Goals.css'
 
 /** A goal of the list: the name, saved of the amount, the bar, whose and till when; the whole row opens it. */
-export function GoalRow({ goal }: { goal: Goal }) {
+export function GoalRow({ goal, household }: { goal: Goal; household: boolean }) {
   return <li>
     <Link className="ck-row goal-row" to={`/goals/${goal.id}`}>
       <span className={`ck-row-badge goal-badge${goal.reached ? ' goal-badge-done' : ''}`} aria-hidden="true"><Icon name="goal" size={20} /></span>
@@ -19,18 +19,18 @@ export function GoalRow({ goal }: { goal: Goal }) {
         <span className="ck-row-title">{goal.name}</span>
         <span className="ck-row-meta ck-figures goal-row-sum">{savedOf(goal)}</span>
         <span className="ck-bar goal-bar" aria-hidden="true"><span style={{ width: `${barShare(goal)}%` }} /></span>
-        <span className="ck-row-meta">{goalMeta(goal)}</span>
+        {goalMeta(goal, household) && <span className="ck-row-meta">{goalMeta(goal, household)}</span>}
       </span>
       <span className="ck-row-amount ck-figures">{goal.percent}&nbsp;%</span>
     </Link>
   </li>
 }
 
-function Group({ id, title, goals }: { id: string; title: string; goals: Goal[] }) {
+function Group({ id, title, goals, household }: { id: string; title: string; goals: Goal[]; household: boolean }) {
   if (!goals.length) return null
   return <section className="ck-panel" aria-labelledby={id}>
     <div className="ck-panel-head"><h2 id={id}>{title}</h2></div>
-    <ul className="ck-list goal-list">{goals.map((goal) => <GoalRow key={goal.id} goal={goal} />)}</ul>
+    <ul className="ck-list goal-list">{goals.map((goal) => <GoalRow key={goal.id} goal={goal} household={household} />)}</ul>
   </section>
 }
 
@@ -46,8 +46,8 @@ export function GoalsView({ data, onAdd }: { data: GoalList; onAdd: () => void }
           и когда цель будет достигнута. Переводы на свой депозит из выписки тоже станут взносами.</p>
       </section>
       : <>
-        <Group id="goals-shared-heading" title={data.household ? 'Общие семьи' : 'Цели'} goals={shared} />
-        <Group id="goals-personal-heading" title={shared.length || data.household ? 'Личные' : 'Цели'} goals={personal} />
+        <Group id="goals-shared-heading" title={data.household ? 'Общие семьи' : 'Цели'} goals={shared} household={data.household} />
+        <Group id="goals-personal-heading" title={shared.length || data.household ? 'Личные' : 'Цели'} goals={personal} household={data.household} />
       </>}
     <button type="button" className="goal-add" aria-haspopup="dialog" onClick={onAdd}><Icon name="plus" size={20} />Новая цель</button>
   </div>
