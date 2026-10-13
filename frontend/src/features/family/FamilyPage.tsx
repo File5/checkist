@@ -2,14 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import {
   addMember, createFamily, createFamilyInvite, createInvite, getFamily, joinFamily, leaveFamily, removeMember, renameFamily,
-  revokeFamilyInvite, revokeInvite, setFamilyAi, transferHead,
+  revokeFamilyInvite, revokeInvite, setFamilyAi, setVisibleFrom, transferHead,
 } from '../../api/family'
 import type { Family, FamilyAi, FamilyInvite, FamilyMember } from '../../api/family'
 import type { LocalApiResult } from '../../api/types'
 import Sheet from '../../components/Sheet'
 import { loadSession } from '../../session'
 import { initials } from '../../lib/people'
-import { aiUsageText, familyFailure, familyTexts, inviteUrl, memberMeta } from './family-state'
+import { aiUsageText, familyFailure, familyTexts, inviteUrl, memberMeta, visibleFromMonths, visibleFromText } from './family-state'
 import type { FamilyAction } from './family-state'
 import '../auth/Auth.css'
 import './Family.css'
@@ -36,6 +36,8 @@ export type FamilyViewProps = {
   /** The server owner invites a new family and revokes such an invite. */
   onFamilyInvite?: () => void
   onRevokeFamily?: (id: number) => void
+  /** The head: since which month (`YYYY-MM`, `null` — no limit) a member sees the spends of the others. */
+  onVisibleFrom?: (member: FamilyMember, month: string | null) => void
 }
 
 const star = <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m12 2.5 2.8 6.1 6.7.7-5 4.5 1.4 6.6L12 17l-5.9 3.4 1.4-6.6-5-4.5 6.7-.7L12 2.5Z" /></svg>
@@ -166,7 +168,7 @@ function AddMemberForm({ busy, onAdd }: { busy: boolean; onAdd: FamilyViewProps[
 }
 
 export function FamilyView(props: FamilyViewProps) {
-  const { family, busy, message, secret, onCreate, onRename, onAdd, onInvite, onRevoke, onAsk, onCopy, onAi } = props
+  const { family, busy, message, secret, onCreate, onRename, onAdd, onInvite, onRevoke, onAsk, onCopy, onAi, onVisibleFrom } = props
   const [renaming, setRenaming] = useState(false)
   const [managing, setManaging] = useState<FamilyMember | null>(null)
   const household = family.household
@@ -198,6 +200,7 @@ export function FamilyView(props: FamilyViewProps) {
             <span className="family-member-text">
               <span className="family-member-name">{member.display_name}</span>
               {memberMeta(member) && <span className="family-member-meta">{memberMeta(member)}</span>}
+              {seesFrom(member) && <span className="family-member-since" data-family-visible-from>{seesFrom(member)}</span>}
             </span>
           </>
           return <li key={member.username}>
@@ -229,6 +232,16 @@ export function FamilyView(props: FamilyViewProps) {
       <Sheet open={managing !== null} onClose={() => setManaging(null)} title={managing?.display_name ?? ''} id="family-member-sheet">
         {managing && <div className="ck-auth family-confirm">
           {memberMeta(managing) && <p className="family-note">{memberMeta(managing)}</p>}
+          {managing.role === 'member' && managing.visible_from !== undefined && <div className="ck-auth-field">
+            <label htmlFor="family-visible-from">Видит траты семьи</label>
+            <select id="family-visible-from" value={managing.visible_from ?? ''} aria-describedby="family-visible-note"
+              aria-disabled={busy || undefined} data-family-visible-select
+              onChange={(event) => { if (busy) return; setManaging(null); onVisibleFrom?.(managing, event.target.value || null) }}>
+              <option value="">Без ограничения</option>
+              {visibleFromMonths(managing.visible_from).map((month) => <option key={month} value={month}>{visibleFromText(month)}</option>)}
+            </select>
+            <p id="family-visible-note" className="family-note">{familyTexts.visibleNote}</p>
+          </div>}
           <div className="ck-auth-actions">
             <button type="button" className="ck-auth-secondary" onClick={() => { setManaging(null); onAsk({ kind: 'head', member: managing }) }}>Сделать главным</button>
             <button type="button" className="ck-auth-danger" onClick={() => { setManaging(null); onAsk({ kind: 'remove', member: managing }) }}>Убрать из семьи</button>
@@ -242,6 +255,10 @@ export function FamilyView(props: FamilyViewProps) {
     {newFamilies}
   </div>
 }
+
+/** «Видит траты семьи: с сентября 2026» under a member — only the head's answer carries `visible_from`. */
+const seesFrom = (member: FamilyMember) => member.role === 'member' && member.visible_from !== undefined
+  ? `Видит траты семьи: ${visibleFromText(member.visible_from)}` : null
 
 const peopleCount = (count: number) => {
   const tens = count % 100
@@ -325,6 +342,10 @@ export default function FamilyPage({ joinToken }: { joinToken?: string }) {
         return null
       })}
       onRevokeFamily={(id) => run('family-revoke', () => revokeFamilyInvite(id), () => 'Приглашение новой семьи отозвано.')}
+      onVisibleFrom={(member, month) => run('visible', () => setVisibleFrom(member.username, month), (data) => {
+        asFamily(data)
+        return `${member.display_name} видит траты семьи ${visibleFromText(month)}.`
+      })}
       onAsk={setConfirm}
       onCopy={(value) => { void navigator.clipboard?.writeText(value).then(() => setMessage('Скопировано.'), () => setMessage('Скопируйте вручную.')) }} />
     <Sheet open={confirm !== null} onClose={() => setConfirm(null)} title={asked?.title ?? ''} id="family-confirm">

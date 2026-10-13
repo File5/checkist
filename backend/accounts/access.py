@@ -13,7 +13,7 @@ Views read neither ``request.user`` nor the setting: they take ``request_user``,
 import ipaddress
 
 from django.conf import settings
-from django.db.models import Q
+from django.db.models import Exists, Q, Subquery
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import NotAuthenticated
 from rest_framework.permissions import SAFE_METHODS, BasePermission
@@ -25,6 +25,8 @@ from recognition.auth import enforce_csrf
 ACCOUNTS = "accounts"
 LOCAL_SINGLE = "local_single"
 MODERATE_CATALOG = "catalog.moderate_catalog"
+# ``owner_q(..., since=UPLOADED)``: a photo (and its jobs, crops, MEDIA) is dated by its upload day.
+UPLOADED = "created_at__date"
 
 
 def mode():
@@ -52,8 +54,8 @@ def request_user(request):
     return user
 
 
-def owner_q(request, prefix=""):
-    """owner_q(request, prefix="") -> Q; rows of the request's user.
+def owner_q(request, prefix="", since=None):
+    """owner_q(request, prefix="", since=None) -> Q; rows of the request's user.
 
     ``prefix`` is the path to the model with ``owner``: ``"receipt__"`` from a line,
     ``"photo__"`` from a job or a receipt image, ``"receipts__"`` from a store.
@@ -63,6 +65,11 @@ def owner_q(request, prefix=""):
     ``accounts``: the rows of the user and of every member of the user's household
     (``accounts.Membership``); without a household — only the user's own rows. One
     subquery, no separate query for the household.
+
+    ``since`` — the date of a row, relative to ``prefix`` (``"purchased_on"`` of a receipt,
+    ``"created_at__date"`` of a photo, ``"received_on"`` of an income): a member whose head set
+    ``Membership.visible_from`` sees rows of the other members dated from that month only; own
+    rows always. The head and a member without ``visible_from`` see everything, as before.
     """
     if mode() == LOCAL_SINGLE:
         return Q(**{f"{prefix}owner__username": LOCAL_USERNAME})
@@ -72,9 +79,14 @@ def owner_q(request, prefix=""):
         return own
     from accounts.models import Membership
 
-    family = Membership.objects.filter(
-        household_id__in=Membership.objects.filter(user_id=pk).values("household_id")).values("user_id")
-    return own | Q(**{f"{prefix}owner_id__in": family})
+    family = Q(**{f"{prefix}owner_id__in": Membership.objects.filter(
+        household_id__in=Membership.objects.filter(user_id=pk).values("household_id")).values("user_id")})
+    if since:
+        # Два несвязанных подзапроса (PostgreSQL считает их один раз): отдельного запроса нет.
+        cutoff = Membership.objects.filter(user_id=pk, role=Membership.Role.MEMBER,
+                                           visible_from__isnull=False).values("visible_from")
+        family &= Q(~Exists(cutoff)) | Q(**{f"{prefix}{since}__gte": Subquery(cutoff)})
+    return own | family
 
 
 def is_head(request):
@@ -98,12 +110,13 @@ def visible_receipts_q(request, prefix="", include_hidden=False):
     """visible_receipts_q(request, prefix="", include_hidden=False) -> Q; receipts the request reads.
 
     ``owner_q`` without hidden payments (``Receipt.hidden``): every receipt and line read path
-    (lists, details, dashboard, stats, export, manual defaults) goes through here. ``prefix``
+    (lists, details, dashboard, stats, export, manual defaults) goes through here. Receipts of the
+    other members are cut at the request's ``visible_from`` by the purchase date (``owner_q``). ``prefix``
     is the path to ``Receipt`` (``"receipt__"`` from a line). ``include_hidden=True`` keeps
     hidden receipts only for the head (``is_head``): the receipts list with ``?hidden=1`` and
     the receipt detail; totals never pass it, so a hidden payment counts for nobody.
     """
-    condition = owner_q(request, prefix)
+    condition = owner_q(request, prefix, since="purchased_on")
     shown = Q(**{f"{prefix}hidden": False})
     if include_hidden:
         # «Запрос — главный» подзапросом, без отдельного запроса: число запросов карточки прежнее.
@@ -111,8 +124,6 @@ def visible_receipts_q(request, prefix="", include_hidden=False):
             return condition
         pk = request.user.pk
         if pk is not None:
-            from django.db.models import Exists
-
             from accounts.models import Membership
 
             mine = Membership.objects.filter(user_id=pk)

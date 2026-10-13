@@ -5,7 +5,7 @@ from django.middleware.csrf import get_token
 from rest_framework.exceptions import ParseError
 from rest_framework.response import Response
 
-from accounts.access import owner_q
+from accounts.access import UPLOADED, owner_q
 from accounts.ai import use_ai
 from api.common import get_or_404
 from api.pagination import paginate
@@ -149,7 +149,7 @@ class JobMutationView(LocalAPIView):
 
     def own_job(self, request, pk):
         # The same place as the existence check: another user's job answers as a missing one.
-        return get_or_404(ProcessingJob.objects.filter(owner_q(request, "photo__")), path_id(pk))
+        return get_or_404(ProcessingJob.objects.filter(owner_q(request, "photo__", UPLOADED)), path_id(pk))
 
 
 class CancelView(JobMutationView):

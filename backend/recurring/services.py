@@ -152,7 +152,8 @@ def load_incomes(request, first, last):
     решают все доходы семьи, а не только видимые запросу записи; один запрос."""
     from incomes.models import Income
 
-    rows = Income.objects.filter(owner_q(request), received_on__gte=first, received_on__lte=last)
+    rows = Income.objects.filter(owner_q(request, since="received_on"), received_on__gte=first,
+                                 received_on__lte=last)
     return [matching.Spend(pk, day, None, category_id, currency, amount) for pk, day, category_id, currency, amount
             in rows.values_list("id", "received_on", "category_id", "currency_id", "amount")]
 

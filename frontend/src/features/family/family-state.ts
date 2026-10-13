@@ -2,11 +2,12 @@ import type { FamilyAi, FamilyMember } from '../../api/family'
 import type { AuthFailure } from '../../api/session'
 import type { LocalApiResult } from '../../api/types'
 import { glue } from '../../lib/text'
+import { deviceMonth, shiftMonth } from '../dashboard/dashboard-state'
 import type { Refusal } from '../auth/labels'
 import { passwordRules, waitText } from '../auth/labels'
 
 export type FamilyAction = 'create' | 'rename' | 'add' | 'remove' | 'head' | 'leave' | 'invite' | 'revoke' | 'join'
-  | 'ai' | 'family-invite' | 'family-revoke'
+  | 'ai' | 'family-invite' | 'family-revoke' | 'visible'
 
 export const familyTexts = {
   noFamily: 'Вы пока не в семье. Создайте семью — вы станете её главным и сможете добавить людей.',
@@ -23,6 +24,7 @@ export const familyTexts = {
   familyInvites: 'Для человека без учётной записи: он заведёт её и свою семью. Видит только администратор сервера.',
   aiNote: 'Фото чеков и тексты трат обрабатывает внешняя модель.',
   aiHeadOnly: 'Включить или выключить может главный.',
+  visibleNote: 'Раньше выбранного месяца не видит траты, фото и доходы других членов семьи; свои — всегда. Сам эту настройку не видит.',
 }
 
 /** «Сегодня использовано 3 из 50», the numbers glued to their words; without a limit — «Сегодня использовано 3». */
@@ -41,7 +43,20 @@ export function familyFailure(action: FamilyAction, result: LocalApiResult<unkno
   return familyTexts.failed
 }
 
-const FIELD_NAMES: Record<string, string> = { name: 'название', username: 'логин', first_name: 'имя', password: 'пароль' }
+const FIELD_NAMES: Record<string, string> = { name: 'название', username: 'логин', first_name: 'имя', password: 'пароль', visible_from: 'месяц' }
+
+const GENITIVE = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря']
+
+/** «с начала», «с сентября 2026»: since when a member sees the spends of the others (`YYYY-MM`, `null` — no limit). */
+export function visibleFromText(month: string | null): string {
+  return month === null ? 'с начала' : glue('с', GENITIVE[Number(month.slice(5, 7)) - 1], month.slice(0, 4))
+}
+
+/** The months the head chooses from: this one and 23 before it, newest first; an older chosen month stays in the list. */
+export function visibleFromMonths(current: string | null, now: string = deviceMonth()): string[] {
+  const months = Array.from({ length: 24 }, (_, index) => shiftMonth(now, -index))
+  return current && !months.includes(current) ? [...months, current] : months
+}
 
 export function fieldsText(fields: string[]): string {
   return `Проверьте: ${fields.map((field) => FIELD_NAMES[field] ?? field).join(', ')}.`

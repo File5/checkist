@@ -7,6 +7,8 @@
 предела — ``429 login_throttled`` с ``retry_after``.
 
 ИИ семьи (``accounts.ai``): состояние — в ``GET``, включает и выключает главный (``PATCH ai/``).
+«Видит траты семьи с» (``Membership.visible_from``): у членов семьи в ответе только главному, меняет
+главный (``PATCH members/{username}/``); член семьи своего ограничения не получает.
 Приглашения «новая семья» выдаёт администратор сервера (``is_staff``, иначе ``403 staff_only``);
 принимает их гость на ``/api/auth/new-family/`` (как вход — без входа, с CSRF; неудачи — ключи ``n:``).
 """
@@ -46,6 +48,12 @@ def invite_object(invite):
     return {"id": invite.pk, "created_at": utc_datetime(invite.created_at), "expires_at": utc_datetime(invite.expires_at)}
 
 
+def visible_from(row):
+    """«Видит траты семьи с» — только в ответе главному: член семьи своего ограничения не видит."""
+    month = row.visible_from if row.role == Membership.Role.MEMBER else None
+    return {"visible_from": None if month is None else f"{month:%Y-%m}"}
+
+
 def family_object(request):
     user = request_user(request)
     staff = family.may_invite_families(user)
@@ -61,7 +69,7 @@ def family_object(request):
         "household": {
             "id": own.household.pk, "name": own.household.name,
             "members": [{"username": row.user.get_username(), "display_name": display_name(row.user), "role": row.role,
-                         "is_me": row.user_id == user.pk} for row in rows],
+                         "is_me": row.user_id == user.pk, **(visible_from(row) if head else {})} for row in rows],
         },
         "is_head": head,
         "invites": [invite_object(invite) for invite in family.active_invites(own.household)] if head else [],
@@ -144,15 +152,28 @@ class MembersView(FamilyBaseView):
         except family.FamilyError as error:
             raise_family(error)
         return Response({
-            "member": {"username": user.get_username(), "display_name": display_name(user), "role": "member", "is_me": False},
+            "member": {"username": user.get_username(), "display_name": display_name(user), "role": "member", "is_me": False,
+                       "visible_from": None},
             "password": password,
         }, status=status.HTTP_201_CREATED)
 
 
 class MemberView(FamilyBaseView):
-    """``DELETE`` — убрать члена семьи: его чеки остаются за ним, доступ к семье пропадает."""
+    """``PATCH`` ``{visible_from: "ГГГГ-ММ" | null}`` — с какого месяца член семьи видит чужие траты семьи
+    (ответ — объект семьи); ``DELETE`` — убрать члена семьи: его чеки остаются за ним, доступ к семье пропадает."""
 
-    http_method_names = ["delete", "options"]
+    http_method_names = ["patch", "delete", "options"]
+
+    def patch(self, request, username):
+        data = self.body(request, ("visible_from",))
+        household = self.head_family(request)
+        if "visible_from" not in data:
+            raise InvalidParameter({"visible_from": ["Обязательное поле."]})
+        try:
+            family.set_visible_from(household, username, data["visible_from"])
+        except family.FamilyError as error:
+            raise_family(error)
+        return Response(family_object(request))
 
     def delete(self, request, username):
         household = self.head_family(request)
