@@ -93,6 +93,16 @@ class ContextTests(Spends, TestCase):
         self.assertEqual(summary["places_year"][0], {"name": "Лавка", "spent": "8000.00", "count": 3})
         self.assertEqual((summary["incomes"], summary["without_rate"], summary["recurring"]), ([], [], []))
 
+    def test_incomes_of_the_window_in_the_base_currency(self):
+        from incomes.models import Income, IncomeCategory
+        salary = IncomeCategory.objects.create(user=local_user(), name="Синтетическая зарплата")
+        for day, total in ((self.month.first, 650000), (self.month.previous().first, 600000)):
+            Income.objects.create(owner=local_user(), received_on=day, amount=Decimal(total), currency_id="KZT",
+                                  category=salary)
+        self.assertEqual(context.build(local_user(), self.month, self.today)["incomes"], [
+            {"month": self.month.previous().label(), "total": "600000.00"},
+            {"month": self.month.label(), "total": "650000.00"}])
+
     def test_limits_of_the_month_show_what_is_over(self):
         current = Month.of(self.today)
         spend(local_user(), self.today, 900, self.taxi)
@@ -103,10 +113,10 @@ class ContextTests(Spends, TestCase):
         self.assertEqual((focus["limit_total"], focus["limited_spent"]), ("500.00", "900.00"))
 
     def test_query_count_does_not_grow_with_data(self):
-        with self.assertNumQueries(17):
+        with self.assertNumQueries(20):  # ponytail: incomes.services.totals также читает траты — один лишний запрос на разбор
             context.build(local_user(), self.month, self.today)
         spend(local_user(), self.month.first, 100, Category.objects.create(name="Ещё одна"), "Новое место")
-        with self.assertNumQueries(17):
+        with self.assertNumQueries(20):  # ponytail: incomes.services.totals также читает траты — один лишний запрос на разбор
             context.build(local_user(), self.month, self.today)
 
 

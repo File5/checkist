@@ -24,6 +24,7 @@ from budget import history
 from budget.access import limits_q
 from budget.dashboard import collect_month, currency_blocks, limit_day
 from budget.models import BudgetLimit, BudgetLimitChange
+from incomes.services import totals as income_totals
 from receipts import trends
 from receipts.decimal_math import price_context, round_decimal
 from receipts.models import Receipt
@@ -36,13 +37,10 @@ NO_PLACE = "Без места"
 _ZERO = Decimal("0.00")
 
 
-def incomes(user, month):
-    """Доходы семьи по месяцам окна — пока пусто: модель о доходах не говорит.
-
-    ponytail: доходы вносит ветка feature/incomes (``incomes.services.month_income(user, month)``, основная
-    валюта); при слиянии ведущий отдаёт здесь ``[{"month": "ГГГГ-ММ", "total": "…"}]`` — промпты уже знают поле.
-    """
-    return []
+def incomes(request, first, month):
+    """Доход семьи по месяцам окна в основной валюте (``incomes.services.totals``); месяцы без дохода не входят."""
+    income = income_totals(request, first, month.last).income
+    return [{"month": key.label(), "total": amount(value)} for key, value in sorted(income.items(), key=lambda item: item[0].first)]
 
 
 def _limits(request, month, today):
@@ -155,7 +153,7 @@ def build(user, month, today=None):
         "recurring": [{"name": row.payment.name, "amount": amount(row.payment.amount), "currency": row.payment.currency_id,
                        "state": row.state, "paid": amount(row.spend.total) if row.spend else None}
                       for row in payments if row.state != "inactive"],
-        "incomes": incomes(user, month),
+        "incomes": incomes(request, months[0], month),
         "without_rate": [{"currency": currency, "receipts": count, "total": amount(total)}
                          for currency, count, total in trends.unconverted(rows, converter)],
     }
