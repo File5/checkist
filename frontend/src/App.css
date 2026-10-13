@@ -52,14 +52,14 @@ h2 { font-size: 1.35rem; letter-spacing: 0; }
 /* «Ещё» belongs to the bottom bar of a phone. Anywhere else its wrappers are not boxes at all: the links behind it
    stand in the row of the menu like the others, and the button is not drawn. */
 .main-more, .main-more-list { display: contents; }
-.main-more-toggle { display: none; }
+/* A link of the phone's bar only (heavier than the general `.main-navigation a`). */
+.main-navigation .main-more-toggle { display: none; }
 /* The sections behind «Ещё» (2026-10-13): no boxes either, their words and headings not drawn — the narrow strip of a
    tiny or low window keeps one row of links. */
 .main-more-tiles, .main-group, .main-group-list { display: contents; }
-.main-group-toggle, .main-group-title { display: none; }
+.main-group-toggle { display: none; }
 /* The pictures of the menu and the theme row of «Ещё» belong to the bottom bar of a phone: the header row is words. */
 .main-navigation .ck-icon { display: none; }
-.main-more-theme { display: none; }
 /* «＋» («Снять чек», «Из галереи», «Добавить трату») belongs to the bottom bar of a phone only; the dashboard has its own buttons. */
 .main-add { display: none; }
 /* The sheet of «＋» lies in the body, outside of the bar: three big rows under the thumb, a picture, the action and a
@@ -273,29 +273,12 @@ footer { border-top: 1px solid var(--ck-divider); color: var(--ck-text-muted); p
   .brand-bar .main-navigation > a, .brand-bar .main-more-toggle { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-width: 0; min-height: 52px; margin: 0; padding: 4px 2px; border: 0; border-radius: var(--ck-radius-sm); background: none; color: var(--ck-text-muted); font-size: var(--ck-text-2xs); font-weight: 600; line-height: 1.2; text-decoration: none; white-space: nowrap; outline-offset: -2px; }
   .brand-bar .main-navigation .ck-icon { display: block; flex: none; }
   /* The hover of the header row (a backing, an underline) does not belong to the bar; the word keeps its colour. */
-  .brand-bar .main-navigation > a:hover, .brand-bar .main-more-toggle:where(:hover) { background: none; text-decoration: none; }
+  .brand-bar .main-navigation > a:hover, .brand-bar .main-more > a:hover { background: none; text-decoration: none; }
   .brand-bar .main-navigation > a[aria-current]::before { content: none; }
-  .brand-bar .main-navigation > a[aria-current], .brand-bar .main-more-toggle[data-current], .brand-bar .main-more-toggle[aria-expanded="true"] { background: none; color: var(--ck-link); font-weight: 800; }
-  /* The list behind «Ещё»: a sheet on top of the bar, drawn only while open, at once. Not a dialog: the page stays in
-     reach. Rows of 52 px: a picture, the word; the current section heavier and on the soft accent. */
+  .brand-bar .main-navigation > a[aria-current], .brand-bar .main-more-toggle[data-current], .brand-bar .main-navigation a.main-more-toggle[aria-current] { background: none; color: var(--ck-link); font-weight: 800; }
+  /* «Ещё» is a link to its screen (/more, features/more, 2026-10-13): the lists of the header row are not drawn in the bar. */
   .brand-bar .main-more-list { display: none; }
-  .brand-bar .main-more[data-open] .main-more-list { display: flex; flex-direction: column; position: absolute; right: 0; bottom: 100%; left: 0; z-index: var(--ck-z-menu-sheet); max-height: calc(100dvh - var(--ck-bottom-occupied) - 32px); overflow-y: auto; overscroll-behavior: contain; padding: 8px max(16px, env(safe-area-inset-right, 0px)) 8px max(16px, env(safe-area-inset-left, 0px)); border: 1px solid var(--ck-border); border-bottom: 0; border-radius: var(--ck-radius) var(--ck-radius) 0 0; background: var(--ck-nav-bg); color: var(--ck-text); box-shadow: 0 -8px 24px var(--ck-popover-shadow); }
-  .brand-bar .main-more-list a { display: flex; align-items: center; gap: 14px; min-height: 52px; padding: 4px 8px; border-radius: var(--ck-radius-sm); color: var(--ck-text); font-weight: 600; white-space: normal; }
-  .brand-bar .main-more-list a + a, .brand-bar .main-more-theme { border-top: 1px solid var(--ck-divider); }
-  .brand-bar .main-more-list .ck-icon { color: var(--ck-text-muted); }
-  .brand-bar .main-more-list a:hover { background: var(--ck-surface-raised); text-decoration: none; }
-  .brand-bar .main-more-list a[aria-current] { background: var(--ck-accent-bg); color: var(--ck-accent-text); font-weight: 800; }
-  .brand-bar .main-more-list a[aria-current]::before { content: none; }
-  .brand-bar .main-more-list a[aria-current] .ck-icon { color: inherit; }
-  .brand-bar .main-more-theme { display: block; padding-top: 4px; }
-  /* Its sections (2026-10-13): «Деньги» — four tiles of two columns at the top; «Данные» and «Настройки» — a small
-     heading over the rows. */
-  .brand-bar .main-more-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 8px 0 4px; }
-  .brand-bar .main-more-tiles a { flex-direction: column; align-items: flex-start; justify-content: center; gap: 8px; min-height: 76px; padding: 12px; border: 1px solid var(--ck-divider); background: var(--ck-surface-raised); }
-  .brand-bar .main-more-tiles a:not([aria-current]) .ck-icon { color: var(--ck-link); }
-  .brand-bar .main-group { display: block; }
-  .brand-bar .main-group-title { display: block; margin: 16px 8px 4px; color: var(--ck-text-muted); font-size: var(--ck-text-2xs); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
-  .brand-bar .main-group-list { display: flex; flex-direction: column; }
+  .brand-bar .main-navigation a.main-more-toggle[aria-current]::before { content: none; }
   /* «＋»: a round button of the main action, raised over the bar (its top 8 px above the edge: less than the padding
      of a pinned action bar, so it never covers a button of one). It opens the sheet from the bottom (components/Sheet). */
   .brand-bar .main-add { display: flex; align-items: center; justify-content: center; }

@@ -19,7 +19,6 @@ const bar = app.slice(app.indexOf(query) + query.length).split('\n}')[0]
 /** Everything but the block of the bar. */
 const rest = app.replace(bar, '')
 const nav = rule('.brand-bar .main-navigation', bar)
-const list = rule('.brand-bar .main-more[data-open] .main-more-list', bar)
 
 describe('bottom bar of the main menu on a phone (artifact design, text of the rules, not rendering)', () => {
   it('lives in one block of its own, after the phone block that the other guards pin', () => {
@@ -72,26 +71,26 @@ describe('bottom bar of the main menu on a phone (artifact design, text of the r
     expect(raw('App.tsx')).toContain("document.documentElement.classList.toggle('ck-focus-mode', focus)")
   })
 
-  it('orders the layers: the list over the bar, the skip link over everything', () => {
-    expect(list).toContain('z-index: var(--ck-z-menu-sheet);')
+  it('orders the layers: the lists of the header over the page, the skip link over everything', () => {
+    expect(rule('.brand-bar .main-group[data-open] .main-group-list', rest)).toContain('z-index: var(--ck-z-menu-sheet);')
     expect(rule('.skip-link', rest)).toContain('z-index: var(--ck-z-skip-link);')
     // «＋» opens the sheet of components/Sheet.css on its own layer above the menu; the header row lies under the bar.
     expect(rules(app).filter((item) => item.selector.includes('main-add-list')).map((item) => item.body).join(' ')).not.toContain('z-index')
     expect([...app.matchAll(/z-index: ([^;]+);/g)].map((match) => match[1]).sort()).toEqual(
-      ['var(--ck-z-bottom-nav)', 'var(--ck-z-menu-sheet)', 'var(--ck-z-menu-sheet)', 'var(--ck-z-skip-link)', 'var(--ck-z-top-bar)'])
+      ['var(--ck-z-bottom-nav)', 'var(--ck-z-menu-sheet)', 'var(--ck-z-skip-link)', 'var(--ck-z-top-bar)'])
   })
 
   it('reads only tokens that the theme defines and writes no colour', () => {
     const defined = new Set([...tokens.matchAll(/^\s*(--ck-[a-z0-9-]+):/gm)].map((match) => match[1]))
     const used = [...new Set([...bar.matchAll(/var\((--[a-z0-9-]+)/g)].map((match) => match[1]))]
-    expect(used).toEqual(expect.arrayContaining(['--ck-bottom-nav-height', '--ck-safe-bottom', '--ck-bottom-occupied', '--ck-z-bottom-nav', '--ck-z-menu-sheet', '--ck-nav-bg', '--ck-primary', '--ck-fab-shadow']))
+    expect(used).toEqual(expect.arrayContaining(['--ck-bottom-nav-height', '--ck-safe-bottom', '--ck-bottom-occupied', '--ck-z-bottom-nav', '--ck-nav-bg', '--ck-primary', '--ck-fab-shadow']))
     expect(used.filter((name) => !defined.has(name))).toEqual([])
     expect(bar).not.toMatch(/#[0-9a-f]{3,8}\b|\b(?:rgb|hsl)a?\(/i)
   })
 
   it('reaches under the cut-out of a phone only together with the side insets', () => {
     expect(html).toContain('<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />')
-    for (const selector of ['.intro', '.page', '.brand-bar .main-navigation', '.brand-bar .main-more[data-open] .main-more-list']) {
+    for (const selector of ['.intro', '.page', '.brand-bar .main-navigation']) {
       expect(rule(selector, bar), selector).toContain('env(safe-area-inset-left, 0px)')
       expect(rule(selector, bar), selector).toContain('env(safe-area-inset-right, 0px)')
     }
@@ -102,23 +101,18 @@ describe('bottom bar of the main menu on a phone (artifact design, text of the r
     expect(rule('body', bar)).toBe('padding-inline: 0;')
   })
 
-  it('shows the list behind «Ещё» only while open, at once, as a sheet on top of the bar', () => {
+  it('leads «Ещё» to its screen (/more, 2026-10-13): the lists of the header row are never drawn in the bar', () => {
     expect(rule('.brand-bar .main-more-list', bar)).toBe('display: none;')
-    expect(list).toContain('display: flex;')
-    expect(list).toContain('position: absolute;')
-    expect(list).toContain('right: 0; bottom: 100%; left: 0;')
-    expect(list).toContain('border-radius: var(--ck-radius) var(--ck-radius) 0 0;')
-    expect(rule('.brand-bar .main-more-list a', bar)).toContain('min-height: 52px;')
-    expect(rule('.brand-bar .main-more-theme', bar)).toContain('display: block;')
+    expect(rules(bar).some((item) => item.selector.includes('[data-open]'))).toBe(false)
     expect(app).not.toMatch(/transition|animation|@keyframes/)
   })
 
   it('draws no «Ещё», no pictures and no theme row wherever the menu is a row: the links behind it stand in the row', () => {
     expect(rule('.main-more', rest)).toBe('display: contents;')
     expect(rule('.main-more-list', rest)).toBe('display: contents;')
-    expect(rule('.main-more-toggle', rest)).toBe('display: none;')
+    // A link: heavier than the general `.main-navigation a` that would draw it in the row.
+    expect(rule('.main-navigation .main-more-toggle', rest)).toBe('display: none;')
     expect(rule('.main-navigation .ck-icon', rest)).toBe('display: none;')
-    expect(rule('.main-more-theme', rest)).toBe('display: none;')
     expect(rule('.brand-bar .main-more-toggle', bar)).toContain('display: flex; flex-direction: column;')
     expect(rule('.brand-bar .main-navigation .ck-icon', bar)).toContain('display: block;')
   })
@@ -128,10 +122,10 @@ describe('bottom bar of the main menu on a phone (artifact design, text of the r
     expect(rule('.brand-bar .main-navigation > a[aria-current]', bar)).toBe(mark)
     expect(rule('.brand-bar .main-more-toggle[data-current]', bar)).toBe(mark)
     expect(rule('.main-navigation a[aria-current]', rest)).toContain('font-weight: 600;')
-    expect(rule('.brand-bar .main-more-list a[aria-current]', bar)).toContain('font-weight: 800;')
-    // The dot of the header row gives way to the weight in the bar and in the list behind «Ещё».
+    // On its own screen «Ещё» is the current page: the same mark, without the dot of the header row.
+    expect(rule('.brand-bar .main-navigation a.main-more-toggle[aria-current]', bar)).toBe(mark)
     expect(rules(bar).filter((item) => item.selector.includes('::before')).map((item) => item.selector))
-      .toEqual(['.brand-bar .main-navigation > a[aria-current]::before', '.brand-bar .main-more-list a[aria-current]::before'])
+      .toEqual(['.brand-bar .main-navigation > a[aria-current]::before', '.brand-bar .main-navigation a.main-more-toggle[aria-current]::before'])
     const forced = app.slice(app.indexOf('@media (forced-colors: active)'))
     expect(rule('.main-more-toggle[data-current]', forced)).toContain('text-decoration: underline;')
   })

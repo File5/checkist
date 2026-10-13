@@ -176,6 +176,8 @@ export type NavigableRoute = CatalogRoute
   | { kind: 'account' }
   /** «Выгрузка»: the family's data as one JSON document; the filters live in the address. */
   | { kind: 'export'; query: ExportQuery }
+  /** «Ещё» of a phone as a screen: the person, «Деньги», «Данные», «Настройки» (features/more). */
+  | { kind: 'more' }
   /** «Семья» (only with accounts): members, invites, the head role; `token` — an invite opened from its link. */
   | { kind: 'family'; token?: string }
   /** «Регулярные платежи»: rent, utilities, subscriptions of this month, suggestions from history, the form. */
@@ -593,6 +595,7 @@ export function buildRoute(route: NavigableRoute): string {
     case 'login': return '/login'
     case 'account': return '/account'
     case 'export': return exportHref(route.query)
+    case 'more': return '/more'
     case 'family': return route.token ? `/family/join?${new URLSearchParams({ token: route.token })}` : '/family'
     case 'recurring': return '/recurring'
     case 'stores': return '/stores'
@@ -659,6 +662,7 @@ export function parseRoute(input: string | URL): Route {
     return id === undefined ? { kind: 'not-found', path } : { kind: 'income-edit', incomeId: id }
   }
   if (normalizedPath === '/stores') return { kind: 'stores' }
+  if (normalizedPath === '/more') return { kind: 'more' }
   if (normalizedPath === '/family') return { kind: 'family' }
   if (normalizedPath === '/recurring') return { kind: 'recurring' }
   if (normalizedPath === '/statements/new') return { kind: 'statement-new' }

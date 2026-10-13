@@ -78,8 +78,9 @@ const mainNav = (html: string) => {
 }
 const navLink = (html: string, text: string) => noIcons(html).match(new RegExp(`<a\\b[^>]*>${text}</a>`))?.[0] ?? ''
 /** The links of the header row; «Добавить трату» lives in the «＋» sheet, which a server render draws closed. */
-/** «Деньги», «Данные», then «Настройки»: the family and the account (accounts) before the health page (2026-10-13). */
-const menuWith = (...people: string[]) => ['Главная', 'Траты', 'Статистика', 'Доходы', 'Платежи', 'Цели', 'Разбор месяца', 'Каталог', 'Магазины',
+/** «Ещё» (a link to its screen, drawn in the phone's bar only), then «Деньги», «Данные» and «Настройки»: the family and the
+ * account (accounts) before the health page (2026-10-13). */
+const menuWith = (...people: string[]) => ['Главная', 'Траты', 'Статистика', 'Ещё', 'Доходы', 'Платежи', 'Цели', 'Разбор месяца', 'Каталог', 'Магазины',
   'Правила выписок', 'Обработка чеков', 'Выгрузка', ...people, 'Состояние сервисов']
 const fullMenu = menuWith()
 

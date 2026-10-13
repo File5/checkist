@@ -17,7 +17,7 @@ const raw = (session: Session, route: Route) => renderToStaticMarkup(<MainMenu s
 const noIcons = (html: string) => html.replace(/<svg\b.*?<\/svg>/g, '')
 const render = (session: Session, route: Route) => noIcons(raw(session, route))
 const links = (html: string) => [...html.matchAll(/<a\b[^>]*>([^<]*)<\/a>/g)].map((match) => match[1])
-const button = (html: string) => html.match(/<button\b[^>]*>[^<]*<\/button>/g) ?? []
+const more = (html: string) => html.match(/<a class="main-more-toggle"[^>]*>Ещё<\/a>/g) ?? []
 
 describe('markup of the main menu (SSR only: the bar, touches and keys are checked by a person)', () => {
   it.each<[string, Session, string[]]>([
@@ -38,22 +38,17 @@ describe('markup of the main menu (SSR only: the bar, touches and keys are check
     const html = render(session, { kind: 'not-found', path: '/missing' })
     // The same nav: «Главная · Траты · ＋ · Статистика · Ещё»; the sections are its direct children, with no new attributes.
     expect(html).toMatch(/^<nav class="main-navigation" aria-label="Основная навигация"><a href="\/">Главная<\/a><a href="\/receipts">Траты<\/a><div class="main-add">.*<\/div><a href="\/stats">Статистика<\/a><div class="main-more">/)
-    expect(links(html)).toEqual(['Главная', 'Траты', 'Статистика', ...more])
-    // Closed buttons that name what they open: «Ещё» a list, «＋» a sheet (a dialog, components/Sheet) not drawn while closed.
-    expect(html).toContain('<button type="button" class="main-more-toggle" aria-expanded="false" aria-controls="main-more-list">Ещё</button>')
+    expect(links(html)).toEqual(['Главная', 'Траты', 'Статистика', 'Ещё', ...more])
+    // «Ещё» of the phone's bar is a link to its screen (/more, 2026-10-13); «＋» a closed sheet (a dialog, components/Sheet).
+    expect(html).toContain('<a class="main-more-toggle" href="/more">Ещё</a>')
     expect(html).toContain('<button type="button" class="main-add-toggle" aria-haspopup="dialog" aria-expanded="false" aria-label="Добавить: снять чек, выбрать из галереи, внести трату или доход, загрузить выписку">')
-    const list = html.split('<div class="main-more-list" id="main-more-list">')[1].split('<div class="main-more-theme">')[0]
+    const list = html.split('<div class="main-more-list">')[1]
     expect(links(list)).toEqual(more)
-    // The header of a phone is gone: its theme switch is the last row of the list (hidden on wider screens), then what
-    // the squares of the spends show — the category by default (lib/list-icons).
-    expect(html).toContain('<div class="main-more-theme"><button type="button" class="ck-theme-toggle ck-theme-toggle-menu"')
-    expect(html).toContain('<button type="button" class="ck-theme-toggle ck-theme-toggle-menu" data-list-icons="category"><span class="ck-theme-label">Значки: категория</span></button></div>')
-    // The sections (2026-10-13): «Деньги» — tiles; «Данные» and «Настройки» — a word with ▾ for the header and a heading
-    // for the sheet, the theme row at the end of «Настройки».
+    // The theme and the pictures of the spends live on the screen «Ещё» (features/more), not in the menu.
+    expect(html).not.toContain('main-more-theme')
+    // The sections for the header row of a wide screen: «Деньги» — links; «Данные» and «Настройки» — a word with ▾.
     expect(list).toContain('<div class="main-more-tiles" role="group" aria-label="Деньги"><a href="/incomes">')
-    expect(html).toContain('<div class="main-group"><button type="button" class="main-group-toggle" aria-expanded="false" aria-controls="main-group-data">Данные</button><p class="main-group-title" aria-hidden="true">Данные</p><div class="main-group-list" id="main-group-data" role="group" aria-label="Данные"><a href="/catalog">')
-    expect(html).toMatch(/aria-label="Настройки">.*<div class="main-more-theme">.*<\/div><\/div><\/div><\/div><\/div><\/nav>$/)
-    expect(html.match(/id="main-more-list"/g)).toHaveLength(1)
+    expect(html).toContain('<div class="main-group"><button type="button" class="main-group-toggle" aria-expanded="false" aria-controls="main-group-data">Данные</button><div class="main-group-list" id="main-group-data" role="group" aria-label="Данные"><a href="/catalog">')
     expect(html).not.toMatch(/role="(dialog|menu)"|aria-modal/)
     expect(html.match(/aria-haspopup/g)).toHaveLength(1)
     expect(html).not.toMatch(/<img/)
@@ -62,9 +57,8 @@ describe('markup of the main menu (SSR only: the bar, touches and keys are check
   it('draws a picture over each word of the bar and before each row of «Ещё», hidden from the screen reader', () => {
     const html = raw(reader, catalog)
     const pictures = html.match(/<svg\b[^>]*>/g) ?? []
-    // Twelve links of «Ещё», three of the bar, «Ещё» itself, «＋» (26 px), the switch of the spend pictures and ▾ of
-    // «Данные» and «Настройки»; the theme switch keeps its own picture.
-    expect(pictures.filter((tag) => tag.includes('class="ck-icon"'))).toHaveLength(3 + 12 + 1 + 1 + 1 + 2)
+    // Twelve links behind «Ещё», three of the bar, «Ещё» itself, «＋» (26 px) and ▾ of «Данные» and «Настройки».
+    expect(pictures.filter((tag) => tag.includes('class="ck-icon"'))).toHaveLength(3 + 12 + 1 + 1 + 2)
     for (const tag of pictures) expect(tag).toContain('aria-hidden="true"')
     expect(html).toMatch(/<a href="\/"><svg class="ck-icon" viewBox="0 0 24 24" width="22" height="22"[^>]*>.*?<\/svg>Главная<\/a>/)
     expect(html).toMatch(/<button type="button" class="main-add-toggle"[^>]*><svg class="ck-icon" viewBox="0 0 24 24" width="26" height="26"/)
@@ -100,8 +94,8 @@ describe('markup of the main menu (SSR only: the bar, touches and keys are check
     ['the account', { kind: 'account' }, 'synthetic-reader'],
   ])('marks «Ещё» as current, and not by colour alone, while %s is open', (_name, route, label) => {
     const html = render(reader, route)
-    expect(button(html).filter((item) => item.includes('main-more-toggle'))).toEqual([`<button type="button" class="main-more-toggle" aria-expanded="false" aria-controls="main-more-list" aria-label="Ещё, текущий раздел: ${label}" data-current="">Ещё</button>`])
-    // The link keeps aria-current; the button does not take it: the effect of the header row looks for the link.
+    expect(more(html)).toEqual([`<a class="main-more-toggle" aria-label="Ещё, текущий раздел: ${label}" data-current="" href="/more">Ещё</a>`])
+    // The link of the section keeps aria-current; «Ещё» does not take it: the effect of the header row looks for the link.
     expect(html.match(/aria-current="page"/g)).toHaveLength(1)
     expect(html).toMatch(new RegExp(`<a [^>]*aria-current="page"[^>]*>${label}</a>`))
   })
@@ -110,7 +104,11 @@ describe('markup of the main menu (SSR only: the bar, touches and keys are check
     for (const route of [{ kind: 'receipts', query: { page: 1 } }, { kind: 'upload' }, { kind: 'spending', query: {} }, { kind: 'not-found', path: '/missing' }] as Route[]) {
       const html = render(reader, route)
       expect(html, route.kind).not.toContain('data-current')
-      expect(button(html).find((item) => item.includes('main-more-toggle')), route.kind).not.toContain('aria-label')
+      expect(more(html), route.kind).toEqual(['<a class="main-more-toggle" href="/more">Ещё</a>'])
     }
+  })
+
+  it('marks «Ещё» as the current page on its own screen', () => {
+    expect(more(render(reader, { kind: 'more' }))).toEqual(['<a class="main-more-toggle" aria-current="page" href="/more">Ещё</a>'])
   })
 })
