@@ -183,6 +183,21 @@ main { padding-bottom: 36px; }
 /* A quiet line: the old jokes of the brand live here, in the background. */
 footer { border-top: 1px solid var(--ck-divider); color: var(--ck-text-muted); padding: 20px 0 30px; font-size: var(--ck-text-xs); }
 
+/* A wide screen: twelve words do not fit one row of the header. The row keeps the items of the phone's bar, the rest
+   stays behind «Ещё» — a list under the button (the same button and list as the phone's sheet, menu/more-menu.ts). */
+@media (min-width: 541px) {
+  .brand-bar .main-more { display: block; position: relative; }
+  .brand-bar .main-more-toggle { display: inline-flex; align-items: center; min-height: 44px; padding: 8px 12px; border: 0; border-radius: var(--ck-radius-pill); background: none; color: inherit; font: inherit; cursor: pointer; }
+  .brand-bar .main-more-toggle:where(:hover) { background: var(--ck-header-hover-bg); text-decoration: underline; }
+  .brand-bar .main-more-toggle[aria-expanded="true"] { background: var(--ck-header-hover-bg); }
+  .brand-bar .main-more-toggle[data-current] { color: var(--ck-header-accent); }
+  .brand-bar .main-more-list { display: none; }
+  .brand-bar .main-more[data-open] .main-more-list { display: flex; flex-direction: column; position: absolute; top: 100%; right: 0; z-index: var(--ck-z-menu-sheet); min-width: 260px; margin-top: 8px; padding: 8px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius); background: var(--ck-nav-bg); color: var(--ck-text); box-shadow: 0 8px 24px var(--ck-popover-shadow); }
+  .brand-bar .main-more-list a { border-radius: var(--ck-radius-sm); color: var(--ck-text); }
+  .brand-bar .main-more-list a:hover { background: var(--ck-surface-raised); }
+  .brand-bar .main-more-list a[aria-current] { background: var(--ck-accent-bg); color: var(--ck-accent-text); }
+}
+
 @media (max-width: 540px) {
   /* The artifact design: 16 px page margins, 16 px between the blocks. */
   .page { padding: 0 16px; }

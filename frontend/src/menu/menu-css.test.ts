@@ -27,8 +27,9 @@ describe('bottom bar of the main menu on a phone (artifact design, text of the r
     expect(app.indexOf(phone)).toBeGreaterThan(0)
     expect(app.indexOf(query)).toBeGreaterThan(app.indexOf(phone))
     // One threshold of the phone; the other two conditions leave a tiny or a low window with the row in the header.
+    // A wide screen keeps the bar's items in the header row and the rest behind «Ещё» (a list under the button).
     expect([...app.matchAll(/@media ([^{]+)\{/g)].map((match) => match[1].trim())).toEqual([
-      '(max-width: 540px)', '(max-width: 540px) and (min-width: 340px) and (min-height: 480px)', '(forced-colors: active)',
+      '(min-width: 541px)', '(max-width: 540px)', '(max-width: 540px) and (min-width: 340px) and (min-height: 480px)', '(forced-colors: active)',
     ])
     expect(nav).not.toBe('')
   })
@@ -77,7 +78,7 @@ describe('bottom bar of the main menu on a phone (artifact design, text of the r
     // «＋» opens the sheet of components/Sheet.css on its own layer above the menu; the header row lies under the bar.
     expect(rules(app).filter((item) => item.selector.includes('main-add-list')).map((item) => item.body).join(' ')).not.toContain('z-index')
     expect([...app.matchAll(/z-index: ([^;]+);/g)].map((match) => match[1]).sort()).toEqual(
-      ['var(--ck-z-bottom-nav)', 'var(--ck-z-menu-sheet)', 'var(--ck-z-skip-link)', 'var(--ck-z-top-bar)'])
+      ['var(--ck-z-bottom-nav)', 'var(--ck-z-menu-sheet)', 'var(--ck-z-menu-sheet)', 'var(--ck-z-skip-link)', 'var(--ck-z-top-bar)'])
   })
 
   it('reads only tokens that the theme defines and writes no colour', () => {
