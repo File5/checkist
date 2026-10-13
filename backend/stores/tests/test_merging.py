@@ -126,6 +126,32 @@ class MergeTests(Spends, TestCase):
 
 
 @tag("integration")
+class MergeMovesRecurringTests(Spends, TestCase):
+    def test_templates_and_dismissed_suggestions_follow_the_main_store(self):
+        from recurring.models import DismissedSuggestion, RecurringPayment
+
+        claude = self.spend("CLAUDE.AI SUBSCRIPTION").store
+        anthropic = self.spend("Anthropic Claude").store
+        owner = {"user": self.owner, "category": self.subs, "currency_id": "KZT"}
+        template = RecurringPayment.objects.create(name="Claude", store=anthropic, amount="225", due_day=12, **owner)
+        moved = DismissedSuggestion.objects.create(store=anthropic, **owner)
+        merging.merge(claude.pk, [anthropic.pk], actor=self.owner)
+        template.refresh_from_db()
+        self.assertEqual(template.store, claude)
+        self.assertEqual(DismissedSuggestion.objects.get(pk=moved.pk).store, claude)
+
+    def test_a_dismissal_the_main_store_already_has_is_dropped(self):
+        from recurring.models import DismissedSuggestion
+
+        claude = self.spend("CLAUDE.AI SUBSCRIPTION").store
+        anthropic = self.spend("Anthropic Claude").store
+        owner = {"user": self.owner, "category": self.subs, "currency_id": "KZT"}
+        DismissedSuggestion.objects.create(store=claude, **owner)
+        DismissedSuggestion.objects.create(store=anthropic, **owner)
+        merging.merge(claude.pk, [anthropic.pk], actor=self.owner)
+        self.assertEqual(list(DismissedSuggestion.objects.values_list("store_id", flat=True)), [claude.pk])
+
+@tag("integration")
 class SuggestionTests(TestCase):
     names = {1: "MAGNUM", 2: "MAGNUM*ALMATY", 3: "Small", 4: "ТОО Small", 5: "Демо кафе"}
     counts = {1: 9, 2: 2, 3: 1, 4: 5, 5: 3}

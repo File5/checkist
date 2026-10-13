@@ -161,6 +161,7 @@ def merge(store_id, merged_ids, actor=None):
             for pk in merged_ids:
                 receipt_ids = list(Receipt.objects.filter(store_id=pk).order_by("pk").values_list("pk", flat=True))
                 Receipt.objects.filter(pk__in=receipt_ids).update(store=main)
+                _move_recurring(pk, main)
                 alias_ids = list(Store.objects.filter(merged_into_id=pk).order_by("pk").values_list("pk", flat=True))
                 Store.objects.filter(pk__in=alias_ids).update(merged_into=main)
                 Store.objects.filter(pk=pk).update(merged_into=main)
@@ -170,6 +171,22 @@ def merge(store_id, merged_ids, actor=None):
         raise MergeConflict() from None
     return entries
 
+
+def _move_recurring(merged_id, main):
+    """Регулярные платежи и скрытые предложения склеенного магазина — главному: иначе сверка оплаты
+    (``recurring/matching.py``) не узнает в новых тратах главного магазина прежний платёж. Скрытое
+    предложение, которое у главного уже есть, удаляется. Откат склейки их не возвращает."""
+    from recurring.models import DismissedSuggestion, RecurringPayment
+
+    RecurringPayment.objects.filter(store_id=merged_id).update(store=main)
+    for row in DismissedSuggestion.objects.filter(store_id=merged_id):
+        twin = DismissedSuggestion.objects.filter(
+            household_id=row.household_id, user_id=row.user_id, store=main, category_id=row.category_id,
+            currency_id=row.currency_id)
+        if twin.exists():
+            row.delete()
+        else:
+            DismissedSuggestion.objects.filter(pk=row.pk).update(store=main)
 
 def revert(entry_id):
     """Вернуть склейку по записи журнала: чеки и варианты, которые она перенесла и которые всё ещё у главного
