@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react'
-import type { FocusEvent, MouseEvent, RefObject } from 'react'
+import type { FocusEvent, MouseEvent, ReactNode, RefObject } from 'react'
 import { Link } from '../navigation'
 import type { Route } from '../navigation'
 import type { Session } from '../session'
@@ -10,7 +10,7 @@ import type { IconName } from '../components/Icon'
 import { ThemeToggle } from '../theme'
 import ListIconsToggle from '../components/ListIconsToggle'
 import { menuItems, ADD_AFTER } from './menu-items'
-import type { MenuItem } from './menu-items'
+import type { MenuGroup, MenuItem } from './menu-items'
 import { MORE_MENU_CLOSED, PRESS_END_EVENTS, moreMenuStep } from './more-menu'
 
 const MORE_LIST_ID = 'main-more-list'
@@ -86,6 +86,27 @@ function usePopup() {
   return { open, toggle, list, wrapperProps, onListClick, onToggle: () => dispatch('toggle') }
 }
 
+/** «Данные» and «Настройки» behind «Ещё». On a phone: a heading and the rows under it, always open inside the sheet. In
+ * the header of a wide screen: a word with ▾ that opens its own list, like «Ещё» used to (`usePopup`). `children` —
+ * what follows the links (the theme row of «Настройки»). */
+function MenuSection({ group, children }: { group: MenuGroup; children?: ReactNode }) {
+  const { open, toggle, list, wrapperProps, onListClick, onToggle } = usePopup()
+  const id = `main-group-${group.key}`
+  const current = group.items.find((entry) => entry.current)
+  return <div className="main-group" {...wrapperProps}>
+    {/* Drawn only in the header row of a wide screen. */}
+    <button type="button" className="main-group-toggle" ref={toggle} aria-expanded={open} aria-controls={id}
+      aria-label={current ? `${group.title}, текущий раздел: ${current.label}` : undefined}
+      data-current={current ? '' : undefined} onClick={onToggle}>{group.title}<Icon name="down" size={16} /></button>
+    {/* Drawn only in the sheet of a phone; the list says the same name to a screen reader. */}
+    <p className="main-group-title" aria-hidden="true">{group.title}</p>
+    <div className="main-group-list" id={id} ref={list} role="group" aria-label={group.title} onClick={onListClick}>
+      {group.items.map(item)}
+      {children}
+    </div>
+  </div>
+}
+
 /** «＋» of the phone's bar: a raised round button and a sheet from the bottom (components/Sheet) with «Снять чек»,
  * «Из галереи», «Трата или доход» (one form with the switch at its top) and «Загрузить выписку». «Снять чек» opens the camera and «Из галереи» the picker from the very press
  * (both fields stay mounted outside of the sheet); the chosen file goes to the upload page and is sent by itself.
@@ -128,7 +149,7 @@ function AddMenu() {
  * the third one behind «Ещё».
  */
 export default function MainMenu({ session, route, menuRef }: { session: Session; route: Route; menuRef: RefObject<HTMLElement | null> }) {
-  const { primary, more, add } = menuItems(session, route)
+  const { primary, more, groups, add } = menuItems(session, route)
   const { open, toggle, list, wrapperProps, onListClick, onToggle } = usePopup()
   const currentInMore = more.find((entry) => entry.current)
 
@@ -143,10 +164,14 @@ export default function MainMenu({ session, route, menuRef }: { session: Session
           aria-label={currentInMore ? `Ещё, текущий раздел: ${currentInMore.label}` : undefined}
           data-current={currentInMore ? '' : undefined} onClick={onToggle}><Icon name="more" />Ещё</button>
         <div className="main-more-list" id={MORE_LIST_ID} ref={list} onClick={onListClick}>
-          {more.map(item)}
-          {/* The header of a phone is gone: its theme switch lives at the end of this list (hidden on wider screens), and
-              beside it what the squares of the spends show (lib/list-icons). */}
-          <div className="main-more-theme"><ThemeToggle placement="menu" /><ListIconsToggle /></div>
+          {groups.map((group) => group.key === 'money'
+            // «Деньги» — four tiles at the top of the sheet; in the header row, links like the others.
+            ? <div key={group.key} className="main-more-tiles" role="group" aria-label={group.title}>{group.items.map(item)}</div>
+            : <MenuSection key={group.key} group={group}>
+              {/* The header of a phone is gone: its theme switch lives at the end of «Настройки» (hidden on wider
+                  screens), and beside it what the squares of the spends show (lib/list-icons). */}
+              {group.key === 'settings' && <div className="main-more-theme"><ThemeToggle placement="menu" /><ListIconsToggle /></div>}
+            </MenuSection>)}
         </div>
       </div>}
     </nav>

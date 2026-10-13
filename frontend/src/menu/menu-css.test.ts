@@ -157,10 +157,10 @@ describe('bottom bar of the main menu on a phone (artifact design, text of the r
   })
 
   it('writes the words of the bar at the 12 px step of the scale only, and makes the sections of a part chips', () => {
-    expect([...bar.matchAll(/font-size:\s*([^;]+);/g)].map((match) => match[1])).toEqual(['var(--ck-text-2xs)'])
+    expect([...new Set([...bar.matchAll(/font-size:\s*([^;]+);/g)].map((match) => match[1]))]).toEqual(['var(--ck-text-2xs)'])
     expect(rule('.section-navigation a[aria-current]', rest)).toContain('background: var(--ck-chip-selected-bg); color: var(--ck-chip-selected-text);')
     // Every rule of the bar about the menu is tied to the header: the menu of a section is a .main-navigation too.
-    const loose = rules(bar).map((item) => item.selector).filter((selector) => /main-(navigation|more)/.test(selector) && !/^(\.ck-focus-mode )?\.brand-bar /.test(selector))
+    const loose = rules(bar).map((item) => item.selector).filter((selector) => /main-(navigation|more|group)/.test(selector) && !/^(\.ck-focus-mode )?\.brand-bar /.test(selector))
     expect(loose).toEqual([])
   })
 })

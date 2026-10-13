@@ -32,8 +32,8 @@ describe('markup of the main menu (SSR only: the bar, touches and keys are check
   })
 
   it.each<[string, Session, string[]]>([
-    ['thirteen items in local_single', local, ['Платежи', 'Разбор месяца', 'Доходы', 'Цели', 'Каталог', 'Магазины', 'Обработка', 'Выгрузка', 'Правила выписок', 'Состояние сервисов']],
-    ['fifteen items in accounts', reader, ['Платежи', 'Разбор месяца', 'Доходы', 'Цели', 'Каталог', 'Магазины', 'Обработка', 'Выгрузка', 'Правила выписок', 'Состояние сервисов', 'Семья', 'synthetic-reader']],
+    ['thirteen items in local_single', local, ['Доходы', 'Платежи', 'Цели', 'Разбор месяца', 'Каталог', 'Магазины', 'Правила выписок', 'Обработка чеков', 'Выгрузка', 'Состояние сервисов']],
+    ['fifteen items in accounts', reader, ['Доходы', 'Платежи', 'Цели', 'Разбор месяца', 'Каталог', 'Магазины', 'Правила выписок', 'Обработка чеков', 'Выгрузка', 'Семья', 'synthetic-reader', 'Состояние сервисов']],
   ])('keeps the links after the third one behind «Ещё» with %s', (_name, session, more) => {
     const html = render(session, { kind: 'not-found', path: '/missing' })
     // The same nav: «Главная · Траты · ＋ · Статистика · Ещё»; the sections are its direct children, with no new attributes.
@@ -48,6 +48,11 @@ describe('markup of the main menu (SSR only: the bar, touches and keys are check
     // the squares of the spends show — the category by default (lib/list-icons).
     expect(html).toContain('<div class="main-more-theme"><button type="button" class="ck-theme-toggle ck-theme-toggle-menu"')
     expect(html).toContain('<button type="button" class="ck-theme-toggle ck-theme-toggle-menu" data-list-icons="category"><span class="ck-theme-label">Значки: категория</span></button></div>')
+    // The sections (2026-10-13): «Деньги» — tiles; «Данные» and «Настройки» — a word with ▾ for the header and a heading
+    // for the sheet, the theme row at the end of «Настройки».
+    expect(list).toContain('<div class="main-more-tiles" role="group" aria-label="Деньги"><a href="/incomes">')
+    expect(html).toContain('<div class="main-group"><button type="button" class="main-group-toggle" aria-expanded="false" aria-controls="main-group-data">Данные</button><p class="main-group-title" aria-hidden="true">Данные</p><div class="main-group-list" id="main-group-data" role="group" aria-label="Данные"><a href="/catalog">')
+    expect(html).toMatch(/aria-label="Настройки">.*<div class="main-more-theme">.*<\/div><\/div><\/div><\/div><\/div><\/nav>$/)
     expect(html.match(/id="main-more-list"/g)).toHaveLength(1)
     expect(html).not.toMatch(/role="(dialog|menu)"|aria-modal/)
     expect(html.match(/aria-haspopup/g)).toHaveLength(1)
@@ -57,9 +62,9 @@ describe('markup of the main menu (SSR only: the bar, touches and keys are check
   it('draws a picture over each word of the bar and before each row of «Ещё», hidden from the screen reader', () => {
     const html = raw(reader, catalog)
     const pictures = html.match(/<svg\b[^>]*>/g) ?? []
-    // Twelve links of «Ещё», three of the bar, «Ещё» itself, «＋» (26 px) and the switch of the spend pictures; the theme
-    // switch keeps its own picture.
-    expect(pictures.filter((tag) => tag.includes('class="ck-icon"'))).toHaveLength(3 + 12 + 1 + 1 + 1)
+    // Twelve links of «Ещё», three of the bar, «Ещё» itself, «＋» (26 px), the switch of the spend pictures and ▾ of
+    // «Данные» and «Настройки»; the theme switch keeps its own picture.
+    expect(pictures.filter((tag) => tag.includes('class="ck-icon"'))).toHaveLength(3 + 12 + 1 + 1 + 1 + 2)
     for (const tag of pictures) expect(tag).toContain('aria-hidden="true"')
     expect(html).toMatch(/<a href="\/"><svg class="ck-icon" viewBox="0 0 24 24" width="22" height="22"[^>]*>.*?<\/svg>Главная<\/a>/)
     expect(html).toMatch(/<button type="button" class="main-add-toggle"[^>]*><svg class="ck-icon" viewBox="0 0 24 24" width="26" height="26"/)
@@ -90,7 +95,7 @@ describe('markup of the main menu (SSR only: the bar, touches and keys are check
 
   it.each<[string, Route, string]>([
     ['the catalog', catalog, 'Каталог'],
-    ['«Обработка»', { kind: 'jobs', query: { page: 1 } }, 'Обработка'],
+    ['«Обработка чеков»', { kind: 'jobs', query: { page: 1 } }, 'Обработка чеков'],
     ['the health page', health, 'Состояние сервисов'],
     ['the account', { kind: 'account' }, 'synthetic-reader'],
   ])('marks «Ещё» as current, and not by colour alone, while %s is open', (_name, route, label) => {

@@ -119,9 +119,10 @@ describe('state rules of the shell (text of the rules, not rendering)', () => {
       '.ck-button-danger:where(:hover:not(:disabled)) = 1', '.ck-button-danger:where(:active:not(:disabled)) = 1',
       '.expense-danger:where(:hover:not(:disabled)) = 1', '.expense-danger:where(:active:not(:disabled)) = 1',
       '.rec-issues summary:focus-visible = 2',
-      // «Ещё» of a wide screen (a list under the button): the shell's own part, as heavy as the header links.
-      '.brand-bar .main-more-toggle:where(:hover) = 2', '.brand-bar .main-more-toggle[aria-expanded="true"] = 3',
-      '.brand-bar .main-more-list a:hover = 3',
+      // «Данные» and «Настройки» of a wide screen (a list under the word, 2026-10-13): the shell's own part, as heavy
+      // as the header links.
+      '.brand-bar .main-group-toggle:where(:hover) = 2', '.brand-bar .main-group-toggle[aria-expanded="true"] = 3',
+      '.brand-bar .main-group-list a:hover = 3',
       // The bottom bar of a phone and the list behind «Ещё»: the shell's own parts, like the links of the header. They
       // weigh as much as the header rules they replace in the bar, and come after them.
       '.brand-bar .main-navigation :focus-visible = 3',

@@ -78,7 +78,10 @@ const mainNav = (html: string) => {
 }
 const navLink = (html: string, text: string) => noIcons(html).match(new RegExp(`<a\\b[^>]*>${text}</a>`))?.[0] ?? ''
 /** The links of the header row; «Добавить трату» lives in the «＋» sheet, which a server render draws closed. */
-const fullMenu = ['Главная', 'Траты', 'Статистика', 'Платежи', 'Разбор месяца', 'Доходы', 'Цели', 'Каталог', 'Магазины', 'Обработка', 'Выгрузка', 'Правила выписок', 'Состояние сервисов']
+/** «Деньги», «Данные», then «Настройки»: the family and the account (accounts) before the health page (2026-10-13). */
+const menuWith = (...people: string[]) => ['Главная', 'Траты', 'Статистика', 'Доходы', 'Платежи', 'Цели', 'Разбор месяца', 'Каталог', 'Магазины',
+  'Правила выписок', 'Обработка чеков', 'Выгрузка', ...people, 'Состояние сервисов']
+const fullMenu = menuWith()
 
 const fetchMock = vi.fn<typeof fetch>()
 beforeEach(() => { fetchMock.mockReset(); vi.stubGlobal('fetch', fetchMock) })
@@ -136,8 +139,8 @@ describe('session gate of the shell (SSR only, no browser interaction)', () => {
     ['error', { kind: 'error' }, ['Состояние сервисов']],
     ['guest', guest, ['Состояние сервисов', 'Войти']],
     ['guest after an ended session', { kind: 'guest', expired: true }, ['Состояние сервисов', 'Войти']],
-    ['reader', reader, [...fullMenu, 'Семья', 'synthetic-reader']],
-    ['moderator', moderator, [...fullMenu, 'Семья', 'synthetic-moderator']],
+    ['reader', reader, menuWith('Семья', 'synthetic-reader')],
+    ['moderator', moderator, menuWith('Семья', 'synthetic-moderator')],
     ['local_single', local, fullMenu],
   ])('keeps health available for %s', (_name, session, menu) => {
     const html = render(session, { kind: 'health' }, '/health')
@@ -158,7 +161,7 @@ describe('signed-in shell (SSR only, no browser interaction)', () => {
     const html = render(reader, route, href)
     expect(screens(html)).toEqual([route.kind])
     expect(html.match(/<h1\b/g)).toHaveLength(1)
-    expect(mainNav(html)).toEqual([...fullMenu, 'Семья', 'synthetic-reader'])
+    expect(mainNav(html)).toEqual(menuWith('Семья', 'synthetic-reader'))
     expect(navLink(html, 'synthetic-reader')).toBe('<a class="account-link" aria-label="Аккаунт: synthetic-reader" href="/account">synthetic-reader</a>')
     expect(html).not.toContain('login-username')
   })

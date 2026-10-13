@@ -53,6 +53,10 @@ h2 { font-size: 1.35rem; letter-spacing: 0; }
    stand in the row of the menu like the others, and the button is not drawn. */
 .main-more, .main-more-list { display: contents; }
 .main-more-toggle { display: none; }
+/* The sections behind «Ещё» (2026-10-13): no boxes either, their words and headings not drawn — the narrow strip of a
+   tiny or low window keeps one row of links. */
+.main-more-tiles, .main-group, .main-group-list { display: contents; }
+.main-group-toggle, .main-group-title { display: none; }
 /* The pictures of the menu and the theme row of «Ещё» belong to the bottom bar of a phone: the header row is words. */
 .main-navigation .ck-icon { display: none; }
 .main-more-theme { display: none; }
@@ -185,19 +189,20 @@ main { padding-bottom: 36px; }
 /* A quiet line: the old jokes of the brand live here, in the background. */
 footer { border-top: 1px solid var(--ck-divider); color: var(--ck-text-muted); padding: 20px 0 30px; font-size: var(--ck-text-xs); }
 
-/* A wide screen: twelve words do not fit one row of the header. The row keeps the items of the phone's bar, the rest
-   stays behind «Ещё» — a list under the button (the same button and list as the phone's sheet, menu/more-menu.ts). */
+/* A wide screen: the sections of «Ещё» stand in the header row (2026-10-13). «Деньги» are links like the others;
+   «Данные» and «Настройки» are a word with ▾ and a list under it (the popup of the phone's «Ещё», menu/more-menu.ts). */
 @media (min-width: 541px) {
-  .brand-bar .main-more { display: block; position: relative; }
-  .brand-bar .main-more-toggle { display: inline-flex; align-items: center; min-height: 44px; padding: 8px 12px; border: 0; border-radius: var(--ck-radius-pill); background: none; color: inherit; font: inherit; cursor: pointer; }
-  .brand-bar .main-more-toggle:where(:hover) { background: var(--ck-header-hover-bg); text-decoration: underline; }
-  .brand-bar .main-more-toggle[aria-expanded="true"] { background: var(--ck-header-hover-bg); }
-  .brand-bar .main-more-toggle[data-current] { color: var(--ck-header-accent); }
-  .brand-bar .main-more-list { display: none; }
-  .brand-bar .main-more[data-open] .main-more-list { display: flex; flex-direction: column; position: absolute; top: 100%; right: 0; z-index: var(--ck-z-menu-sheet); min-width: 260px; margin-top: 8px; padding: 8px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius); background: var(--ck-nav-bg); color: var(--ck-text); box-shadow: 0 8px 24px var(--ck-popover-shadow); }
-  .brand-bar .main-more-list a { border-radius: var(--ck-radius-sm); color: var(--ck-text); }
-  .brand-bar .main-more-list a:hover { background: var(--ck-surface-raised); }
-  .brand-bar .main-more-list a[aria-current] { background: var(--ck-accent-bg); color: var(--ck-accent-text); }
+  .brand-bar .main-group { display: block; position: relative; }
+  .brand-bar .main-group-toggle { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; padding: 8px 12px; border: 0; border-radius: var(--ck-radius-pill); background: none; color: inherit; font: inherit; cursor: pointer; }
+  .brand-bar .main-group-toggle .ck-icon { display: block; flex: none; }
+  .brand-bar .main-group-toggle:where(:hover) { background: var(--ck-header-hover-bg); text-decoration: underline; }
+  .brand-bar .main-group-toggle[aria-expanded="true"] { background: var(--ck-header-hover-bg); }
+  .brand-bar .main-group-toggle[data-current] { color: var(--ck-header-accent); }
+  .brand-bar .main-group-list { display: none; }
+  .brand-bar .main-group[data-open] .main-group-list { display: flex; flex-direction: column; position: absolute; top: 100%; right: 0; z-index: var(--ck-z-menu-sheet); min-width: 260px; margin-top: 8px; padding: 8px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius); background: var(--ck-nav-bg); color: var(--ck-text); box-shadow: 0 8px 24px var(--ck-popover-shadow); }
+  .brand-bar .main-group-list a { border-radius: var(--ck-radius-sm); color: var(--ck-text); }
+  .brand-bar .main-group-list a:hover { background: var(--ck-surface-raised); }
+  .brand-bar .main-group-list a[aria-current] { background: var(--ck-accent-bg); color: var(--ck-accent-text); }
 }
 
 @media (max-width: 540px) {
@@ -283,6 +288,14 @@ footer { border-top: 1px solid var(--ck-divider); color: var(--ck-text-muted); p
   .brand-bar .main-more-list a[aria-current]::before { content: none; }
   .brand-bar .main-more-list a[aria-current] .ck-icon { color: inherit; }
   .brand-bar .main-more-theme { display: block; padding-top: 4px; }
+  /* Its sections (2026-10-13): «Деньги» — four tiles of two columns at the top; «Данные» and «Настройки» — a small
+     heading over the rows. */
+  .brand-bar .main-more-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 8px 0 4px; }
+  .brand-bar .main-more-tiles a { flex-direction: column; align-items: flex-start; justify-content: center; gap: 8px; min-height: 76px; padding: 12px; border: 1px solid var(--ck-divider); background: var(--ck-surface-raised); }
+  .brand-bar .main-more-tiles a:not([aria-current]) .ck-icon { color: var(--ck-link); }
+  .brand-bar .main-group { display: block; }
+  .brand-bar .main-group-title { display: block; margin: 16px 8px 4px; color: var(--ck-text-muted); font-size: var(--ck-text-2xs); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+  .brand-bar .main-group-list { display: flex; flex-direction: column; }
   /* «＋»: a round button of the main action, raised over the bar (its top 8 px above the edge: less than the padding
      of a pinned action bar, so it never covers a button of one). It opens the sheet from the bottom (components/Sheet). */
   .brand-bar .main-add { display: flex; align-items: center; justify-content: center; }
