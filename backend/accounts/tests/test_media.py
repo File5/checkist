@@ -279,8 +279,8 @@ class MediaPreviewAndDownloadTests(MediaMixin, TestCase):
 
     def test_owner_gets_previews_written_on_first_request(self):
         client = self.client_of(self.first)
-        for directory in ("originals", "crops"):
-            for name, longest in (("preview-1600-v1.webp", 1600), ("thumb-400-v1.webp", 400)):
+        for directory, version in (("originals", "v1"), ("crops", "v2")):
+            for name, longest in ((f"preview-1600-{version}.webp", 1600), (f"thumb-400-{version}.webp", 400)):
                 with self.subTest(directory=directory, name=name):
                     path = self.variant(self.own, directory, name)
                     self.assertFalse((self.root / path).exists())
@@ -294,12 +294,14 @@ class MediaPreviewAndDownloadTests(MediaMixin, TestCase):
                     self.assertEqual(body(client.get(f"/media/{path}")), written)
         # The originals stay as they were: the pipeline never sees the previews.
         self.assertEqual((self.root / self.own["originals"]).read_bytes(), png_bytes())
+        # A crop has only the v2 copies (straightened): its v1 name is a plain missing file.
+        self.assert_refused(client.get(f"/media/{self.variant(self.own, 'crops', 'thumb-400-v1.webp')}"))
 
     def test_foreign_or_anonymous_preview_is_refused_and_not_written(self):
         expected = refusal(self.client_of(self.first).get(f"/media/originals/{uuid.uuid4()}/source.png"))
         for client in (self.client_of(self.first), APIClient(), signed_in(self.moderator)):
-            for directory in ("originals", "crops"):
-                path = self.variant(self.foreign, directory, "thumb-400-v1.webp")
+            for directory, name in (("originals", "thumb-400-v1.webp"), ("crops", "thumb-400-v2.webp")):
+                path = self.variant(self.foreign, directory, name)
                 with self.subTest(directory=directory):
                     response = client.get(f"/media/{path}")
                     self.assert_refused(response)
@@ -356,7 +358,7 @@ class MediaPreviewAndDownloadTests(MediaMixin, TestCase):
 class MediaPreviewLocalSingleTests(MediaMixin, TestCase):
     def test_previews_are_written_without_sign_in(self):
         self.write(self.own["crops"], png_bytes((300, 900)))
-        path = f"{Path(self.own['crops']).parent.as_posix()}/thumb-400-v1.webp"
+        path = f"{Path(self.own['crops']).parent.as_posix()}/thumb-400-v2.webp"
         response = APIClient().get(f"/media/{path}")
         self.assertEqual(response.status_code, 200)
         body(response)

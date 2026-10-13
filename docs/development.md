@@ -668,3 +668,22 @@ wsl.exe -d docker-desktop -- wslinfo --networking-mode
 Затем человек выполнил `wsl --shutdown` и перезапустил Docker Desktop. После этого `wslinfo --networking-mode` вернул `virtioproxy`, а Windows TCP-пробы на QA2-портах 25433/16380 — `True`. При неизменном коде прошли Windows миграции, integration tests, `check_services` и HTTP 200/503/405/406; негативные ответы уложились в ≤10 с, после восстановления вернулся 200. Точные результаты — в [verification.md](verification.md#фактические-результаты-windows-проверки-2026-10-03).
 
 Доступ восстановился после изменения окружения; строгая причинность Mirrored против VPN не изолирована. VPN мог быть дополнительным фактором: повторное включение Mirrored и отдельная проверка без VPN не выполнялись. Изменение WSL, VPN/firewall и перезапуск Docker Desktop — решение человека; агенты самостоятельно их не выполняют. После устранения такого отказа повторите локальные QA-команды и HTTP/negative сценарии из verification.md.
+
+## Выпрямленные копии вырезок (2026-10-13, ветка `feature/receipt-scan`)
+
+Копии вырезок теперь `preview-1600-v2.webp` / `thumb-400-v2.webp` — бумага, выпрямленная по `quad`
+([api-contract.md](api-contract.md#выпрямленные-копии-вырезок-2026-10-13-ветка-featurereceipt-scan)). Для уже
+сохранённых вырезок их пишет прежняя команда ([PDF и сжатые копии фото](#pdf-и-сжатые-копии-фото)), повтор ничего не
+меняет (`written: 0`, всё в `present`):
+
+```bash
+cd backend && $PY manage.py media_previews backfill --dry-run
+cd backend && $PY manage.py media_previews backfill        # на сервере: deploy/docker/ck manage media_previews backfill
+```
+
+Без неё копии появятся при первом просмотре. Старые `*-v1.webp` в каталогах вырезок больше не запрашиваются, удалять
+их не обязательно. Миграций и новых зависимостей нет (только Pillow). Тесты:
+`manage.py test recognition.tests.test_previews accounts.tests.test_media --noinput` — `ScanQuadTests` (данные
+преобразования и отказы), `ScanPreviewTests` (синтетический чек под 22° в лёгкой перспективе на пёстром фоне: после
+выпрямления фона внутри запаса нет, строки идут поперёк, текст вверх; без `quad`, у PDF и при крутой перспективе — прежняя
+обрезка), v2 через `/media/` с проверкой владельца.

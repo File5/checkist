@@ -11,7 +11,7 @@ file, ``demo/``, a path that tries to leave its directory. Nothing in the answer
 apart, so a path cannot be probed for existence.
 
 A display variant (``recognition.previews``: ``preview-1600-v1.webp``, ``thumb-400-v1.webp`` in an
-``originals``/``crops`` directory) is written on its first allowed request, after the same owner
+``originals`` directory, ``-v2`` in a ``crops`` one) is written on its first allowed request, after the same owner
 check, and is sent with a year of private caching: its name never points at other pixels.
 ``?download=1`` sends any allowed file as an attachment (``Content-Disposition``).
 """
