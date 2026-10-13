@@ -11,15 +11,20 @@
 текущей суммой, как до журнала. Функции чтения работают со списками, без запросов к БД;
 им передают весь журнал пары, а не срез по месяцам — иначе пара без записей в срезе
 сочтётся парой без журнала.
+
+Здесь же (2026-10-13): ``backfill`` — нынешние лимиты прошлым месяцам (команда
+``limit_history backfill``); общий бюджет месяца ``MonthlyBudget`` — ``set_budget`` и
+``budget_at`` (таблица бюджета сама себе журнал: строка на месяц изменения).
 """
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime, time
 from types import SimpleNamespace
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
-from .models import BudgetLimit, BudgetLimitChange
+from .models import BudgetLimit, BudgetLimitChange, MonthlyBudget
 
 _OWNER_KEY = ("household_id", "user_id", "category_id", "currency_id")
 
@@ -82,6 +87,65 @@ def delete_limit(limit, actor=None):
             return
         _change(_owner_key(current), current.amount, None, actor, timezone.now()).save()
         current.delete()
+
+
+def backfill(since, *, dry_run=False):
+    """Прошлые месяцы с ``since`` (первое число) получают нынешние лимиты (``manage.py limit_history backfill``).
+
+    Журнал начался 2026-10-12, и прошлые месяцы показывали «Лимиты не заданы». Паре текущего лимита, чей
+    журнал начинается позже ``since``, добавляется запись «создан» с текущей суммой в месяце ``since``
+    (автор неизвестен, время — полночь первого числа). Пара без журнала и так действует во всех месяцах,
+    пара с журналом не позже ``since`` не трогается — повтор ничего не меняет. Удалённые лимиты не
+    восстанавливаются. Возвращает добавленные записи (с ``dry_run`` — те, что были бы добавлены).
+    """
+    from django.db.models import Min
+
+    started = {
+        key[:4]: key[4] for key in BudgetLimitChange.objects.values("household_id", "user_id", "category_id", "currency_id")
+        .annotate(first=Min("effective_month")).order_by()
+        .values_list("household_id", "user_id", "category_id", "currency_id", "first")
+    }
+    at = timezone.make_aware(datetime.combine(since, time.min))
+    rows = []
+    for limit in BudgetLimit.objects.select_related("category").order_by("pk"):
+        first = started.get(_owner_key(limit))
+        if first is None or first <= since:
+            continue
+        row = _change(_owner_key(limit), None, limit.amount, None, at)
+        row.category, row.effective_month = limit.category, since
+        rows.append(row)
+    if not dry_run:
+        BudgetLimitChange.objects.bulk_create(rows)
+    return rows
+
+
+# --- общий бюджет месяца (``MonthlyBudget``) ---
+
+def budget_at(owner_q, month):
+    """Строка бюджета, действующая в месяце ``month`` (первое число), либо ``None``; ``amount`` пуст — бюджет снят.
+
+    ``owner_q`` — ``budget.access.limits_q``. Один запрос.
+    """
+    return (MonthlyBudget.objects.filter(owner_q, effective_month__lte=month)
+            .order_by("-effective_month").first())
+
+
+def set_budget(owner, currency, amount, actor=None):
+    """Бюджет с текущего месяца: ``amount`` либо ``None`` (снять); прошлые месяцы не меняются.
+
+    ``owner`` — ``budget.access.limit_owner``. Снятие без действующего бюджета ничего не пишет.
+    """
+    month = current_month()
+    lookup = {"household": owner["household"], "user": owner["user"], "effective_month": month}
+    with transaction.atomic():
+        if amount is None:
+            mine = Q(household=owner["household"]) if owner["household"] else Q(user=owner["user"], household__isnull=True)
+            active = budget_at(mine, month)
+            if active is None or active.amount is None:
+                return None
+        row, _ = MonthlyBudget.objects.update_or_create(**lookup, defaults={
+            "currency_id": currency, "amount": amount, "changed_by": _actor(actor), "changed_at": timezone.now()})
+    return row
 
 
 # --- сумма лимита в месяце ---

@@ -14,7 +14,7 @@ from rest_framework.response import Response
 
 from accounts.access import request_user, visible_receipts_q
 from accounts.people import display_name
-from budget import dashboard, history
+from budget import allowance, dashboard, history
 from budget.access import limit_owner, limits_q, people
 from budget.models import BudgetLimit, BudgetLimitChange
 from catalog.models import Category
@@ -196,6 +196,45 @@ class LimitView(LocalAPIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+def budget_object(request):
+    """Общий бюджет текущего месяца: ``amount`` (null — не задан), ``currency`` и основная валюта семьи."""
+    row = history.budget_at(limits_q(request), history.current_month())
+    amount = row.amount if row is not None else None
+    return {"amount": common.amount(amount), "currency": row.currency_id if amount is not None else None,
+            "base_currency": request_base_currency(request)}
+
+
+class MonthBudgetView(LocalAPIView):
+    """Общий бюджет месяца над лимитами (2026-10-13): одна сумма на семью (без семьи — своя), в основной валюте.
+
+    ``GET`` — бюджет текущего месяца; ``POST {"amount"}`` — задать с текущего месяца; ``DELETE`` — снять с
+    текущего месяца. Прошлые месяцы сохраняют свою сумму (``budget.history.budget_at``).
+    """
+
+    http_method_names = ["get", "post", "delete", "head", "options"]
+    parser_classes = [LimitBodyParser]
+
+    def get(self, request):
+        return Response(budget_object(request))
+
+    def post(self, request):
+        data = manual_body(request)
+        errors = {key: [MESSAGES["unknown_field"]] for key in data if key != "amount"}
+        amount = _amount(data["amount"]) if "amount" in data else None
+        if "amount" not in data:
+            errors["amount"] = [MESSAGES["required"]]
+        elif amount is None:
+            errors["amount"] = [MESSAGES["amount"]]
+        if errors:
+            raise InvalidParameter(errors)
+        history.set_budget(limit_owner(request), request_base_currency(request), amount, request_user(request))
+        return Response(budget_object(request))
+
+    def delete(self, request):
+        history.set_budget(limit_owner(request), request_base_currency(request), None, request_user(request))
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
 def read_month(params, today):
     raw = params.raw("month")
     if raw is None:
@@ -239,6 +278,25 @@ def _block_object(block):
     }
 
 
+def _month_budget(row, converter, day, block):
+    """Бюджет месяца дашборда в основной валюте рядом с потраченным; ``None`` — бюджета нет (или нет курса)."""
+    amount = converter.convert(row.amount, row.currency_id, day) if row is not None and row.amount is not None else None
+    if amount is None:
+        return None
+    return {"amount": common.amount(amount), "currency": converter.base,
+            "spent": common.amount(block.spent if block is not None else Decimal("0.00"))}
+
+
+def _allowance_object(value):
+    if value is None:
+        return None
+    return {
+        "currency": value.currency, "basis": value.basis, "amount": common.amount(value.amount),
+        "spent": common.amount(value.spent), "unpaid": common.amount(value.unpaid), "unpaid_count": value.unpaid_count,
+        "days_left": value.days_left, "per_day": common.amount(value.per_day), "overspent": common.amount(value.overspent),
+    }
+
+
 def month_limits(request, month, today):
     """Лимиты месяца дашборда по ``pk``: текущий и будущие — нынешние, прошлый — суммы того месяца по журналу."""
     limits = visible_limits(request).order_by("pk")
@@ -270,8 +328,10 @@ class DashboardView(LocalAPIView):
         latest = dashboard.recent(receipts, tree, product_ref=product_ref)
         family = people(request)
         rate_day = dashboard.limit_day(month, today)
+        budget = history.budget_at(limits_q(request), month.first)
         converter = stats_common.converter(request, found.needs() | {
             *((limit.currency_id, rate_day) for limit in limits),
+            *(((budget.currency_id, rate_day),) if budget is not None else ()),
             *((row.currency_id, row.purchased_on) for row, _name in latest)})
         blocks = dashboard.currency_blocks(found, limits, month, tree)
         in_base = dashboard.currency_blocks(found, limits, month, tree, converter, today)
@@ -284,4 +344,7 @@ class DashboardView(LocalAPIView):
             **stats_common.base_fields(converter, block and _block_object(block),
                                        spending.unconverted(found.data, converter)),
             "recent": [_recent_object(row, name, converter) for row, name in latest],
+            # Общий бюджет месяца и «можно тратить в день» (только текущий месяц) — в основной валюте.
+            "budget": _month_budget(budget, converter, rate_day, block),
+            "allowance": _allowance_object(allowance.daily(request_user(request), month, today=today)),
         })

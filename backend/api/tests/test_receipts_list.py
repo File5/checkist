@@ -152,3 +152,34 @@ class ListFieldsTests(TestCase):
                 self.assertEqual(self.client.get(f"/api/receipts/?page_size={size}").status_code, 200)
         with self.assertNumQueries(2):
             self.assertEqual(self.client.get("/api/receipts/?q=nothing-matches").status_code, 200)
+
+
+@tag("integration")
+@local_single_mode()
+class SearchTests(TestCase):
+    """Строка поиска «Трат» (2026-10-13): место, комментарий, позиции и сумма — одним ``?q=``."""
+
+    @classmethod
+    def setUpTestData(cls):
+        store = samples.lidl_store()
+        cls.exact = make_receipt(store, "KZT", date(2026, 10, 1), total=D("4500.00"))
+        cls.below = make_receipt(store, "KZT", date(2026, 10, 2), total=D("4499.50"))  # на экране — «4 500»
+        cls.other = make_receipt(store, "KZT", date(2026, 10, 3), total=D("4499.00"))
+        cls.noted = make_receipt(store, "KZT", date(2026, 10, 4), total=D("12.00"), note="Кофе 4500 зёрен")
+        make_line(cls.other, position=1, raw_name="Кофе молотый", amount=D("4499.00"))
+
+    def found(self, query):
+        return set(ids(self.client.get("/api/receipts/", {"q": query})))
+
+    def test_whole_number_finds_what_the_screen_shows(self):
+        self.assertEqual(self.found("4500"), {self.exact.pk, self.below.pk, self.noted.pk})
+        self.assertEqual(self.found("4 500"), {self.exact.pk, self.below.pk})
+        self.assertEqual(self.found("4\u00a0500"), {self.exact.pk, self.below.pk})
+
+    def test_amount_with_cents_is_exact(self):
+        self.assertEqual(self.found("4499,50"), {self.below.pk})
+        self.assertEqual(self.found("4499.5"), {self.below.pk})
+
+    def test_words_still_search_places_notes_and_lines(self):
+        self.assertEqual(self.found("кофе"), {self.other.pk, self.noted.pk})
+        self.assertEqual(self.found("lidl"), {self.exact.pk, self.below.pk, self.other.pk, self.noted.pk})
