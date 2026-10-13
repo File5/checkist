@@ -3,7 +3,6 @@ import { excludedNote } from '../../lib/base-currency'
 import type { MouseEvent } from 'react'
 import type { SpendingCurrency, SpendingGroupBy } from '../../api/stats'
 import { spendingGroupings } from '../../api/stats'
-import ChipScroller from '../../components/ChipScroller'
 import RequestState from '../../components/RequestState'
 import { useLocalRequestFocus } from '../../components/useLocalRequestFocus'
 import { PieChart } from '../../lib/charts'
@@ -12,10 +11,10 @@ import { Link } from '../../navigation'
 import type { SpendingQuery } from '../../navigation'
 import { PeriodText } from './period'
 import {
-  breadcrumbs, failureView, grouping, groupingCaptions, groupingHref, groupingLabels, hasFilters, needsAddressReset, resetHref, shownResult, upHref,
+  breadcrumbs, failureView, grouping, groupingCaptions, groupingHref, groupingShortLabels, hasFilters, needsAddressReset, resetHref, shownResult, upHref,
 } from './spending-state'
 import type { Shown, SpendingFailure, SpendingRequestState } from './spending-state'
-import { useChipInView } from './chip-in-view'
+import './StatsBar.css'
 import { blockTail } from './spending-tail'
 import { blockView, tailSharesNote, unassignedHint } from './spending-view'
 import type { BlockView, TailView } from './spending-view'
@@ -132,15 +131,13 @@ export default function SpendingResults({ query, state, retry, last, genericName
   const crumbs = breadcrumbs(query, shown?.data.parent, genericName)
   const up = upHref(crumbs)
   const loading = state.kind === 'loading'
-  const groupingsRef = useChipInView<HTMLElement>(by)
 
   return <section ref={block} className="spending-panel" aria-labelledby={heading} aria-busy={loading}>
     <h2 id={heading} data-request-focus-target tabIndex={-1}>Траты {groupingCaptions[by]}</h2>
-    <nav ref={groupingsRef} className="spending-groupings" aria-label="Разбивка трат">
-      <ChipScroller label="Разбивка">
-        {spendingGroupings.map((value) => <Link key={value} className="ck-chip" to={groupingHref(query, value)}
-          aria-current={value === by ? 'true' : undefined}>{groupingLabels[value]}</Link>)}
-      </ChipScroller>
+    {/* A low switch on the width of the card, short words: four segments fit a 360 px phone without a cut. */}
+    <nav className="spending-groupings stats-segments" aria-label="Разбивка трат">
+      {spendingGroupings.map((value) => <Link key={value} className="stats-segment" to={groupingHref(query, value)}
+        aria-current={value === by ? 'true' : undefined}>{groupingShortLabels[value]}</Link>)}
     </nav>
     {crumbs.length > 0 && <nav className="spending-path" aria-label="Путь в тратах">
       <ol className="spending-crumbs">

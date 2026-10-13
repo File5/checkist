@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import type { ReactElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Income, IncomeMonth, IncomeSummary, IncomeTrends } from '../../api/incomes'
 import { buildRoute, parseRoute } from '../../navigation'
 import { ExpenseForm } from '../expense/ExpensePage'
@@ -9,7 +9,7 @@ import { draftFromIncome, emptyDraft, incomeBody, incomeChip, serverErrors } fro
 import { draftFromParse } from '../expense/parse-text'
 import { IncomeSummaryView } from './IncomeSummary'
 import { IncomesView } from './IncomesPage'
-import { incomeSeries, summaryParts } from './incomes-state'
+import { INCOME_MONTH_KEY, incomeSeries, rememberIncomeMonth, sessionIncomeMonth, summaryParts } from './incomes-state'
 
 const NBSP = String.fromCharCode(0xa0)
 const plain = (text: string) => text.replaceAll(NBSP, ' ')
@@ -117,5 +117,26 @@ describe('«Доход и отложено» of «Динамика»', () => {
   it('is one line of the screen', () => {
     const source = readFileSync(new URL('../stats/TrendsPage.tsx', import.meta.url), 'utf8')
     expect(source.match(/<IncomeTrend query=\{query\} \/>/g)).toHaveLength(1)
+  })
+})
+
+describe('the month of «Доходы» within a session (feature/stats-compact)', () => {
+  afterEach(() => vi.unstubAllGlobals())
+  it('opens the month opened last in this session; a new session — the current one', () => {
+    const values = new Map<string, string>()
+    vi.stubGlobal('window', { sessionStorage: { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value) } })
+    expect(sessionIncomeMonth()).toBeUndefined()
+    rememberIncomeMonth('2026-08')
+    expect(sessionIncomeMonth()).toBe('2026-08')
+    values.set(INCOME_MONTH_KEY, '2026-13')
+    expect(sessionIncomeMonth()).toBeUndefined()
+  })
+  it('opens the current month without storage', () => {
+    const fail = () => { throw new DOMException('blocked', 'SecurityError') }
+    vi.stubGlobal('window', { sessionStorage: { getItem: fail, setItem: fail } })
+    expect(() => rememberIncomeMonth('2026-08')).not.toThrow()
+    expect(sessionIncomeMonth()).toBeUndefined()
+    vi.unstubAllGlobals()
+    expect(sessionIncomeMonth()).toBeUndefined()
   })
 })

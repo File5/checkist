@@ -1,13 +1,15 @@
 import { useId, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import ChipScroller from '../../components/ChipScroller'
-import Sheet from '../../components/Sheet'
 import { useNarrow } from '../../lib/cards'
 import { Link, maxTrendsPeriodMonths, navigate } from '../../navigation'
 import type { TrendsQuery } from '../../navigation'
-import { checkPeriod, fieldValue, supportsMonthInput, monthsCount, parsePeriodPhrase, periodHref, periodText, presetChoices, resolvePeriod } from './trends-period'
+import {
+  checkPeriod, fieldValue, supportsMonthInput, monthsCount, parsePeriodPhrase, periodHref, periodLabel, periodText, presetChoices, resolvePeriod,
+} from './trends-period'
 import type { Period, PeriodDraft, PeriodErrors } from './trends-period'
 import { useChipInView } from './chip-in-view'
+import { PeriodSheet } from './stats-period'
 import { monthName } from './trends-state'
 
 
@@ -88,61 +90,54 @@ export interface TrendsPeriodPickerProps {
   current: string
   /** The first month with receipts; `undefined` while unknown, `null` without receipts. */
   first: string | null | undefined
-  /** For the tests: the width and the field kind without a browser. */
+  /** Where a period leads: «Динамика» by default (its category stays); «Доходы» of the statistics pass their own. */
+  hrefOf?: (period: Period) => string
+  /** For the tests: the width, the field kind and an open sheet without a browser. */
   narrow?: boolean
   native?: boolean
+  open?: boolean
 }
 
 /**
- * The period of «Динамика»: ready periods as chips in one sideways row, the current period in words, and «Свой период» —
- * inline from 541 px, in a sheet from the bottom on a phone.
+ * The period of «Динамика» (and of «Доходы» in the statistics): from 541 px ready periods as chips in one sideways row,
+ * the current period in words and «Свой период» inline; on a phone one button «Период: 12 месяцев ▾» that opens the
+ * ready periods, the current period in words and «Свой период» in a sheet from the bottom.
  */
-export default function TrendsPeriodPicker({ query, current, first, narrow: narrowProp, native: nativeProp }: TrendsPeriodPickerProps) {
+export default function TrendsPeriodPicker({ query, current, first, hrefOf: hrefProp, narrow: narrowProp, native: nativeProp, open }: TrendsPeriodPickerProps) {
   const measured = useNarrow()
   const narrow = narrowProp ?? measured
   const [native] = useState(() => nativeProp ?? supportsMonthInput())
-  const [open, setOpen] = useState(false)
-  const sheetId = useId()
   const period = resolvePeriod(query, current)
   const key = `${period.from}-${period.to}-${native}`
   const chipsRef = useChipInView<HTMLElement>(`${key}-${narrow}-${first ?? ''}`)
-  const apply = (next: Period) => {
-    setOpen(false)
-    navigate(periodHref(query, next))
+  const hrefOf = hrefProp ?? ((next: Period) => periodHref(query, next))
+  const choices = presetChoices(query, current, first, hrefOf)
+  const offTitle = first === null ? 'Чеков пока нет' : 'Узнаём, с какого месяца есть чеки…'
+  const clippedTitle = `Чеки есть и раньше; показаны последние ${monthsCount(maxTrendsPeriodMonths)}`
+  const form = (done?: () => void) => <PeriodForm key={key} period={period} current={current} native={native}
+    onApply={(next) => { done?.(); navigate(hrefOf(next)) }} />
+  if (narrow) {
+    return <section className="trends-period" aria-label="Период">
+      <PeriodSheet label={periodLabel(period, choices)} open={open} current={<PeriodText period={period} />}
+        choices={choices.map((choice) => ({ key: choice.key, label: choice.label, href: choice.href, active: choice.active,
+          title: choice.href === null ? offTitle : choice.clipped ? clippedTitle : undefined }))}>
+        {form}
+      </PeriodSheet>
+    </section>
   }
-  const form = <PeriodForm key={key} period={period} current={current} native={native} onApply={apply} />
-  const chips = (
-    <ChipScroller label="Готовые периоды" className="trends-period-chips">
-      {presetChoices(query, current, first).map((choice) => choice.href === null
-        ? <span key={choice.key} className="ck-chip trends-chip-off" aria-disabled="true"
-          title={first === null ? 'Чеков пока нет' : 'Узнаём, с какого месяца есть чеки…'}>{choice.label}</span>
-        : <Link key={choice.key} className="ck-chip" to={choice.href} aria-current={choice.active ? 'true' : undefined}
-          title={choice.clipped ? `Чеки есть и раньше; показаны последние ${monthsCount(maxTrendsPeriodMonths)}` : undefined}>{choice.label}</Link>)}
-    </ChipScroller>
-  )
   return (
     <section ref={chipsRef} className="trends-period" aria-label="Период">
-      {narrow ? (
-        <>
-          {/* On a phone «Свой период» stands at the start of the row of ready periods, like «Фильтры» on «Траты». */}
-          <div className="trends-period-bar">
-            <button type="button" className="trends-period-open" aria-haspopup="dialog" aria-expanded={open}
-              aria-controls={open ? sheetId : undefined} onClick={() => setOpen(true)}>Свой период</button>
-            {chips}
-          </div>
-          <PeriodText period={period} />
-          <Sheet open={open} onClose={() => setOpen(false)} title="Свой период" id={sheetId}>{form}</Sheet>
-        </>
-      ) : (
-        <>
-          {chips}
-          <PeriodText period={period} />
-          <div className="trends-period-custom">
-            <h3 className="trends-subheading">Свой период</h3>
-            {form}
-          </div>
-        </>
-      )}
+      <ChipScroller label="Готовые периоды" className="trends-period-chips">
+        {choices.map((choice) => choice.href === null
+          ? <span key={choice.key} className="ck-chip trends-chip-off" aria-disabled="true" title={offTitle}>{choice.label}</span>
+          : <Link key={choice.key} className="ck-chip" to={choice.href} aria-current={choice.active ? 'true' : undefined}
+            title={choice.clipped ? clippedTitle : undefined}>{choice.label}</Link>)}
+      </ChipScroller>
+      <PeriodText period={period} />
+      <div className="trends-period-custom">
+        <h3 className="trends-subheading">Свой период</h3>
+        {form()}
+      </div>
     </section>
   )
 }

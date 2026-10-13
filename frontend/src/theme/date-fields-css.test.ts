@@ -43,6 +43,8 @@ describe('fields of a date keep the width of their panel (text of the rules and 
       'features/recurring/RecurringPay.tsx: date',
       'features/stats/receipts-filters.tsx: date',
       'features/stats/spending-filters.tsx: date',
+      // «Свой период» of the period sheet of a phone (feature/stats-compact).
+      'features/stats/spending-filters.tsx: date',
     ])
     for (const item of found) expect(kinds).toContain(item.split(': ')[1])
   })

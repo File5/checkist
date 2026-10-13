@@ -123,6 +123,9 @@ export interface TrendsQuery {
   month?: string
 }
 
+/** `/stats/incomes`: the period of «Доходы» in the statistics, the same as the period of «Динамика». */
+export type StatsIncomesQuery = Pick<TrendsQuery, 'from' | 'to' | 'months'>
+
 /** Months from `from` to `to` inclusive (`ГГГГ-ММ`); zero or less when `to` is earlier. */
 export function trendsSpan(from: string, to: string): number {
   const index = (month: string) => Number(month.slice(0, 4)) * 12 + Number(month.slice(5, 7))
@@ -150,6 +153,8 @@ export type NavigableRoute = CatalogRoute
   | { kind: 'receipts-stats'; query: ReceiptsStatsQuery }
   /** «Динамика»: spending by month, one category over time, the family price index. */
   | { kind: 'trends'; query: TrendsQuery }
+  /** «Доходы» of the statistics: the family's income, spent and saved of a period, income by category. */
+  | { kind: 'stats-incomes'; query: StatsIncomesQuery }
   | { kind: 'health' }
   | { kind: 'receipts'; query: ReceiptsQuery }
   | { kind: 'upload' }
@@ -408,6 +413,12 @@ export function parseTrendsQuery(search: string | URLSearchParams): ParsedQuery<
   }
 }
 
+/** The period of «Динамика» without its category and opened month. */
+export function parseStatsIncomesQuery(search: string | URLSearchParams): ParsedQuery<StatsIncomesQuery> {
+  const { query: { from, to, months }, invalidFields } = parseTrendsQuery(search)
+  return { query: { ...(from && to && { from, to }), ...(months && { months }) }, invalidFields }
+}
+
 /** A Django username: letters, digits and @.+-_, at most 150 characters. A wrong one is refused like any wrong filter. */
 const ownerPattern = /^[\p{L}\p{N}_@.+-]{1,150}$/u
 
@@ -516,6 +527,10 @@ export function trendsHref(query: TrendsQuery = {}): string {
   return `/stats/trends${buildTrendsQuery(query)}`
 }
 
+export function statsIncomesHref(query: StatsIncomesQuery = {}): string {
+  return `/stats/incomes${buildQuery(query, ['from', 'to', 'months'], parseStatsIncomesQuery, false)}`
+}
+
 export function buildReceiptsQuery(query: ReceiptsQuery): string {
   return buildQuery(query, ['store', 'product', 'country', 'currency', 'operation', 'date_from', 'date_to', 'q', 'owner', 'hidden', 'page', 'page_size', 'ordering'], parseReceiptsQuery)
 }
@@ -560,6 +575,7 @@ export function buildRoute(route: NavigableRoute): string {
     case 'spending': return spendingHref(route.query)
     case 'receipts-stats': return receiptsStatsHref(route.query)
     case 'trends': return trendsHref(route.query)
+    case 'stats-incomes': return statsIncomesHref(route.query)
     case 'health': return '/health'
     case 'receipts': return `/receipts${buildReceiptsQuery(route.query)}`
     case 'upload': return '/receipts/upload'
@@ -683,6 +699,7 @@ export function parseRoute(input: string | URL): Route {
   if (normalizedPath === '/stats') return { kind: 'spending', query: parseSpendingQuery(url.searchParams).query }
   if (normalizedPath === '/stats/receipts') return { kind: 'receipts-stats', query: parseReceiptsStatsQuery(url.searchParams).query }
   if (normalizedPath === '/stats/trends') return { kind: 'trends', query: parseTrendsQuery(url.searchParams).query }
+  if (normalizedPath === '/stats/incomes') return { kind: 'stats-incomes', query: parseStatsIncomesQuery(url.searchParams).query }
   if (normalizedPath === '/receipts' || normalizedPath === '/recognition/jobs') {
     const receipts = normalizedPath === '/receipts'
     const parsed = receipts ? parseReceiptsQuery(url.searchParams) : parseJobsQuery(url.searchParams)

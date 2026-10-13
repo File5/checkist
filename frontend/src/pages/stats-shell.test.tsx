@@ -19,6 +19,7 @@ vi.mock('../features/stats', () => ({
   SpendingPage: ({ query }: { query: unknown }) => <pre data-screen="spending">{JSON.stringify(query)}</pre>,
   ReceiptsStatsPage: ({ query }: { query: unknown }) => <pre data-screen="receipts-stats">{JSON.stringify(query)}</pre>,
   TrendsPage: ({ query }: { query: unknown }) => <pre data-screen="trends">{JSON.stringify(query)}</pre>,
+  IncomesStatsPage: ({ query }: { query: unknown }) => <pre data-screen="stats-incomes">{JSON.stringify(query)}</pre>,
 }))
 
 /** The pictures of the main menu (the bottom bar of a phone) are left out: the words name the links. */
@@ -33,13 +34,15 @@ describe('statistics section in the shell (SSR only, no browser interaction)', (
   it.each<[NavigableRoute, string, string, string]>([
     [{ kind: 'spending', query: {} }, 'Траты за период', 'Траты', '/stats'],
     [{ kind: 'receipts-stats', query: {} }, 'Средний чек', 'Средний чек', '/stats/receipts'],
-    [{ kind: 'trends', query: { months: 24 } }, 'Динамика', 'Динамика', '/stats/trends'],
+    [{ kind: 'trends', query: { months: 24 } }, 'Динамика', 'Динамика', '/stats/trends?months=24'],
+    [{ kind: 'stats-incomes', query: { from: '2026-01', to: '2026-10' } }, 'Доходы', 'Доходы', '/stats/incomes?from=2026-01&amp;to=2026-10'],
   ])('mounts %j with the shell title, the active menu item and the active subsection', (route, title, section, href) => {
     const html = render(route)
     expect(html.match(/<h1\b/g)).toHaveLength(1)
     expect(html).toContain(`${title}</h1>`)
+    // The menu item and the tab lead to the address shown: it is what the device remembers (stats-memory.ts).
     expect(activeLinks(html)).toEqual([
-      '<a aria-current="page" href="/stats">Статистика',
+      `<a aria-current="page" href="${href}">Статистика`,
       `<a aria-current="page" href="${href}">${section}`,
     ])
     expect(html).toContain('aria-label="Раздел статистики"')
@@ -51,6 +54,7 @@ describe('statistics section in the shell (SSR only, no browser interaction)', (
     expect(html).toContain('<a href="/stats/receipts">Средний чек</a>')
     expect(render({ kind: 'receipts-stats', query: {} })).toContain('<a href="/stats">Траты</a>')
     expect(html).toContain('<a href="/stats/trends">Динамика</a>')
+    expect(html).toContain('<a href="/stats/incomes">Доходы</a>')
     expect(render({ kind: 'trends', query: {} })).toContain('<a href="/stats/receipts">Средний чек</a>')
   })
   it('shows the menu item everywhere and the subsection only inside statistics', () => {

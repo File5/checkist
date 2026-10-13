@@ -70,11 +70,13 @@ h2 { font-size: 1.35rem; letter-spacing: 0; }
 .main-add-title { font-size: var(--ck-text-base); font-weight: 800; }
 .main-add-note { color: var(--ck-text-muted); font-size: var(--ck-text-xs); font-weight: 500; }
 .main-add-chevron { flex: none; color: var(--ck-text-muted); }
-/* The sections of a part (Траты · Средний чек · Динамика): a row of chips under the header row, the current one in the
-   colours of a selected chip. The row scrolls sideways when it is wider than the window. */
-.section-navigation { flex-wrap: nowrap; gap: 8px; margin-bottom: 16px; overflow-x: auto; scrollbar-width: none; }
-.section-navigation a { flex: none; min-height: 40px; padding: 8px 16px; border: 1px solid var(--ck-border-field); background: var(--ck-surface); color: var(--ck-text); font-weight: 600; text-decoration: none; white-space: nowrap; }
-.section-navigation a[aria-current] { border-color: var(--ck-chip-selected-bg); background: var(--ck-chip-selected-bg); color: var(--ck-chip-selected-text); font-weight: 800; }
+/* The sections of a part (Траты · Средний чек · Динамика · Доходы): one low switch under the header row (feature/
+   stats-compact), the current section in the colours of a selected chip. On a phone it spans the width and every section
+   is as wide as its word needs; a part wider than the window still scrolls sideways inside it. */
+.section-navigation { flex-wrap: nowrap; gap: 2px; width: fit-content; max-width: 100%; margin-bottom: 12px; padding: 2px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius-pill); background: var(--ck-surface); overflow-x: auto; scrollbar-width: none; }
+.section-navigation a { flex: 1 1 auto; justify-content: center; min-height: 32px; padding: 0 16px; color: var(--ck-text); font-size: var(--ck-text-sm); font-weight: 700; text-decoration: none; white-space: nowrap; }
+.section-navigation a:where(:hover) { background: var(--ck-surface-raised); }
+.section-navigation a[aria-current] { background: var(--ck-chip-selected-bg); color: var(--ck-chip-selected-text); font-weight: 800; }
 .section-navigation a[aria-current]::before { content: none; }
 .account-link { max-width: 100%; font-weight: 600; overflow-wrap: anywhere; }
 /* The account link lies on the header bar: its text is the header text; hover, the current
@@ -208,6 +210,7 @@ footer { border-top: 1px solid var(--ck-divider); color: var(--ck-text-muted); p
   .ck-theme-toggle-header .ck-theme-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .main-navigation { width: 100%; }
   .main-navigation a { padding-inline: 8px; }
+  .section-navigation a { padding: 0 6px; font-size: var(--ck-text-xs); }
   /* One row scrolled sideways; the padding leaves room for the focus ring inside the scroller. */
   .brand-bar .main-navigation { flex-wrap: nowrap; margin: 0 -20px; padding: 7px 20px; overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--ck-header-text-muted) var(--ck-header-bg); }
   .brand-bar .main-navigation a { flex: none; white-space: nowrap; }

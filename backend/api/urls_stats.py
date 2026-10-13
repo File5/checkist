@@ -1,6 +1,6 @@
 from django.urls import re_path
 
-from .views.incomes import TrendsIncomesView
+from .views.incomes import StatsIncomesView, TrendsIncomesView
 from .views.recognition import LocalNotFoundView
 from .views.stats_category import CategorySpendsView
 from .views.stats_receipts import ReceiptCompareView, ReceiptSeriesView
@@ -18,5 +18,6 @@ urlpatterns = [
     re_path(r"^stats/trends/limits/$", TrendsLimitsView.as_view(), name="stats-trends-limits"),
     re_path(r"^stats/trends/range/$", TrendsRangeView.as_view(), name="stats-trends-range"),
     re_path(r"^stats/trends/incomes/$", TrendsIncomesView.as_view(), name="stats-trends-incomes"),
+    re_path(r"^stats/incomes/$", StatsIncomesView.as_view(), name="stats-incomes"),
     re_path(r"^stats/(?:.*/)?$", LocalNotFoundView.as_view(), name="stats-not-found"),
 ]

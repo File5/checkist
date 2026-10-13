@@ -2,7 +2,7 @@ import { invalidIds } from './http.ts'
 import { getLocalJson, mutate } from './local.ts'
 import { isMonthCode } from './budget-schema.ts'
 import { omitEmpty } from './stats.ts'
-import { amount, array, bool, currency, isId, isISODate, nonNegativeInteger, nullable, object, text } from './schema.ts'
+import { amount, array, bool, choice, currency, isId, isISODate, nonNegativeInteger, nullable, object, text } from './schema.ts'
 import type { Guard } from './schema.ts'
 import type { TrendsParams } from './trends-types.ts'
 import type { CurrencyCode, Decimal, ISODate, LocalApiResult, RequestOptions } from './types.ts'
@@ -33,6 +33,15 @@ export type IncomeTrends = {
   items: (IncomeFigures & { month: string })[]
 }
 
+/** «Статистика → Доходы» of a window: the family's figures, and income by category of the records the person may see —
+ * `family`: every record of the family (the head, a person without a family); `own`: one's own records (a member). */
+export type IncomeStats = IncomeFigures & {
+  months: number; month_from: string; month_to: string; base_currency: CurrencyCode
+  categories_scope: 'family' | 'own'
+  categories: { id: number; name: string; total: Decimal }[]
+  excluded: { currency: CurrencyCode; total: Decimal }[]
+}
+
 const named = object<{ id: number; name: string }>({ id: isId, name: text })
 export const isIncome = object<Income>({
   id: isId, received_on: isISODate, amount, currency, category: named, note: text, owner: text, owner_name: text,
@@ -47,6 +56,11 @@ const isSummary = object<IncomeSummary>({ month: isMonthCode, base_currency: cur
 const isTrends = object<IncomeTrends>({
   months: nonNegativeInteger, month_from: isMonthCode, month_to: isMonthCode, base_currency: currency, excluded,
   items: array(object<IncomeTrends['items'][number]>({ month: isMonthCode, ...figures })),
+})
+const isStats = object<IncomeStats>({
+  months: nonNegativeInteger, month_from: isMonthCode, month_to: isMonthCode, base_currency: currency, excluded, ...figures,
+  categories_scope: choice('family', 'own'),
+  categories: array(object<IncomeStats['categories'][number]>({ id: isId, name: text, total: amount })),
 })
 const isEmpty = (value: unknown): value is null => value === null
 const isCategories = object<{ results: IncomeCategory[] }>({ results: array(isCategory) })
@@ -87,6 +101,12 @@ export function getIncomeSummary(month?: string, options: RequestOptions = {}): 
 export async function getIncomeTrends(params: TrendsParams = {}, options: RequestOptions = {}): Promise<LocalApiResult<IncomeTrends>> {
   const { months, month, from, to } = params
   return invalidIds({ months }, options.signal) ?? getLocalJson('stats/trends/incomes/', omitEmpty({ months, month, from, to }), isTrends, options)
+}
+
+/** «Статистика → Доходы»: the figures of the window and income by category (the window as of «Динамика»). */
+export async function getIncomeStats(params: TrendsParams = {}, options: RequestOptions = {}): Promise<LocalApiResult<IncomeStats>> {
+  const { months, from, to } = params
+  return invalidIds({ months }, options.signal) ?? getLocalJson('stats/incomes/', omitEmpty({ months, from, to }), isStats, options)
 }
 
 /** Another screen added an income: «Главная» reads its line again. */

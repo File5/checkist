@@ -2,6 +2,7 @@ import type { Route } from '../navigation'
 import type { Session } from '../session'
 import { personName } from '../lib/people'
 import type { IconName } from '../components/Icon'
+import { statsMenuHref } from '../features/stats/stats-memory'
 
 export type MenuItem = {
   key: string
@@ -33,7 +34,7 @@ export const ADD_AFTER = 2
 const homeKinds: Route['kind'][] = ['dashboard', 'limits', 'category-spends']
 const catalogKinds: Route['kind'][] = ['catalog', 'category', 'product', 'merges', 'merge', 'classification']
 const receiptKinds: Route['kind'][] = ['receipts', 'upload', 'expense-new', 'expense-edit', 'receipt', 'statement-new', 'statement']
-const statsKinds: Route['kind'][] = ['spending', 'receipts-stats', 'trends']
+const statsKinds: Route['kind'][] = ['spending', 'receipts-stats', 'trends', 'stats-incomes']
 const jobKinds: Route['kind'][] = ['jobs', 'job']
 
 /** Every item of the main menu, in the order of the header. */
@@ -46,7 +47,8 @@ function allItems(session: Session, route: Route): MenuItem[] {
   const items: MenuItem[] = [
     { key: 'home', to: '/', label: 'Главная', current: homeKinds.includes(route.kind), icon: 'home' },
     { key: 'receipts', to: '/receipts', label: 'Траты', current: receiptKinds.includes(route.kind), icon: 'list' },
-    { key: 'stats', to: '/stats', label: 'Статистика', current: statsKinds.includes(route.kind), icon: 'stats' },
+    // The tab and the filters the person left the statistics with, remembered on this device.
+    { key: 'stats', to: statsMenuHref(route), label: 'Статистика', current: statsKinds.includes(route.kind), icon: 'stats' },
     { key: 'recurring', to: '/recurring', label: 'Платежи', current: route.kind === 'recurring', icon: 'repeat' },
     { key: 'review', to: '/review', label: 'Разбор месяца', current: route.kind === 'review' || route.kind === 'ask', icon: 'insight' },
     { key: 'incomes', to: '/incomes', label: 'Доходы', current: route.kind === 'incomes' || route.kind === 'income-edit', icon: 'income' },

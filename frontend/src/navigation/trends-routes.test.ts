@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildRoute, parseRoute, parseTrendsQuery, trendsHref } from './routes'
+import { buildRoute, parseRoute, parseTrendsQuery, statsIncomesHref, trendsHref } from './routes'
 
 describe('trends route /stats/trends', () => {
   it('opens without parameters, with a trailing slash and with empty values', () => {
@@ -37,5 +37,20 @@ describe('trends route /stats/trends', () => {
     expect(buildRoute({ kind: 'trends', query: { month: '2026-08', category: 12, months: 24 } })).toBe(href)
     expect(parseRoute(href)).toEqual({ kind: 'trends', query: { months: 24, category: 12, month: '2026-08' } })
     expect(trendsHref()).toBe('/stats/trends')
+  })
+})
+
+describe('«Доходы» of the statistics /stats/incomes (feature/stats-compact)', () => {
+  it('reads the period of «Динамика» and drops what belongs to its blocks', () => {
+    expect(parseRoute('/stats/incomes')).toEqual({ kind: 'stats-incomes', query: {} })
+    expect(parseRoute('/stats/incomes?from=2026-01&to=2026-10&category=3&month=2026-05'))
+      .toEqual({ kind: 'stats-incomes', query: { from: '2026-01', to: '2026-10' } })
+    expect(parseRoute('/stats/incomes?months=24')).toEqual({ kind: 'stats-incomes', query: { months: 24 } })
+    expect(parseRoute('/stats/incomes?from=2026-10&to=2026-01')).toEqual({ kind: 'stats-incomes', query: {} })
+  })
+  it('builds the canonical address', () => {
+    expect(buildRoute({ kind: 'stats-incomes', query: { from: '2026-01', to: '2026-10' } })).toBe('/stats/incomes?from=2026-01&to=2026-10')
+    expect(statsIncomesHref({ months: 6 })).toBe('/stats/incomes?months=6')
+    expect(statsIncomesHref()).toBe('/stats/incomes')
   })
 })

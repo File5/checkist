@@ -108,7 +108,10 @@ describe('state rules of the shell (text of the rules, not rendering)', () => {
       '.skip-link:focus = 2', '.skip-link:focus-visible = 2', '.brand-bar :focus-visible = 2',
       '.brand-bar .main-navigation a:hover = 3',
       // The rows of the «＋» sheet and the round control of the header row (artifact design): as weak as their class.
-      '.main-add-action:where(:hover) .main-add-title = 2', '.ck-round:where(:hover) = 1',
+      '.main-add-action:where(:hover) .main-add-title = 2',
+      // A section of the low switch of a part (Статистика, каталог; feature/stats-compact): as weak as its link.
+      '.section-navigation a:where(:hover) = 1',
+      '.ck-round:where(:hover) = 1',
       'button:where(:hover:not(:disabled)) = 0', 'button:where(:active:not(:disabled)) = 0', 'button:disabled = 1',
       '.action-link:where(:hover) = 1',
       // The secondary and the quiet danger looks of a button (mobile design 2026-10-12): as weak as their class.

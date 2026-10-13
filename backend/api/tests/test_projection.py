@@ -539,7 +539,7 @@ class NoForeignReceiptIdTests(ProjectionMixin, TestCase):
             "/api/dashboard/?month=2026-06", "/api/export/",
             "/api/export/?include=receipts,lines,media,stores,summary", "/api/recurring/",
             "/api/statements/", "/api/statements/rules/",
-            "/api/incomes/", "/api/incomes/summary/", "/api/incomes/categories/", "/api/stats/trends/incomes/",
+            "/api/incomes/", "/api/incomes/summary/", "/api/incomes/categories/", "/api/stats/trends/incomes/", "/api/stats/incomes/",
             "/api/goals/", "/api/push/", "/api/insights/review/", "/api/insights/ask/",
         ]
         paths += [f"/api/categories/{pk}/" for pk in Category.objects.values_list("pk", flat=True)]

@@ -1,4 +1,5 @@
-"""Доходы (``/api/incomes/``), строка Главной и «Динамика» дохода (``/api/stats/trends/incomes/``).
+"""Доходы (``/api/incomes/``), строка Главной, «Динамика» дохода (``/api/stats/trends/incomes/``)
+и вкладка «Доходы» статистики (``/api/stats/incomes/``).
 
 Доступ — как у трат без чека: ``accounts`` — вход, ``local_single`` — DEBUG + флаг + loopback;
 запись — с CSRF. Записи видят автор и главный в семье (``incomes.access.visible_q``), чужая —
@@ -12,7 +13,7 @@ from accounts.people import display_name
 from budget.dashboard import Month
 from config.exceptions import InvalidParameter
 from incomes import services
-from incomes.access import categories_q, visible_q
+from incomes.access import categories_q, sees_family, visible_q
 from incomes.models import Income, IncomeCategory
 from receipts.manual import ManualInvalid
 
@@ -146,6 +147,34 @@ class IncomeSummaryView(LocalAPIView):
         found = services.totals(request, month.first, month.last)
         return Response({"month": month.label(), "base_currency": found.base, **month_figures(found, month),
                          "excluded": excluded(found)})
+
+
+class StatsIncomesView(LocalAPIView):
+    """«Статистика → Доходы»: доход семьи, потрачено и отложено за окно и доход по категориям.
+
+    Окно — как у ``trends/monthly/`` (``from``/``to`` либо ``months``/``month``). Итог — доход всей семьи (общий доход
+    видят все её члены), разбивка — только записи, видимые запросу (``visible_q``): ``categories_scope`` ``family`` —
+    все записи семьи (главный, человек без семьи), ``own`` — только свои (член семьи). Число запросов от объёма не зависит.
+    """
+
+    def get(self, request):
+        params = Params(request.query_params)
+        months = [Month.of(first) for first in _window(params) or []]
+        params.check()
+        first, last = months[0].first, months[-1].last
+        found = services.totals(request, first, last)
+        income = sum(found.income.values(), services.ZERO) if found.income else None
+        spent = sum(found.spent.values(), services.ZERO)
+        saved, percent = services.saved(income, spent)
+        return Response({
+            **_head([month.first for month in months]), "base_currency": found.base,
+            "income": common.amount(income), "spent": common.amount(spent), "saved": common.amount(saved),
+            "saved_percent": common.percent(percent),
+            "categories_scope": "family" if sees_family(request) else "own",
+            "categories": [{"id": pk, "name": name, "total": common.amount(total)}
+                           for pk, name, total in services.by_category(request, first, last, found.base)],
+            "excluded": excluded(found),
+        })
 
 
 class TrendsIncomesView(LocalAPIView):

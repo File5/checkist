@@ -89,15 +89,24 @@ export interface PresetChoice {
   /** «Всё время» longer than the server allows: the chip shows the last 60 months. */
   clipped: boolean
 }
-export function presetChoices(query: TrendsQuery, current: string, first?: string | null): PresetChoice[] {
+/** `hrefOf` — where a period leads: «Динамика» keeps its category, «Доходы» of the statistics pass their own. */
+export function presetChoices(query: TrendsQuery, current: string, first?: string | null,
+  hrefOf: (period: Period) => string = (period) => periodHref(query, period)): PresetChoice[] {
   const shown = resolvePeriod(query, current)
   return presetKeys.map((key) => {
     const period = presetPeriod(key, current, first)
     return {
-      key, label: presetLabels[key], href: period && periodHref(query, period), active: period !== null && samePeriod(period, shown),
+      key, label: presetLabels[key], href: period && hrefOf(period), active: period !== null && samePeriod(period, shown),
       clipped: key === 'all' && period !== null && !!first && first < period.from,
     }
   })
+}
+
+/** The words of «Период: …» on a phone: the chosen ready period, otherwise its months, «ноя 2025 — окт 2026». */
+export function periodLabel(period: Period, choices: readonly PresetChoice[]): string {
+  const chosen = choices.find((choice) => choice.active)
+  if (chosen) return chosen.label
+  return period.from === period.to ? monthName(period.from, true) : `${monthName(period.from, true)} — ${monthName(period.to, true)}`
 }
 
 // --- the fields «С» and «По» ---

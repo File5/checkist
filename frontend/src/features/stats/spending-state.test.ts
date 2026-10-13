@@ -299,15 +299,12 @@ describe('result block', () => {
   })
 })
 
-describe('the number on «Фильтры» of a phone', () => {
-  const today = '2026-10-07'
-  it('counts own dates, the country, the currency and the stores; a ready period is a chip, not a filter', () => {
-    expect(filterCount({}, today)).toBe(0)
-    expect(filterCount({ date_from: '2026-10-01', date_to: '2026-10-31' }, today)).toBe(0)
-    expect(filterCount({ date_from: '2026-10-02', date_to: '2026-10-31' }, today)).toBe(1)
-    expect(filterCount({ date_from: '2026-01-01' }, today)).toBe(1)
-    expect(filterCount({ country: 'KZ', currency: 'KZT', store: [1, 2] }, today)).toBe(3)
+describe('the number beside the filters of a phone', () => {
+  it('counts the country, the currency and the stores; the period has its own button', () => {
+    expect(filterCount({})).toBe(0)
+    expect(filterCount({ date_from: '2026-10-02', date_to: '2026-10-31' })).toBe(0)
+    expect(filterCount({ country: 'KZ', currency: 'KZT', store: [1, 2] })).toBe(3)
     // The drill-down and the breakdown are not filters of the form.
-    expect(filterCount({ category: 3, group_by: 'store', other: 'open' }, today)).toBe(0)
+    expect(filterCount({ category: 3, group_by: 'store', other: 'open' })).toBe(0)
   })
 })

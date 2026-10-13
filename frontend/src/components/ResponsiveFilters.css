@@ -16,3 +16,6 @@
 .ck-filters-sheet [aria-invalid="true"] { border-color: var(--ck-error-border); }
 /* A pinned bar of a form inside the sheet stops at the bottom of the sheet: the bottom menu is under the backdrop. */
 .ck-filters-sheet .ck-action-bar { bottom: 0; }
+/* The compact bar of a statistics tab (`compact`): what is chosen on the left, a low pill on the right with the
+   picture of the filters and their number; the words «Фильтры (N)» are its name for a screen reader. */
+.ck-filters-icon { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; margin-left: auto; padding: 0 12px; border-radius: var(--ck-radius-pill); font-variant-numeric: tabular-nums; }

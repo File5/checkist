@@ -26,7 +26,7 @@ from receipts.decimal_math import price_context
 from receipts.models import Receipt
 from stores.models import Currency
 
-from .access import categories_q
+from .access import categories_q, visible_q
 from .models import Income, IncomeCategory
 
 FIELDS = ("amount", "currency", "category", "received_on", "note")
@@ -148,6 +148,24 @@ def totals(request, first, last):
     for currency, day, _ in incomes:
         result.income.setdefault(Month.of(day), ZERO)
     return result
+
+
+def by_category(request, first, last, base):
+    """Видимые запросу доходы (``visible_q``) с ``first`` по ``last`` по категориям в валюте ``base``; два запроса.
+
+    ``[(id, название, сумма)]`` от большей суммы; суммы без курса не входят (они уже в ``excluded`` итогов).
+    """
+    rows = list(Income.objects.filter(visible_q(request), received_on__gte=first, received_on__lte=last)
+                .values("category_id", "category__name", "currency_id", "received_on").annotate(total=Sum("amount"))
+                .order_by().values_list("category_id", "category__name", "currency_id", "received_on", "total"))
+    converter = convert.converter(base, {(currency, day) for _, _, currency, day, _ in rows})
+    found = {}
+    with price_context():
+        for pk, name, currency, day, total in rows:
+            value = converter.convert(total, currency, day)
+            if value is not None:
+                found[(pk, name)] = found.get((pk, name), ZERO) + value
+    return sorted(((pk, name, total) for (pk, name), total in found.items()), key=lambda row: (-row[2], row[1], row[0]))
 
 
 def saved(income, spent):
