@@ -21,7 +21,6 @@ from receipts.decimal_math import price_context
 from receipts.dedup import build_fiscal_key, find_duplicates, name_key
 from receipts import service_charges
 from receipts.models import Receipt, ReceiptDiscount, ReceiptLine, ReceiptTax
-from receipts.prices import owner_scopes
 from receipts.validation import validate_receipt
 from stores.models import Store
 
@@ -274,8 +273,7 @@ def _create_graph(header, observation, country, derived, confirmed=None):
     # Parents may occur after their child in the printed order. Create all rows
     # first, then connect only the already validated references.
     for i, observed in enumerate(observation.lines):
-        resolution = _resolve_product(observed, header["store"].merchant, field=f"/lines/{i}/product_hint",
-                                      owner_id=header["owner_id"])
+        resolution = _resolve_product(observed, header["store"].merchant, field=f"/lines/{i}/product_hint")
         product = resolution.product
         issues.extend(resolution.issues)
         rate = tax_rate(observed.tax_rate, f"/lines/{i}/tax_rate")
@@ -330,44 +328,45 @@ def _same_line(saved, observed):
 
 
 class _PrivateProduct(Exception):
-    """The resolution picked a private product of another family (``Product.scope``)."""
+    """The resolution picked a private product (``Product.scope``) or was ambiguous with one around."""
 
 
-def _resolve_product(observed, merchant, *, field, owner_id):
+def _resolve_product(observed, merchant, *, field):
     from .resolution import ProductResolution
 
-    scopes = owner_scopes(owner_id)
     try:
         with transaction.atomic():
             resolution = resolve_product(observed, merchant, field=field)
-            # A private product made from a manual spend of another family (Product.scope) is never joined: its
-            # name is that person's own text. Roll back what the resolution wrote and look among shared ones.
-            if resolution.product is not None and resolution.product.scope not in scopes \
-                    or _private_namesake(observed, scopes, resolution.issues):
+            # A printed line joins shared products only: a private product (made from a manual spend, Product.scope) —
+            # even the importer's own family's — never gets a photo line or a shared alias of a shop. Roll back what
+            # the resolution wrote (alias, brand, product) and look among shared ones.
+            if resolution.product is not None and resolution.product.scope or _private_namesake(observed, resolution.issues):
                 raise _PrivateProduct()
             return resolution
     except _PrivateProduct:
-        return _shared_product(observed, merchant, field, scopes)
+        return _shared_product(observed, merchant, field)
     except ValidationError:
         # A bad optional catalogue hint must not discard the readable line or
         # leave an unused partial catalogue graph behind.
         return ProductResolution(None, [issue("product_package_invalid", field)])
 
 
-def _private_namesake(observed, scopes, issues):
-    """The resolution was ambiguous and a private product of another family bears the same name: maybe the cause."""
+def _private_namesake(observed, issues):
+    """The resolution was ambiguous and a private product bears the same name: maybe the cause."""
     from catalog.models import Product
 
     if not any(item["code"] == "product_ambiguous" for item in issues):
         return False
     key = name_key(observed.product_hint.name or observed.raw_name)
-    return any(name_key(name) == key for name in Product.objects.exclude(scope__in=scopes).values_list("name", flat=True))
+    return any(name_key(name) == key for name in Product.objects.exclude(scope="").values_list("name", flat=True))
 
 
-def _shared_product(observed, merchant, field, scopes):
-    """``resolve_product``'s name lookup among products of the owner's scopes only, else a new shared product.
+def _shared_product(observed, merchant, field):
+    """``resolve_product``'s name lookup among shared products only (``scope=""``), else a new shared product.
 
-    Reached when the resolution picked another family's private product or was ambiguous with one around.
+    Reached when the resolution picked a private product or was ambiguous with one around. A shared namesake of a
+    private product breaks nothing: the scope is a part of the unique name, and a manual spend prefers its own private
+    namesake (``receipts.manual.find_or_create_products``).
     """
     from catalog.models import Brand, Category, GenericProduct, Product
     from catalog.units import BaseUnit
@@ -380,7 +379,7 @@ def _shared_product(observed, merchant, field, scopes):
         return ProductResolution(None, [issue("product_conflict", field)])
     gtin = next(iter(gtins), None)
     name = hint.name or observed.raw_name
-    candidates = Product.objects.select_related("brand").filter(scope__in=scopes)
+    candidates = Product.objects.select_related("brand").filter(scope="")
     if hint.package_quantity is not None:
         candidates = candidates.filter(package_quantity=hint.package_quantity, package_unit=hint.package_unit)
     if hint.brand:
@@ -465,8 +464,7 @@ def _update_graph(receipt, header, observation):
             issues.append(issue("receipt_line_conflict", field))
             continue
         if line.kind == "product" and line.product_id is None:
-            resolution = _resolve_product(observed, receipt.store.merchant, field=field + "/product_hint",
-                                          owner_id=receipt.owner_id)
+            resolution = _resolve_product(observed, receipt.store.merchant, field=field + "/product_hint")
             issues.extend(resolution.issues)
             if resolution.product:
                 line.product = resolution.product

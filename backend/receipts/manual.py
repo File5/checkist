@@ -21,6 +21,7 @@ import re
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from decimal import Decimal
+from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 from django.db import IntegrityError, connection, transaction
@@ -270,15 +271,15 @@ def find_or_create_products(names, owner, store=None):
     поглощённый ожидающим слиянием товар и название товара, поглощённого подтверждённым слиянием
     (``merges``), отвечают оставляемым.
 
-    Название — личный текст человека: ищутся только общие товары и товары своей области (``Product.scope``,
-    ``receipts.prices.owner_scopes``) — чужой личный товар-тёзка не находится; новый товар — в области владельца
-    (``product_scope``: семья либо он сам). Написание у места не запоминается.
+    Название — личный текст человека: ищутся только товары, которые владелец видит (``receipts.prices.seen_product_q``:
+    общие и свои личные с видимой ему строкой), свой личный тёзка важнее общего; чужой личный товар не находится; новый
+    товар — в области владельца (``product_scope``: семья либо он сам). Написание у места не запоминается.
 
     Вызывается в транзакции записи: берёт мьютекс импорта (``recognition.importer.IMPORT_LOCK``), чтобы
     не пересекаться с импортом и слияниями дублей.
     """
     from merges.models import ProductMerge, ProductMergeMember
-    from receipts.prices import owner_scopes
+    from receipts.prices import seen_product_q
     from recognition.importer import IMPORT_LOCK  # lazy: the importer imports receipts
 
     spelled = {}
@@ -320,11 +321,13 @@ def find_or_create_products(names, owner, store=None):
         return pk
 
     ids = {key: {survivor(pk) for pk in pks} for key, pks in found.items()}
-    existing = (Product.objects.filter(scope__in=owner_scopes(owner.pk))
+    existing = (Product.objects.filter(seen_product_q(SimpleNamespace(user=owner)))
                 .in_bulk({pk for pks in ids.values() for pk in pks}))
     result = {}
     for key, name in spelled.items():
         products = [existing[pk] for pk in ids[key] if pk in existing]
+        # Свой личный тёзка важнее общего: общий товар с тем же названием (чек с фото) не ломает свою покупку.
+        products = [product for product in products if product.scope] or products
         result[key] = None if len(products) > 1 else products[0] if products else _new_product(name, owner)
     return result
 

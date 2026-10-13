@@ -356,7 +356,37 @@ class PrivatePurchaseTests(TwoUsers, NamedMixin, TestCase):
         self.assertFalse(ReceiptLine.objects.filter(product=self.private).exists())
         self.assertEqual(self.get(self.second, f"/api/products/{self.private.pk}/").status_code, 404)
         self.assertEqual(self.get(self.second, "/api/products/?q=Психотерапевт").json()["results"], [])
-        self.assertEqual(self.get(self.first, f"/api/products/{self.private.pk}/").status_code, 200)
+        # Fail-closed: без видимой строки личный товар не виден и автору; новая трата с тем же названием вернёт его.
+        self.assertEqual(self.get(self.first, f"/api/products/{self.private.pk}/").status_code, 404)
+        again = self.line(self.save(self.client_of(self.first), item_name="Психотерапевт", currency="KZT"))
+        self.assertEqual(again.product_id, self.private.pk)
+
+    def test_a_hidden_payment_and_visible_from_hide_the_name_from_a_member(self):
+        family = Household.objects.create(name="Демо-семья")
+        Membership.objects.create(user=self.first, household=family, role="head")
+        membership = Membership.objects.create(user=self.second, household=family)
+        hidden = self.line(self.save(self.client_of(self.first), item_name="Подарок Лене", currency="KZT"))
+        early = self.line(self.save(self.client_of(self.first), item_name="Врач в июле", currency="KZT",
+                                    purchased_on="2026-07-01"))
+        Receipt.objects.filter(pk=hidden.receipt_id).update(hidden=True)
+        membership.visible_from = date(2026, 9, 1)
+        membership.save()
+        for product in (hidden.product, early.product):
+            with self.subTest(product=product.name):
+                self.assertEqual(self.get(self.first, f"/api/products/{product.pk}/").status_code, 200)  # главный
+                self.assertEqual(self.get(self.second, f"/api/products/{product.pk}/").status_code, 404)
+                self.assertEqual(self.get(self.second, f"/api/products/?q={product.name}").json()["results"], [])
+        # Член семьи с тем же названием в другом регистре получает свой товар: чужое написание не открывается.
+        mine = self.line(self.save(self.client_of(self.second), item_name="подарок лене", currency="KZT")).product
+        self.assertEqual(mine.name, "подарок лене")
+        self.assertNotEqual(mine.pk, hidden.product_id)
+
+    def test_own_private_namesake_wins_over_a_shared_one(self):
+        shared = make_product(self.private.generic, "ПСИХОТЕРАПЕВТ")  # общий тёзка из чека с фото
+        again = self.line(self.save(self.client_of(self.first), item_name="психотерапевт", currency="KZT"))
+        self.assertEqual(again.product_id, self.private.pk)
+        other = self.line(self.save(self.client_of(self.second), item_name="психотерапевт", currency="KZT"))
+        self.assertEqual(other.product_id, shared.pk)  # у другой семьи — общий товар
 
     def test_a_receipt_with_a_photo_never_joins_a_private_product(self):
         from types import SimpleNamespace
@@ -367,14 +397,16 @@ class PrivatePurchaseTests(TwoUsers, NamedMixin, TestCase):
         observed = SimpleNamespace(kind="product", product_hint=hint, barcode=None, raw_name="ПСИХОТЕРАПЕВТ",
                                    store_item_code="")
         merchant = samples.lidl_store().merchant
-        resolution = importer._resolve_product(observed, merchant, field="/lines/0/product_hint", owner_id=self.second.pk)
+        resolution = importer._resolve_product(observed, merchant, field="/lines/0/product_hint")
         shared = resolution.product
         self.assertEqual((shared.name, shared.scope, resolution.issues), ("ПСИХОТЕРАПЕВТ", "", []))
         self.assertNotEqual(shared.pk, self.private.pk)
         self.assertFalse(ProductAlias.objects.filter(product=self.private).exists())
-        # Повтор находит общий товар по написанию; владелец личного товара тоже его находит — свой и общий различны.
-        again = importer._resolve_product(observed, merchant, field="/lines/0/product_hint", owner_id=self.second.pk)
-        self.assertEqual(again.product.pk, shared.pk)
+        # Повтор находит общий товар по написанию; чек с фото самой семьи A — тоже общий, не её личный.
+        self.assertEqual(importer._resolve_product(observed, merchant, field="/lines/0/product_hint").product.pk, shared.pk)
+        own = importer._resolve_product(observed, samples.shop_store().merchant, field="/lines/0/product_hint")
+        self.assertEqual((own.product.pk, own.issues), (shared.pk, []))
+        self.assertFalse(ProductAlias.objects.filter(product__scope__gt="").exists())
 
     def test_duplicates_and_suggestions_do_not_show_a_private_product(self):
         theirs = self.line(self.save(self.client_of(self.second), item_name="Психотерапевт", currency="KZT")).product

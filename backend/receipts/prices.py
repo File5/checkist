@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from django.db.models import (
-    Avg, Case, CharField, Count, DecimalField, ExpressionWrapper, F, Max, Min, Q, Value, When,
+    Avg, Case, CharField, Count, DecimalField, Exists, ExpressionWrapper, F, Max, Min, OuterRef, Q, Value, When,
 )
 from django.db.models.functions import Cast, Concat, Round
 
@@ -56,15 +56,6 @@ def observation_q(prefix="", request=None):
     }) & seen
 
 
-def owner_scopes(user_id):
-    """Области товаров человека: общая ``""``, своя «user:<id>» и «household:<id>» его семьи (если есть). Один запрос."""
-    from accounts.models import Membership
-
-    scopes = {"", f"user:{user_id}"}
-    scopes.update(f"household:{pk}" for pk in Membership.objects.filter(user_id=user_id).values_list("household_id", flat=True))
-    return scopes
-
-
 def product_scope(user_id):
     """``Product.scope`` нового товара из траты вручную: семья владельца траты (её видят все члены), без семьи — он сам.
 
@@ -75,27 +66,37 @@ def product_scope(user_id):
     return f"household:{household}" if household is not None else f"user:{user_id}"
 
 
-def scope_q(request, prefix=""):
-    """Условие «товар виден запросу» по ``Product.scope`` (путь ``prefix`` до ``Product``): общий (``""``), свой либо
-    своей семьи. Личный товар из траты вручную чужой семьи не виден никогда — ни после удаления траты, ни со строками
-    чеков с фото (fail-closed). ``local_single`` — все товары. Один подзапрос, без отдельного запроса."""
+def seen_product_q(request):
+    """Условие над ``Product``: товар виден запросу. Общий (``scope=""``) — всем; личный (из траты вручную) — только своей
+    области (``user:<id>`` либо ``household:<id>`` своей семьи) и только пока у него есть строка траты, видимой запросу
+    (``visible_receipts_q``; главному — и скрытой): скрытый главным платёж, траты раньше ``visible_from`` и удалённые траты
+    название не открывают (fail-closed), чужие строки — тоже. ``local_single`` — все товары. Подзапросы, без отдельного
+    запроса."""
     if mode() == LOCAL_SINGLE:
         return Q()
     pk = request.user.pk
     if pk is None:
-        return Q(**{f"{prefix}scope": ""})
+        return Q(scope="")
     from accounts.models import Membership
 
     family = Membership.objects.filter(user_id=pk).annotate(
         key=Concat(Value("household:"), Cast("household_id", CharField()))).values("key")
-    return Q(**{f"{prefix}scope__in": ["", f"user:{pk}"]}) | Q(**{f"{prefix}scope__in": family})
+    lines = ReceiptLine.objects.filter(visible_receipts_q(request, "receipt__", include_hidden=True), product=OuterRef("pk"))
+    return Q(scope="") | ((Q(scope=f"user:{pk}") | Q(scope__in=family)) & Exists(lines))
 
 
 def hidden_products(request):
-    """Подзапрос ``id`` товаров, которых запрос не видит (``scope_q``): для журналов со ссылками на товар."""
+    """Подзапрос ``id`` товаров, которых запрос не видит (``seen_product_q``): для журналов и путей от другой модели."""
     if mode() == LOCAL_SINGLE:
         return Product.objects.none().values("pk")
-    return Product.objects.exclude(scope_q(request)).values("pk")
+    return Product.objects.exclude(seen_product_q(request)).values("pk")
+
+
+def scope_q(request, prefix=""):
+    """``seen_product_q`` по пути ``prefix`` до ``Product`` (``"product__"`` от строки, ``"products__"`` от бренда)."""
+    if not prefix:
+        return seen_product_q(request)
+    return ~Q(**{f"{prefix}pk__in": hidden_products(request)})
 
 
 def is_manual(line):
