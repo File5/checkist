@@ -24,7 +24,7 @@ from django.utils import timezone
 from accounts.access import visible_receipts_q
 from accounts.people import display_name
 from api import common, stats_common
-from budget import dashboard
+from budget import dashboard, history
 from budget.access import limits_q
 from budget.models import BudgetLimit
 from rates.convert import base_currency, converter
@@ -64,10 +64,13 @@ def recurring_due(user, now, prefs):
 def _limit(month, key, name, spent, limit, currency):
     if not limit or spent < limit * Decimal("0.8"):
         return []
+    over = "бюджета" if key == "budget" else "лимита"
     left = f" Осталось {money(limit - spent, currency)}." if spent < limit else (
-        f" Сверх лимита {money(spent - limit, currency)}." if spent > limit else "")
+        f" Сверх {over} {money(spent - limit, currency)}." if spent > limit else "")
     full, percent = spent >= limit, f"{int(spent * 100 // limit)}{services.NBSP}%"
-    if key == "total":
+    if key == "budget":
+        title = "Бюджет месяца исчерпан" if full else f"Бюджет месяца: потрачено {percent}"
+    elif key == "total":
         title = "Лимиты месяца исчерпаны" if full else f"Лимиты месяца: потрачено {percent}"
     else:
         title = f"{name}: лимит исчерпан" if full else f"{name}: {percent} лимита"
@@ -80,17 +83,26 @@ def limits(user, now, prefs):
     today = now.astimezone(services.LOCAL_TZ).date()
     month = dashboard.Month.of(today)
     found_limits = list(BudgetLimit.objects.filter(limits_q(request)).select_related("category").order_by("pk"))
-    if not found_limits:
+    # Общий бюджет месяца (``budget.MonthlyBudget``): как полоса на Главной — все видимые траты месяца.
+    budget = history.budget_at(limits_q(request), month.first)
+    if budget is not None and budget.amount is None:
+        budget = None
+    if not found_limits and budget is None:
         return
     tree = common.CategoryTree.load()
     found = dashboard.collect_month(Receipt.objects.filter(visible_receipts_q(request)), month,
                                     stats_common.owner_product_id())
     rate_day = dashboard.limit_day(month, today)
-    rates = stats_common.converter(request, found.needs() | {(item.currency_id, rate_day) for item in found_limits})
+    rates = stats_common.converter(request, found.needs() | {(item.currency_id, rate_day) for item in found_limits}
+                                   | ({(budget.currency_id, rate_day)} if budget is not None else set()))
     block = stats_common.base_block(
         dashboard.currency_blocks(found, found_limits, month, tree, rates, today), rates.base)
     if block is None:
         return
+    if budget is not None:
+        amount = rates.convert(budget.amount, budget.currency_id, rate_day)
+        if amount:
+            yield from _limit(month, "budget", "", block.spent, amount, block.currency)
     limited, rows = [], list(block.categories)
     while rows:
         row = rows.pop(0)

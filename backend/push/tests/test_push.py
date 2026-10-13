@@ -24,7 +24,7 @@ from pywebpush import WebPushException
 
 from accounts.models import Household, Membership
 from api.tests.accounts_helpers import NOT_AUTHENTICATED, accounts_mode, make_user, signed_in
-from budget.models import BudgetLimit
+from budget.models import BudgetLimit, MonthlyBudget
 from catalog.models import Category
 from push import reasons, services
 from push.models import PushNotification, PushSettings, PushSubscription
@@ -255,6 +255,20 @@ class ReasonTests(TestCase):
         self.assertEqual(self.notes("limits")[-1][1:3], (
             "Лимиты месяца: потрачено 85 %",
             "Потрачено 85 000 ₸ из 100 000 ₸. Осталось 15 000 ₸."))
+
+    def test_monthly_budget_80_and_100_without_category_limits(self, webpush):
+        MonthlyBudget.objects.create(household=self.family, currency_id="KZT", amount=D("100000"),
+                                     effective_month=date(2026, 10, 1), changed_at=at(2026, 10, 1, 12))
+        spend(self.other, self.food, 85000, date(2026, 10, 5))
+        self.tick(at(2026, 10, 12, 12))
+        spend(self.other, self.home, 20000, date(2026, 10, 6))
+        self.tick(at(2026, 10, 12, 12, 5))
+        self.assertEqual(self.notes("limits"), [
+            ("2026-10:budget:80", "Бюджет месяца: потрачено 85 %",
+             "Потрачено 85 000 ₸ из 100 000 ₸. Осталось 15 000 ₸.", "/"),
+            ("2026-10:budget:100", "Бюджет месяца исчерпан",
+             "Потрачено 105 000 ₸ из 100 000 ₸. Сверх бюджета 5 000 ₸.", "/"),
+        ])
 
     def test_weekly_on_sunday_evening(self, webpush):
         spend(self.other, self.food, 30000, date(2026, 10, 1))  # прошлая неделя (пн 28.09 – вс 4.10)
