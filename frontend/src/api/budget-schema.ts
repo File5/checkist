@@ -3,8 +3,8 @@ import type { Check, Guard } from './schema.ts'
 import { withBase } from './base-currency.ts'
 import type { InBase } from './base-currency.ts'
 import type {
-  BudgetLimit, BudgetLimitChange, BudgetLimitHistory, BudgetLimitSeries, CategorySpendCurrency, CategorySpendItem, CategorySpendLine, CategorySpendPart, CategorySpends, Dashboard, DashboardCategory,
-  DashboardCurrency, DashboardRecent, DashboardSubCategory,
+  BudgetLimit, BudgetLimitChange, BudgetLimitHistory, BudgetLimitSeries, CategorySpendCurrency, CategorySpendItem, CategorySpendLine, CategorySpendPart, CategorySpends, Dashboard, DashboardAllowance,
+  DashboardBudget, DashboardCategory, DashboardCurrency, DashboardRecent, DashboardSubCategory, MonthBudget,
 } from './budget-types.ts'
 import { isPerson } from '../lib/people.ts'
 
@@ -35,13 +35,21 @@ const dashboardRecent = object<Omit<DashboardRecent, 'owner_name' | 'base_total'
 })
 const recentItem: Check = (value) => dashboardRecent(value) && optional(value, 'owner_name', text)
   && optional(value, 'base_total', nullable(amount))
-const dashboardShape = object<Omit<Dashboard, 'people' | 'base' | keyof InBase>>({
+const dashboardShape = object<Omit<Dashboard, 'people' | 'base' | 'budget' | 'allowance' | keyof InBase>>({
   month: isMonthCode, previous_month: isMonthCode, days_left: nonNegativeInteger, members: array(username),
   currencies: array(dashboardCurrency), recent: array(recentItem),
 })
+const dashboardBudget = object<DashboardBudget>({ amount, currency, spent: amount })
+const dashboardAllowance = object<DashboardAllowance>({
+  currency, basis: choice('budget', 'limits', 'income'), amount, spent: amount, unpaid: amount, unpaid_count: nonNegativeInteger,
+  days_left: nonNegativeInteger, per_day: nullable(amount), overspent: nullable(amount),
+})
 /** The month in the base currency too when the server sends it; an older server without it passes. */
 export const isDashboard = withBase<Dashboard>((value): value is Dashboard => dashboardShape(value)
-  && optional(value, 'people', array(isPerson)), undefined, false)
+  && optional(value, 'people', array(isPerson)) && optional(value, 'budget', nullable(dashboardBudget))
+  && optional(value, 'allowance', nullable(dashboardAllowance)), undefined, false)
+
+export const isMonthBudget = object<MonthBudget>({ amount: nullable(amount), currency: nullable(currency), base_currency: currency })
 
 const named = object<{ id: number; name: string }>({ id: isId, name: text })
 const categorySpendLine = object<CategorySpendLine>({ id: isId, name: text, amount, category_id: isId, category_name: text })

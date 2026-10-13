@@ -1,8 +1,8 @@
 import { invalidIds } from './http.ts'
 import { getLocalJson, mutate } from './local.ts'
-import { isBudgetLimit, isBudgetLimitHistory, isBudgetLimitList, isCategorySpends, isDashboard, isMonthCode } from './budget-schema.ts'
+import { isBudgetLimit, isBudgetLimitHistory, isBudgetLimitList, isCategorySpends, isDashboard, isMonthBudget, isMonthCode } from './budget-schema.ts'
 import type {
-  BudgetLimit, BudgetLimitHistory, BudgetLimitHistoryParams, BudgetLimitInput, CategorySpends, Dashboard, MonthCode,
+  BudgetLimit, BudgetLimitHistory, BudgetLimitHistoryParams, BudgetLimitInput, CategorySpends, Dashboard, MonthBudget, MonthCode,
 } from './budget-types.ts'
 import type { LocalApiResult, RequestOptions } from './types.ts'
 import { resultInBase } from './base-currency.ts'
@@ -53,6 +53,18 @@ export async function updateBudgetLimit(id: number, amount: string, options: Req
 export async function deleteBudgetLimit(id: number, options: RequestOptions = {}): Promise<LocalApiResult<null>> {
   return invalidIds({ id }, options.signal)
     ?? mutate(`budget/limits/${id}/`, '', (value): value is null => value === null, options, false, undefined, { method: 'DELETE' })
+}
+
+/** The family's budget of the current month (2026-10-13): one amount over the limits, in the base currency. */
+export async function getMonthBudget(options: RequestOptions = {}): Promise<LocalApiResult<MonthBudget>> {
+  return getLocalJson('budget/month/', {}, isMonthBudget, options)
+}
+
+/** Sets the budget from the current month on (`amount`) or removes it from this month (`null`); past months keep theirs. */
+export async function saveMonthBudget(amount: string | null, options: RequestOptions = {}): Promise<LocalApiResult<MonthBudget | null>> {
+  return amount === null
+    ? mutate('budget/month/', '', (value): value is null => value === null, options, false, undefined, { method: 'DELETE' })
+    : mutate('budget/month/', JSON.stringify({ amount }), isMonthBudget, options)
 }
 
 /** The journal of the limits the person sees (the family's, or one's own) and each limit by month of the window. */

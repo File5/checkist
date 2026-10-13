@@ -7,6 +7,7 @@ import type { Page } from '../../api/types'
 import { ReceiptPage, ReceiptsPage } from './index'
 import { ReceiptDiscounts, ReceiptHeader, ReceiptImages, ReceiptLines, ReceiptTaxes } from './ReceiptContent'
 import ReceiptFilters from './ReceiptFilters'
+import SpendSearch from './SpendSearch'
 import ReceiptMedia, { ReceiptImageFallback } from './ReceiptMedia'
 import { ReceiptPagination } from './ReceiptBlock'
 import { ReceiptView } from './ReceiptPage'
@@ -199,9 +200,13 @@ describe('receipt screens (Vitest/SSR, not browser visual acceptance)', () => {
     expect(unfiltered).toContain('Загрузите первое фото чека')
     expect(unfiltered).toContain('href="/receipts/upload"')
     expect(unfiltered).toContain('href="/recognition/jobs"')
-    const filtered = renderToStaticMarkup(<ReceiptsView query={{ page: 1, q: 'MILCH' }} state={{ kind: 'ok', data: emptyPage() }} retry={noop} />)
+    const filtered = renderToStaticMarkup(<ReceiptsView query={{ page: 1, operation: 'refund' }} state={{ kind: 'ok', data: emptyPage() }} retry={noop} />)
     expect(filtered).toContain('По выбранным фильтрам трат нет')
     expect(filtered).toContain('Сбросить фильтры')
+    // A search that found nothing names its words and drops only them (2026-10-13).
+    const searched = renderToStaticMarkup(<ReceiptsView query={{ page: 1, q: 'MILCH', operation: 'refund' }} state={{ kind: 'ok', data: emptyPage() }} retry={noop} />)
+    expect(searched).toContain('По запросу «MILCH» трат нет.')
+    expect(searched).toContain('<a class="action-link" href="/receipts?operation=refund">Сбросить поиск</a>')
   })
   it('list rows, their review flag and page links retain the complete URL query', () => {
     const data = { ...(publicFixture('receipts.json') as Page<Receipt>), count: 5, page: 2, pages: 3,
@@ -215,14 +220,20 @@ describe('receipt screens (Vitest/SSR, not browser visual acceptance)', () => {
     })
   })
   it('restores date/search/sort form fields from URL and labels server field errors locally', () => {
-    const html = renderToStaticMarkup(<ReceiptFilters query={{ page: 1, q: 'MILCH', date_from: '2026-10-01', date_to: '2026-10-04', ordering: 'purchased_at' }} failure={{ kind: 'error', reason: 'invalid_parameter', status: 400, fields: ['q', 'date_from'] }} />)
-    expect(html).toContain('name="q"')
-    expect(html).toContain('value="MILCH"')
+    const failure = { kind: 'error' as const, reason: 'invalid_parameter' as const, status: 400, fields: ['q', 'date_from'] }
+    const query = { page: 1, q: 'MILCH', date_from: '2026-10-01', date_to: '2026-10-04', ordering: 'purchased_at' as const }
+    const html = renderToStaticMarkup(<ReceiptFilters query={query} failure={failure} />)
+    // The words of a search are the search line's (2026-10-13): the form has no field for them and no error of theirs.
+    expect(html).not.toContain('name="q"')
     expect(html).toContain('value="2026-10-01"')
     expect(html).toContain('value="2026-10-04"')
     expect(html).toContain('value="purchased_at" selected')
-    expect(html.match(/aria-invalid="true"/g)).toHaveLength(2)
+    expect(html.match(/aria-invalid="true"/g)).toHaveLength(1)
     expect(html).toContain('Исправьте поля фильтров')
+    const search = renderToStaticMarkup(<SpendSearch query={query} failure={failure} />)
+    expect(search).toContain('name="q" value="MILCH"')
+    expect(search.match(/aria-invalid="true"/g)).toHaveLength(1)
+    expect(search).toContain('Введите от 2 до 100 символов без управляющих символов.')
   })
   it('local detail pagination uses keyboard buttons and marks current page', () => {
     const html = renderToStaticMarkup(<ReceiptPagination page={2} pages={3} onPage={noop} label="Страницы: строки чека" />)

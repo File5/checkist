@@ -14,15 +14,15 @@ export default function ReceiptFilters({ query, failure }: { query: ReceiptsQuer
   const errors = { ...form.errors }
   if (failure?.reason === 'invalid_parameter') {
     for (const field of failure.fields ?? []) {
-      if (field in filterMessages && draft[field as FilterField] === filterDraft(query)[field as FilterField]) {
+      if (field !== 'q' && field in filterMessages && draft[field as FilterField] === filterDraft(query)[field as FilterField]) {
         errors[field as FilterField] = filterMessages[field as FilterField]
       }
     }
   }
   const update = (field: FilterField, value: string) => setForm({ source, draft: { ...draft, [field]: value }, errors: {} })
-  const input = (field: 'q' | 'date_from' | 'date_to', label: string, type: 'search' | 'date') => <div className="receipt-field">
+  const input = (field: 'date_from' | 'date_to', label: string, kind: 'date') => <div className="receipt-field">
     <label htmlFor={`${id}-${field}`}>{label}</label>
-    <input id={`${id}-${field}`} name={field} type={type} value={draft[field]} onChange={(event) => update(field, event.target.value)}
+    <input id={`${id}-${field}`} name={field} type={kind} value={draft[field]} onChange={(event) => update(field, event.target.value)}
       aria-invalid={Boolean(errors[field])} aria-describedby={`${id}-help${errors[field] ? ` ${id}-${field}-error` : ''}`} />
     {errors[field] && <p className="receipt-field-error" id={`${id}-${field}-error`}>{errors[field]}</p>}
   </div>
@@ -35,7 +35,7 @@ export default function ReceiptFilters({ query, failure }: { query: ReceiptsQuer
     {errors[field] && <p className="receipt-field-error" id={`${id}-${field}-error`}>{errors[field]}</p>}
   </div>
   return <section className="receipt-panel" aria-labelledby={`${id}-heading`}>
-    <h2 id={`${id}-heading`}>Найти чек</h2>
+    <h2 id={`${id}-heading`}>Фильтры</h2>
     <form ref={formRef} noValidate onSubmit={(event) => {
       event.preventDefault()
       const result = applyFilters(query, draft)
@@ -44,9 +44,9 @@ export default function ReceiptFilters({ query, failure }: { query: ReceiptsQuer
       if (field) (formRef.current?.elements.namedItem(field) as HTMLElement | null)?.focus()
       else navigate({ kind: 'receipts', query: result.query })
     }}>
-      {input('q', 'Магазин или товар в чеке', 'search')}
+      {/* The words of a search live in the line above the list (SpendSearch, 2026-10-13); the form keeps them as they are. */}
       <div className="receipt-filter-grid">{input('date_from', 'Период с', 'date')}{input('date_to', 'Период по', 'date')}</div>
-      <p className="receipt-note" id={`${id}-help`}>Поиск: от 2 до 100 символов. Обе даты включительно, по дате покупки в магазине.</p>
+      <p className="receipt-note" id={`${id}-help`}>Обе даты включительно, по дате покупки в магазине.</p>
       <div className="receipt-filter-grid">
         {select('operation', 'Операция', [['', 'Все операции'], ['sale', 'Продажа'], ['refund', 'Возврат']])}
         {select('ordering', 'По дате покупки', [['-purchased_at', 'Новые первыми'], ['purchased_at', 'Старые первыми']])}
@@ -60,12 +60,14 @@ export default function ReceiptFilters({ query, failure }: { query: ReceiptsQuer
       {Object.keys(errors).length > 0 && <p className="receipt-field-error" role="alert">Исправьте поля фильтров.</p>}
       <div className="receipt-actions ck-action-bar">
         <button type="submit">Применить</button>
-        {(hasFilters(query) || JSON.stringify(draft) !== JSON.stringify(filterDraft(query))) &&
+        {(hasFilters({ ...query, q: undefined }) || JSON.stringify(draft) !== JSON.stringify(filterDraft(query))) &&
           <button type="button" className="receipt-secondary" onClick={() => {
-            setForm({ source, draft: filterDraft({ page: 1 }), errors: {} })
-            navigate({ kind: 'receipts', query: { page: 1 } })
-            const search = formRef.current?.elements.namedItem('q') as HTMLElement | null
-            search?.focus()
+            // The search line above keeps its words: «Сбросить» clears the filters of this form only.
+            const kept: ReceiptsQuery = { page: 1, ...(query.q && { q: query.q }) }
+            setForm({ source, draft: filterDraft(kept), errors: {} })
+            navigate({ kind: 'receipts', query: kept })
+            const first = formRef.current?.elements.namedItem('date_from') as HTMLElement | null
+            first?.focus()
           }}>Сбросить</button>}
       </div>
     </form>

@@ -158,6 +158,9 @@ export const reviewFlag = 'требует проверки'
 export const isRowFlag = (text: string) => text === hiddenFlag || text === reviewFlag
 
 /** «208 трат» under the list. */
+/** «Спросить» of the search line (2026-10-13): the screen `/ask` (wave 2, ai-insights) gets the words in its address. */
+export const askHref = (text: string) => `/ask?q=${encodeURIComponent(text)}`
+
 export function spendsCount(count: number): string {
   return glue(count.toLocaleString('ru-RU'), plural(count, 'трата', 'траты', 'трат'))
 }

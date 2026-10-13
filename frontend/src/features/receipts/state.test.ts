@@ -76,7 +76,8 @@ describe('«Фильтры (N)» of a phone', () => {
   it('counts the conditions of the form and of the link, not the family chip, the page or the default order', () => {
     expect(activeFilterCount({ page: 3 })).toBe(0)
     expect(activeFilterCount({ page: 1, owner: 'liza', ordering: '-purchased_at' })).toBe(0)
-    expect(activeFilterCount({ page: 1, q: 'MILCH', date_from: '2026-10-01', date_to: '2026-10-31', operation: 'refund' })).toBe(4)
+    // The words of the search line are seen anyway (2026-10-13): they are not counted.
+    expect(activeFilterCount({ page: 1, q: 'MILCH', date_from: '2026-10-01', date_to: '2026-10-31', operation: 'refund' })).toBe(3)
     expect(activeFilterCount({ page: 1, store: 7, currency: 'KZT', ordering: 'purchased_at' })).toBe(3)
   })
 })

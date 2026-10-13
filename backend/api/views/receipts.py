@@ -1,3 +1,6 @@
+import re
+from decimal import Decimal
+
 from django.contrib.postgres.aggregates import ArrayAgg
 from django.db.models import Exists, OuterRef, Q, Subquery
 from django.db.models.functions import Coalesce
@@ -106,6 +109,24 @@ def list_items(receipts, request):
     return items
 
 
+_SEARCH_AMOUNT = re.compile(r"[0-9]{1,12}([.,][0-9]{1,2})?")
+
+
+def total_q(search):
+    """Поиск по сумме (2026-10-13): «4500», «4 500», «4 499,50» — итог чека; иначе пустое условие.
+
+    Целое число находит и итоги, которые экран показывает этим числом: суммы на экране округлены вверх
+    (``lib/money.ts``), поэтому «4500» — итог от 4499,01 до 4500,00; с копейками — ровно этот итог.
+    """
+    text = re.sub(r"[\s\u00a0\u202f]", "", search)
+    if not _SEARCH_AMOUNT.fullmatch(text):
+        return Q(pk__in=[])
+    value = Decimal(text.replace(",", "."))
+    if "," in text or "." in text:
+        return Q(total=value)
+    return Q(total__gt=value - 1, total__lte=value)
+
+
 class ReceiptsView(LocalAPIView):
     def get(self, request):
         params = Params(request.query_params)
@@ -136,7 +157,7 @@ class ReceiptsView(LocalAPIView):
                 Q(raw_name__icontains=search) | Q(product__name__icontains=search))
             receipts = receipts.filter(Q(store__merchant__brand_name__icontains=search)
                                        | Q(store__name__icontains=search) | Q(note__icontains=search)
-                                       | Q(Exists(matching_line)))
+                                       | Q(Exists(matching_line)) | total_q(search))
         data = paginate(with_list_fields(receipts).order_by(ordering, "-id" if ordering.startswith("-") else "id"), page)
         data["results"] = list_items(list(data["results"]), request)
         return Response(data)

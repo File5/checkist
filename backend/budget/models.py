@@ -100,3 +100,48 @@ class BudgetLimitChange(models.Model):
 
     def __str__(self):
         return f"{self.category_id} {self.currency_id}: {self.old_amount} -> {self.new_amount}"
+
+
+class MonthlyBudget(models.Model):
+    """Общий бюджет месяца: одна сумма на владельца (семья либо пользователь — как у ``BudgetLimit``).
+
+    Строка — сумма, действующая с ``effective_month`` (первое число) до следующей строки того же
+    владельца; ``amount`` пуст — бюджет снят с этого месяца. Таблица сама себе журнал: сумма в
+    месяце — последняя строка не позже месяца, прошлые месяцы сохраняют свою сумму. Две правки
+    в одном месяце — одна строка (последняя сумма). Валюта — основная валюта семьи на момент
+    записи (``rates.convert``). Пишет только ``budget.history.set_budget``.
+    """
+
+    household = models.ForeignKey(
+        "accounts.Household", null=True, blank=True, on_delete=models.CASCADE, related_name="monthly_budgets")
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.CASCADE, related_name="monthly_budgets")
+    currency = models.ForeignKey("stores.Currency", on_delete=models.PROTECT, related_name="monthly_budgets")
+    amount = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    effective_month = models.DateField()
+    changed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    changed_at = models.DateTimeField()
+
+    class Meta:
+        verbose_name = "monthly budget"
+        verbose_name_plural = "monthly budgets"
+        constraints = [
+            models.CheckConstraint(
+                condition=(Q(household__isnull=False, user__isnull=True) | Q(household__isnull=True, user__isnull=False)),
+                name="monthly_budget_one_owner",
+            ),
+            models.CheckConstraint(condition=Q(amount__isnull=True) | Q(amount__gt=0), name="monthly_budget_amount_positive"),
+            models.CheckConstraint(condition=Q(effective_month__day=1), name="monthly_budget_month_start"),
+            models.UniqueConstraint(
+                fields=["household", "effective_month"], condition=Q(household__isnull=False),
+                name="monthly_budget_household_month_uniq",
+            ),
+            models.UniqueConstraint(
+                fields=["user", "effective_month"], condition=Q(user__isnull=False),
+                name="monthly_budget_user_month_uniq",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.effective_month:%Y-%m}: {self.amount} {self.currency_id}"

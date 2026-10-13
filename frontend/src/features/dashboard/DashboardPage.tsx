@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { getDashboard } from '../../api/budget'
-import type { Dashboard, DashboardCategory, DashboardCurrency, DashboardRecent, DashboardSubCategory } from '../../api/budget'
+import type { Dashboard, DashboardAllowance, DashboardBudget, DashboardCategory, DashboardCurrency, DashboardRecent, DashboardSubCategory } from '../../api/budget'
 import type { ExcludedSpends } from '../../api/base-currency'
 import Icon from '../../components/Icon'
 import { HeaderSlot } from '../../components/PageHeader'
@@ -13,7 +13,7 @@ import { useQuickShot } from '../recognition/QuickShot'
 import RecurringDue from '../recurring/RecurringDue'
 import IncomeSummary from '../incomes/IncomeSummary'
 import {
-  badgeLetter, capitalize, categoryIds, categoryTone, cents, compareMonths, currencyName, daysLeftText, dashboardErrorMessage, dashboardPeople, deviceDate, deviceMonth,
+  allowanceView, badgeLetter, capitalize, categoryIds, categoryTone, cents, compareMonths, currencyName, daysLeftText, dashboardErrorMessage, dashboardPeople, deviceDate, deviceMonth,
   formatMoney, formatNumber, hasLimit, initials, inMonth, monthIsEmpty, monthSlide, monthTitle, progress, recentMeta, shiftMonth,
 } from './dashboard-state'
 import type { MonthSlide, Progress } from './dashboard-state'
@@ -61,6 +61,33 @@ function LimitLeft({ value, total, currency }: { value: Progress; total: string;
     : <span>Осталось <span className="dash-value dash-strong">{formatMoney(value.remaining, currency)}</span> из <span className="dash-value">{formatMoney(total, currency)}</span></span>
 }
 
+/** «Можно тратить в день» of the current month under the hero figure; gone below zero — «Перерасход», never a negative day. */
+function AllowanceRow({ value }: { value: DashboardAllowance }) {
+  const view = allowanceView(value)
+  return <div className={`dash-allowance${view.over ? ' dash-allowance-over' : ''}`}>
+    <p className="dash-allowance-line">
+      <span className="dash-allowance-label">{view.label}</span>
+      <span className="dash-allowance-value ck-figures">{formatMoney(view.amount, value.currency)}</span>
+    </p>
+    <p className="dash-note">{view.note}</p>
+  </div>
+}
+
+/** «Бюджет месяца» over the limits of the categories: one amount of the family in the base currency and its bar. */
+function BudgetRow({ budget }: { budget: DashboardBudget }) {
+  const bar = progress(budget.spent, budget.amount)
+  return <div className="dash-budget">
+    <div className="dash-limit-head">
+      <span className="dash-limit-name">Бюджет месяца</span>
+      <LimitValue spent={budget.spent} limit={budget.amount} currency={budget.currency} over={Boolean(bar?.over)} />
+    </div>
+    {bar && <Bar value={bar} label={`Потрачено ${bar.percent}% бюджета месяца`} />}
+    {bar && <p className="dash-note">{bar.over
+      ? <span className="dash-over">Сверх бюджета на <span className="dash-value">{formatMoney(bar.overBy, budget.currency)}</span></span>
+      : <>Осталось <span className="dash-value dash-strong">{formatMoney(bar.remaining, budget.currency)}</span></>}</p>}
+  </div>
+}
+
 /** The first currency of the month: the hero figure of the screen, the comparison, the overall limit and its days. */
 function HeroCard({ block, data, family, current }: { block: DashboardCurrency; data: Dashboard; family: boolean; current: boolean }) {
   const comparison = compareMonths(block.spent, block.previous_spent, data.previous_month)
@@ -82,6 +109,7 @@ function HeroCard({ block, data, family, current }: { block: DashboardCurrency; 
       </p>
       {partial && <p className="dash-note dash-hero-note">Категории с лимитом: <span className="dash-value">{formatMoney(block.limited_spent, block.currency)}</span></p>}
     </div>}
+    {current && data.allowance && <AllowanceRow value={data.allowance} />}
   </section>
 }
 
@@ -227,7 +255,7 @@ function PlainRow({ category, currency, month }: { category: DashboardCategory; 
   </li>
 }
 
-function LimitsCard({ block, several, month, fold }: { block: DashboardCurrency; several: boolean; month: string; fold: Fold }) {
+function LimitsCard({ block, several, month, fold, budget }: { block: DashboardCurrency; several: boolean; month: string; fold: Fold; budget?: DashboardBudget | null }) {
   const headingId = `dash-limits-${block.currency}`
   const limited = block.categories.filter(hasLimit)
   const plain = block.categories.filter((category) => !hasLimit(category))
@@ -237,6 +265,7 @@ function LimitsCard({ block, several, month, fold }: { block: DashboardCurrency;
       <h2 id={headingId}>Лимиты{several && <span className="dash-currency"> · {currencySymbol(block.currency)}</span>}</h2>
       <Link className="dash-card-link" to="/budget/limits">Изменить</Link>
     </div>
+    {budget && budget.currency === block.currency && <BudgetRow budget={budget} />}
     {limited.length > 0 && <ul className="dash-limit-list">{limited.map((category) => <LimitRow key={key(category)} category={category} currency={block.currency} month={month} fold={fold} />)}</ul>}
     {block.limit_total === null && <p className="dash-note">Лимиты не заданы. <Link className="dash-inline-link" to="/budget/limits">Задать лимиты</Link></p>}
     {plain.length > 0 && <div className="dash-plain-block">
@@ -326,10 +355,11 @@ export function DashboardView({ data, today = deviceMonth(), family = data.membe
       </section>
     </div>
     <div className="dash-column dash-column-side">
-      {limits.map((block) => <LimitsCard key={block.currency} block={block} several={several} month={data.month} fold={fold} />)}
-      {!data.currencies.length && <section className="ck-panel dash-card dash-limits" aria-label="Лимиты">
+      {limits.map((block) => <LimitsCard key={block.currency} block={block} several={several} month={data.month} fold={fold} budget={data.budget} />)}
+      {(!data.currencies.length || (data.budget && !limits.length)) && <section className="ck-panel dash-card dash-limits" aria-label="Лимиты">
         <div className="ck-panel-head"><h2>Лимиты</h2><Link className="dash-card-link" to="/budget/limits">Изменить</Link></div>
-        <p className="dash-note">Лимиты на месяц помогают видеть, сколько ещё можно потратить.</p>
+        {data.budget ? <BudgetRow budget={data.budget} />
+          : <p className="dash-note">Лимиты на месяц помогают видеть, сколько ещё можно потратить.</p>}
       </section>}
     </div>
   </div>

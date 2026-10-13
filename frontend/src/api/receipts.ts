@@ -50,10 +50,10 @@ export async function updateManualSpend(id: number, input: ManualSpendInput, opt
  * without the link; `withPhoto` also deletes the source photo with its jobs, crops and files. Refusals:
  * `409 job_active` (the photo is still being recognized), `409 photo_shared` (another receipt comes from the photo).
  */
-export async function deleteReceipt(id: number, { withPhoto = false }: { withPhoto?: boolean } = {}, options: RequestOptions = {}): Promise<LocalApiResult<null>> {
+export async function deleteReceipt(id: number, { withPhoto = false, keepalive = false }: { withPhoto?: boolean; keepalive?: boolean } = {}, options: RequestOptions = {}): Promise<LocalApiResult<null>> {
   return invalidIds({ id }, options.signal)
     ?? mutate(`receipts/${id}/`, '', (value): value is null => value === null, options, false, undefined,
-      { method: 'DELETE', ...(withPhoto && { query: { with_photo: '1' } }) })
+      { method: 'DELETE', ...(withPhoto && { query: { with_photo: '1' } }), ...(keepalive && { keepalive }) })
 }
 export async function deleteManualSpend(id: number, options: RequestOptions = {}): Promise<LocalApiResult<null>> {
   return deleteReceipt(id, {}, options)

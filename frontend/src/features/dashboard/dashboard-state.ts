@@ -1,4 +1,4 @@
-import type { Dashboard, DashboardCategory, DashboardRecent, DashboardSubCategory, MonthCode } from '../../api/budget-types'
+import type { Dashboard, DashboardAllowance, DashboardCategory, DashboardRecent, DashboardSubCategory, MonthCode } from '../../api/budget-types'
 import { ownerName, peopleOf } from '../../lib/people'
 import type { Person } from '../../lib/people'
 import type { Decimal, LocalApiFailure } from '../../api/types'
@@ -170,6 +170,26 @@ export function hasLimit(category: DashboardCategory | DashboardSubCategory): bo
 /** «ещё 19 дней» до конца месяца. */
 export function daysLeftText(days: number): string {
   return glue('ещё', String(days), plural(days, 'день', 'дня', 'дней'))
+}
+
+const allowanceBasis = {
+  budget: ['Бюджет месяца', 'бюджета месяца'], limits: ['Сумма лимитов', 'суммы лимитов'], income: ['Доход месяца', 'дохода месяца'],
+} as const
+
+export type AllowanceView = { label: string; amount: Decimal; over: boolean; note: string }
+
+/** «Можно тратить в день 4 187 ₸» and how it was counted; gone below zero — «Перерасход N ₸», never a negative day. */
+export function allowanceView(value: DashboardAllowance): AllowanceView {
+  const [basis, ofBasis] = allowanceBasis[value.basis]
+  const owed = cents(value.unpaid) > 0n && value.unpaid_count > 0
+    ? glue(String(value.unpaid_count), plural(value.unpaid_count, 'платёж', 'платежа', 'платежей'), 'к', 'оплате') : null
+  if (value.per_day === null) {
+    return { label: 'Перерасход', amount: value.overspent ?? '0.00', over: true,
+      note: `${owed ? `Траты и ${owed}` : 'Траты'} больше ${ofBasis} ${formatMoney(value.amount, value.currency)}` }
+  }
+  return { label: 'Можно тратить в день', amount: value.per_day, over: false,
+    note: `${basis} ${formatMoney(value.amount, value.currency)} минус траты${owed ? ` и ${owed} (${formatMoney(value.unpaid, value.currency)})` : ''}, `
+      + `поровну на ${glue(String(value.days_left), plural(value.days_left, 'день', 'дня', 'дней'))}` }
 }
 
 /** A month with nothing spent in any currency: limits may still be there with zeros. */

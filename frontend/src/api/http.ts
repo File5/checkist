@@ -117,6 +117,8 @@ export type JsonRequest = {
   /** Success statuses answered without a body (204): nothing is read, the validator receives `null`. */
   emptyStatuses?: readonly number[]
   timeoutMs?: number
+  /** The request outlives a closed page: `fetch(…, { keepalive: true })`. */
+  keepalive?: boolean
 }
 /** Failures the transport produces by itself; every result type of a caller includes them. */
 export type TransportFailure = { kind: 'error'; reason: 'network' | 'timeout' | 'invalid_response'; status?: number }

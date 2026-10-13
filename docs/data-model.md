@@ -991,3 +991,20 @@ docker compose -p checkist_dev cp postgres:/tmp/checkist.dump ./checkist.dump
   до него удалить правила `action=goal` и вернуть строки `state=goal` в `skipped`: старые ограничения их не пропустят.
 - Демо-выписка (`statements.demo.demo_kaspi_lines`, `seed_statement_demo`) получила перевод «На Kaspi Депозит» на
   100 000 ₸ — 20 строк вместо 19.
+## Бюджет месяца и история лимитов прошлых месяцев (2026-10-13, ветка `feature/spends-home`)
+
+- `budget.MonthlyBudget` (миграция `budget.0004_monthly_budget`, откат — `migrate budget 0003_seed_limit_changes`):
+  владелец как у `BudgetLimit` (семья либо пользователь — ровно один), `currency` (основная валюта на момент записи),
+  `amount` (NULL — бюджет снят), `effective_month` (1-е число), `changed_by`, `changed_at`; уникальность — владелец +
+  месяц. Таблица сама себе журнал: сумма в месяце — последняя строка не позже месяца (`budget.history.budget_at`), две
+  правки в одном месяце — одна строка. Пишет только `budget.history.set_budget` (API `/api/budget/month/`); в админке
+  модели нет. Записей «до первого бюджета» нет: прошлые месяцы без бюджета так и остаются без него.
+- «Можно тратить в день» — `budget/allowance.py`, `daily(user, month, *, income=None)`; новых таблиц нет (правило —
+  `docs/api-contract.md`).
+- История лимитов прошлых месяцев: журнал `BudgetLimitChange` начался 2026-10-12, и прошлые месяцы показывали «Лимиты не
+  заданы». `manage.py limit_history backfill --since ГГГГ-ММ [--dry-run]` даёт месяцам с `--since` нынешние лимиты:
+  паре текущего лимита, чей журнал начинается позже `--since`, добавляется запись «создан» с текущей суммой в месяце
+  `--since` (автор пуст, время — полночь 1-го числа). Пара без журнала и пара с журналом не позже `--since` не трогаются,
+  удалённые лимиты не восстанавливаются; повтор ничего не меняет. Пишет только `BudgetLimitChange`; `--since` — месяц до
+  текущего. Вывод — JSON (`added`, `entries`). Откат — удалить добавленные записи (`changed_by` NULL, `effective_month`
+  = `--since`).

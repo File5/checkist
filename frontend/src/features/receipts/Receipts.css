@@ -178,6 +178,33 @@
 .spends-page .pagination { padding: 0; }
 .spends-page .pagination ul { justify-content: center; }
 .spends-page .pagination a { text-decoration: none; }
+/* The search line (SpendSearch.tsx, 2026-10-13): a round field with a magnifier, «Спросить» beside it once there is
+   text. The field itself carries the focus ring of the general rule. */
+.spends-search { display: grid; gap: 6px; min-width: 0; }
+.spends-search-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.spends-search-field { position: relative; flex: 1 1 auto; min-width: 0; }
+.spends-search-field .ck-icon { position: absolute; top: 50%; left: 14px; color: var(--ck-text-muted); transform: translateY(-50%); pointer-events: none; }
+.spends-search-field input { box-sizing: border-box; width: 100%; min-height: 48px; padding: 8px 14px 8px 44px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-pill); background: var(--ck-surface); color: var(--ck-text); font-size: var(--ck-text-base); }
+.spends-search .receipt-field-error { margin: 0 4px; }
+.spends-ask { display: inline-flex; flex: none; align-items: center; min-height: 48px; padding: 0 18px; border-radius: var(--ck-radius-pill); background: var(--ck-primary); color: var(--ck-on-primary); font-size: var(--ck-text-sm); font-weight: 800; text-decoration: none; white-space: nowrap; }
+.spends-ask:hover { background: var(--ck-primary-hover); color: var(--ck-on-primary); }
+.spends-delete-failure { margin: 0; }
+/* A spend by hand slides to the left over «Удалить» (SpendDays.tsx): the row follows the finger, a vertical move stays
+   the scroll of the page; the Tab key on «Удалить» slides the row aside as well. No animation: the row follows the
+   finger and stands where it is let go (the plan allows two motions only). The ring of the button is drawn inside: the
+   card clips its rows. */
+.spends-swipe { position: relative; }
+:where(.spends-swipe) > .spends-row { position: relative; z-index: 1; background: var(--ck-surface); touch-action: pan-y; -webkit-user-select: none; user-select: none; }
+.spends-swipe:has(> .spends-row-delete:focus-visible) > .spends-row { transform: translateX(-96px); }
+.spends-row-delete { position: absolute; top: 0; right: -16px; bottom: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; width: 96px; min-height: 0; padding: 0; border: 0; border-radius: 0; background: var(--ck-swipe-delete-bg); color: var(--ck-swipe-delete-text); font-size: var(--ck-text-xs); font-weight: 800; }
+.spends-row-delete:hover:not(:disabled), .spends-row-delete:active:not(:disabled) { background: var(--ck-swipe-delete-bg); color: var(--ck-swipe-delete-text); }
+.spends-row-delete:focus-visible { outline-offset: -3px; }
+/* «Удалено · Сбербанк  Отменить» above the bottom bar while the deletion waits (undo-delete.ts). */
+.spends-undo { position: fixed; right: 16px; bottom: calc(var(--ck-bottom-occupied) + 12px); left: 16px; z-index: var(--ck-z-toast); display: flex; align-items: center; gap: 8px; max-width: 520px; min-height: 52px; margin: 0 auto; padding: 4px 4px 4px 16px; border: 1px solid var(--ck-toast-border); border-radius: var(--ck-radius-button); background: var(--ck-toast-bg); color: var(--ck-toast-text); box-shadow: 0 8px 24px var(--ck-popover-shadow); }
+.spends-undo-text { flex: 1 1 auto; min-width: 0; overflow: hidden; font-size: var(--ck-text-sm); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.spends-undo-action { flex: none; min-height: 44px; padding: 0 14px; border: 0; border-radius: var(--ck-radius-sm); background: transparent; color: var(--ck-toast-action); font-size: var(--ck-text-sm); font-weight: 800; }
+.spends-undo-action:hover:not(:disabled), .spends-undo-action:active:not(:disabled) { background: transparent; color: var(--ck-toast-action); text-decoration: underline; text-underline-offset: 3px; }
+.spends-undo-action:focus-visible { outline-color: var(--ck-toast-focus); outline-offset: -3px; }
 .spends-jobs { margin: 0; text-align: center; }
 .spends-jobs a { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; padding: 0 12px; color: var(--ck-link); font-size: var(--ck-text-sm); font-weight: 700; text-decoration: none; }
 .spends-jobs a:hover { text-decoration: underline; text-underline-offset: 3px; }
