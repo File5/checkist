@@ -1,0 +1,42 @@
+# Checkist observability agent on observ (docs/observability.md), modelled on cave-alloy:
+#   docker compose -f /opt/checkist/deploy/observability/alloy/compose.yaml up -d
+# Its own project: deploy/docker/deploy.sh (project `checkist`) never touches it.
+name: checkist-observability
+
+services:
+  alloy:
+    image: grafana/alloy:v1.20.1
+    container_name: checkist-alloy
+    command:
+      - run
+      - --storage.path=/var/lib/alloy/data
+      - --server.http.listen-addr=127.0.0.1:12345
+      - /etc/alloy/config.alloy
+    volumes:
+      - ./config.alloy:/etc/alloy/config.alloy:ro
+      - alloy-data:/var/lib/alloy/data
+      # Cron log of `push tick`; created empty by Docker when missing.
+      - /var/log/checkist:/var/log/checkist:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # cAdvisor's docker factory also dials containerd; without it: only the root cgroup.
+      - /run/containerd/containerd.sock:/run/containerd/containerd.sock:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /sys:/sys:ro
+    networks:
+      - observability
+    pid: host
+    # cgroup v2: without the host cgroup namespace cAdvisor sees only itself.
+    cgroup: host
+    privileged: true
+    mem_limit: 384m
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+volumes:
+  alloy-data:
+
+networks:
+  observability:
+    external: true

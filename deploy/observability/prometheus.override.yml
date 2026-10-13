@@ -1,0 +1,13 @@
+# Checkist addition to /opt/observability (docs/observability.md), copied there as
+# docker-compose.override.yml: `docker compose` without -f in that directory merges it with
+# docker-compose.yml. Prometheus joins the pair network checkist-metrics, where only Checkist's web
+# (alias checkist-web) is; the shared `observability` network stays as it is.
+services:
+  prometheus:
+    networks:
+      - observability
+      - checkist-metrics
+
+networks:
+  checkist-metrics:
+    external: true

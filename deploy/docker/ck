@@ -6,7 +6,8 @@
 #   deploy/docker/ck manage createsuperuser
 #   deploy/docker/ck manage backup create --dir /backups --keep-days 14
 #
-# `ck compose ...` is `docker compose -f compose.prod.yaml --env-file <environment file> ...`.
+# `ck compose ...` is `docker compose -f compose.prod.yaml --env-file <environment file> ...`,
+# plus `-f compose.observability.yaml` when the environment file sets CHECKIST_OBSERVABILITY=1.
 # `ck manage ...` runs `python manage.py ...` in a one-off `web` container (PostgreSQL and Redis
 # are started when needed); it works without a terminal, so it fits a cron line.
 # Environment file: .env.prod in the repository root, or CHECKIST_ENV_FILE (absolute or relative
@@ -20,7 +21,7 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$root"
 
 usage() {
-    sed -n '2,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
+    sed -n '2,14p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
 }
 
 env_file="${CHECKIST_ENV_FILE:-.env.prod}"
@@ -32,6 +33,12 @@ fi
 # compose.prod.yaml reads the same path for the containers.
 export CHECKIST_ENV_FILE="$env_file"
 compose=(docker compose -f compose.prod.yaml --env-file "$env_file")
+# The networks to Prometheus and Grafana (docs/observability.md): only when the environment file asks.
+if grep -qx 'CHECKIST_OBSERVABILITY=1' "$env_file"; then
+    compose+=(-f compose.observability.yaml)
+    CHECKIST_COMMIT="$(git -C "$root" rev-parse --short=12 HEAD 2>/dev/null || true)"
+    export CHECKIST_COMMIT
+fi
 
 case "${1:-}" in
     compose)
