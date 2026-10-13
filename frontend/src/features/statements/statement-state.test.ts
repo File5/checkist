@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { rowFixture, statementFixture } from '../../api/statements-test-support'
 import type { Category } from '../../api/types'
 import {
-  categoryOptions, defaultChecked, keepsPolling, missingCategory, periodText, reasonText, reviewNote, rowMeta, saveLabel, saveRows,
-  sections, setCategory, setStore, syncEdits, toggleRow,
+  canBeGoal, categoryOptions, defaultChecked, keepsPolling, missingCategory, periodText, reasonText, reviewNote, rowMeta, saveLabel,
+  saveRows, sections, setCategory, setStore, syncEdits, toggleRow,
 } from './statement-state'
 
 const category = (id: number, name: string, parent?: { id: number; name: string }): Category => ({
@@ -106,6 +106,30 @@ describe('the draft of a statement', () => {
     const home = { id: 8, name: 'Жильё' }
     const options = categoryOptions([category(9, 'Аренда', home), category(1, 'Еда и напитки'), category(8, 'Жильё'), category(5, 'Не разобрано')])
     expect(options).toEqual([{ id: 1, label: 'Еда и напитки' }, { id: 8, label: 'Жильё' }, { id: 9, label: ' Аренда' }])
+  })
+
+  it('saves a transfer to the deposit as a contribution to its goal, not as a spend', () => {
+    const vacation = { id: 30, name: 'Отпуск' }
+    const deposit = rowFixture({ id: 40, date: '2026-10-06', amount: '-100000.00', spend: '100000.00', operation: 'Перевод',
+      details: 'На Kaspi Депозит', merchant: 'На Kaspi Депозит', kind: 'own_move', state: 'goal', category: null, store_name: null,
+      source: 'rule', goal: vacation })
+    const twin = rowFixture({ ...deposit, id: 41, date: '2026-10-07', state: 'duplicate', reason: 'goal_duplicate' })
+    const saved = rowFixture({ ...deposit, id: 42, contribution_id: 9 })
+    const all = [...rows, deposit, twin, saved]
+    const edits = syncEdits(all)
+    expect([defaultChecked(deposit), defaultChecked(twin), defaultChecked(saved)]).toEqual([true, false, false])
+    expect(saveRows(all, edits).filter((item) => 'goal' in item)).toEqual([{ id: 40, goal: 30 }])
+    expect(saveLabel(all, edits).replaceAll(String.fromCharCode(0xa0), ' ')).toBe('Сохранить 4 траты и 1 взнос · 130 150 ₸')
+    expect(missingCategory(all, toggleRow(edits, 41, true))).toEqual([])
+    expect(saveRows(all, toggleRow(edits, 41, true)).filter((item) => 'goal' in item).map((item) => item.id)).toEqual([40, 41])
+    const parts = sections(all)
+    expect([parts.goals.map((row) => row.id), parts.duplicates.map((row) => row.id), parts.saved.map((row) => row.id)])
+      .toEqual([[40], [41, 7], [42, 8]])
+    expect(rowMeta(deposit, edits[40], new Map())).toBe('6 окт. · взнос в цель «Отпуск»')
+    expect(rowMeta(saved, edits[42], new Map())).toBe('6 окт. · сохранено · взнос в цель «Отпуск»')
+    expect(reasonText(twin)).toBe('Взнос в «Отпуск» уже есть')
+    // «Это взнос в цель» — only for a transfer that is not saved and not a contribution already.
+    expect(all.filter(canBeGoal).map((row) => row.id)).toEqual([9])
   })
 
   it('writes the period short', () => {

@@ -10,13 +10,21 @@ import { glue } from '../../lib/text'
 export type RowEdit = { checked: boolean; category: number | null; store: string; touched: boolean }
 export type Edits = Record<number, RowEdit>
 
-/** A row that can become a spend: money left the card, something is left after the refunds, not saved yet. */
-export const saveable = (row: StatementRow) => row.receipt_id === null && row.amount.startsWith('-') && row.spend !== '0.00'
+/** A row that can become a spend or a contribution: money left the card, something is left after the refunds, not saved
+ * yet. */
+export const saveable = (row: StatementRow) => row.receipt_id === null && !row.contribution_id && row.amount.startsWith('-')
+  && row.spend !== '0.00'
 
-/** Checked from the start: a recognised spend, and a questionable one that already has a category. */
+/** A contribution to a goal: a transfer by a rule «→ цель», or one whose contribution the goal already has. */
+export const asGoal = (row: StatementRow) => Boolean(row.goal) && (row.state === 'goal' || row.reason === 'goal_duplicate')
+
+/** A transfer the person may call a contribution to a goal («Это взнос в цель»). */
+export const canBeGoal = (row: StatementRow) => saveable(row) && !asGoal(row) && (row.kind === 'transfer' || row.kind === 'own_move')
+
+/** Checked from the start: a recognised spend, a contribution, and a questionable one that already has a category. */
 export function defaultChecked(row: StatementRow): boolean {
   if (!saveable(row)) return false
-  return row.state === 'spend' || (row.state === 'review' && row.category !== null)
+  return row.state === 'spend' || row.state === 'goal' || (row.state === 'review' && row.category !== null)
 }
 
 const editOf = (row: StatementRow): RowEdit => ({
@@ -63,15 +71,16 @@ export function setCategory(edits: Edits, rows: StatementRow[], id: number, cate
   return { edits: next, followers }
 }
 
-/** The body of «Сохранить»: checked, saveable rows with a category. */
+/** The body of «Сохранить»: checked, saveable rows — a spend with its category, a contribution with its goal. */
 export function saveRows(rows: StatementRow[], edits: Edits): StatementSaveRow[] {
-  return rows.filter((row) => saveable(row) && edits[row.id]?.checked && edits[row.id]?.category !== null)
-    .map((row) => ({ id: row.id, category: edits[row.id].category as number, store_name: edits[row.id].store.trim() }))
+  return rows.filter((row) => saveable(row) && edits[row.id]?.checked && (asGoal(row) || edits[row.id]?.category !== null))
+    .map((row) => row.goal && asGoal(row) ? { id: row.id, goal: row.goal.id }
+      : { id: row.id, category: edits[row.id].category as number, store_name: edits[row.id].store.trim() })
 }
 
 /** Checked rows still without a category: «Сохранить» waits for them. */
 export function missingCategory(rows: StatementRow[], edits: Edits): StatementRow[] {
-  return rows.filter((row) => saveable(row) && edits[row.id]?.checked && edits[row.id]?.category === null)
+  return rows.filter((row) => saveable(row) && !asGoal(row) && edits[row.id]?.checked && edits[row.id]?.category === null)
 }
 
 /** Exact cents of a wire Decimal: the sum of the button is counted without rounding (`lib/money` rounds the display). */
@@ -82,13 +91,16 @@ function cents(value: string): bigint {
   return match[1] ? -absolute : absolute
 }
 
-/** «Сохранить 12 трат · 245 300 ₸»: the sum only when every row is in one currency. */
+/** «Сохранить 12 трат и 1 взнос · 245 300 ₸»: the sum only when every row is in one currency. */
 export function saveLabel(rows: StatementRow[], edits: Edits): string {
   const chosen = saveRows(rows, edits)
   const byId = new Map(rows.map((row) => [row.id, row]))
   const currencies = new Set(chosen.map((item) => byId.get(item.id)?.currency))
   const count = chosen.length
-  const words = count === 0 ? 'Нечего сохранить' : `Сохранить ${glue(count, spendWord(count))}`
+  const gifts = chosen.filter((item) => 'goal' in item).length
+  const spends = count - gifts
+  const parts = [spends ? glue(spends, spendWord(spends)) : '', gifts ? glue(gifts, giftWord(gifts)) : ''].filter(Boolean)
+  const words = count === 0 ? 'Нечего сохранить' : `Сохранить ${parts.join(' и ')}`
   if (count === 0 || currencies.size !== 1) return words
   const total = chosen.reduce((sum, item) => sum + cents(byId.get(item.id)?.spend ?? '0'), 0n)
   return `${words} · ${formatCents(total, [...currencies][0] as string)}`
@@ -103,16 +115,20 @@ const plural = (count: number, one: string, few: string, many: string) => {
 export const spendWord = (count: number) => plural(count, 'трату', 'траты', 'трат')
 export const rowWord = (count: number) => plural(count, 'строка', 'строки', 'строк')
 export const ruleWord = (count: number) => plural(count, 'правило', 'правила', 'правил')
+export const giftWord = (count: number) => plural(count, 'взнос', 'взноса', 'взносов')
 
 /** The sections of the screen, in their order. Saved rows and incomings never mix with the rest. */
-export type Sections = { toSave: StatementRow[]; duplicates: StatementRow[]; saved: StatementRow[]; skipped: StatementRow[]; incomes: StatementRow[] }
+export type Sections = {
+  toSave: StatementRow[]; goals: StatementRow[]; duplicates: StatementRow[]; saved: StatementRow[]; skipped: StatementRow[]; incomes: StatementRow[]
+}
 export function sections(rows: StatementRow[]): Sections {
-  const result: Sections = { toSave: [], duplicates: [], saved: [], skipped: [], incomes: [] }
+  const result: Sections = { toSave: [], goals: [], duplicates: [], saved: [], skipped: [], incomes: [] }
   // Newest first, like «Траты»; within a day the order of the bank.
   const ordered = [...rows].sort((a, b) => (a.date === b.date ? 0 : a.date < b.date ? 1 : -1))
   for (const row of ordered) {
-    if (row.receipt_id !== null) result.saved.push(row)
+    if (row.receipt_id !== null || row.contribution_id) result.saved.push(row)
     else if (row.kind === 'income') result.incomes.push(row)
+    else if (row.state === 'goal') result.goals.push(row)
     else if (row.state === 'duplicate') result.duplicates.push(row)
     else if (row.state === 'skipped') result.skipped.push(row)
     else result.toSave.push(row)
@@ -131,6 +147,7 @@ export function reasonText(row: StatementRow): string {
     case 'refund': return 'Возврат учтён в покупке того же дня'
     case 'refunded': return 'Покупку вернули полностью'
     case 'rule': return 'Пропускается по правилу'
+    case 'goal_duplicate': return `Взнос в «${row.goal?.name ?? 'цель'}» уже есть`
     case 'income': return incomeText(row)
     default: return ''
   }
@@ -162,9 +179,10 @@ export function shortDate(value: string): string {
 export function rowMeta(row: StatementRow, edit: RowEdit | undefined, categories: Map<number, Category>): string {
   const parts = [shortDate(row.date)]
   const category = edit?.category ?? null
-  if (row.receipt_id !== null) parts.push('сохранено')
+  if (row.receipt_id !== null || row.contribution_id) parts.push('сохранено')
   // Without a category the note under the row says what is going on with it.
-  if (category !== null) parts.push(categoryLabel(categories.get(category)) ?? row.category?.name ?? '')
+  if (row.goal && asGoal(row)) parts.push(`взнос в цель «${row.goal.name}»`)
+  else if (category !== null) parts.push(categoryLabel(categories.get(category)) ?? row.category?.name ?? '')
   return parts.filter(Boolean).join(' · ')
 }
 
@@ -231,13 +249,14 @@ export function historyMeta(item: StatementSummary): string {
 }
 
 export const actionLabels: Record<StatementRuleAction, string> = {
-  category: 'Категория', skip: 'Пропускать', own: 'Свои счета и семья',
+  category: 'Категория', skip: 'Пропускать', own: 'Свои счета и семья', goal: 'Взнос в цель',
 }
 
 /** «→ Жильё › Аренда · Съёмное жильё», «пропускать», «свои счета и семья». */
 export function ruleMeta(rule: StatementRule, byId: Map<number, Category>): string {
   if (rule.action === 'skip') return 'пропускать'
   if (rule.action === 'own') return 'свои счета и семья — не трата'
+  if (rule.action === 'goal') return `→ взнос в цель «${rule.goal?.name ?? ''}» · только ваши выписки`
   const category = rule.category ? categoryLabel(byId.get(rule.category.id)) ?? rule.category.name : ''
   return [category && `→ ${category}`, rule.store_name].filter(Boolean).join(' · ')
 }

@@ -9,7 +9,8 @@ export function rowFixture(patch: Partial<StatementRow> = {}): StatementRow {
   return {
     id: 1, date: '2026-10-05', amount: '-18450.00', currency: 'KZT', operation: 'Покупка', details: 'ТОО "MAGNUM CASH&CARRY"',
     merchant: 'MAGNUM CASH&CARRY', mcc: null, refund: '0.00', spend: '18450.00', kind: 'spend', state: 'spend', reason: null,
-    category: food, store_name: 'MAGNUM', source: 'builtin', ai: null, duplicate_of: null, receipt_id: null, ...patch,
+    category: food, store_name: 'MAGNUM', source: 'builtin', ai: null, duplicate_of: null, receipt_id: null, goal: null,
+    contribution_id: null, ...patch,
   }
 }
 
@@ -41,7 +42,7 @@ export function statementFixture(patch: Partial<StatementDetail> = {}): Statemen
 
 export function ruleFixture(patch: Partial<StatementRule> = {}): StatementRule {
   return {
-    id: 1, pattern: 'Олег Б.', action: 'category', category: rent, store_name: 'Съёмное жильё', origin: 'manual',
+    id: 1, pattern: 'Олег Б.', action: 'category', category: rent, store_name: 'Съёмное жильё', goal: null, origin: 'manual',
     updated_at: '2026-10-13T05:00:00Z', ...patch,
   }
 }

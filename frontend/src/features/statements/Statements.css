@@ -54,6 +54,7 @@ span.statement-check-box { cursor: default; }
 .statement-details { color: var(--ck-text-muted); font-size: var(--ck-text-xs); overflow-wrap: anywhere; }
 .statement-details > span { font-weight: 700; }
 .statement-saved-link { color: var(--ck-link); font-size: var(--ck-text-sm); font-weight: 700; }
+.statement-goal-pick { display: grid; gap: 8px; }
 .statement-field { display: grid; gap: 6px; min-width: 0; color: var(--ck-text-muted); font-size: var(--ck-text-sm); font-weight: 600; }
 .statement-field input, .statement-field select { width: 100%; min-width: 0; min-height: 48px; padding: 8px 14px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-surface); color: var(--ck-text); font-size: var(--ck-text-base); font-weight: 400; }
 
