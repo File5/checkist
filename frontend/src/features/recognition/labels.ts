@@ -1,5 +1,6 @@
 import type { ExecutorState, Job, JobStage, JobStatus } from '../../api/recognition'
 import type { LocalApiFailure } from '../../api/types'
+import { aiRefusalText } from '../../lib/ai'
 import { glue } from '../../lib/text'
 import { getSession, permissionDeniedText } from '../../session'
 
@@ -53,6 +54,7 @@ export function errorText(error: LocalApiFailure, mutation = false): string {
     case 'job_active': return 'Для этого фото уже идёт обработка. Откройте список заданий этого фото.'
     case 'job_terminal': return 'Задание уже завершилось. Отменить его нельзя.'
     case 'retry_not_allowed': return 'Повтор сейчас недоступен.'
+    case 'ai_disabled': case 'ai_quota': return aiRefusalText(error) ?? ''
     case 'network': case 'timeout': return mutation
       ? 'Ответ сервера не получен. Действие могло выполниться: проверьте задание или список обработки перед повтором.'
       : 'Нет ответа сервера. Проверьте соединение и повторите запрос.'

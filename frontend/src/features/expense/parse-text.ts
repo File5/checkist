@@ -1,6 +1,7 @@
 /** «Трата словами»: what the hint above the form shows and how a parse draft fills the form. No network, no React. */
 import type { ManualParse, ManualParseDraft } from '../../api/receipts'
 import type { Category } from '../../api/types'
+import { aiRefusalText } from '../../lib/ai'
 import { errorMessage } from '../receipts/state'
 import type { Failure } from '../receipts/state'
 import { amountText, newLine } from './expense-form'
@@ -49,6 +50,8 @@ export function parseErrorMessage(code: string): string {
 
 /** A refused POST or GET in words of the hint. */
 export function requestFailureMessage(failure: Failure): string {
+  const ai = aiRefusalText(failure)
+  if (ai) return ai
   if (failure.reason === 'parse_limit') return parseTexts.limit
   if (failure.reason === 'invalid_parameter') return parseTexts.text
   if (failure.reason === 'csrf_failed') return 'Сессия обновилась. Повторите действие ещё раз.'

@@ -46,6 +46,16 @@ def make_moderator(username, **fields):
     return account
 
 
+def allow_ai(*accounts):
+    """Пользователи без семьи — администраторы сервера: только им ``accounts.ai`` разрешает ИИ без семьи.
+
+    Для тестов разбора текста и загрузки фото, которые проверяют не ИИ, а доступ, CSRF и лимиты.
+    """
+    get_user_model().objects.filter(pk__in=[account.pk for account in accounts]).update(is_staff=True)
+    for account in accounts:
+        account.is_staff = True
+
+
 def with_csrf(client):
     """Ставит клиенту заголовки CSRF. Токен берётся после входа: вход его меняет."""
     response = client.get(CSRF_URL)

@@ -14,7 +14,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from api.tests.accounts_helpers import (
-    MISSING, NOT_FOUND, TwoUsers, accounts_mode, local_single_mode, signed_in,
+    MISSING, NOT_FOUND, TwoUsers, accounts_mode, allow_ai, local_single_mode, signed_in,
 )
 from api.tests.factories import make_product, make_receipt
 from api.tests.test_recognition_api import upload
@@ -178,6 +178,8 @@ class RecognitionIsolationTests(IsolationMixin, TestCase):
     @classmethod
     def setUpTestData(cls):
         super().setUpTestData()
+        # Загрузка и повтор отправляют фото модели: без семьи — только администратору сервера.
+        allow_ai(cls.first, cls.second)
         store, product = samples.lidl_store(), milk()
         cls.rows = {}
         for account in (cls.first, cls.second):

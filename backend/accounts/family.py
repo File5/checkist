@@ -8,9 +8,12 @@
   (хранится SHA-256 токена); приглашение принимает вошедший пользователь без семьи;
 - главный убирает члена семьи и передаёт роль; член семьи выходит сам; главный выйти не
   может, пока не передал роль (одному в семье выходить некуда — семья с лимитами останется);
-- чеки и фото убранного либо вышедшего остаются за ним (``owner``), семья их больше не видит.
+- чеки и фото убранного либо вышедшего остаются за ним (``owner``), семья их больше не видит;
+- приглашение «новая семья» выдаёт только администратор сервера (``is_staff``); по нему гость
+  заводит учётную запись и семью, где становится главным (ИИ у новой семьи выключен). Открытой
+  регистрации нет: без действующего одноразового токена учётная запись не появляется.
 
-Отказы — ``FamilyError(code, fields=None)``; коды переводит вью.
+Отказы — ``FamilyError(code, fields=None, issues=())``; коды переводит вью.
 """
 import hashlib
 import secrets
@@ -29,10 +32,13 @@ NAME_MAX = 100
 
 
 class FamilyError(Exception):
-    def __init__(self, code, fields=None):
+    """``issues`` — коды причин отказа пароля без приставки ``password_`` (``too_short`` …)."""
+
+    def __init__(self, code, fields=None, issues=()):
         super().__init__(code)
         self.code = code
         self.fields = fields or {}
+        self.issues = list(issues)
 
 
 def token_hash(token):
@@ -79,8 +85,21 @@ def generate_password():
 @transaction.atomic
 def add_member(family, *, username, first_name="", password=None):
     """Новая учётная запись в семье; возвращает ``(user, password)`` — пароль показывается один раз."""
+    if password is None or password == "":
+        password = generate_password()
+    candidate = new_account(username=username, first_name=first_name, password=password)
+    Membership.objects.create(user=candidate, household=family, role=Membership.Role.MEMBER)
+    return candidate, password
+
+
+def new_account(*, username, first_name, password, errors=None):
+    """Сохранённая учётная запись с проверенными логином, именем и паролем (валидаторы Django).
+
+    ``errors`` — уже найденные ошибки других полей: они уходят вместе с ошибками учётной записи.
+    Вызывается внутри транзакции вызывающего.
+    """
     User = get_user_model()
-    errors = {}
+    errors, issues = dict(errors or {}), []
     if not isinstance(username, str) or not username.strip():
         errors["username"] = ["Введите логин."]
     else:
@@ -96,25 +115,26 @@ def add_member(family, *, username, first_name="", password=None):
                 errors["username"] = ["Такой логин уже есть."]
     if not isinstance(first_name, str) or len(first_name) > 150:
         errors["first_name"] = ["Имя — строка не длиннее 150 символов."]
-    if password is None or password == "":
-        password = generate_password()
-    elif not isinstance(password, str):
+    if not isinstance(password, str):
         errors["password"] = ["Ожидается строка."]
+    elif password == "":
+        errors["password"] = ["Введите пароль."]
+    elif "username" not in errors and "first_name" not in errors:
+        try:
+            validate_password(password, User(username=username, first_name=first_name.strip()))
+        except ValidationError as error:
+            errors["password"] = [str(message) for message in error.messages]
+            issues = [(item.code or "").removeprefix("password_") for item in error.error_list]
     if errors:
-        raise FamilyError("invalid_parameter", errors)
+        raise FamilyError("invalid_parameter", errors, issues)
     candidate = User(username=username, first_name=first_name.strip())
-    try:
-        validate_password(password, candidate)
-    except ValidationError as error:
-        raise FamilyError("invalid_parameter", {"password": [str(message) for message in error.messages]}) from None
     candidate.set_password(password)
     try:
         with transaction.atomic():
             candidate.save()
     except IntegrityError:
         raise FamilyError("invalid_parameter", {"username": ["Такой логин уже есть."]}) from None
-    Membership.objects.create(user=candidate, household=family, role=Membership.Role.MEMBER)
-    return candidate, password
+    return candidate
 
 
 def member(family, username):
@@ -162,18 +182,69 @@ def create_invite(family, actor):
 
 
 def active_invites(family):
-    return Invite.objects.filter(household=family, used_at__isnull=True, expires_at__gt=timezone.now())
+    return Invite.objects.filter(kind=Invite.Kind.JOIN, household=family, used_at__isnull=True,
+                                 expires_at__gt=timezone.now())
+
+
+def may_invite_families(user):
+    """Приглашать новые семьи может только администратор сервера: ``is_staff`` активного пользователя."""
+    return bool(user is not None and user.is_active and user.is_staff)
+
+
+def create_family_invite(actor):
+    """Приглашение «новая семья»: ``(invite, token)``; токен в базе не хранится."""
+    token = secrets.token_urlsafe(24)
+    invite = Invite.objects.create(kind=Invite.Kind.NEW_FAMILY, token_hash=token_hash(token), created_by=actor,
+                                   expires_at=timezone.now() + timedelta(days=INVITE_DAYS))
+    return invite, token
+
+
+def active_family_invites():
+    return Invite.objects.filter(kind=Invite.Kind.NEW_FAMILY, used_at__isnull=True, expires_at__gt=timezone.now())
+
+
+def _usable(kind, token, *, lock=False):
+    """Действующее приглашение вида ``kind`` по токену либо ``invite_invalid``."""
+    if not isinstance(token, str) or not token or len(token) > 200:
+        raise FamilyError("invite_invalid")
+    rows = Invite.objects.select_for_update() if lock else Invite.objects
+    invite = rows.filter(kind=kind, token_hash=token_hash(token)).first()
+    if invite is None or invite.used_at is not None or invite.expires_at <= timezone.now():
+        raise FamilyError("invite_invalid")
+    return invite
+
+
+def check_family_invite(token):
+    """Приглашение «новая семья» действует: ``Invite`` либо ``invite_invalid``. Ничего не меняет."""
+    return _usable(Invite.Kind.NEW_FAMILY, token)
+
+
+@transaction.atomic
+def accept_family_invite(token, *, name, username, first_name="", password):
+    """Гость по приглашению «новая семья»: учётная запись, семья ``name`` и роль главного.
+
+    Возвращает ``(user, household)``. Неверное, просроченное, принятое — ``invite_invalid``
+    (раньше проверки полей); поля — ``invalid_parameter`` все разом, пароль — валидаторы Django.
+    """
+    invite = _usable(Invite.Kind.NEW_FAMILY, token, lock=True)
+    errors = {}
+    try:
+        name = clean_name(name)
+    except FamilyError as error:
+        errors.update(error.fields)
+    user = new_account(username=username, first_name=first_name, password=password, errors=errors)
+    family = Household.objects.create(name=name)
+    Membership.objects.create(user=user, household=family, role=Membership.Role.HEAD)
+    invite.used_at, invite.used_by = timezone.now(), user
+    invite.save(update_fields=["used_at", "used_by"])
+    return user, family
 
 
 @transaction.atomic
 def redeem(user, token):
     """Принять приглашение: ``user`` без семьи становится членом. Неверное, просроченное,
     принятое — ``invite_invalid``; уже в семье — ``already_in_family``."""
-    if not isinstance(token, str) or not token or len(token) > 200:
-        raise FamilyError("invite_invalid")
-    invite = Invite.objects.select_for_update().filter(token_hash=token_hash(token)).first()
-    if invite is None or invite.used_at is not None or invite.expires_at <= timezone.now():
-        raise FamilyError("invite_invalid")
+    invite = _usable(Invite.Kind.JOIN, token, lock=True)
     if Membership.objects.filter(user_id=user.pk).exists():
         raise FamilyError("already_in_family")
     Membership.objects.create(user=user, household=invite.household, role=Membership.Role.MEMBER)
