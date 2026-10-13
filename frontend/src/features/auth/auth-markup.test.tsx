@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { AccountView } from './AccountPage'
 import type { AccountViewProps } from './AccountPage'
 import type { FormState } from './auth-state'
+import { setMoneyDigits } from '../../lib/money-digits'
 import { passwordChangedText, passwordRefusal, sessionExpiredText } from './labels'
 import LoginPage, { LoginView } from './LoginPage'
 import type { LoginViewProps } from './LoginPage'
@@ -161,6 +162,31 @@ describe('account page (Node server markup, not browser behavior)', () => {
     expect(html).toContain('<li class="ck-auth-row"><span id="account-icons-label" class="ck-auth-row-label">Значки</span><div class="ck-auth-segments" role="group" aria-labelledby="account-icons-label"><button type="button" class="ck-auth-segment" aria-pressed="true">Категория</button><button type="button" class="ck-auth-segment" aria-pressed="false">Как внесена</button></div></li>')
     expect(html).toMatch(/<a [^>]*href="\/family"[^>]*>/)
     expect(accountHtml()).not.toContain('data-auth-family-name')
+  })
+  it('offers «Суммы» right after «Значки»: whole units by default, with cents once chosen', () => {
+    const row = (pressed: [boolean, boolean]) => '<li class="ck-auth-row"><span id="account-money-label" class="ck-auth-row-label">Суммы</span>'
+      + '<div class="ck-auth-segments" role="group" aria-labelledby="account-money-label">'
+      + `<button type="button" class="ck-auth-segment" aria-pressed="${pressed[0]}">Целые</button>`
+      + `<button type="button" class="ck-auth-segment" aria-pressed="${pressed[1]}">С копейками</button></div></li>`
+    const html = accountHtml()
+    expect(html).toContain(row([true, false]))
+    // The three choices of the device stand together, in this order, before the rows that lead away.
+    expect(html).toContain(`Как внесена</button></div></li>${row([true, false])}<li><a `)
+    expect(html.indexOf('id="account-theme-label"')).toBeLessThan(html.indexOf('id="account-icons-label"'))
+    expect(html.match(/class="ck-auth-segments"/g)).toHaveLength(3)
+    expect(html.match(/class="ck-auth-segment"/g)).toHaveLength(6)
+    expect(count(html, 'account-money-label')).toBe(2)
+    try {
+      setMoneyDigits('cents')
+      const cents = accountHtml()
+      expect(cents).toContain(row([false, true]))
+      expect(cents).not.toContain(row([true, false]))
+      // The other choices do not move with it.
+      expect(cents).toContain('aria-pressed="true">Категория</button>')
+    } finally {
+      setMoneyDigits('whole')
+    }
+    expect(accountHtml()).toContain(row([true, false]))
   })
     it('labels the three password fields for a password manager', () => {
     const html = accountHtml()

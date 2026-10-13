@@ -24,7 +24,8 @@ function decimal(value: Decimal | null, maximum: number, minimum = 0): string {
 export function formatUnit(unit: Unit | null): string {
   return unit === null ? missing : units[unit] ?? missing
 }
-/* Money amounts are not formatted here: `formatMoney` in `./money.ts` shows them in whole units, rounded up. */
+/* Money amounts are not formatted here: `formatMoney` in `./money.ts` shows them by the choice of the device — whole
+ * units, rounded up, or exactly with two places (`./money-digits.ts`). */
 /** Two places like a price tag; a non-zero price that would read 0,00 keeps up to four. */
 export function formatPrice(value: Decimal | null, currency: CurrencyCode, unit?: Unit | null): string {
   let number = decimal(value, 2, 2)

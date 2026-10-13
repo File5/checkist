@@ -27,6 +27,7 @@ import MainMenu from './menu/MainMenu'
 import { useWarmUp } from './menu/warm-up'
 import { headerAction, isFocusRoute, isMoreSection } from './menu/back-target'
 import { ThemeToggle } from './theme'
+import { useMoneyDigits } from './lib/money-digits'
 import OfflineBanner from './offline/OfflineBanner'
 import { usePendingSync } from './offline/pending-store'
 import emblem from './assets/brand/emblem-96.webp'
@@ -147,6 +148,9 @@ export default function App() {
   const previousShell = useRef<string | undefined>(undefined)
   const pathname = navigation.href.split(/[?#]/)[0]
   const session = useSession()
+  // «Суммы» of the device (lib/money-digits): a change redraws the tree in place, so every amount follows and nothing
+  // typed is lost. No key on the root — it would wipe unsaved forms, in the other tabs too.
+  useMoneyDigits()
   const view = shellView(session, route)
   const title = shellTitle(view, route)
   // The health page lives through every change of the session; any other page belongs to one person.
