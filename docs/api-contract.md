@@ -2161,3 +2161,42 @@ Line несёт ещё `category` (`{"id","name"}` либо `null`, после `
   `unverified` — числа от 100 из текста, которых нет среди цифр сводки и вопроса (как написаны).
 - Коды сбоя: `invalid_output` (ответ не прошёл схему), `timeout`, `expired` (ждал воркера > 10 мин), `worker_lost`,
   `auth_required`, `internal_error` и прочие коды провайдера; `message` — фиксированный текст.
+## Доходы (2026-10-13, ветка `feature/incomes`)
+
+Доходы человек вносит только сам; поступления из выписок доходами не становятся. Доступ — как у трат без чека
+(`accounts` — вход, `local_single` — DEBUG + флаг + loopback), запись — с CSRF. **Видимость** — одно правило
+`incomes.access.visible_q`: запись видят тот, кто внёс, и главный в семье; другой член семьи получает на неё `404`, но
+видит общий доход семьи за месяц (`family_total`, `income` строки Главной). Пользователь без семьи видит свои.
+
+| Метод и путь | Что |
+| --- | --- |
+| `GET /api/incomes/?month=ГГГГ-ММ` | `{month, base_currency, family_total, results}`: видимые записи месяца (новые сверху) и доход всей семьи в основной валюте (`null` — доходов нет) |
+| `POST /api/incomes/` | `{amount, category, currency?, received_on?, note?}` → `201` запись; валюта по умолчанию — как у трат (профиль → последний чек → KZT), дата — сегодня |
+| `GET/PATCH/DELETE /api/incomes/{id}/` | одна запись; невидимая — `404` |
+| `GET /api/incomes/categories/` | `{results: [{id, name, built_in}]}`: встроенные «Зарплата · Подработка · Подарки · Кэшбэк и проценты · Продажа вещей · Прочее», потом свои |
+| `POST /api/incomes/categories/` | `{name}` (1–60) → `201`; своя категория семьи (владелец как у лимита), то же имя без учёта регистра — уже имеющаяся |
+| `GET /api/incomes/summary/?month=` | строка Главной: `{month, base_currency, income, spent, saved, saved_percent, excluded}`; `income`/`saved`/`saved_percent` — `null`, пока дохода за месяц нет |
+| `GET /api/stats/trends/incomes/?months=…` (или `from`/`to`, как у `trends/monthly/`) | `{months, month_from, month_to, base_currency, excluded, items: [{month, income, spent, saved, saved_percent}]}` |
+
+Запись: `{id, received_on, amount, currency, category: {id, name}, note, owner, owner_name, base_amount}`
+(`base_amount` — в основной валюте по курсу дня, `null` — курса нет). Ошибки тела — `400 invalid_parameter` с полями
+и текстами ручной траты (`amount`, `currency`, `category`, `received_on`, `note`, неизвестное поле). Итоги — в основной
+валюте (`rates.convert`) по курсу дня: доход — всех членов семьи, «потрачено» — `Σ Receipt.total` видимых чеков (как
+«Потрачено» Главной), «отложено» — разница, `saved_percent` — её доля от дохода. Суммы без курса в итоги не входят и
+перечислены в `excluded` (`[{currency, total}]`). Для «можно тратить в день» — `incomes.services.month_income(user,
+month) -> Decimal | None` (основная валюта; `None` — доходов за месяц нет).
+
+**Разбор словами.** Схема ответа модели получила обязательное `kind` (`spend` | `income`), вход — `income_categories`.
+«Зарплата 650 000» — черновик тех же полей с `"kind": "income"`, `category` — id категории дохода, без места и позиций;
+у траты ключа `kind` в черновике нет (черновик траты по-прежнему — тело `POST /api/receipts/manual/`).
+
+**Регулярный доход** (`/api/recurring/`): у платежа поле `kind` (`spend` | `income`); тело нового может нести
+`"kind": "income"` — тогда `category_id` — категория дохода, места нет; у сохранённого вид не меняется (`400` у `kind`).
+Шаблон дохода видят автор и главный (остальным — `404`). Получен ли — сверка с доходами всей семьи тем же окном месяца:
+нужна та же категория дохода, сумма ±25 % — лишний признак (сумму при внесении можно поправить). У дохода
+`paid.receipt_id` — `null`, `purchased_on` — день получения; в `totals` («осталось оплатить») и вопросах о прошлом месяце
+доходов нет, ответ (`decision/`) на шаблон дохода — `404`; `recurring.services.unpaid` отдаёт только платежи.
+
+**Выгрузка** (`GET /api/export/`): раздел `incomes` (в наборе по умолчанию; `include=…,incomes`) —
+`[{id, received_on, currency, amount, category, note, owner, owner_name}]`, видимость та же (`visible_q`); из фильтров
+к доходам относятся только `from`/`to`, `currency` и `owner`.

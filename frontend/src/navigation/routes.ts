@@ -154,9 +154,12 @@ export type NavigableRoute = CatalogRoute
   | { kind: 'receipts'; query: ReceiptsQuery }
   | { kind: 'upload' }
   /** «Добавить трату» — a spend without a receipt; `repeat` — a manual spend whose copy with today's date starts the form
-   * («Повторить»). `expense-edit` changes a manual spend with the same form. */
-  | { kind: 'expense-new'; repeat?: number }
+   * («Повторить»). `expense-edit` changes a manual spend with the same form. `income` — the same form on «Доход». */
+  | { kind: 'expense-new'; repeat?: number; income?: boolean }
   | { kind: 'expense-edit'; receiptId: number }
+  /** «Доходы» of a month (no `month` — the current one) and the form of one income. */
+  | { kind: 'incomes'; month?: string }
+  | { kind: 'income-edit'; incomeId: number }
   | { kind: 'receipt'; receiptId: number }
   | { kind: 'jobs'; query: JobsQuery }
   | { kind: 'job'; jobId: number }
@@ -557,8 +560,11 @@ export function buildRoute(route: NavigableRoute): string {
     case 'health': return '/health'
     case 'receipts': return `/receipts${buildReceiptsQuery(route.query)}`
     case 'upload': return '/receipts/upload'
-    case 'expense-new': return route.repeat === undefined ? '/receipts/new' : `/receipts/new?repeat=${buildId(route.repeat)}`
+    case 'expense-new': return route.income ? '/receipts/new?kind=income'
+      : route.repeat === undefined ? '/receipts/new' : `/receipts/new?repeat=${buildId(route.repeat)}`
     case 'expense-edit': return `/receipts/${buildId(route.receiptId)}/edit`
+    case 'incomes': return parseMonthParam(route.month) ? `/incomes?month=${route.month}` : '/incomes'
+    case 'income-edit': return `/incomes/${buildId(route.incomeId)}/edit`
     case 'receipt': return `/receipts/${buildId(route.receiptId)}`
     case 'jobs': return `/recognition/jobs${buildJobsQuery(route.query)}`
     case 'job': return `/recognition/jobs/${buildId(route.jobId)}`
@@ -608,6 +614,7 @@ export function parseRoute(input: string | URL): Route {
   if (normalizedPath === '/login') return { kind: 'login' }
   if (normalizedPath === '/receipts/upload') return { kind: 'upload' }
   if (normalizedPath === '/receipts/new') {
+    if (url.searchParams.get('kind') === 'income') return { kind: 'expense-new', income: true }
     // A wrong `repeat` is dropped: the form opens empty.
     const repeat = positiveInteger(url.searchParams.get('repeat') ?? '')
     return repeat === undefined ? { kind: 'expense-new' } : { kind: 'expense-new', repeat }
@@ -619,6 +626,17 @@ export function parseRoute(input: string | URL): Route {
     return id === undefined ? { kind: 'not-found', path } : { kind: 'expense-edit', receiptId: id }
   }
   if (normalizedPath === '/account') return { kind: 'account' }
+  if (normalizedPath === '/incomes') {
+    // Like the dashboard: a wrong month is dropped and the current one opens.
+    const month = parseMonthParam(url.searchParams.getAll('month').at(-1))
+    return month ? { kind: 'incomes', month } : { kind: 'incomes' }
+  }
+  const incomeEdit = /^\/incomes\/([^/]+)\/edit$/.exec(normalizedPath)
+  if (incomeEdit) {
+    let id: number | undefined
+    try { id = positiveInteger(decodeURIComponent(incomeEdit[1])) } catch { /* Invalid path encoding. */ }
+    return id === undefined ? { kind: 'not-found', path } : { kind: 'income-edit', incomeId: id }
+  }
   if (normalizedPath === '/stores') return { kind: 'stores' }
   if (normalizedPath === '/family') return { kind: 'family' }
   if (normalizedPath === '/recurring') return { kind: 'recurring' }

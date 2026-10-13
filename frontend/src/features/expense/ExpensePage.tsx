@@ -1,10 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { CSSProperties, FormEvent, RefObject } from 'react'
 import { getCategories } from '../../api/catalog'
+import { announceIncome, createIncome, getIncome, getIncomeCategories, updateIncome } from '../../api/incomes'
 import { createManualSpend, getManualDefaults, getReceipt, getReceiptLines, updateManualSpend } from '../../api/receipts'
 import type { Line, ManualDefaults, Receipt } from '../../api/receipts'
 import type { Category, LocalApiResult } from '../../api/types'
 import RequestState from '../../components/RequestState'
+import { usePageTitle } from '../../components/page-header'
 import { Link, navigate } from '../../navigation'
 import { isNetworkFailure } from '../../offline/pending'
 import { clearHandoff, discardPending, draftFromPending, enqueueSpend, peekHandoff } from '../../offline/pending-store'
@@ -19,7 +21,9 @@ import { caretAfter, charsBefore, evaluateAmount, groupDigits, hasOperator, ungr
 import {
   categoryChips, categoryTree, chipParent, chipToneId, dateChoice, sumText, dayBefore, sentIndexes, draftBody, draftFromReceipt, emptyDraft, fieldScrollDelta,
   linesTotal, filledLines, LINES_MAX, newLine, saveLabel, savedNotice, serverErrors, setExpenseNotice, shortDay, todayISO, updatedNotice, visibleChips,
+  draftFromIncome, incomeBody, incomeChip,
 } from './expense-form'
+import { setIncomeNotice } from '../incomes/incomes-state'
 import Sheet from '../../components/Sheet'
 import { categoryTone } from '../../lib/category-tone'
 import { useNarrow } from '../../lib/cards'
@@ -29,7 +33,9 @@ import { DeleteSpend } from './ManualSpendActions'
 import type { ExpenseDraft, ExpenseErrors, LineDraft } from './expense-form'
 import './Expense.css'
 
-type Loaded = { draft: ExpenseDraft; chips: Category[]; byline?: string }
+type Loaded = { draft: ExpenseDraft; chips: Category[]; incomeChips: Category[]; byline?: string }
+/** «Трата / Доход»: what the form saves. */
+export type FormKind = 'spend' | 'income'
 type LoadState = { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'read-only' } | { kind: 'ok'; data: Loaded }
 
 /** The keys of the amount calculator and their names for a screen reader. */
@@ -56,6 +62,10 @@ export type ExpenseFormProps = {
   byline?: string
   /** A phone: the deletion asks in a sheet. */
   narrow?: boolean
+  /** `income` — the same amount, date and note, the chips of income categories, no place and no positions. */
+  kind?: FormKind
+  /** The income being changed: the form ends with «Удалить доход». */
+  incomeId?: number
 }
 
 /** A focused field of the form stays above the save bar and the keyboard of a phone: after the focus and whenever the
@@ -111,16 +121,18 @@ const openPicker = (input: HTMLInputElement) => {
 }
 
 /** The form itself, without loading and saving: the markup tests render it directly. */
-export function ExpenseForm({ draft, chips, errors, saving, failure, receiptId, onChange, onSubmit, today = todayISO(), initialSheet = false, byline, narrow = false }: ExpenseFormProps) {
+export function ExpenseForm({ draft, chips, errors, saving, failure, receiptId, onChange, onSubmit, today = todayISO(), initialSheet = false, byline, narrow = false, kind = 'spend', incomeId }: ExpenseFormProps) {
   const [sheet, setSheet] = useState(initialSheet)
   const [search, setSearch] = useState('')
   const formRef = useRef<HTMLFormElement>(null)
   const added = useRef<number | undefined>(undefined)
+  const income = kind === 'income'
   const itemized = filledLines(draft.lines).length > 0
   const sum = linesTotal(draft.lines)
   // Errors name a position by its place among the sent ones: an untouched empty row is not sent.
   const sent = sentIndexes(draft.lines)
-  const shown = visibleChips(chips, draft.category, false)
+  // The short list of income categories is shown whole.
+  const shown = income ? chips : visibleChips(chips, draft.category, false)
   const choice = dateChoice(draft.date, today)
   const symbol = currencySymbol(draft.currency)
   // «₸ KZT»: the sign before the code, where the currency has one.
@@ -202,8 +214,8 @@ export function ExpenseForm({ draft, chips, errors, saving, failure, receiptId, 
           {chipParent(category) && <span className="expense-visually-hidden">{chipParent(category)} › </span>}
           <span className="expense-chip-name">{category.name}</span>
         </button>)}
-        <button type="button" className="expense-chip expense-more" aria-haspopup="dialog" aria-expanded={sheet}
-          onClick={() => setSheet(true)}>Все категории…</button>
+        {!income && <button type="button" className="expense-chip expense-more" aria-haspopup="dialog" aria-expanded={sheet}
+          onClick={() => setSheet(true)}>Все категории…</button>}
       </div>}
       {!chips.length && <p className="expense-hint-note">Категорий пока нет: их заводят в каталоге.</p>}
       {fieldError(errors, 'category')}
@@ -244,14 +256,14 @@ export function ExpenseForm({ draft, chips, errors, saving, failure, receiptId, 
         </div>
         {fieldError(errors, dateField)}
       </div>
-      <div className="expense-row-block">
+      {!income && <div className="expense-row-block">
         <label className="expense-row" htmlFor="expense-place">
           <span className="expense-row-label">Где</span>
           <input id="expense-place" className="expense-row-input" autoComplete="off" value={draft.place} placeholder="Без места" aria-invalid={Boolean(errors.place)}
             aria-describedby={describedBy(errors, 'place')} onChange={(event) => set({ place: event.target.value })} />
         </label>
         {fieldError(errors, 'place')}
-      </div>
+      </div>}
       <div className="expense-row-block">
         <label className="expense-row" htmlFor="expense-note">
           <span className="expense-row-label">Комментарий</span>
@@ -260,7 +272,7 @@ export function ExpenseForm({ draft, chips, errors, saving, failure, receiptId, 
         </label>
         {fieldError(errors, 'note')}
       </div>
-      <div className="expense-row-block expense-lines" role="group" aria-labelledby="expense-lines-heading">
+      {!income && <div className="expense-row-block expense-lines" role="group" aria-labelledby="expense-lines-heading">
         <div className="expense-row">
           <span id="expense-lines-heading" className="expense-row-label">Позиции</span>
           {draft.lines.length < LINES_MAX && <button type="button" className="expense-add-line" onClick={addLine}>
@@ -285,11 +297,12 @@ export function ExpenseForm({ draft, chips, errors, saving, failure, receiptId, 
           {fieldError(errors, `lines.${sent[index]}.amount`)}
         </li>)}</ol>}
         {fieldError(errors, 'lines')}
-      </div>
+      </div>}
     </section>
 
     {byline && <p className="expense-byline">{byline}</p>}
     {receiptId !== undefined && <DeleteSpend receiptId={receiptId} narrow={narrow} />}
+    {incomeId !== undefined && <DeleteSpend receiptId={incomeId} narrow={narrow} income />}
 
     <div className="expense-actions ck-action-bar">
       {failure && <p className="expense-failure" role="alert">{failure}</p>}
@@ -306,8 +319,12 @@ function unwrap<T>(result: LocalApiResult<T>): T | Failure | undefined {
 const isFailure = (value: unknown): value is Failure => typeof value === 'object' && value !== null && (value as Failure).kind === 'error'
 
 /** `/receipts/new` and `/receipts/{id}/edit`: loads what the form needs, saves, then opens the page of the spend.
- * The shell keys it by the spend, so another spend starts from «loading» again. */
-export default function ExpensePage({ receiptId, repeat }: { receiptId?: number; repeat?: number }) {
+ * The shell keys it by the spend, so another spend starts from «loading» again. A new form switches «Трата / Доход»
+ * (`income` — it opens on «Доход»); `/incomes/{id}/edit` (`incomeId`) changes an income and goes back to «Доходы». */
+export default function ExpensePage({ receiptId, repeat, income = false, incomeId }: { receiptId?: number; repeat?: number; income?: boolean; incomeId?: number }) {
+  const isNew = receiptId === undefined && incomeId === undefined
+  const [kind, setKind] = useState<FormKind>(income || incomeId !== undefined ? 'income' : 'spend')
+  usePageTitle(isNew ? (kind === 'income' ? 'Новый доход' : 'Новая трата') : undefined)
   const [load, setLoad] = useState<LoadState>({ kind: 'loading' })
   const [attempt, setAttempt] = useState(0)
   const [draft, setDraft] = useState<ExpenseDraft | undefined>()
@@ -316,7 +333,7 @@ export default function ExpensePage({ receiptId, repeat }: { receiptId?: number;
   const [failure, setFailure] = useState<string>()
   const saveController = useRef<AbortController | undefined>(undefined)
   // «Исправить» of a spend waiting on the phone: the form starts from it and replaces it once saved.
-  const [handed] = useState(() => receiptId === undefined ? peekHandoff() : undefined)
+  const [handed] = useState(() => isNew ? peekHandoff() : undefined)
   const session = useSession()
   const owner = session.kind === 'user' ? session.user.username : undefined
   const family = session.kind === 'user' && session.household !== null
@@ -327,6 +344,21 @@ export default function ExpensePage({ receiptId, repeat }: { receiptId?: number;
     const controller = new AbortController()
     const { signal } = controller
     void (async () => {
+      if (incomeId !== undefined) {
+        const found = await Promise.all([getIncomeCategories({ signal }), getIncome(incomeId, { signal })])
+        if (signal.aborted) return
+        const failed = found.find(isFailure)
+        if (failed) { setLoad({ kind: 'error', message: errorMessage(failed) }); return }
+        const [categoryList, saved] = found
+        if (categoryList.kind !== 'ok' || saved.kind !== 'ok') return
+        const next = draftFromIncome(saved.data)
+        setDraft(next)
+        setLoad({ kind: 'ok', data: { draft: next, chips: [], incomeChips: categoryList.data.map(incomeChip),
+          byline: `Внёс: ${saved.data.owner_name} · запись видят автор и главный в семье` } })
+        return
+      }
+      // The categories of incomes for «Трата / Доход» of a new form; without them the form stays a spend form.
+      const incomeCategories = receiptId === undefined ? getIncomeCategories({ signal }) : undefined
       const categories = getCategories({}, { signal })
       // «Повторить» (`?repeat=`): the spend to copy is read like the one to change; if it cannot be read, the form is empty.
       const source = receiptId ?? (handed ? undefined : repeat)
@@ -337,6 +369,7 @@ export default function ExpensePage({ receiptId, repeat }: { receiptId?: number;
         : Promise.all([categories, getReceipt(receiptId, { signal }), getReceiptLines(receiptId, { page_size: 200 }, { signal })])
       const [categoryResult, ...rest] = await loaded
       const [copiedReceipt, copiedLines] = receiptId === undefined && copied ? await copied : []
+      const incomeResult = incomeCategories ? await incomeCategories : undefined
       if (signal.aborted) return
       const values = [unwrap(categoryResult), ...rest.map((result) => unwrap(result as LocalApiResult<unknown>))]
       if (values.some((value) => value === undefined)) return
@@ -360,15 +393,40 @@ export default function ExpensePage({ receiptId, repeat }: { receiptId?: number;
         byline = `Добавил: ${ownerName(receipt)} · ${receipt.hidden ? 'скрыта от семьи' : 'видна всей семье'}`
       }
       setDraft(next)
-      setLoad({ kind: 'ok', data: { draft: next, chips: categoryChips(categoryData.results, frequent), byline } })
+      setLoad({ kind: 'ok', data: { draft: next, chips: categoryChips(categoryData.results, frequent),
+        incomeChips: incomeResult?.kind === 'ok' ? incomeResult.data.map(incomeChip) : [], byline } })
     })()
     return () => controller.abort()
-  }, [receiptId, repeat, attempt, handed])
+  }, [receiptId, incomeId, repeat, attempt, handed])
 
   useEffect(() => () => saveController.current?.abort(), [])
 
+  const saveIncome = async (current: ExpenseDraft) => {
+    const checked = incomeBody(current)
+    if ('errors' in checked) { setErrors(checked.errors); setFailure(undefined); return }
+    setErrors({})
+    setFailure(undefined)
+    setSaving(true)
+    const controller = new AbortController()
+    saveController.current = controller
+    const result = incomeId === undefined
+      ? await createIncome(checked.body, { signal: controller.signal })
+      : await updateIncome(incomeId, checked.body, { signal: controller.signal })
+    if (controller.signal.aborted || result.kind === 'aborted') return
+    setSaving(false)
+    if (result.kind === 'ok') {
+      announceIncome()
+      setIncomeNotice(incomeId === undefined ? 'Доход сохранён.' : updatedNotice)
+      navigate({ kind: 'incomes', month: result.data.received_on.slice(0, 7) })
+      return
+    }
+    if (result.reason === 'invalid_parameter' && result.fields?.length) setErrors(serverErrors(result.fields))
+    setFailure(saveMessage(result))
+  }
+
   const save = async () => {
     if (!draft || saving) return
+    if (kind === 'income') { await saveIncome(draft); return }
     const checked = draftBody(draft)
     if ('errors' in checked) { setErrors(checked.errors); setFailure(undefined); return }
     setErrors({})
@@ -403,14 +461,29 @@ export default function ExpensePage({ receiptId, repeat }: { receiptId?: number;
     onRetry={() => { setLoad({ kind: 'loading' }); setAttempt((value) => value + 1) }} />
   if (load.kind === 'read-only') return <RequestState kind="empty" message="Чек с фото не меняется: править можно только трату, внесённую вручную."
     action={<Link className="action-link" to={`/receipts/${receiptId}`}>К чеку</Link>} />
-  const chips = load.data.chips
-  // Who adds the spend, said only in a family: a person alone adds everything themselves.
-  const byline = !family ? undefined : receiptId === undefined && session.kind === 'user'
-    ? `Добавит: ${personName(session.user.username, session.user.display_name)} · видна всей семье` : load.data.byline
+  const { chips: spendChips, incomeChips } = load.data
+  const chips = kind === 'income' ? incomeChips : spendChips
+  const me = session.kind === 'user' ? personName(session.user.username, session.user.display_name) : undefined
+  // Who adds the spend, said only in a family: a person alone adds everything themselves. An income is private.
+  const byline = !family ? undefined : !isNew || me === undefined ? load.data.byline
+    : kind === 'income' ? `Внесёт: ${me} · запись видят вы и главный в семье` : `Добавит: ${me} · видна всей семье`
+  // «Трата / Доход»: the amount, the date and the note stay; the category belongs to its own list.
+  const switchKind = (next: FormKind) => {
+    if (next === kind) return
+    setKind(next)
+    setDraft((before) => before && { ...before, category: null, ...(next === 'income' && { place: '', lines: [] }) })
+    setErrors({})
+    setFailure(undefined)
+  }
+  const fill = (next: FormKind, filled: ExpenseDraft) => { setKind(next); setDraft(filled); setErrors({}); setFailure(undefined) }
   return <div className="expense-page">
-    {receiptId === undefined && <TextHint onFill={(parsed) => { setDraft(draftFromParse(parsed, chips)); setErrors({}); setFailure(undefined) }}
-      onRepeat={(spend) => { setDraft(draftFromSuggestion(spend, chips, todayISO())); setErrors({}); setFailure(undefined) }} />}
-    <ExpenseForm draft={draft ?? load.data.draft} chips={chips} errors={errors} saving={saving} failure={failure}
-      receiptId={receiptId} onChange={setDraft} onSubmit={() => { void save() }} byline={byline} narrow={narrow} />
+    {isNew && incomeChips.length > 0 && <div className="expense-kind" role="group" aria-label="Что вносим">
+      <button type="button" aria-pressed={kind === 'spend'} onClick={() => switchKind('spend')}>Трата</button>
+      <button type="button" aria-pressed={kind === 'income'} onClick={() => switchKind('income')}>Доход</button>
+    </div>}
+    {isNew && <TextHint income={kind === 'income'} onFill={(parsed) => parsed.kind === 'income' ? fill('income', draftFromParse(parsed, incomeChips)) : fill('spend', draftFromParse(parsed, spendChips))}
+      onRepeat={(spend) => fill('spend', draftFromSuggestion(spend, spendChips, todayISO()))} />}
+    <ExpenseForm kind={kind} draft={draft ?? load.data.draft} chips={chips} errors={errors} saving={saving} failure={failure}
+      receiptId={receiptId} incomeId={incomeId} onChange={setDraft} onSubmit={() => { void save() }} byline={byline} narrow={narrow} />
   </div>
 }

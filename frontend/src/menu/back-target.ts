@@ -9,7 +9,7 @@ export type HeaderAction = BackTarget & { kind: 'back' | 'close' }
 
 /** A new or changed spend: a screen of one task, with «✕» instead of «назад» and without the bottom bar of a phone. */
 export function isFocusRoute(route: Route): boolean {
-  return route.kind === 'expense-new' || route.kind === 'expense-edit'
+  return route.kind === 'expense-new' || route.kind === 'expense-edit' || route.kind === 'income-edit'
 }
 
 /** The name of the way back by the kind of the page it leads to. */
@@ -24,6 +24,7 @@ const backLabels: Partial<Record<Route['kind'], string>> = {
   merges: 'Назад к дублям',
   classification: 'Назад к категориям товаров',
   'statement-new': 'Назад к выпискам',
+  incomes: 'Назад к доходам',
 }
 
 const labelOf = (href: string) => backLabels[parseRoute(new URL(href, 'http://checkist.invalid')).kind] ?? 'Назад'
@@ -59,6 +60,7 @@ export function headerAction(navigation: Pick<NavigationSnapshot, 'route' | 'ret
   const { route } = navigation
   if (route.kind === 'expense-new') return { kind: 'close', to: from ?? '/', label: 'Закрыть' }
   if (route.kind === 'expense-edit') return { kind: 'close', to: `/receipts/${route.receiptId}`, label: 'Закрыть' }
+  if (route.kind === 'income-edit') return { kind: 'close', to: from ?? '/incomes', label: 'Закрыть' }
   const back = backTarget(navigation)
   return back && { kind: 'back', ...back }
 }

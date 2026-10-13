@@ -73,6 +73,8 @@ export type ManualParseLine = { name: string; amount: Decimal; quantity: Decimal
 export type ManualParseDraft = {
   total: Decimal | null; currency: CurrencyCode; category: number | null; purchased_on: ISODate
   store_name: string | null; note: string; lines: ManualParseLine[]
+  /** `income` — «зарплата 650 000»: `category` is a category of incomes, no place and no positions. Absent — a spend. */
+  kind?: 'spend' | 'income'
 }
 export type ManualParse = {
   id: number; status: ManualParseStatus; draft: ManualParseDraft | null

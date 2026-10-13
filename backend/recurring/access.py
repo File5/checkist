@@ -5,6 +5,8 @@
 скрытых платежей. ``as_request(user)`` — те же правила для кода без HTTP-запроса
 (``recurring.services.unpaid``).
 """
+from django.db.models import Q
+
 from budget.access import limit_owner, limits_q
 
 
@@ -27,3 +29,10 @@ def owner_fields(request):
 def payments_q(request, prefix=""):
     """Платежи (и скрытые предложения), которые запрос видит и правит."""
     return limits_q(request, prefix)
+
+
+def visible_payments_q(request):
+    """Шаблоны запроса: платежи семьи и регулярный доход — его видят автор и главный (``incomes.access.visible_q``)."""
+    from incomes.access import visible_q
+
+    return payments_q(request) & (Q(kind="spend") | visible_q(request, "created_by"))

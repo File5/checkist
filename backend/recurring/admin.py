@@ -7,8 +7,9 @@ from .models import DismissedSuggestion, RecurringDecision, RecurringPayment
 class RecurringPaymentAdmin(admin.ModelAdmin):
     """Регулярные платежи; обычно их правят на экране «Регулярные платежи», админка — запасной путь."""
 
-    list_display = ("name", "amount", "currency", "due_day", "active", "category", "store", "household", "user")
-    list_filter = ("active", "currency")
+    list_display = ("name", "kind", "amount", "currency", "due_day", "active", "category", "income_category", "store",
+                    "household", "user")
+    list_filter = ("kind", "active", "currency")
     search_fields = ("name", "category__name", "household__name", "user__username")
     raw_id_fields = ("store", "created_by")
     autocomplete_fields = ("user",)

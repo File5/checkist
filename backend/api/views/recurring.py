@@ -3,6 +3,10 @@
 Доступ — как у лимитов и записи трат: ``accounts`` — вход, ``local_single`` — DEBUG + флаг +
 loopback; запись — с CSRF. Платежи семьи видят и правят все её члены, чужой — ``404``.
 Сверка с тратами — ``recurring.services`` (видимые траты семьи без скрытых).
+
+Регулярный доход (``kind: "income"``, 2026-10-13): ``category_id`` — категория дохода
+(``/api/incomes/categories/``), места нет; получен ли — сверка с доходами месяца. Такой шаблон
+видят его автор и главный в семье, остальным он — ``404``. Вопросов о прошлом месяце у дохода нет.
 """
 import re
 
@@ -17,7 +21,9 @@ from catalog.models import Category
 from config.exceptions import ApiError, InvalidParameter, ObjectNotFound
 from receipts import manual
 from recurring import matching, services
-from recurring.access import owner_fields, payments_q
+from incomes.access import categories_q
+from incomes.models import IncomeCategory
+from recurring.access import owner_fields, visible_payments_q
 from recurring.models import RecurringDecision, RecurringPayment
 from stores.models import Currency, Store
 
@@ -28,7 +34,8 @@ from .receipts import manual_body, manual_invalid
 from .recognition import path_id
 from .recognition_base import JsonObjectParser, LocalAPIView
 
-FIELDS = ("name", "store_name", "category_id", "currency", "amount", "due_day", "active")
+FIELDS = ("name", "store_name", "category_id", "currency", "amount", "due_day", "active", "kind")
+INCOME = RecurringPayment.Kind.INCOME
 NAME_MAX = 100
 MESSAGES = {
     "unknown_field": "Неизвестное поле.",
@@ -44,6 +51,7 @@ MESSAGES = {
     "decision": "Ответ — added, skipped или elsewhere.",
     "month": "Месяц до текущего, не раньше чем за год, в формате ГГГГ-ММ.",
     "store": "Магазин не найден.",
+    "kind": "Вид — spend или income; у сохранённого шаблона не меняется.",
 }
 _MONTH = re.compile(r"([0-9]{4})-([0-9]{2})")
 
@@ -74,9 +82,16 @@ def _currency(value):
     return None
 
 
-def read_payment(data, *, partial):
-    """Проверенные поля тела платежа (только присланные при ``partial``); ``store_name`` — текст места."""
+def read_payment(data, request, *, partial, kind=None):
+    """Проверенные поля тела платежа (только присланные при ``partial``); ``store_name`` — текст места.
+
+    ``kind`` — вид сохранённого шаблона (правка его не меняет); у нового — из тела, по умолчанию ``spend``.
+    """
     errors, values = {}, {}
+    raw_kind = data.get("kind", kind or RecurringPayment.Kind.SPEND)
+    if raw_kind not in RecurringPayment.Kind.values or (kind is not None and raw_kind != kind):
+        errors["kind"] = [MESSAGES["kind"]]
+    income = raw_kind == INCOME
     for key in data:
         if key not in FIELDS:
             errors[key] = [MESSAGES["unknown_field"]]
@@ -96,8 +111,11 @@ def read_payment(data, *, partial):
             if value is not None and not (isinstance(value, str) and len(value.strip()) <= manual.STORE_NAME_MAX):
                 errors[key] = [MESSAGES["store_name"]]
             values["store_name"] = (value.strip() or None) if isinstance(value, str) else None
+        elif key == "kind":
+            values["kind"] = raw_kind
         elif key == "category_id":
-            category = Category.objects.filter(pk=_id(value)).first() if _id(value) else None
+            categories = IncomeCategory.objects.filter(categories_q(request)) if income else Category.objects
+            category = categories.filter(pk=_id(value)).first() if _id(value) else None
             if category is None:
                 errors[key] = [MESSAGES["category"]]
             values["category"] = category
@@ -127,8 +145,13 @@ def read_payment(data, *, partial):
 
 
 def apply(payment, values):
+    payment.kind = values.get("kind", payment.kind)
     for name, value in values.items():
-        if name == "store_name":
+        if name == "category" and payment.kind == INCOME:
+            payment.income_category = value
+        elif name == "store_name" and payment.kind == INCOME:
+            payment.store = None  # у дохода места нет
+        elif name == "store_name":
             currency = values.get("currency_id") or payment.currency_id
             payment.store = manual.find_or_create_store(value, currency) if value else None
         else:
@@ -142,8 +165,8 @@ def _store(store):
 
 def payment_object(payment):
     return {
-        "id": payment.pk, "name": payment.name, "store": _store(payment.store),
-        "category": {"id": payment.category_id, "name": payment.category.name},
+        "id": payment.pk, "kind": payment.kind, "name": payment.name, "store": _store(payment.store),
+        "category": {"id": payment.any_category.pk, "name": payment.any_category.name},
         "currency": payment.currency_id, "amount": common.amount(payment.amount), "due_day": payment.due_day,
         "active": payment.active, "created_by": person(payment.created_by) if payment.created_by else None,
     }
@@ -153,8 +176,10 @@ def _month_payment(row):
     spend = row.spend
     return {
         **payment_object(row.payment), "state": row.state, "due_date": common.iso_date(row.due),
+        # У дохода ``receipt_id`` — null, ``purchased_on`` — день, когда доход получен.
         "paid": None if spend is None else {
-            "receipt_id": spend.id, "purchased_on": common.iso_date(spend.day), "total": common.amount(spend.total)},
+            "receipt_id": None if row.payment.kind == INCOME else spend.id, "purchased_on": common.iso_date(spend.day),
+            "total": common.amount(spend.total)},
         "added": row.added, "average": common.amount(row.average), "last_amount": common.amount(row.last),
         "previous_amount": common.amount(row.previous),
         "history": [{"month": month.label(), "state": state} for month, state in row.history],
@@ -182,7 +207,7 @@ def _totals(rows):
     """По валютам: сколько платежей в месяце, сколько закрыто, сколько осталось оплатить."""
     totals = {}
     for row in rows:
-        if row.state in (services.BEFORE, services.INACTIVE):
+        if row.state in (services.BEFORE, services.INACTIVE) or row.payment.kind == INCOME:
             continue
         entry = totals.setdefault(row.payment.currency_id, {"currency": row.payment.currency_id, "payments": 0,
                                                              "done": 0, "left": None})
@@ -195,7 +220,8 @@ def _totals(rows):
 
 
 def visible_payments(request):
-    return RecurringPayment.objects.filter(payments_q(request)).select_related("store__merchant", "category", "created_by")
+    return RecurringPayment.objects.filter(visible_payments_q(request)).select_related(
+        "store__merchant", "category", "income_category", "created_by")
 
 
 class PaymentsView(LocalAPIView):
@@ -219,7 +245,7 @@ class PaymentsView(LocalAPIView):
         })
 
     def post(self, request):
-        values = read_payment(manual_body(request), partial=False)
+        values = read_payment(manual_body(request), request, partial=False)
         payment = apply(RecurringPayment(**owner_fields(request), created_by=request_user(request)), values)
         payment.save()
         return Response(payment_object(payment), status=status.HTTP_201_CREATED)
@@ -236,7 +262,7 @@ class PaymentView(LocalAPIView):
 
     def patch(self, request, pk):
         payment = common.get_or_404(visible_payments(request), path_id(pk))
-        apply(payment, read_payment(manual_body(request), partial=True)).save()
+        apply(payment, read_payment(manual_body(request), request, partial=True, kind=payment.kind)).save()
         return Response(payment_object(payment))
 
     def delete(self, request, pk):
@@ -276,7 +302,7 @@ class DecisionView(LocalAPIView):
     parser_classes = [RecurringBodyParser]
 
     def post(self, request, pk):
-        payment = common.get_or_404(visible_payments(request), path_id(pk))
+        payment = common.get_or_404(visible_payments(request).filter(kind=RecurringPayment.Kind.SPEND), path_id(pk))
         today = timezone.localdate()
         month, decision = read_decision(manual_body(request), today)
         try:

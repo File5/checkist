@@ -5,7 +5,7 @@ const history = (states: RecurringState[]) => states.map((state, index) => ({ mo
 /** A payment of October 2026 in the shape of `GET /api/recurring/`. */
 export function monthPaymentFixture(patch: Partial<RecurringMonthPayment> = {}): RecurringMonthPayment {
   return {
-    id: 1, name: 'Аренда', store: { id: 7, name: 'Съемное жилье' }, category: { id: 6, name: 'Аренда' }, currency: 'KZT',
+    id: 1, kind: 'spend', name: 'Аренда', store: { id: 7, name: 'Съемное жилье' }, category: { id: 6, name: 'Аренда' }, currency: 'KZT',
     amount: '220000.00', due_day: 5, active: true, created_by: { username: 'local', display_name: 'Андрей' },
     state: 'paid', due_date: '2026-10-05', paid: { receipt_id: 101, purchased_on: '2026-10-05', total: '220000.00' }, added: false,
     average: '220000.00', last_amount: '220000.00', previous_amount: null,

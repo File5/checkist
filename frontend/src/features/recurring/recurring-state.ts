@@ -31,11 +31,12 @@ const daysBetween = (from: string, to: string) => Math.round((Date.UTC(+to.slice
   - Date.UTC(+from.slice(0, 4), +from.slice(5, 7) - 1, +from.slice(8, 10))) / 86_400_000)
 
 /** What a payment is in its month, in a few words: «оплачен 5 октября», «до 25 октября», «просрочен с 5 октября». */
-export function stateText(row: Pick<RecurringMonthPayment, 'state' | 'due_date' | 'paid' | 'added'>, today: string): string {
+export function stateText(row: Pick<RecurringMonthPayment, 'state' | 'due_date' | 'paid' | 'added' | 'kind'>, today: string): string {
+  const income = row.kind === 'income'
   switch (row.state) {
     case 'paid':
       if (row.added) return 'добавлен по средней'
-      return row.paid ? glue('оплачен', dayAndMonth(row.paid.purchased_on)) : 'оплачен'
+      return row.paid ? glue(income ? 'получен' : 'оплачен', dayAndMonth(row.paid.purchased_on)) : income ? 'получен' : 'оплачен'
     case 'skipped': return 'не было'
     case 'elsewhere': return 'оплачено иначе'
     case 'due': {
@@ -44,7 +45,7 @@ export function stateText(row: Pick<RecurringMonthPayment, 'state' | 'due_date' 
       if (days === 1) return 'срок завтра'
       return glue('до', dayAndMonth(row.due_date))
     }
-    case 'overdue': return glue('просрочен с', dayAndMonth(row.due_date))
+    case 'overdue': return income ? glue('не внесён, срок', dayAndMonth(row.due_date)) : glue('просрочен с', dayAndMonth(row.due_date))
     case 'before': return 'ещё не начался'
     case 'inactive': return 'выключен'
   }
@@ -62,11 +63,20 @@ export const historyWords: Record<RecurringState, string> = {
   before: 'ещё не было платежа', inactive: 'выключен',
 }
 
-/** The payments of the month that count: on, and already started. */
+/** The payments of the month that count: on, already started, and a payment — a regular income is not «to pay». */
 export function counted(data: RecurringMonth): RecurringMonthPayment[] {
-  return data.payments.filter((row) => row.state !== 'before' && row.state !== 'inactive')
+  return data.payments.filter((row) => row.state !== 'before' && row.state !== 'inactive' && row.kind !== 'income')
 }
 export const isOpen = (row: RecurringMonthPayment) => row.state === 'due' || row.state === 'overdue'
+
+/** Days before its day when a regular income is already asked for on «Главная». */
+export const INCOME_ASK_DAYS = 3
+/** «Зарплата 650 000 ₸ — внести?»: the regular incomes of the current month not received yet, from a few days before
+ * their day. */
+export function incomeDue(data: RecurringMonth): RecurringMonthPayment[] {
+  if (data.month !== data.today.slice(0, 7)) return []
+  return data.payments.filter((row) => row.kind === 'income' && isOpen(row) && daysBetween(data.today, row.due_date) <= INCOME_ASK_DAYS)
+}
 
 /** «каждый месяц около 5-го · 6 месяцев подряд». */
 export function suggestionMeta(item: RecurringSuggestion): string {
@@ -82,13 +92,15 @@ export type RecurringDraft = {
   amount: string
   due_day: string
   active: boolean
+  /** A payment or a regular income; a saved one keeps its kind. */
+  kind: 'spend' | 'income'
 }
 
-export function draftOf(payment: RecurringPayment | null, currency: string): RecurringDraft {
-  if (!payment) return { name: '', store_name: '', category_id: null, currency, amount: '', due_day: '', active: true }
+export function draftOf(payment: RecurringPayment | null, currency: string, kind: RecurringDraft['kind'] = 'spend'): RecurringDraft {
+  if (!payment) return { name: '', store_name: '', category_id: null, currency, amount: '', due_day: '', active: true, kind }
   return {
     name: payment.name, store_name: payment.store?.name ?? '', category_id: payment.category.id, currency: payment.currency,
-    amount: payment.amount.replace(/\.00$/, ''), due_day: String(payment.due_day), active: payment.active,
+    amount: payment.amount.replace(/\.00$/, ''), due_day: String(payment.due_day), active: payment.active, kind: payment.kind ?? 'spend',
   }
 }
 
@@ -104,7 +116,7 @@ export type DraftErrors = Partial<Record<'name' | 'category_id' | 'currency' | '
 
 export function draftErrors(draft: RecurringDraft): DraftErrors {
   const errors: DraftErrors = {}
-  if (!draft.name.trim()) errors.name = 'Назовите платёж.'
+  if (!draft.name.trim()) errors.name = draft.kind === 'income' ? 'Назовите доход.' : 'Назовите платёж.'
   if (draft.category_id === null) errors.category_id = 'Выберите категорию.'
   if (!/^[A-Za-z]{3}$/.test(draft.currency.trim())) errors.currency = 'Код валюты — три буквы.'
   if (amountValue(draft.amount) === null) errors.amount = 'Сумма больше нуля.'
@@ -113,12 +125,12 @@ export function draftErrors(draft: RecurringDraft): DraftErrors {
   return errors
 }
 
-/** The body of the form; call after `draftErrors` came back empty. */
+/** The body of the form; call after `draftErrors` came back empty. An income has no place. */
 export function draftBody(draft: RecurringDraft): RecurringInput {
   return {
-    name: draft.name.trim(), store_name: draft.store_name.trim() || null, category_id: draft.category_id as number,
+    name: draft.name.trim(), store_name: draft.kind === 'income' ? null : draft.store_name.trim() || null, category_id: draft.category_id as number,
     currency: draft.currency.trim().toUpperCase(), amount: amountValue(draft.amount) as string,
-    due_day: Number(draft.due_day), active: draft.active,
+    due_day: Number(draft.due_day), active: draft.active, ...(draft.kind === 'income' && { kind: 'income' as const }),
   }
 }
 

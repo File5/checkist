@@ -13,8 +13,17 @@ class RecurringPayment(models.Model):
     месяце, не хранится: это сверка с тратами при чтении (``recurring.matching``). Магазин
     необязателен: без него платёж узнаётся по категории и сумме. Удаление магазина оставляет
     платёж без магазина; категорию с платежом удалить нельзя (PROTECT), как у лимита.
+
+    Вид ``income`` (2026-10-13) — регулярный доход («Зарплата»): категория — ``income_category``
+    (категория дохода), магазина нет, получен ли — сверка с доходами месяца; такой шаблон видят
+    его автор и главный в семье (``recurring.access.visible_payments_q``).
     """
 
+    class Kind(models.TextChoices):
+        SPEND = "spend", "Платёж"
+        INCOME = "income", "Доход"
+
+    kind = models.CharField(max_length=8, choices=Kind.choices, default=Kind.SPEND)
     household = models.ForeignKey(
         "accounts.Household", null=True, blank=True, on_delete=models.CASCADE, related_name="recurring_payments")
     user = models.ForeignKey(
@@ -22,7 +31,10 @@ class RecurringPayment(models.Model):
     name = models.CharField(max_length=100)
     # Без обратной связи у магазина: у Store нет полей «оплаты» (receipts.tests.test_samples).
     store = models.ForeignKey("stores.Store", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
-    category = models.ForeignKey("catalog.Category", on_delete=models.PROTECT, related_name="recurring_payments")
+    category = models.ForeignKey(
+        "catalog.Category", null=True, blank=True, on_delete=models.PROTECT, related_name="recurring_payments")
+    income_category = models.ForeignKey(
+        "incomes.IncomeCategory", null=True, blank=True, on_delete=models.PROTECT, related_name="recurring_payments")
     currency = models.ForeignKey("stores.Currency", on_delete=models.PROTECT, related_name="recurring_payments")
     amount = models.DecimalField(max_digits=14, decimal_places=2)  # ожидаемая сумма
     due_day = models.PositiveSmallIntegerField()  # число месяца; 31 в коротком месяце — его последний день
@@ -39,10 +51,19 @@ class RecurringPayment(models.Model):
             models.CheckConstraint(condition=OWNER_CONSTRAINT, name="recurring_payment_one_owner"),
             models.CheckConstraint(condition=Q(amount__gt=0), name="recurring_payment_amount_positive"),
             models.CheckConstraint(condition=Q(due_day__gte=1, due_day__lte=31), name="recurring_payment_due_day_range"),
+            models.CheckConstraint(
+                condition=Q(kind="spend", category__isnull=False, income_category__isnull=True)
+                | Q(kind="income", category__isnull=True, income_category__isnull=False, store__isnull=True),
+                name="recurring_payment_kind_category"),
         ]
 
     def __str__(self):
         return self.name
+
+    @property
+    def any_category(self):
+        """Категория траты либо категория дохода — что у этого вида."""
+        return self.income_category if self.kind == self.Kind.INCOME else self.category
 
 
 class RecurringDecision(models.Model):

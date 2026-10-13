@@ -13,7 +13,7 @@
     "q": null,
     "min_total": null,
     "max_total": null,
-    "include": ["receipts", "lines", "categories", "stores", "limits", "summary", "media"]
+    "include": ["receipts", "lines", "categories", "stores", "limits", "summary", "media", "incomes"]
   },
   "people": [
     {"username": "andrey", "display_name": "Андрей"},
@@ -125,5 +125,9 @@
         ]
       }
     ]
-  }
+  },
+  "incomes": [
+    {"id": 3, "received_on": "2026-10-05", "currency": "KZT", "amount": "650000.00", "category": "Зарплата",
+     "note": "", "owner": "andrey", "owner_name": "Андрей"}
+  ]
 }

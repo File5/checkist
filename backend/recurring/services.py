@@ -16,6 +16,10 @@
 создаёт ручную трату (``receipts.manual.create``) в срок того месяца на среднюю найденных
 оплат за 12 месяцев (нет оплат — ожидаемая сумма). Сам модуль ничего не добавляет: только
 по ответу человека. Удалённая трата такого ответа снова открывает вопрос.
+
+Регулярный доход (``kind = income``) сверяется тем же окном с доходами всей семьи
+(``load_incomes``, правило — ``matching.income_signals``): ``paid`` — доход получен. Вопросов о
+прошлом месяце и «осталось оплатить» у дохода нет, ``unpaid`` его не отдаёт.
 """
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -25,7 +29,7 @@ from django.db.models import F
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
-from accounts.access import request_user, visible_receipts_q
+from accounts.access import owner_q, request_user, visible_receipts_q
 from budget.dashboard import Month
 from catalog.models import Category
 from receipts import manual
@@ -34,7 +38,7 @@ from receipts.spending import UNASSIGNED_NAME
 from stores.models import Store
 
 from . import matching
-from .access import as_request, owner_fields, payments_q
+from .access import as_request, owner_fields, payments_q, visible_payments_q
 from .models import DismissedSuggestion, RecurringDecision, RecurringPayment
 
 LOOKBACK_MONTHS = 12
@@ -44,6 +48,7 @@ AVERAGE_MONTHS = 12
 PAID, SKIPPED, ELSEWHERE, DUE, OVERDUE, BEFORE, INACTIVE = (
     "paid", "skipped", "elsewhere", "due", "overdue", "before", "inactive")
 UNPAID = (DUE, OVERDUE)
+SPEND, INCOME = RecurringPayment.Kind.SPEND, RecurringPayment.Kind.INCOME
 MONTH_NAMES = ("январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь", "октябрь",
                "ноябрь", "декабрь")
 
@@ -142,8 +147,19 @@ def load_spends(request, first, last, parents, unassigned):
     ]
 
 
+def load_incomes(request, first, last):
+    """Доходы всей семьи (``owner_q``) с ``first`` по ``last`` как «траты» сверки: получен ли регулярный доход,
+    решают все доходы семьи, а не только видимые запросу записи; один запрос."""
+    from incomes.models import Income
+
+    rows = Income.objects.filter(owner_q(request), received_on__gte=first, received_on__lte=last)
+    return [matching.Spend(pk, day, None, category_id, currency, amount) for pk, day, category_id, currency, amount
+            in rows.values_list("id", "received_on", "category_id", "currency_id", "amount")]
+
+
 def _plan(payment):
-    return matching.Plan(payment.pk, payment.store_id, payment.category_id, payment.currency_id, payment.amount,
+    category_id = payment.income_category_id if payment.kind == INCOME else payment.category_id
+    return matching.Plan(payment.pk, payment.store_id, category_id, payment.currency_id, payment.amount,
                          payment.due_day)
 
 
@@ -153,8 +169,8 @@ class _Ledger:
     def __init__(self, request, first, last, today):
         self.request, self.today = request, today
         self.payments = list(
-            RecurringPayment.objects.filter(payments_q(request))
-            .select_related("store__merchant", "category", "created_by").order_by("due_day", "name", "pk"))
+            RecurringPayment.objects.filter(visible_payments_q(request))
+            .select_related("store__merchant", "category", "income_category", "created_by").order_by("due_day", "name", "pk"))
         self.parents, self.names, unassigned = _categories()
         # Окно месяца начинается до его первого числа и кончается в следующем месяце.
         self.spends = load_spends(request, first.first - timedelta(days=matching.EARLY_DAYS),
@@ -176,8 +192,14 @@ class _Ledger:
                 elif item.receipt_id not in existing:
                     continue
             self.decisions[key] = item
-        plans = [_plan(payment) for payment in self.payments if payment.active]
+        plans = [_plan(payment) for payment in self.payments if payment.active and payment.kind == SPEND]
         self.assigned = matching.assign(plans, self.spends, self.months, self.parents, fixed)
+        self.taken = {spend.id for spend in self.assigned.values()}
+        # Регулярный доход сверяется с доходами месяца тем же окном; запрос — только когда такой шаблон есть.
+        incomes = [_plan(payment) for payment in self.payments if payment.active and payment.kind == INCOME]
+        if incomes:
+            found = load_incomes(request, first.first - timedelta(days=matching.EARLY_DAYS), matching.shift(last, 1).last)
+            self.assigned.update(matching.assign(incomes, found, self.months, {}, score=matching.income_signals))
         self.paid_months = {}
         for (payment_id, month), spend in self.assigned.items():
             self.paid_months.setdefault(payment_id, []).append((month, spend))
@@ -237,7 +259,7 @@ class _Ledger:
         start = matching.shift(Month.of(self.today), -LOOKBACK_MONTHS).first
         dismissed = set(DismissedSuggestion.objects.filter(payments_q(self.request))
                         .values_list("store_id", "category_id", "currency_id"))
-        taken = {spend.id for spend in self.assigned.values()}
+        taken = self.taken
 
         def covered(store_id, category_id, currency, last):
             # Скрыто; последняя трата уже оплата какого-то платежа; у того же получателя есть платёж той же категории.
@@ -261,7 +283,7 @@ class _Ledger:
         # Одна вывеска у нескольких предложений и платежей («Съемное жилье»: аренда, квитанция, ОСИ): имя — категория,
         # а если и она повторяется — вывеска и категория.
         names = [row.name for row in rows] + [payment.name for payment in self.payments]
-        categories = [row.category_name for row in rows] + [payment.category.name for payment in self.payments]
+        categories = [row.category_name for row in rows] + [payment.any_category.name for payment in self.payments]
         for row in rows:
             if names.count(row.name) > 1 and row.category_name:
                 row.name = (row.category_name if categories.count(row.category_name) == 1
@@ -285,12 +307,14 @@ def month_view(request, month, today=None, *, suggestions=True):
     if month == Month.of(today):
         previous = month.previous()
         questions = [item for item in (ledger.question(payment, previous) for payment in ledger.payments
-                                       if payment.active) if item is not None]
+                                       if payment.active and payment.kind == SPEND) if item is not None]
     return MonthView(month, today, payments, questions, ledger.suggestions() if suggestions else [])
 
 
 def unpaid(user, month, today=None):
     """Неоплаченные включённые платежи пользователя (его семьи) в ``month`` — для «можно тратить в день».
+
+    Только платежи (траты): регулярный доход сюда не входит.
 
     ``month`` — ``budget.dashboard.Month`` либо дата внутри месяца. Каждый — ``{"id", "name",
     "amount" (Decimal, ожидаемая сумма), "currency", "due_date", "overdue"}``; оплаченные,
@@ -302,7 +326,7 @@ def unpaid(user, month, today=None):
     return [
         {"id": row.payment.pk, "name": row.payment.name, "amount": row.payment.amount,
          "currency": row.payment.currency_id, "due_date": row.due, "overdue": row.state == OVERDUE}
-        for row in view.payments if row.state in UNPAID
+        for row in view.payments if row.state in UNPAID and row.payment.kind == SPEND
     ]
 
 
@@ -328,7 +352,7 @@ def decide(request, payment_id, month, decision, today=None):
     today = today or timezone.localdate()
     with transaction.atomic():
         # Блокировка платежа упорядочивает ответы на один платёж: второй ждёт и видит первый.
-        payment = RecurringPayment.objects.select_for_update().get(payments_q(request), pk=payment_id)
+        payment = RecurringPayment.objects.select_for_update().get(payments_q(request), pk=payment_id, kind=SPEND)
         stale = RecurringDecision.objects.filter(payment=payment, month=month.first).first()
         if stale is not None and stale.decision == RecurringDecision.Decision.ADDED \
                 and not Receipt.objects.filter(pk=stale.receipt_id).exists():

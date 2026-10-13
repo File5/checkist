@@ -86,7 +86,7 @@ describe('App feature connections (Node server markup, not browser behavior)', (
     expect(header.match(/<a\b[^>]*href="[^"]*"/g)).toEqual([
       '<a class="brand" aria-label="Чекист — главная" href="/"', '<a href="/"', '<a href="/receipts"',
       // «Добавить трату» lives in the «＋» sheet (components/Sheet), which is closed until «＋» is pressed.
-      '<a href="/stats"', '<a href="/recurring"', '<a href="/review"', '<a aria-current="page" href="/catalog"', '<a href="/stores"', '<a href="/recognition/jobs"', '<a href="/export"', '<a href="/statements/rules"', '<a href="/health"',
+      '<a href="/stats"', '<a href="/recurring"', '<a href="/review"', '<a href="/incomes"', '<a aria-current="page" href="/catalog"', '<a href="/stores"', '<a href="/recognition/jobs"', '<a href="/export"', '<a href="/statements/rules"', '<a href="/health"',
     ])
     expect(html).not.toContain('href="/login"')
     expect(header.match(/<button\b[^>]*class="ck-theme-toggle ck-theme-toggle-header"/g)).toHaveLength(1)

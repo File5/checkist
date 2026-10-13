@@ -134,6 +134,12 @@ textarea.expense-row-input { resize: none; field-sizing: content; max-height: 12
 .expense-confirm { display: grid; gap: 12px; padding: 12px; border: 1px solid var(--ck-warning-border); border-radius: var(--ck-radius-sm); background: var(--ck-warning-bg); }
 .expense-confirm p { margin: 0; color: var(--ck-warning-text); }
 
+/* «Трата / Доход» (2026-10-13): two halves of one pill above a new form; the chosen one is the main colour. */
+.expense-kind { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border-radius: var(--ck-radius-pill); background: var(--ck-surface); box-shadow: var(--ck-card-shadow); }
+.expense-kind > button { min-height: 44px; padding: 0 12px; border: 0; border-radius: var(--ck-radius-pill); background: transparent; color: var(--ck-text-muted); font-size: var(--ck-text-base); font-weight: 800; }
+.expense-kind > button:hover:not(:disabled) { border: 0; background: var(--ck-surface-raised); color: var(--ck-text); }
+.expense-kind > button[aria-pressed="true"], .expense-kind > button[aria-pressed="true"]:hover:not(:disabled) { background: var(--ck-primary); color: var(--ck-on-primary); }
+
 /* «Все категории» in a sheet: search and the tree, every row a whole-width button with the dot of its colour. */
 .expense-search { display: grid; gap: 6px; min-width: 0; }
 .expense-search label { font-weight: 600; }
