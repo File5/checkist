@@ -1033,13 +1033,17 @@ docker compose -p checkist_dev cp postgres:/tmp/checkist.dump ./checkist.dump
 - Схема прежняя, миграций нет. `ReceiptLine.product` у траты вручную теперь заполнен у названной покупки: строки «Что
   купили» (`item_name`) и каждой позиции; строка «<категория>» (трата без названия — выписки, регулярные платежи,
   «Продукты 12 000») остаётся `product=NULL`. Пишет только `receipts.manual` (`find_or_create_products`, правило — как
-  у импорта среди товаров, видимых владельцу траты: написание продавца места → `name_key` названия → новый `Product` в
-  «Не разобрано» со `scope = "user:<id>"`; поглощённый слиянием — оставляемый). Написаний трата вручную не создаёт.
-- `catalog.Product.scope` (миграция `catalog.0004_product_scope`): пусто — общий товар, `user:<id>` — товар из траты
-  вручную; поле входит в уникальность `catalog_product_brand_name_package_uniq`. Откат — `migrate catalog
-  0003_service_charge_category` (отказывает, пока есть товары, различающиеся только `scope`).
-- Личное название: `receipts.prices.observation_q(prefix, request)` пускает строку траты вручную только видимую запросу,
-  `private_products(request)` — товары только из чужих трат вручную; API скрывает их (`api.projection.seen_products`).
+  у импорта среди общих товаров и товаров своих областей: написание продавца места → `name_key` названия → новый
+  `Product` в «Не разобрано» в области владельца траты; поглощённый слиянием — оставляемый). Написаний трата вручную
+  не создаёт.
+- `catalog.Product.scope` (миграция `catalog.0004_product_scope`): пусто — общий товар; `household:<id>` / `user:<id>` —
+  личный товар из траты вручную (`receipts.prices.product_scope`: семья владельца траты, без семьи — он сам). Видимость
+  товара — только по `scope` (`receipts.prices.scope_q`), строки на неё не влияют. Поле входит в уникальность
+  `catalog_product_brand_name_package_uniq` (первым). Откат — `migrate catalog 0003_service_charge_category`
+  (отказывает, пока есть товары, различающиеся только `scope`).
+- Личное название: `receipts.prices.observation_q(prefix, request)` пускает строку траты вручную только видимую запросу
+  и только товара видимой области; импорт чеков с фото к чужому личному товару не привязывает; `merges` и
+  `classification` берут только `scope=""`.
 - `ReceiptLine.category` важнее категории товара (`receipts.spending.line_category`, `category_spends.line_category`,
   `trends`, `budget.dashboard`, список «Трат», выгрузка): у строки чека с фото категории нет (кроме обслуживания без
   товара), поэтому прежние суммы не меняются.

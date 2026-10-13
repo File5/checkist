@@ -1158,3 +1158,34 @@ class ReadTests(SuggestedTestCase):
             self.assertEqual(len(infos), size)
         with self.assertNumQueries(1):  # empty lookups are not sent; only the category tree is read
             self.assertEqual(services.describe([]), [])
+
+
+@tag("integration")
+class PrivateProductTests(TestCase):
+    """A product made only of named purchases of manual spends is a person's own text: it never joins a run."""
+
+    def test_a_private_product_is_not_in_a_batch_and_a_photo_one_is(self):
+        from datetime import date
+
+        from api.tests.factories import make_receipt
+        from receipts import manual
+        from receipts.ownership import local_user
+        from receipts.tests import samples
+        from receipts.tests.test_models import make_line
+
+        subs = Category.objects.create(name="Демо-подписки")
+        receipt = manual.create(local_user(), {"total": "30000", "currency": "KZT", "category": subs.pk,
+                                               "item_name": "Психотерапевт"})
+        private = receipt.lines.get().product
+        photo = Product.objects.create(generic=private.generic, name="Демо-молоко 1 л")
+        shop = make_receipt(samples.lidl_store(), "EUR", date(2026, 9, 1), owner=local_user(), total=Decimal("1.00"))
+        make_line(shop, product=photo, raw_name="MILCH", unit_price=Decimal("1.0000"), amount=Decimal("1.00"))
+        # A named purchase of a product with a photo line keeps it shared: it stays a candidate.
+        shared = manual.create(local_user(), {"total": "500", "currency": "KZT", "category": subs.pk,
+                                              "item_name": "Демо-молоко 1 л"}).lines.get().product
+        self.assertEqual(shared.pk, photo.pk)
+        for auto in (False, True):
+            with self.subTest(auto=auto):
+                self.assertEqual(list(services.candidates(auto=auto).values_list("pk", flat=True)), [photo.pk])
+        self.assertIsNone(services.start_run(product_ids=[private.pk]))  # `suggest --product`
+        self.assertEqual(services.start_run().product_ids, [photo.pk])

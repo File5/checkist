@@ -2,11 +2,11 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from django.db.models import (
-    Avg, Case, CharField, Count, DecimalField, Exists, ExpressionWrapper, F, Max, Min, OuterRef, Q, Value, When,
+    Avg, Case, CharField, Count, DecimalField, ExpressionWrapper, F, Max, Min, Q, Value, When,
 )
-from django.db.models.functions import Round
+from django.db.models.functions import Cast, Concat, Round
 
-from accounts.access import visible_receipts_q
+from accounts.access import LOCAL_SINGLE, mode, visible_receipts_q
 from catalog.models import Product
 from catalog.units import Unit, to_base
 from receipts.decimal_math import round_decimal
@@ -44,6 +44,9 @@ def observation_q(prefix="", request=None):
     seen = Q(**{f"{prefix}receipt__source": Receipt.Source.PHOTO})
     if request is not None:
         seen |= Q(**{f"{prefix}product__isnull": False}) & visible_receipts_q(request, f"{prefix}receipt__")
+        if mode() != LOCAL_SINGLE:
+            # Строки чужого личного товара (Product.scope) не наблюдения: товара запросу не видно.
+            seen &= Q(**{f"{prefix}product__isnull": True}) | scope_q(request, f"{prefix}product__")
     return Q(**{
         f"{prefix}kind": ReceiptLine.Kind.PRODUCT,
         f"{prefix}quantity__gt": 0,
@@ -53,20 +56,46 @@ def observation_q(prefix="", request=None):
     }) & seen
 
 
-def private_products(request=None):
-    """Подзапрос ``id`` товаров, которых запрос не видит: у товара есть строки трат вручную, и ни одна его строка
-    не из чека с фото и не из траты, видимой запросу (``visible_receipts_q``). Без ``request`` — товары, у которых
-    есть лишь строки трат вручную (поиск дублей их не трогает). Товар без строк виден всем, как прежде.
+def owner_scopes(user_id):
+    """Области товаров человека: общая ``""``, своя «user:<id>» и «household:<id>» его семьи (если есть). Один запрос."""
+    from accounts.models import Membership
 
-    Название такого товара — личный текст человека («Что купили»): каталог, 13 GET, группы дублей, предположения
-    категорий и поиск товара при сохранении траты (``receipts.manual``) его не показывают и не находят.
-    """
-    lines = ReceiptLine.objects.filter(product=OuterRef("pk"))
-    seen = Q(receipt__source=Receipt.Source.PHOTO)
-    if request is not None:
-        seen |= visible_receipts_q(request, "receipt__")
-    return (Product.objects.filter(Exists(lines.filter(receipt__source=Receipt.Source.MANUAL)))
-            .exclude(Exists(lines.filter(seen))).values("pk"))
+    scopes = {"", f"user:{user_id}"}
+    scopes.update(f"household:{pk}" for pk in Membership.objects.filter(user_id=user_id).values_list("household_id", flat=True))
+    return scopes
+
+
+def product_scope(user_id):
+    """``Product.scope`` нового товара из траты вручную: семья владельца траты (её видят все члены), без семьи — он сам.
+
+    Товар семьи остаётся у семьи, когда человек уходит из неё: это её покупки."""
+    from accounts.models import Membership
+
+    household = Membership.objects.filter(user_id=user_id).values_list("household_id", flat=True).first()
+    return f"household:{household}" if household is not None else f"user:{user_id}"
+
+
+def scope_q(request, prefix=""):
+    """Условие «товар виден запросу» по ``Product.scope`` (путь ``prefix`` до ``Product``): общий (``""``), свой либо
+    своей семьи. Личный товар из траты вручную чужой семьи не виден никогда — ни после удаления траты, ни со строками
+    чеков с фото (fail-closed). ``local_single`` — все товары. Один подзапрос, без отдельного запроса."""
+    if mode() == LOCAL_SINGLE:
+        return Q()
+    pk = request.user.pk
+    if pk is None:
+        return Q(**{f"{prefix}scope": ""})
+    from accounts.models import Membership
+
+    family = Membership.objects.filter(user_id=pk).annotate(
+        key=Concat(Value("household:"), Cast("household_id", CharField()))).values("key")
+    return Q(**{f"{prefix}scope__in": ["", f"user:{pk}"]}) | Q(**{f"{prefix}scope__in": family})
+
+
+def hidden_products(request):
+    """Подзапрос ``id`` товаров, которых запрос не видит (``scope_q``): для журналов со ссылками на товар."""
+    if mode() == LOCAL_SINGLE:
+        return Product.objects.none().values("pk")
+    return Product.objects.exclude(scope_q(request)).values("pk")
 
 
 def is_manual(line):

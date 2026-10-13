@@ -21,6 +21,7 @@ from receipts.decimal_math import price_context
 from receipts.dedup import build_fiscal_key, find_duplicates, name_key
 from receipts import service_charges
 from receipts.models import Receipt, ReceiptDiscount, ReceiptLine, ReceiptTax
+from receipts.prices import owner_scopes
 from receipts.validation import validate_receipt
 from stores.models import Store
 
@@ -273,7 +274,8 @@ def _create_graph(header, observation, country, derived, confirmed=None):
     # Parents may occur after their child in the printed order. Create all rows
     # first, then connect only the already validated references.
     for i, observed in enumerate(observation.lines):
-        resolution = _resolve_product(observed, header["store"].merchant, field=f"/lines/{i}/product_hint")
+        resolution = _resolve_product(observed, header["store"].merchant, field=f"/lines/{i}/product_hint",
+                                      owner_id=header["owner_id"])
         product = resolution.product
         issues.extend(resolution.issues)
         rate = tax_rate(observed.tax_rate, f"/lines/{i}/tax_rate")
@@ -327,16 +329,86 @@ def _same_line(saved, observed):
     return True
 
 
-def _resolve_product(observed, merchant, *, field):
+class _PrivateProduct(Exception):
+    """The resolution picked a private product of another family (``Product.scope``)."""
+
+
+def _resolve_product(observed, merchant, *, field, owner_id):
     from .resolution import ProductResolution
 
+    scopes = owner_scopes(owner_id)
     try:
         with transaction.atomic():
-            return resolve_product(observed, merchant, field=field)
+            resolution = resolve_product(observed, merchant, field=field)
+            # A private product made from a manual spend of another family (Product.scope) is never joined: its
+            # name is that person's own text. Roll back what the resolution wrote and look among shared ones.
+            if resolution.product is not None and resolution.product.scope not in scopes \
+                    or _private_namesake(observed, scopes, resolution.issues):
+                raise _PrivateProduct()
+            return resolution
+    except _PrivateProduct:
+        return _shared_product(observed, merchant, field, scopes)
     except ValidationError:
         # A bad optional catalogue hint must not discard the readable line or
         # leave an unused partial catalogue graph behind.
         return ProductResolution(None, [issue("product_package_invalid", field)])
+
+
+def _private_namesake(observed, scopes, issues):
+    """The resolution was ambiguous and a private product of another family bears the same name: maybe the cause."""
+    from catalog.models import Product
+
+    if not any(item["code"] == "product_ambiguous" for item in issues):
+        return False
+    key = name_key(observed.product_hint.name or observed.raw_name)
+    return any(name_key(name) == key for name in Product.objects.exclude(scope__in=scopes).values_list("name", flat=True))
+
+
+def _shared_product(observed, merchant, field, scopes):
+    """``resolve_product``'s name lookup among products of the owner's scopes only, else a new shared product.
+
+    Reached when the resolution picked another family's private product or was ambiguous with one around.
+    """
+    from catalog.models import Brand, Category, GenericProduct, Product
+    from catalog.units import BaseUnit
+
+    from .resolution import ProductResolution, _remember_alias, canonical_gtin, product_matches_hint
+
+    hint = observed.product_hint
+    gtins = {value for value in (canonical_gtin(hint.gtin), canonical_gtin(observed.barcode)) if value}
+    if len(gtins) > 1 or (hint.package_quantity is None) != (hint.package_unit is None):
+        return ProductResolution(None, [issue("product_conflict", field)])
+    gtin = next(iter(gtins), None)
+    name = hint.name or observed.raw_name
+    candidates = Product.objects.select_related("brand").filter(scope__in=scopes)
+    if hint.package_quantity is not None:
+        candidates = candidates.filter(package_quantity=hint.package_quantity, package_unit=hint.package_unit)
+    if hint.brand:
+        candidates = candidates.filter(brand__name__iexact=hint.brand)
+    candidates = [p for p in candidates.iterator() if name_key(p.name) == name_key(name)]
+    matches = [p for p in candidates if product_matches_hint(p, hint, gtin)]
+    if len(matches) > 1 or (candidates and not matches):
+        return ProductResolution(None, [issue("product_ambiguous", field)])
+    try:
+        with transaction.atomic():
+            product = matches[0] if matches else None
+            if product is None:
+                category, _ = Category.objects.get_or_create(parent=None, name="Не разобрано")
+                generic, _ = GenericProduct.objects.get_or_create(
+                    name__iexact="Не разобрано",
+                    defaults={"name": "Не разобрано", "category": category, "base_unit": BaseUnit.PCS},
+                )
+                brand = Brand.objects.get_or_create(name__iexact=hint.brand, defaults={"name": hint.brand})[0] \
+                    if hint.brand else None
+                product = clean_save(Product(
+                    generic=generic, brand=brand, name=name, gtin=gtin or "",
+                    package_quantity=hint.package_quantity, package_unit=hint.package_unit or "",
+                ))
+            if not _remember_alias(merchant, observed, product):
+                raise _PrivateProduct()
+            return ProductResolution(product, [])
+    except (_PrivateProduct, IntegrityError, ValidationError):
+        return ProductResolution(None, [issue("product_conflict", field)])
 
 
 def _update_graph(receipt, header, observation):
@@ -393,7 +465,8 @@ def _update_graph(receipt, header, observation):
             issues.append(issue("receipt_line_conflict", field))
             continue
         if line.kind == "product" and line.product_id is None:
-            resolution = _resolve_product(observed, receipt.store.merchant, field=field + "/product_hint")
+            resolution = _resolve_product(observed, receipt.store.merchant, field=field + "/product_hint",
+                                          owner_id=receipt.owner_id)
             issues.extend(resolution.issues)
             if resolution.product:
                 line.product = resolution.product
