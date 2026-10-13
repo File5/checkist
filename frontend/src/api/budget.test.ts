@@ -74,13 +74,14 @@ describe('dashboard on the wire', () => {
 describe('budget limits on the wire', () => {
   it('reads the list bare, as {results} and as a page', async () => {
     const limits = [limitFixture(), limitFixture({ id: 8, category_id: 8, category_name: 'Кафе', amount: '50000.00' })]
+    // The same address three times: `fresh` asks the network each time instead of the memory of answers.
     for (const body of [limits, { results: limits }, { count: 2, page: 1, page_size: 50, pages: 1, results: limits }]) {
       fetchMock.mockResolvedValueOnce(json(body))
-      expect(await getBudgetLimits()).toEqual({ kind: 'ok', data: limits })
+      expect(await getBudgetLimits({ fresh: true })).toEqual({ kind: 'ok', data: limits })
     }
     expect(fetchMock.mock.calls.map((call) => call[0])).toEqual(Array(3).fill('/api/budget/limits/'))
     fetchMock.mockResolvedValueOnce(json([{ ...limitFixture(), amount: 120000 }]))
-    expect(await getBudgetLimits()).toEqual({ kind: 'error', reason: 'invalid_response', status: 200 })
+    expect(await getBudgetLimits({ fresh: true })).toEqual({ kind: 'error', reason: 'invalid_response', status: 200 })
     expect(isBudgetLimit({ ...limitFixture(), category_id: 0 })).toBe(false)
   })
   it('creates a limit with the CSRF token and the JSON body', async () => {

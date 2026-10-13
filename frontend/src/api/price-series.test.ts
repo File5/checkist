@@ -55,7 +55,8 @@ describe('price series query', () => {
   beforeEach(() => { fetchMock.mockImplementation(async () => response('price-series-empty.json')) })
   it('sends nothing for absent and empty parameters', async () => {
     await getProductPriceSeries(1)
-    await getProductPriceSeries(1, { date_from: '', date_to: '', country: [], currency: '', interval: undefined, price: undefined, similar: undefined, similar_limit: undefined })
+    // The same address again: `fresh` sends it instead of answering from the memory of answers.
+    await getProductPriceSeries(1, { date_from: '', date_to: '', country: [], currency: '', interval: undefined, price: undefined, similar: undefined, similar_limit: undefined }, { fresh: true })
     expect(urls()).toEqual(['/api/products/1/prices/series/', '/api/products/1/prices/series/'])
   })
   it('sends every parameter once, countries as one comma-separated value', async () => {

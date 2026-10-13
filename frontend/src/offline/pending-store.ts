@@ -10,6 +10,7 @@ import { amountText } from '../features/expense/expense-form'
 import { lineFromBody } from '../features/expense/line-draft'
 import type { ExpenseDraft } from '../features/expense/expense-form'
 import { saveMessage } from '../features/expense/labels'
+import { getSession } from '../session'
 import { pendingStore } from './idb'
 import { newPending, ownSpends, syncPending } from './pending'
 import type { PendingSpend, PendingStore, SyncOutcome } from './pending'
@@ -62,9 +63,10 @@ export async function discardPending(id: string): Promise<void> {
   await reload()
 }
 
-/** Manual spends of that date straight from the server: the service worker never answers this read from its cache. */
+/** Manual spends of that date straight from the server: neither the service worker nor the memory of answers
+ * answers this read. */
 function freshSpends(body: ManualSpendInput): Promise<LocalApiResult<Page<Receipt>>> {
-  return requestJson('receipts/', { date_from: body.purchased_on, date_to: body.purchased_on, page_size: 200 }, page(isReceipt), {}, {
+  return requestJson('receipts/', { date_from: body.purchased_on, date_to: body.purchased_on, page_size: 200 }, page(isReceipt), { fresh: true }, {
     local: true, credentials: 'same-origin', headers: { 'X-Checkist-Fresh': '1' },
   })
 }
@@ -77,10 +79,12 @@ export function outcomeNote(outcome: SyncOutcome): string | undefined {
 }
 
 let running: Promise<void> | undefined
-/** Send the waiting spends of the current person one by one. Concurrent calls share one run. */
+/** Send the waiting spends of the current person one by one. Concurrent calls share one run.
+ * Never while the person is only remembered on the device (`provisional`): the server has not confirmed who it is. */
 export function sendPendingNow(): Promise<void> {
   const owner = state.owner
-  if (owner === null) return Promise.resolve()
+  const session = getSession()
+  if (owner === null || session.kind !== 'user' || session.provisional || session.user.username !== owner) return Promise.resolve()
   running ??= (async () => {
     set({ syncing: true, note: undefined })
     try {

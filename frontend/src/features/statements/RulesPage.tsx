@@ -150,7 +150,8 @@ export default function RulesPage() {
   const [attempt, setAttempt] = useState(0)
   useEffect(() => {
     const abort = new AbortController()
-    void getStatementRules({ signal: abort.signal }).then((result) => {
+    // A rule is sent back whole: never an answer from memory (api/answer-cache.ts).
+    void getStatementRules({ signal: abort.signal, fresh: true }).then((result) => {
       if (result.kind === 'ok') setState({ kind: 'ok', rules: result.data.results })
       else if (result.kind === 'error') setState({ kind: 'error', message: statementFailure(result) })
     })

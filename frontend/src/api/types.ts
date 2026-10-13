@@ -43,7 +43,12 @@ export type LocalApiFailure = Omit<ApiFailure, 'reason'> & {
   resetsAt?: string
 }
 export type LocalApiResult<T> = { kind: 'ok'; data: T } | LocalApiFailure | { kind: 'aborted' }
-export type RequestOptions = { signal?: AbortSignal; baseUrl?: string }
+export type RequestOptions = {
+  signal?: AbortSignal; baseUrl?: string
+  /** Skips the memory of answers (`answer-cache.ts`) and asks the network; a good answer is still kept.
+   * For a form that loads an object to send it back whole. */
+  fresh?: boolean
+}
 export type Results<T> = { results: T[] }
 export type Page<T> = Results<T> & { count: number; page: number; page_size: number; pages: number }
 export type PageParams = { page?: number; page_size?: number }

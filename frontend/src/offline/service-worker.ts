@@ -8,6 +8,8 @@
  *    `/receipts/new`, `/receipts/{id}/edit`, `/receipts/upload`, where it waits for the next return;
  *  - a new `sw.js` takes over at once (`skipWaiting` + `clients.claim`); the page that was already controlled reloads once.
  */
+import { forgetAnswers } from '../api/answer-cache.ts'
+
 export const CLEAR_MESSAGE = 'checkist:clear-api'
 export const API_CACHE = 'checkist-api-v1'
 const RELOAD_KEY = 'checkist.reloadedAt'
@@ -78,8 +80,10 @@ export function registerServiceWorker(): void {
   })
 }
 
-/** Sign-in, sign-out, another person: the API answers kept on the phone belong to nobody now. */
+/** Sign-in, sign-out, another person: the API answers kept on the phone, and in the memory of this page
+ * (`api/answer-cache.ts`), belong to nobody now. */
 export function forgetCachedAnswers(): void {
+  forgetAnswers()
   try {
     if (typeof caches !== 'undefined') void caches.delete(API_CACHE).catch(() => undefined)
     if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {

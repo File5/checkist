@@ -23,7 +23,7 @@
 | `stores.ts` | `getStores(params?: StoreParams, options?: RequestOptions)` | `Page<StoreEntry>` |
 
 ```ts
-type RequestOptions = { signal?: AbortSignal; baseUrl?: string }
+type RequestOptions = { signal?: AbortSignal; baseUrl?: string; fresh?: boolean } // fresh — мимо памяти ответов (answer-cache.ts)
 type Results<T> = { results: T[] }
 type Page<T> = Results<T> & {
   count: number; page: number; page_size: number; pages: number

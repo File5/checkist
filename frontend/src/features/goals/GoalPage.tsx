@@ -106,7 +106,8 @@ export default function GoalPage({ goalId }: { goalId: number }) {
   const [notice, setNotice] = useState<string | null>(null)
   useEffect(() => {
     const controller = new AbortController()
-    void getGoal(goalId, { signal: controller.signal }).then((result) => {
+    // The edit form sends the goal back whole: never an answer from memory (api/answer-cache.ts).
+    void getGoal(goalId, { signal: controller.signal, fresh: true }).then((result) => {
       if (result.kind === 'ok') setLoad({ kind: 'ok', goal: result.data })
       else if (result.kind === 'error') setLoad({ kind: 'error', message: goalFailure(result) })
     })

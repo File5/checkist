@@ -221,7 +221,8 @@ export default function RecurringPage() {
   useEffect(() => {
     const controller = new AbortController()
     const signal = controller.signal
-    void Promise.all([getRecurringMonth(undefined, { signal }), getCategories({}, { signal }), getManualDefaults({ signal }),
+    // The edit sheet sends a payment back whole: never an answer from memory (api/answer-cache.ts).
+    void Promise.all([getRecurringMonth(undefined, { signal, fresh: true }), getCategories({}, { signal }), getManualDefaults({ signal }),
       getIncomeCategories({ signal })])
       .then(([month, categories, defaults, incomeCategories]) => {
         if (signal.aborted) return

@@ -166,6 +166,13 @@ describe('signed-in shell (SSR only, no browser interaction)', () => {
     expect(navLink(html, 'synthetic-reader')).toBe('<a class="account-link" aria-label="Аккаунт: synthetic-reader" href="/account">synthetic-reader</a>')
     expect(html).not.toContain('login-username')
   })
+  it.each(pages)('opens %j at once for the person remembered on the device, before «Я» answers', (route, href) => {
+    // session/store.ts starts as the last «Я» of this device: the screen mounts without «Проверяем вход…».
+    const html = render({ ...reader, provisional: true } as Session, route, href)
+    expect(screens(html)).toEqual([route.kind])
+    expect(html).not.toContain('Проверяем вход')
+    expect(mainNav(html)).toEqual(menuWith('Семья', 'synthetic-reader'))
+  })
   it('hides «Дубли» and «Категории» from a reader', () => {
     for (const [route, href] of pages) {
       const html = render(reader, route, href)

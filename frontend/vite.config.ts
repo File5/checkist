@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { fileURLToPath } from 'node:url'
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
@@ -26,5 +27,7 @@ export default defineConfig(({ mode }) => {
     },
     server: { host: '127.0.0.1', port: 5173, strictPort: true, proxy },
     preview: { host: '127.0.0.1', port: 5173, strictPort: true, proxy },
+    // Every test starts with an empty memory of API answers (src/api/answer-cache.ts), as a fresh page does.
+    test: { setupFiles: ['./src/test-setup.ts'] },
   }
 })

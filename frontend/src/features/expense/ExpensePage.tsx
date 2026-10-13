@@ -43,11 +43,12 @@ export type FormKind = 'spend' | 'income'
 type LoadState = { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'ok'; data: Loaded }
 
 /** Every line of a receipt — a long photo receipt has more than one page: the form sends them all back, and a saved
- * line that is not sent is removed. */
+ * line that is not sent is removed. Read from the server, never from the memory of answers (`fresh`), like the
+ * receipt and the income the form changes: an object sent back whole must be the latest one. */
 async function allReceiptLines(id: number, signal: AbortSignal): Promise<LocalApiResult<{ results: Line[] }>> {
   const results: Line[] = []
   for (let page = 1; ; page += 1) {
-    const result = await getReceiptLines(id, { page, page_size: 200 }, { signal })
+    const result = await getReceiptLines(id, { page, page_size: 200 }, { signal, fresh: true })
     if (result.kind !== 'ok') return result
     results.push(...result.data.results)
     if (page >= result.data.pages) return { kind: 'ok', data: { results } }
@@ -364,7 +365,7 @@ export default function ExpensePage({ receiptId, repeat, income = false, incomeI
     const { signal } = controller
     void (async () => {
       if (incomeId !== undefined) {
-        const found = await Promise.all([getIncomeCategories({ signal }), getIncome(incomeId, { signal })])
+        const found = await Promise.all([getIncomeCategories({ signal }), getIncome(incomeId, { signal, fresh: true })])
         if (signal.aborted) return
         const failed = found.find(isFailure)
         if (failed) { setLoad({ kind: 'error', message: errorMessage(failed) }); return }
@@ -385,7 +386,7 @@ export default function ExpensePage({ receiptId, repeat, income = false, incomeI
         : Promise.all([getReceipt(source, { signal }), getReceiptLines(source, { page_size: 200 }, { signal })])
       const loaded = receiptId === undefined
         ? Promise.all([categories, getManualDefaults({ signal })])
-        : Promise.all([categories, getReceipt(receiptId, { signal }), allReceiptLines(receiptId, signal)])
+        : Promise.all([categories, getReceipt(receiptId, { signal, fresh: true }), allReceiptLines(receiptId, signal)])
       const [categoryResult, ...rest] = await loaded
       const [copiedReceipt, copiedLines] = receiptId === undefined && copied ? await copied : []
       const incomeResult = incomeCategories ? await incomeCategories : undefined

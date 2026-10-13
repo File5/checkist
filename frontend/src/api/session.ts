@@ -24,6 +24,8 @@ export type Me = {
   /** Token of the current session. Never render it. */
   csrf_token: string
 }
+/** «Я» without the token: what the device keeps between visits (`session/store.ts`). */
+export type RememberedMe = Omit<Me, 'csrf_token'>
 export type UserSettings = { default_currency: string | null }
 /** `members` — usernames by the alphabet (the key of filters); `people` — the same people with names to show,
  * missing from an older server (then the usernames are shown). */

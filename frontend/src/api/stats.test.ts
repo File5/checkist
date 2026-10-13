@@ -112,7 +112,8 @@ describe('query', () => {
   beforeEach(() => { fetchMock.mockImplementation(async () => response('spending-empty.json')) })
   it('sends nothing for absent and empty parameters', async () => {
     await getSpending()
-    await getSpending({ date_from: '', date_to: '', country: '', currency: '', store: [], group_by: undefined, category: undefined, generic: undefined, limit: undefined })
+    // The same address again: `fresh` sends it instead of answering from the memory of answers.
+    await getSpending({ date_from: '', date_to: '', country: '', currency: '', store: [], group_by: undefined, category: undefined, generic: undefined, limit: undefined }, { fresh: true })
     await getReceiptSeries({ date_from: '', country: '', store: [], interval: undefined })
     expect(urls()).toEqual(['/api/stats/spending/', '/api/stats/spending/', '/api/stats/receipts/series/'])
   })

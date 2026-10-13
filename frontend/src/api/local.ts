@@ -1,4 +1,6 @@
+import { forgetAnswers } from './answer-cache.ts'
 import { apiUrl, refuse, requestJson } from './http.ts'
+import { waitForWrites } from './write-gate.ts'
 import type { Query } from './http.ts'
 import { isRecognitionCsrf } from './recognition-schema.ts'
 import type { Guard } from './schema.ts'
@@ -72,6 +74,16 @@ export function clearRecognitionCsrf(options: Pick<RequestOptions, 'baseUrl'> = 
 /** `query` — parameters of the address, like `?with_photo=1` of a deletion. */
 export type MutationMethod = { method?: 'POST' | 'PATCH' | 'DELETE'; query?: Query; /** The request outlives a closed page (a deferred DELETE). */ keepalive?: boolean }
 
+/** An upload is a write too: the memory of answers is forgotten before and after it, as `sendJson` does for the rest. */
+async function upload<T>(send: () => Promise<LocalApiResult<T>>): Promise<LocalApiResult<T>> {
+  forgetAnswers()
+  try {
+    return await send()
+  } finally {
+    forgetAnswers()
+  }
+}
+
 /** One CSRF-protected POST of the local API, shared by recognition and product merges.
  * `onProgress` moves a multipart body to XMLHttpRequest where it exists: same refusals and session signal, the deadline
  * is «no movement» instead of the total 60 s. Without it, or without XMLHttpRequest (Node), the `fetch` path is unchanged.
@@ -81,6 +93,14 @@ export async function mutate<T>(
   write: MutationMethod = {},
 ): Promise<LocalApiResult<T>> {
   if (options.signal?.aborted) return { kind: 'aborted' }
+  // The session started from the device: only after the server confirmed «Я» does a write go (api/write-gate.ts).
+  const gate = waitForWrites(options.signal)
+  if (gate) {
+    const outcome = await gate
+    // «Я» could not be read: nothing was sent, and the form says what it says without network.
+    if (outcome === 'retry') return { kind: 'error', reason: 'network' }
+    if (outcome !== 'go') return { kind: 'aborted' }
+  }
   const key = csrfKey(options)
   let token = tokens.get(key)
   if (!token) {
@@ -89,9 +109,9 @@ export async function mutate<T>(
     token = csrf.data.csrf_token
   }
   const result: LocalApiResult<T> = onProgress && body instanceof FormData && canReportProgress()
-    ? await sendUpload(apiUrl(options.baseUrl ?? (import.meta.env.VITE_API_BASE_URL || '/api'), path), body, validate,
+    ? await upload(() => sendUpload(apiUrl(options.baseUrl ?? (import.meta.env.VITE_API_BASE_URL || '/api'), path), body, validate,
       { signal: options.signal, headers: { 'X-CSRFToken': token }, successStatuses: [200, 202], onProgress },
-      (status, answer) => refuse(status, answer, true))
+      (status, answer) => refuse(status, answer, true)))
     : await requestJson(path, write.query ?? {}, validate, options, {
       local: true, method: write.method ?? 'POST', body: write.method === 'DELETE' ? undefined : body, ...(write.keepalive && { keepalive: true }),
       credentials: 'same-origin', timeoutMs: multipart ? 60_000 : 15_000,

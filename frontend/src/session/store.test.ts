@@ -32,7 +32,8 @@ beforeEach(() => {
 afterEach(() => { off(); resetSession(); clearRecognitionCsrf(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 describe('reading «Я»', () => {
-  it('starts as loading and becomes the user of GET /api/me/', async () => {
+  // A device that remembers nobody (here: no window at all); the start from the device is in remembered.test.ts.
+  it('starts as loading on a device that remembers nobody and becomes the user of GET /api/me/', async () => {
     expect(getSession()).toEqual({ kind: 'loading' })
     fetchMock.mockResolvedValue(json(me()))
     await loadSession()

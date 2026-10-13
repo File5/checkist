@@ -34,6 +34,7 @@ import { moderatorOnlyText } from './features/auth/labels'
 import { canModerate, loadSession, useSession } from './session'
 import { menuKey, useCurrentItemInView } from './menu-view'
 import MainMenu from './menu/MainMenu'
+import { useWarmUp } from './menu/warm-up'
 import { headerAction, isFocusRoute, isMoreSection } from './menu/back-target'
 import { ThemeToggle } from './theme'
 import OfflineBanner from './offline/OfflineBanner'
@@ -181,8 +182,11 @@ export default function App() {
   }
 
   useEffect(() => watchSession(loadSession, document), [])
-  // Spends kept on the phone without network belong to one person and are sent when the network is back.
-  usePendingSync(session.kind === 'user' ? session.user.username : null)
+  // Spends kept on the phone without network belong to one person and are sent when the network is back — once the
+  // server confirmed who that person is (a session started from the device is `provisional` until then).
+  usePendingSync(session.kind === 'user' && !session.provisional ? session.user.username : null)
+  // The other screens of the bar are read on the first idle moment: a tap on them shows them at once (menu/warm-up.ts).
+  useWarmUp(session, route)
 
   useLayoutEffect(() => {
     const previous = previousNavigation.current
