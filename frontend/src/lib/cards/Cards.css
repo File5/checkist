@@ -4,7 +4,9 @@
 .ck-cards-caption { margin: 0; color: var(--ck-text-muted); }
 .ck-cards-list { display: grid; gap: 10px; min-width: 0; margin: 0; padding: 0; list-style: none; }
 
-.ck-card { display: grid; gap: 8px; min-width: 0; padding: 12px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius); background: var(--ck-surface); }
+/* A card looks like the surface panel of the artifact (.ck-panel in tokens.css): radius 20, the theme's card shadow, no
+   heavy frame — only a hairline of the divider, so a card still parts from a panel of the same surface in the dark theme. */
+.ck-card { display: grid; gap: 8px; min-width: 0; padding: 16px; border: 1px solid var(--ck-divider); border-radius: var(--ck-radius); background: var(--ck-surface); box-shadow: var(--ck-card-shadow); }
 .ck-card:target { background: var(--ck-accent-bg); }
 .ck-card-title { min-width: 0; font-weight: 600; overflow-wrap: break-word; }
 /* The main line of the heading is its bare text or its first element. Whatever follows is as plain as it was in the

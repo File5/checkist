@@ -102,4 +102,5 @@ class StoreAdmin(admin.ModelAdmin):
     ordering = ("merchant", "name")
     list_select_related = ("merchant", "country")
     autocomplete_fields = ("merchant",)
-    readonly_fields = ("address_key",)
+    # Склейка переносит чеки и пишет журнал: только через stores.merging, не правкой поля.
+    readonly_fields = ("address_key", "merged_into")

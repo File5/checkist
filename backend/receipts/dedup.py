@@ -93,7 +93,8 @@ def find_duplicates(receipt_data, *, owner):
     if owner_id is None:
         # Без владельца поиск молча ничего бы не нашёл, и повтор сохранился бы как новый чек.
         raise ValueError("find_duplicates: owner is required.")
-    own = Receipt.objects.filter(owner_id=owner_id)
+    # Ручные траты дублями не бывают: две одинаковые траты за день — две траты.
+    own = Receipt.objects.filter(owner_id=owner_id, source=Receipt.Source.PHOTO)
     store_id = _store_id(receipt_data)
     queries = []
 

@@ -18,7 +18,7 @@ const me = () => fixture('me.json') as Me
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status })
 const failure = (reason: AuthFailure['reason'], extra: Partial<AuthFailure> = {}): AuthFailure => ({ kind: 'error', reason, ...extra })
 const user = (id: number, moderate: boolean, mode: Me['mode'] = 'accounts'): Session => (
-  { kind: 'user', mode, user: { id, username: `synthetic-${id}`, is_staff: false }, permissions: { moderate_catalog: moderate } })
+  { kind: 'user', mode, user: { id, username: `synthetic-${id}`, is_staff: false }, household: null, permissions: { moderate_catalog: moderate } })
 const serverPhrases = ['Некорректные параметры запроса', 'Пароль слишком короткий', 'Пароль не может состоять только из цифр']
 
 function form<I>(send: (input: I, signal: AbortSignal) => Promise<AuthResult<Me>>, check?: (input: I) => ReturnType<typeof checkLogin>) {
@@ -267,7 +267,7 @@ describe('forms over the real adapters (mocked fetch, the backend\'s fixtures)',
     await result.run(credentials)
     expect(calls()).toEqual(['GET /api/auth/csrf/', 'POST /api/auth/login/'])
     expect(JSON.parse(fetchMock.mock.calls[1][1]!.body as string)).toEqual(credentials)
-    expect(getSession()).toEqual({ kind: 'user', mode: 'accounts', user: me().user, permissions: me().permissions })
+    expect(getSession()).toEqual({ kind: 'user', mode: 'accounts', user: me().user, household: null, permissions: me().permissions, isHead: true, settings: { default_currency: null } })
     expect(result.getSnapshot()).toEqual({ kind: 'idle' })
   })
   it('shows the wrong password once, keeps the guest and does not repeat the POST', async () => {

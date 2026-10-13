@@ -1,0 +1,44 @@
+/* Верх «Статистики» (feature/stats-compact, 2026-10-13, жалоба с iPhone «кнопки и фильтры слишком большие»):
+   на телефоне под вкладками одна строка — «Период: … ▾» слева (лист с готовыми периодами и «Свой период»), значок
+   фильтров с числом справа (ResponsiveFilters, `compact`); разбивка и интервал внутри карточек — низкий переключатель
+   на всю ширину. Подписи не обрезаются: кнопка периода переносит слова, переключатель делит ширину по подписям.
+   Цвета — только токены, размеры текста — только шкала --ck-text-*. */
+.stats-period-open {
+  display: inline-flex; justify-self: start; align-items: center; gap: 6px; min-width: 0; max-width: 100%; min-height: 40px; padding: 4px 10px 4px 14px;
+  border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-pill); background: var(--ck-surface); color: var(--ck-text);
+  font-size: var(--ck-text-sm); font-weight: 600; text-align: left;
+}
+.stats-period-open:where(:hover:not(:disabled)) { border-color: var(--ck-text-muted); background: var(--ck-surface-raised); }
+.stats-period-open:where(:active:not(:disabled)) { border-color: var(--ck-text-muted); background: var(--ck-surface-raised); }
+.stats-period-text { min-width: 0; }
+.stats-period-word { color: var(--ck-text-muted); font-weight: 600; }
+.stats-period-open strong { font-weight: 800; }
+.stats-period-open .ck-icon { flex: none; color: var(--ck-text-muted); }
+
+/* The sheet: the exact period, the ready ones as rows of a list (the chosen one bold with a tick), «Свой период». */
+.stats-period-sheet { display: grid; gap: 12px; padding-bottom: 4px; }
+.stats-period-sheet > p { margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-sm); }
+.stats-period-choice { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 8px 4px; color: var(--ck-text); text-decoration: none; }
+.stats-period-choice:where(:hover) .stats-period-choice-label { text-decoration: underline; text-underline-offset: 3px; }
+.stats-period-choice[aria-current="true"] { color: var(--ck-link); }
+.stats-period-choice[aria-current="true"] .stats-period-choice-label { font-weight: 800; }
+.stats-period-choice[aria-disabled="true"] { color: var(--ck-text-muted); }
+.stats-period-choice .ck-icon { flex: none; margin-left: auto; }
+.stats-period-choice-text { display: grid; gap: 2px; min-width: 0; }
+.stats-period-choice-label { font-size: var(--ck-text-base); font-weight: 600; }
+.stats-period-choice-note { color: var(--ck-text-muted); font-size: var(--ck-text-xs); }
+.stats-period-custom { margin: 8px 0 0; font-size: var(--ck-text-base); font-weight: 800; }
+
+/* A low switch inside a card (the breakdown of «Траты», the interval of «Среднего чека»): one row, on a phone on the
+   whole width of the card, every segment as wide as its words need, the chosen one in the colours of a selected chip. */
+.stats-segments { display: flex; gap: 2px; width: fit-content; min-width: 0; max-width: 100%; padding: 2px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius-pill); background: var(--ck-bg); }
+.stats-segment {
+  display: inline-flex; flex: 1 1 auto; align-items: center; justify-content: center; min-height: 32px; padding: 0 10px;
+  border-radius: var(--ck-radius-pill); color: var(--ck-text); font-size: var(--ck-text-sm); font-weight: 700; text-decoration: none; white-space: nowrap;
+}
+.stats-segment:where(:hover) { background: var(--ck-surface-raised); }
+.stats-segment[aria-current="true"] { background: var(--ck-chip-selected-bg); color: var(--ck-chip-selected-text); }
+@media (max-width: 540px) {
+  .stats-segments { width: auto; }
+  .stats-segment { padding: 0 6px; font-size: var(--ck-text-xs); }
+}

@@ -1,0 +1,166 @@
+/* Offline mode: the banner and the spends waiting on the phone. Colours are tokens only (theme/tokens.css);
+   no font-size of its own: the sizes stay those of the page. */
+.offline-banner {
+  margin: 0;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--ck-warning-border);
+  background: var(--ck-warning-bg);
+  color: var(--ck-warning-text);
+  line-height: 1.35;
+  text-align: center;
+}
+
+/* «Ждут отправки» on «Траты», laid out as a day of the list: a quiet heading with the explanation, then one card with a
+   row per spend — a warning badge, the place and the date, the amount — the actions under the row, «Отправить сейчас»
+   at the end. Font sizes — the scale --ck-text-* only. */
+.pending-spends {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+}
+
+.pending-spends-head {
+  display: grid;
+  gap: 2px;
+  padding: 0 4px;
+}
+
+.pending-spends h2 {
+  margin: 0;
+  color: var(--ck-warning-text);
+  font-size: var(--ck-text-sm);
+  font-weight: 700;
+}
+
+.pending-spends-head p {
+  margin: 0;
+  color: var(--ck-text-muted);
+  font-size: var(--ck-text-xs);
+}
+
+.pending-spends-card {
+  display: grid;
+  gap: 12px;
+  padding: 4px 16px 16px;
+  border: 1px solid var(--ck-warning-border);
+  border-radius: var(--ck-radius);
+  background: var(--ck-surface);
+  box-shadow: var(--ck-card-shadow);
+}
+
+.pending-spend-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* A row like a spend of the list: the badge, the place and the date, the amount; the buttons and a refusal below. */
+.pending-spend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 12px 0;
+}
+
+.pending-spend + .pending-spend {
+  border-top: 1px solid var(--ck-divider);
+}
+
+.pending-spend-badge {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--ck-radius-sm);
+  background: var(--ck-warning-bg);
+  color: var(--ck-warning-text);
+}
+
+.pending-spend-badge svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.pending-spend-main {
+  display: grid;
+  flex: 1 1 0;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pending-spend-place {
+  overflow: hidden;
+  font-size: var(--ck-text-sm);
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pending-spend-main time {
+  color: var(--ck-text-muted);
+  font-size: var(--ck-text-xs);
+}
+
+.pending-spend-amount {
+  flex: none;
+  font-size: var(--ck-text-sm);
+  white-space: nowrap;
+}
+
+/* The buttons start under the place, past the badge. */
+.pending-spend-actions {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-left: 52px;
+}
+
+.pending-spend-actions button {
+  min-height: 44px;
+  border-color: var(--ck-border);
+  padding: 0 16px;
+  border-radius: var(--ck-radius-pill);
+  font-size: var(--ck-text-sm);
+  font-weight: 700;
+}
+
+.pending-spend-actions .pending-spend-delete {
+  color: var(--ck-error-text);
+}
+
+.pending-spend-error {
+  flex-basis: 100%;
+  margin: 0;
+  padding-left: 52px;
+  color: var(--ck-error-text);
+  font-size: var(--ck-text-xs);
+  font-weight: 600;
+}
+
+.pending-spends-send {
+  width: 100%;
+  min-height: 48px;
+  border-color: var(--ck-primary);
+  background: var(--ck-primary);
+  color: var(--ck-on-primary);
+  font-weight: 800;
+}
+
+.pending-spends-note {
+  margin: 0;
+  color: var(--ck-text-muted);
+  font-size: var(--ck-text-xs);
+  text-align: center;
+}
+
+.pending-spends-send:hover:not(:disabled) {
+  border-color: var(--ck-primary-hover);
+  background: var(--ck-primary-hover);
+}

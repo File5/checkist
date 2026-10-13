@@ -4,14 +4,19 @@ import { getCountries } from '../../api/countries'
 import type { CountryEntry } from '../../api/countries'
 import { getStores } from '../../api/stores'
 import type { StoreEntry } from '../../api/types'
+import ChipScroller from '../../components/ChipScroller'
+import ResponsiveFilters from '../../components/ResponsiveFilters'
 import { useLocalRequestFocus } from '../../components/useLocalRequestFocus'
+import { useNarrow } from '../../lib/cards'
 import { buildReceiptsStatsQuery, Link, maxStatsStores, navigate } from '../../navigation'
 import type { ReceiptsStatsQuery } from '../../navigation'
 import { useProductRequest } from '../product/useProductRequest'
 import {
-  applyFilters, filterDraft, formErrors, hasPeriods, hasScope, isActivePreset, localToday, periodPresets, presetHref, sameDraft,
+  applyFilters, dateFields, filterDraft, formErrors, hasPeriods, hasScope, isActivePreset, localToday, periodPresets, presetHref, sameDraft,
 } from './receipts-state'
 import type { DateField, FilterDraft, FilterErrors, FilterField } from './receipts-state'
+import { useChipInView } from './chip-in-view'
+import { PeriodSheet } from './stats-period'
 
 /** A reference list of the form; the form stays usable while it loads or after it failed. */
 export type Reference<T> = { kind: 'loading' } | { kind: 'error' } | { kind: 'ok'; items: T[]; total: number }
@@ -32,6 +37,10 @@ export interface ReceiptsFiltersFormProps {
   onRetryCountries: () => void
   onRetryStores: () => void
   formRef?: Ref<HTMLFormElement>
+  /** Problems of the applied address, for the dates of the period sheet on a phone. */
+  applied?: FilterErrors
+  /** For the tests: the phone view without a browser. */
+  narrow?: boolean
 }
 
 function storeLabel(store: StoreEntry): string {
@@ -118,12 +127,10 @@ function StoresField({ id, draft, error, stores, onToggle, onRetry }: {
   )
 }
 
-/** The form itself: no requests and no navigation, so it can be rendered with any state. */
-export function ReceiptsFiltersForm({
-  query, draft, errors, today, countries, stores, onChange, onToggleStore, onSubmit, onReset, onRetryCountries, onRetryStores, formRef,
-}: ReceiptsFiltersFormProps) {
-  const id = useId()
-  const presets = periodPresets(today)
+/** «Базовый период (было)» and «Текущий период (стало)», two dates each, and the note under them. */
+function PeriodFields({ id, draft, errors, onChange }: {
+  id: string; draft: FilterDraft; errors: FilterErrors; onChange: (field: DateField, value: string) => void
+}) {
   const date = (field: DateField, label: string) => (
     <div className="stats-field">
       <label htmlFor={`${id}-${field}`}>{label}</label>
@@ -132,42 +139,95 @@ export function ReceiptsFiltersForm({
       {errors[field] && <p className="stats-field-error" id={`${id}-${field}-error`}>{errors[field]}</p>}
     </div>
   )
+  return <>
+    <div className="stats-periods">
+      <fieldset className="stats-period">
+        <legend>Базовый период (было)</legend>
+        <div className="stats-field-grid">{date('base_from', 'С')}{date('base_to', 'По')}</div>
+      </fieldset>
+      <fieldset className="stats-period">
+        <legend>Текущий период (стало)</legend>
+        <div className="stats-field-grid">{date('current_from', 'С')}{date('current_to', 'По')}</div>
+      </fieldset>
+    </div>
+    <p className="stats-note" id={`${id}-period-note`}>
+      Обе границы включительно, по дате покупки в магазине. Периоды не должны пересекаться: текущий начинается позже окончания базового.
+    </p>
+  </>
+}
+
+/** The two periods of the sheet of a phone: the country, the currency, the stores and the interval stay. */
+function PairPeriodForm({ query, applied, onDone }: { query: ReceiptsStatsQuery; applied: FilterErrors; onDone: () => void }) {
+  const id = useId()
+  const [draft, setDraft] = useState(() => filterDraft(query))
+  const [submitted, setSubmitted] = useState<FilterErrors>({})
+  const all = formErrors(draft, filterDraft(query), submitted, applied)
+  const errors = Object.fromEntries(Object.entries(all).filter(([field]) => (dateFields as readonly string[]).includes(field))) as FilterErrors
+  return <form className="stats-form" noValidate aria-label="Свой период" onSubmit={(event) => {
+    event.preventDefault()
+    const result = applyFilters(query, draft)
+    setSubmitted(result.errors)
+    const field = dateFields.find((name) => result.errors[name])
+    if (field) { event.currentTarget.querySelector<HTMLInputElement>(`[name="${field}"]`)?.focus(); return }
+    onDone()
+    navigate({ kind: 'receipts-stats', query: result.query })
+  }}>
+    <PeriodFields id={id} draft={draft} errors={errors} onChange={(field, value) => { setDraft({ ...draft, [field]: value }); setSubmitted({}) }} />
+    <button type="submit">Сравнить периоды</button>
+  </form>
+}
+
+/** «Период: 2025 против 2026» of «Средний чек» on a phone: the ready pairs and «Свой период» in a sheet. */
+export function ReceiptsPeriodSheet({ query, applied, today, open }: { query: ReceiptsStatsQuery; applied: FilterErrors; today: string; open?: boolean }) {
+  const presets = periodPresets(today)
+  const active = presets.find((preset) => isActivePreset(query, preset))
+  return <PeriodSheet label={active?.short ?? (hasPeriods(query) ? 'свои периоды' : 'не выбран')} open={open}
+    choices={presets.map((preset) => ({ key: preset.key, label: preset.short, note: preset.note, href: presetHref(query, preset), active: preset === active }))}>
+    {(close) => <PairPeriodForm query={query} applied={applied} onDone={close} />}
+  </PeriodSheet>
+}
+
+/** The form itself: no requests and no navigation, so it can be rendered with any state. */
+export function ReceiptsFiltersForm({
+  query, draft, errors, today, countries, stores, onChange, onToggleStore, onSubmit, onReset, onRetryCountries, onRetryStores, formRef,
+  applied = {}, narrow: narrowProp,
+}: ReceiptsFiltersFormProps) {
+  const id = useId()
+  const presets = periodPresets(today)
   const changed = !sameDraft(draft, filterDraft(query))
+  const measured = useNarrow()
+  const narrow = narrowProp ?? measured
+  const active = presets.find((preset) => isActivePreset(query, preset))
+  const presetsRef = useChipInView<HTMLElement>(`${active?.key ?? ''}-${narrow}`)
+  // The country, the currency and the stores; the periods have their own button, «Период: …».
+  const count = (query.country ? 1 : 0) + (query.currency ? 1 : 0) + (query.store?.length ? 1 : 0)
+  // On a phone the dates are in the sheet of the period: the form names only its own refusals.
+  const shownErrors = narrow ? Object.fromEntries(Object.entries(errors).filter(([field]) => !(dateFields as readonly string[]).includes(field))) : errors
+  const chips = presets.length > 0 && <nav ref={presetsRef} className="stats-presets" aria-label="Готовые пары периодов">
+    {!narrow && <span className="stats-presets-title">Быстрый выбор:</span>}
+    <ChipScroller label="Готовые пары периодов">
+      {presets.map((preset) => (
+        <Link key={preset.key} className="ck-chip" to={presetHref(query, preset)} aria-current={isActivePreset(query, preset) ? 'true' : undefined}>{preset.label}</Link>
+      ))}
+    </ChipScroller>
+  </nav>
   return (
-    <section className="stats-panel" aria-labelledby={`${id}-heading`}>
+    <section className="stats-panel stats-filters" aria-labelledby={`${id}-heading`}>
       <h3 id={`${id}-heading`}>Периоды и фильтры</h3>
-      {presets.length > 0 && <nav className="stats-presets" aria-label="Готовые пары периодов">
-        <span className="stats-presets-title">Быстрый выбор:</span>
-        <ul>
-          {presets.map((preset) => (
-            <li key={preset.key}>
-              <Link className="stats-chip" to={presetHref(query, preset)} aria-current={isActivePreset(query, preset) ? 'true' : undefined}>{preset.label}</Link>
-            </li>
-          ))}
-        </ul>
-      </nav>}
-      <form ref={formRef} noValidate onSubmit={onSubmit}>
-        <div className="stats-periods">
-          <fieldset className="stats-period">
-            <legend>Базовый период (было)</legend>
-            <div className="stats-field-grid">{date('base_from', 'С')}{date('base_to', 'По')}</div>
-          </fieldset>
-          <fieldset className="stats-period">
-            <legend>Текущий период (стало)</legend>
-            <div className="stats-field-grid">{date('current_from', 'С')}{date('current_to', 'По')}</div>
-          </fieldset>
-        </div>
-        <p className="stats-note" id={`${id}-period-note`}>
-          Обе границы включительно, по дате покупки в магазине. Периоды не должны пересекаться: текущий начинается позже окончания базового.
-        </p>
+      {!narrow && chips}
+      <ResponsiveFilters count={count} summary={<ReceiptsPeriodSheet query={query} applied={applied} today={today} />} compact narrow={narrowProp}>
+      <form ref={formRef} className="stats-form" noValidate onSubmit={onSubmit}>
+        {!narrow && <PeriodFields id={id} draft={draft} errors={errors} onChange={onChange} />}
         <ScopeSelects id={id} draft={draft} errors={errors} countries={countries} onChange={onChange} onRetry={onRetryCountries} />
         <StoresField id={id} draft={draft} error={errors.store} stores={stores} onToggle={onToggleStore} onRetry={onRetryStores} />
-        {Object.keys(errors).length > 0 && <p className="stats-field-error" role="alert">Исправьте отмеченные поля.</p>}
+        {Object.keys(shownErrors).length > 0 && <p className="stats-field-error" role="alert">Исправьте отмеченные поля.</p>}
         <div className="stats-actions ck-action-bar">
-          <button type="submit">Сравнить периоды</button>
-          {(hasPeriods(query) || hasScope(query) || changed) && <button type="button" className="stats-secondary" onClick={onReset}>Сбросить периоды и фильтры</button>}
+          <button type="submit">{narrow ? 'Применить' : 'Сравнить периоды'}</button>
+          {/* «Сбросить» brings the default view back: the screen remembers the last one (stats-memory.ts). */}
+          {(hasPeriods(query) || hasScope(query) || query.interval || changed) && <button type="button" className="stats-secondary" onClick={onReset}>Сбросить</button>}
         </div>
       </form>
+      </ResponsiveFilters>
     </section>
   )
 }
@@ -197,7 +257,7 @@ export default function ReceiptsFilters({ query, applied }: { query: ReceiptsSta
   }
   return (
     <ReceiptsFiltersForm
-      formRef={formRef} query={query} draft={draft} today={today} countries={countryList} stores={storeList}
+      formRef={formRef} query={query} draft={draft} today={today} countries={countryList} stores={storeList} applied={applied}
       errors={formErrors(draft, filterDraft(query), form.errors, applied)}
       onChange={(field, value) => setForm({ source, draft: { ...draft, [field]: value }, errors: {} })}
       onToggleStore={(storeId) => setForm({
@@ -214,7 +274,7 @@ export default function ReceiptsFilters({ query, applied }: { query: ReceiptsSta
       }}
       onReset={() => {
         setForm({ source, draft: filterDraft({}), errors: {} })
-        navigate({ kind: 'receipts-stats', query: query.interval ? { interval: query.interval } : {} })
+        navigate({ kind: 'receipts-stats', query: {} })
         focusField('base_from')
       }}
       onRetryCountries={countries.retry} onRetryStores={stores.retry}

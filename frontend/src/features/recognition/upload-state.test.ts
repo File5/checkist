@@ -7,7 +7,7 @@ import { applyMe } from '../../session'
 import { resetSession } from '../../session/store'
 import { errorText } from './labels'
 import { createPreview } from './preview'
-import { createUpload, fileFormat, getJobNotice, retryNotice, setJobNotice, uploadMessage, validateFile } from './upload-state'
+import { autoSendStep, createUpload, fileFormat, getJobNotice, isHeif, pickAccept, retryNotice, setJobNotice, uploadMessage, validateFile } from './upload-state'
 
 const fixture = <T,>(name: string, guard: (value: unknown) => value is T) => {
   const value = publicFixture(name); if (!guard(value)) throw new Error('Invalid fixture'); return value
@@ -23,22 +23,33 @@ describe('upload and object URL lifecycle', () => {
     expect(validateFile({ name: 'Фото.JPEG', size: limits.max_bytes }, limits)).toBeUndefined()
     expect(validateFile({ name: 'photo.png', size: limits.max_bytes + 1 }, limits)).toContain('слишком большой')
     expect(validateFile({ name: 'photo.png', size: 0 }, limits)).toContain('пуст')
-    for (const name of ['photo.HEIC', 'photo.gif', 'photo.pdf', 'photo']) expect(validateFile({ name, size: 2 }, limits)).toContain('JPEG или PNG')
+    for (const name of ['photo.gif', 'photo.tiff', 'photo', 'photo.avif']) expect(validateFile({ name, size: 2 }, limits)).toBe('Формат не поддерживается. Выберите фото в JPEG, PNG, WebP или HEIC либо PDF.')
+    for (const name of ['photo.HEIC', 'photo.heif', 'Квитанция.PDF']) expect(validateFile({ name, size: 2 }, limits)).toBeUndefined()
+    // A PDF over the bytes is refused like a photo: it is never reduced.
+    expect(validateFile({ name: 'bill.pdf', size: limits.max_bytes + 1 }, limits)).toContain('слишком большой')
+    // An older server without PDF in its formats: refused before sending.
+    expect(validateFile({ name: 'bill.pdf', size: 2 }, { ...limits, formats: ['image/jpeg', 'image/png'] })).toContain('не поддерживается')
+    // An older server without HEIC in its formats: refused before sending.
+    expect(validateFile({ name: 'photo.heic', size: 2 }, { ...limits, formats: ['image/jpeg', 'image/png', 'image/webp'] })).toContain('не поддерживается')
     expect(validateFile({ name: 'photo.webp', size: 2 }, { ...limits, formats: ['image/png'] })).toContain('не поддерживается')
   })
   it('judges the format by file.type only when the extension is unknown', () => {
     const limits = csrf().limits
     // A camera file may come without an extension, or with one nobody knows.
-    for (const [name, type] of [['image', 'image/jpeg'], ['IMG_0001', 'IMAGE/PNG'], ['photo.tmp', 'image/webp'], ['12345.jfif', 'image/jpeg']]) {
+    for (const [name, type] of [['image', 'image/jpeg'], ['IMG_0001', 'IMAGE/PNG'], ['photo.tmp', 'image/webp'], ['12345.jfif', 'image/jpeg'], ['IMG_0001.HEIC', 'image/heic'], ['image', 'image/heif']]) {
       expect(validateFile({ name, type, size: 2 }, limits), `${name} ${type}`).toBeUndefined()
     }
-    for (const [name, type] of [['IMG_0001.HEIC', 'image/heic'], ['image', 'image/heif'], ['image', ''], ['scan', 'application/pdf'], ['clip', 'image/gif']]) {
-      expect(validateFile({ name, type, size: 2 }, limits), `${name} ${type}`).toBe('Формат не поддерживается. HEIC и другие форматы сохраните в JPEG или PNG.')
+    expect(validateFile({ name: 'scan', type: 'application/pdf', size: 2 }, limits)).toBeUndefined()
+    for (const [name, type] of [['image', ''], ['scan', 'application/zip'], ['clip', 'image/gif'], ['image', 'image/avif']]) {
+      expect(validateFile({ name, type, size: 2 }, limits), `${name} ${type}`).toBe('Формат не поддерживается. Выберите фото в JPEG, PNG, WebP или HEIC либо PDF.')
     }
     // A known extension wins: the server checks the bytes anyway.
     expect(validateFile({ name: 'photo.jpg', type: 'image/heic', size: 2 }, limits)).toBeUndefined()
     expect(fileFormat({ name: 'photo.PNG', type: 'image/jpeg' })).toBe('image/png')
     expect(fileFormat({ name: 'photo', type: 'image/webp' })).toBe('image/webp')
+    expect(fileFormat({ name: 'IMG_0001.HEIC', type: '' })).toBe('image/heic')
+    expect([isHeif({ name: 'a.heif' }), isHeif({ name: 'a', type: 'image/heic' }), isHeif({ name: 'a.jpg', type: 'image/heic' })]).toEqual([true, true, false])
+    expect(pickAccept).toBe('image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf,.jpg,.jpeg,.png,.webp,.heic,.heif,.pdf')
     // The type is still held against the formats of the server.
     expect(validateFile({ name: 'image', type: 'image/webp', size: 2 }, { ...limits, formats: ['image/png'] })).toContain('не поддерживается')
     expect(validateFile({ name: 'image', type: 'image/jpeg', size: 0 }, limits)).toContain('пуст')
@@ -47,7 +58,7 @@ describe('upload and object URL lifecycle', () => {
   it('does not send a file failing client validation', async () => {
     const send = vi.fn()
     const upload = createUpload(send, vi.fn(), vi.fn(), vi.fn())
-    await upload.submit(new File(['x'], 'bad.heic'), csrf().limits)
+    await upload.submit(new File(['x'], 'bad.gif'), csrf().limits)
     expect(send).not.toHaveBeenCalled(); expect(upload.getSnapshot().kind).toBe('error')
   })
   it.each([false, true])('handles the full public success reused=%s and passes the server job to navigation', async (reused) => {
@@ -101,7 +112,7 @@ describe('upload and object URL lifecycle', () => {
     const denied = { kind: 'error' as const, reason: 'permission_denied' as const }
     const former = [errorText(denied), errorText(denied, true)]
     const me = (mode: 'accounts' | 'local_single') =>
-      ({ mode, user: { id: 3, username: 'anna', is_staff: false }, permissions: { moderate_catalog: mode === 'local_single' }, csrf_token: 'token' })
+      ({ mode, user: { id: 3, username: 'anna', is_staff: false }, household: null, permissions: { moderate_catalog: mode === 'local_single' }, csrf_token: 'token' })
     try {
       applyMe(me('accounts'))
       expect([errorText(denied), errorText(denied, true)]).toEqual(Array(2).fill('Нет права модератора каталога.'))
@@ -138,5 +149,26 @@ describe('upload and object URL lifecycle', () => {
     preview.dispose(); preview.dispose(); expect(urls.revokeObjectURL).toHaveBeenCalledExactlyOnceWith('blob:first')
     preview.start(); expect(preview.getSnapshot()).toBe('blob:second'); preview.dispose()
     expect(urls.revokeObjectURL).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('sending the photo from the camera by itself', () => {
+  const limits = () => csrf().limits
+  const camera = new File(['image'], 'image.jpg', { type: 'image/jpeg' })
+  const ready = { file: camera, pending: camera, limits: limits(), measuring: false, refreshing: false, idle: true }
+  it('sends once everything is known and nothing is in flight', () => {
+    expect(autoSendStep(ready)).toBe('send')
+    expect(autoSendStep({ ...ready, limits: undefined })).toBe('wait')
+    expect(autoSendStep({ ...ready, measuring: true })).toBe('wait')
+    expect(autoSendStep({ ...ready, refreshing: true })).toBe('wait')
+    expect(autoSendStep({ ...ready, idle: false })).toBe('wait')
+  })
+  it('never sends a photo from «Выбрать файл», an earlier photo or one already sent', () => {
+    expect(autoSendStep({ ...ready, pending: undefined })).toBe('none')
+    expect(autoSendStep({ ...ready, pending: new File(['image'], 'image.jpg', { type: 'image/jpeg' }) })).toBe('none')
+    expect(autoSendStep({ ...ready, file: undefined })).toBe('none')
+  })
+  it('drops its turn on a refused format: the error is shown and nothing goes', () => {
+    expect(autoSendStep({ ...ready, invalid: 'Формат не поддерживается.' })).toBe('drop')
   })
 })

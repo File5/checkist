@@ -28,6 +28,7 @@
       "country": "DE",
       "currency": "EUR",
       "unit": "kg",
+      "manual": false,
       "comparable": true,
       "observations": 14,
       "points": [
@@ -120,6 +121,7 @@
       "country": "DE",
       "currency": "EUR",
       "unit": "kg",
+      "manual": false,
       "comparable": true,
       "observations": 5,
       "points": [
@@ -175,6 +177,7 @@
       "country": "KZ",
       "currency": "KZT",
       "unit": "kg",
+      "manual": false,
       "comparable": true,
       "observations": 5,
       "points": [

@@ -32,6 +32,9 @@ const schemas: Record<string, (value: unknown) => boolean> = {
   'receipt.json': isReceipt, 'receipts.json': page(isReceipt), 'lines.json': page(isLine), 'discounts.json': page(isDiscount), 'taxes.json': page(isTax),
 }
 
+/** Root fields added after the first contract: their absence is still a valid answer. */
+const LATER_FIELDS = new Set(['owner_name', 'hidden', 'hidden_at', 'base_currency', 'base_total', 'payment_method', 'statement'])
+
 describe('public recognition/receipts contract fixtures', () => {
   it('covers every JSON supplied by backend, including future additions', () => {
     const files = readdirSync(new URL('../../../backend/recognition/tests/fixtures/public/', import.meta.url)).filter((name) => name.endsWith('.json')).sort()
@@ -43,7 +46,8 @@ describe('public recognition/receipts contract fixtures', () => {
     for (const key of Object.keys(body)) {
       const missing = { ...body }
       delete missing[key]
-      expect(validate(missing), `${name} missing ${key}`).toBe(false)
+      // A field added later is optional: an older server (or an answer cached before it) leaves it out.
+      expect(validate(missing), `${name} missing ${key}`).toBe(LATER_FIELDS.has(key))
     }
     for (const invalid of [null, [], true, 'body', 1, {}]) expect(validate(invalid)).toBe(false)
   })
@@ -82,6 +86,8 @@ describe('public recognition/receipts contract fixtures', () => {
     ['receipt-image.json', { issues: [{ code: 'missing_required', field: '/fiscal', message: 'error' }] }],
     ['receipt.json', { total: 2.38 }], ['receipt.json', { total: '2.3800' }], ['receipt.json', { purchased_at: 'yesterday' }],
     ['receipt.json', { origin: 'manual' }], ['receipt.json', { lines_url: 'https://outside.test/api/receipts/71/lines/' }],
+    ['csrf.json', { limits: { formats: ['image/avif'], max_bytes: 1, max_pixels: 1, max_receipts: 1 } }],
+    ['csrf.json', { limits: { formats: ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'image/jpeg'], max_bytes: 1, max_pixels: 1, max_receipts: 1 } }],
     ['csrf.json', { csrf_token: 'token\r\nInjected: 1' }], ['csrf.json', { executor: { available: 'false', last_seen_at: null } }],
   ])('rejects malformed nested fields in %s %#', (name, patch) => {
     expect(schemas[name]({ ...(publicFixture(name) as object), ...patch })).toBe(false)

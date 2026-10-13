@@ -1,9 +1,11 @@
 import { useCallback, useId, useMemo } from 'react'
+import { excludedNote } from '../../lib/base-currency'
 import type { ReceiptInterval, ReceiptSeriesCurrency } from '../../api/stats'
 import RequestState from '../../components/RequestState'
 import { useLocalRequestFocus } from '../../components/useLocalRequestFocus'
 import { LineChart } from '../../lib/charts'
 import { formatAxisTick } from '../../lib/charts/scale'
+import { currencySymbol } from '../../lib/money'
 import { Link, receiptsStatsHref } from '../../navigation'
 import type { ReceiptsStatsQuery } from '../../navigation'
 import { PeriodDate } from './period'
@@ -21,7 +23,7 @@ function CurrencyTrend({ block, interval }: { block: ReceiptSeriesCurrency; inte
   const formatTick = useCallback((x: string) => intervalName(x, interval, true), [interval])
   return (
     <article className="stats-currency" aria-labelledby={id}>
-      <h4 id={id}>{block.currency}</h4>
+      <h4 id={id}>Средний и медианный чек, {currencySymbol(block.currency)}</h4>
       <LineChart title={`Средний и медианный чек, ${block.currency}`} series={charts.receipts} interval={interval} zeroBaseline
         formatX={formatX} formatTick={formatTick} formatValue={moneyAxisNumber} valueAxisLabel={block.currency} />
       <LineChart title="Позиций на чек" series={charts.lines} interval={interval} zeroBaseline
@@ -48,7 +50,7 @@ function TrendBody({ state, query, onRetry }: TrendBlockProps) {
     }
     case 'ok': {
       const { data } = state
-      if (data.currencies.length === 0) {
+      if (data.currencies.length === 0 && !data.excluded?.length) {
         return hasScope(query)
           ? <RequestState kind="empty" message="По выбранным стране, валюте и магазинам походов за это время нет."
             action={<Link className="action-link" to={receiptsStatsHref(withoutScope(query))}>Убрать фильтры</Link>} />
@@ -60,6 +62,7 @@ function TrendBody({ state, query, onRetry }: TrendBlockProps) {
         <>
           {data.currencies.length > 1 && <p className="stats-note">Валюты не складываются: у каждой валюты чеков свои графики.</p>}
           {data.currencies.map((block) => <CurrencyTrend key={block.currency} block={block} interval={data.interval} />)}
+          {data.excluded?.length ? <p className="stats-note">{excludedNote(data.excluded)}</p> : null}
         </>
       )
     }
@@ -79,18 +82,13 @@ export default function TrendBlock(props: TrendBlockProps) {
   return (
     <section ref={block} className="stats-panel" aria-labelledby={id} aria-busy={state.kind === 'loading'}>
       <h3 id={id} data-request-focus-target tabIndex={-1}>Средний чек по времени</h3>
-      <p className="stats-note">Охват графика: {span}. Интервал без походов — разрыв линии, а не ноль.</p>
-      <nav className="stats-intervals" aria-label="Интервал графика">
-        <span className="stats-presets-title">Интервал:</span>
-        <ul>
-          {intervalChoices(query.interval ?? 'month').map((choice) => (
-            <li key={choice.interval}>
-              <Link className="stats-chip" to={intervalHref(query, choice.interval)} aria-current={choice.active ? 'true' : undefined}>{choice.label}</Link>
-            </li>
-          ))}
-        </ul>
+      <nav className="stats-intervals stats-segments" aria-label="Интервал графика">
+        {intervalChoices(query.interval ?? 'month').map((choice) => (
+          <Link key={choice.interval} className="stats-segment" to={intervalHref(query, choice.interval)} aria-current={choice.active ? 'true' : undefined}>{choice.label}</Link>
+        ))}
       </nav>
       <TrendBody {...props} />
+      <p className="stats-note stats-footnote">Охват графика: {span}. Интервал без походов — разрыв линии, а не ноль.</p>
     </section>
   )
 }

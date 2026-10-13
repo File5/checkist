@@ -1,17 +1,138 @@
-from django.db.models import Exists, OuterRef, Q
+import re
+from decimal import Decimal
+
+from django.contrib.postgres.aggregates import ArrayAgg
+from django.db.models import Exists, OuterRef, Q, Subquery
+from django.db.models.functions import Coalesce
+from django.utils import timezone
+from rest_framework import status
+from rest_framework.exceptions import ParseError, UnsupportedMediaType
 from rest_framework.response import Response
 
-from accounts.access import owner_q
-from api.common import get_or_404
+from accounts.access import is_head, owner_q, request_user, visible_receipts_q
+from api import stats_common
+from api.common import CategoryTree, amount, get_or_404, utc_datetime
 from api.pagination import paginate
 from api.params import Params
 from api.recognition_serialization import (
-    discount_object, line_object, receipt_object, receipts_queryset, tax_object,
+    discount_object, executor_object, line_object, receipt_object, receipts_queryset, tax_object,
 )
-from receipts.models import Receipt, ReceiptLine
+from config.exceptions import InvalidParameter, InvalidRequest, ObjectNotFound, RecognitionApiError
+from receipts import deletion, history, manual, manual_parse
+from receipts.models import ManualParseRequest, Receipt, ReceiptLine
 
 from .recognition import path_id
-from .recognition_base import LocalAPIView
+from .recognition_base import EmptyObjectParser, JsonObjectParser, LocalAPIView
+
+# Причины отказа ``receipts.manual`` -> фиксированные тексты; значения запроса в ответ не идут.
+MANUAL_MESSAGES = {
+    "body": "Ожидается объект JSON.",
+    "unknown_field": "Неизвестное поле.",
+    "required": "Обязательное поле.",
+    "type": "Неверный тип значения.",
+    "blank": "Значение не может быть пустым.",
+    "too_long": "Слишком длинное значение.",
+    "size": f"Не больше {manual.MAX_LINES} позиций.",
+    "money": "Сумма больше нуля, не больше двух знаков после запятой.",
+    "quantity": "Количество больше нуля, не больше трёх знаков после запятой.",
+    "format": "Код валюты — три буквы.",
+    "date": "Дата в формате ГГГГ-ММ-ДД.",
+    "unknown": "Значение не найдено.",
+    "mismatch": "Итог не совпадает с суммой позиций.",
+    "itemized": "У траты с позициями категорию задают позициям.",
+    "item_itemized": "У траты с позициями покупки называют позициями.",
+    "choice": "Способ оплаты — kaspi_gold, forte, cash, crypto, card либо пусто.",
+    "unit": "Единица — pcs, g, kg, ml, l или m.",
+    "price": "Цена за единицу не меньше нуля, не больше четырёх знаков после запятой.",
+    "price_mismatch": "Сумма позиции не равна количеству × цене.",
+    "discount": "Скидка не меньше нуля и не больше суммы позиции, не больше двух знаков после запятой.",
+    "duplicate": "Такой чек у вас уже есть: то же место и дата с тем же номером либо временем и суммой.",
+    "statement": "У траты из выписки способ оплаты — банк выписки.",
+}
+
+
+class ManualBodyParser(JsonObjectParser):
+    limit = 256 * 1024  # 300 позиций чека с длинными названиями, с запасом
+
+
+def manual_body(request):
+    """Объект JSON тела; пустое тело и не JSON — отказ до проверки полей."""
+    if request.content_type != "application/json":
+        raise UnsupportedMediaType(request.content_type)
+    if request._request.META.get("CONTENT_LENGTH") in (None, "", "0"):
+        raise InvalidRequest()
+    try:
+        return request.data
+    except ParseError:
+        raise InvalidRequest() from None
+
+
+def manual_invalid(error):
+    return InvalidParameter({name: [MANUAL_MESSAGES[reason]] for name, reason in error.fields.items()})
+
+
+def with_list_fields(receipts):
+    """Поля строки списка «Траты»: первая позиция и категории строк — подзапросами, без запроса на чек.
+
+    Категория строки — своя ``ReceiptLine.category``, если есть, иначе категория товара (как в статистике);
+    строки без обеих не учитываются.
+    """
+    lines = ReceiptLine.objects.filter(receipt_id=OuterRef("pk"))
+    categories = (lines.annotate(spent_category=Coalesce("category_id", "product__generic__category_id"))
+                  .filter(spent_category__isnull=False).order_by().values("receipt_id")
+                  .annotate(ids=ArrayAgg("spent_category", distinct=True)).values("ids"))
+    return receipts.annotate(first_line=Subquery(lines.order_by("position", "id").values("raw_name")[:1]),
+                             line_category_ids=Subquery(categories))
+
+
+def base_total(receipt, converter):
+    """Поля чека в основной валюте семьи: ``base_currency`` и ``base_total`` (по курсу дня покупки; null — курса нет)."""
+    return {"base_currency": converter.base,
+            "base_total": amount(converter.convert(receipt.total, receipt.currency_id, receipt.purchased_on))}
+
+
+def receipt_converter(request, receipts):
+    """Курсы для чеков ``receipts`` одним запросом (и основная валюта семьи — ещё одним)."""
+    return stats_common.converter(request, {(receipt.currency_id, receipt.purchased_on) for receipt in receipts})
+
+
+def list_items(receipts, request):
+    """Объекты списка: ``receipt_object`` + ``category`` (общая категория верхнего уровня либо null) + ``first_line``
+    + сумма в основной валюте (``base_total``). У категорий — ``icon``: свой значок либо предка (``CategoryTree.icon``).
+
+    Дерево категорий читается одним запросом и только если на странице есть строки с категорией.
+    """
+    tree = CategoryTree.load() if any(receipt.line_category_ids for receipt in receipts) else None
+    converter = receipt_converter(request, receipts) if receipts else None
+    items = []
+    for receipt in receipts:
+        roots = {tree.path_ids(pk)[0] for pk in receipt.line_category_ids or () if pk in tree}
+        root = roots.pop() if len(roots) == 1 else None
+        # Every category of the lines, as precise as the lines name it (2026-10-12): the list answers «на что».
+        leaves = sorted((pk for pk in receipt.line_category_ids or () if pk in tree), key=lambda pk: (tree.name(pk), pk))
+        items.append({**receipt_object(receipt), "first_line": receipt.first_line or None,
+                      "category": None if root is None else {"id": root, "name": tree.name(root), "icon": tree.icon(root)},
+                      "categories": [{"id": pk, "name": tree.name(pk), "icon": tree.icon(pk)} for pk in leaves],
+                      **base_total(receipt, converter)})
+    return items
+
+
+_SEARCH_AMOUNT = re.compile(r"[0-9]{1,12}([.,][0-9]{1,2})?")
+
+
+def total_q(search):
+    """Поиск по сумме (2026-10-13): «4500», «4 500», «4 499,50» — итог чека; иначе пустое условие.
+
+    Целое число находит и итоги, которые экран показывает этим числом: суммы на экране округлены вверх
+    (``lib/money.ts``), поэтому «4500» — итог от 4499,01 до 4500,00; с копейками — ровно этот итог.
+    """
+    text = re.sub(r"[\s\u00a0\u202f]", "", search)
+    if not _SEARCH_AMOUNT.fullmatch(text):
+        return Q(pk__in=[])
+    value = Decimal(text.replace(",", "."))
+    if "," in text or "." in text:
+        return Q(total=value)
+    return Q(total__gt=value - 1, total__lte=value)
 
 
 class ReceiptsView(LocalAPIView):
@@ -24,8 +145,14 @@ class ReceiptsView(LocalAPIView):
         operation = params.choice("operation", Receipt.Operation.values)
         date_from, date_to = params.date_range()
         search = params.search()
+        # Скрытые платежи — только главному в семье и только по ``?hidden=1``; другим флажок ничего не даёт.
+        show_hidden = params.choice("hidden", ("0", "1"), default="0") == "1"
+        # Логин того, кто добавил; видны только чеки семьи, поэтому чужой или неизвестный логин — пустой список.
+        owner = params.raw("owner")
         params.check()
-        receipts = receipts_queryset(request)
+        receipts = receipts_queryset(request, include_hidden=show_hidden)
+        if owner is not None:
+            receipts = receipts.filter(owner__username=owner)
         for field, value in (("store_id", store), ("store__country_id", country),
                              ("currency_id", currency), ("operation", operation),
                              ("purchased_on__gte", date_from), ("purchased_on__lte", date_to)):
@@ -37,18 +164,190 @@ class ReceiptsView(LocalAPIView):
             matching_line = ReceiptLine.objects.filter(receipt_id=OuterRef("pk")).filter(
                 Q(raw_name__icontains=search) | Q(product__name__icontains=search))
             receipts = receipts.filter(Q(store__merchant__brand_name__icontains=search)
-                                       | Q(store__name__icontains=search) | Q(Exists(matching_line)))
-        return Response(paginate(receipts.order_by(ordering, "-id" if ordering.startswith("-") else "id"), page, receipt_object))
+                                       | Q(store__name__icontains=search) | Q(note__icontains=search)
+                                       | Q(Exists(matching_line)) | total_q(search))
+        data = paginate(with_list_fields(receipts).order_by(ordering, "-id" if ordering.startswith("-") else "id"), page)
+        data["results"] = list_items(list(data["results"]), request)
+        return Response(data)
 
 
 def own_receipt(request, pk):
     """The receipt of the request's user; another user's one is ``404`` like a missing one."""
-    return get_or_404(Receipt.objects.filter(owner_q(request)), path_id(pk))
+    return get_or_404(Receipt.objects.filter(visible_receipts_q(request, include_hidden=True)), path_id(pk))
+
+
+class ReceiptHideView(LocalAPIView):
+    """``POST`` — скрыть (``hide=True``) либо показать платёж; решает только главный в семье.
+
+    Чек ищется среди видимых запросу (``visible_receipts_q`` со скрытыми для главного): чужой
+    либо скрытый от члена семьи — ``404``; видимый, но запрос не от главного — ``403 head_only``.
+    Повтор безопасен: ответ — карточка чека.
+    """
+
+    http_method_names = ["post", "options"]
+    parser_classes = [EmptyObjectParser]
+    hide = True
+
+    def post(self, request, pk):
+        receipt = own_receipt(request, pk)
+        if not is_head(request):
+            raise RecognitionApiError("head_only")
+        if receipt.hidden != self.hide:
+            receipt.hidden = self.hide
+            receipt.hidden_by = request_user(request) if self.hide else None
+            receipt.hidden_at = timezone.now() if self.hide else None
+            receipt.save(update_fields=["hidden", "hidden_by", "hidden_at", "updated_at"])
+        return Response(receipt_object(get_or_404(receipts_queryset(request, include_hidden=True), receipt.pk)))
+
+
+class ManualReceiptView(LocalAPIView):
+    """``GET`` — значения формы по умолчанию, ``POST`` — новая трата без чека."""
+
+    http_method_names = ["get", "post", "head", "options"]
+    parser_classes = [ManualBodyParser]
+
+    def get(self, request):
+        own = Receipt.objects.filter(visible_receipts_q(request))
+        return Response({
+            "currency": manual.default_currency(own, request_user(request)),
+            "frequent_categories": manual.frequent_categories(
+                ReceiptLine.objects.filter(visible_receipts_q(request, "receipt__"))),
+        })
+
+    def post(self, request):
+        data = manual_body(request)
+        try:
+            receipt = manual.create(request_user(request), data)
+        except manual.ManualInvalid as error:
+            raise manual_invalid(error) from None
+        return Response(receipt_object(get_or_404(receipts_queryset(request), receipt.pk)), status=status.HTTP_201_CREATED)
+
+
+class ManualSuggestView(LocalAPIView):
+    """``GET ?q=`` — прошлые траты семьи для повтора одним касанием, без модели (``receipts.history``).
+
+    Со словами в ``q`` — до 5 трат, где каждое слово есть в месте (с вариантами написания), комментарии или
+    позициях; без слов (пусто, одна буква, только числа) — до 4 частых повторяющихся трат. Скрытые платежи
+    не видны (``visible_receipts_q``). Запросов постоянное число.
+    """
+
+    def get(self, request):
+        params = Params(request.query_params)
+        text = (params.raw("q") or "")[:manual_parse.TEXT_MAX]
+        params.check()
+        receipts = Receipt.objects.filter(visible_receipts_q(request))
+        found = history.suggest(receipts, text) if history.words(text) else history.frequent(receipts)
+        return Response({"results": found})
+
+
+# Коды сбоя разбора -> фиксированные тексты; сырой ответ модели в API не попадает.
+PARSE_ERRORS = {
+    "invalid_output": "Не удалось разобрать текст. Заполните форму вручную.",
+    "timeout": "Разбор не уложился в срок. Попробуйте ещё раз или заполните форму вручную.",
+    "expired": "Разбор не дождался исполнителя. Заполните форму вручную.",
+    "worker_lost": "Исполнитель остановился во время разбора. Попробуйте ещё раз.",
+    "auth_required": "Разбор сейчас недоступен: исполнителю нужен вход в Codex.",
+}
+PARSE_ERROR_DEFAULT = "Разбор сейчас недоступен. Заполните форму вручную."
+
+
+def parse_object(row):
+    error = None
+    if row.error_code:
+        error = {"code": row.error_code, "message": PARSE_ERRORS.get(row.error_code, PARSE_ERROR_DEFAULT)}
+    return {
+        "id": row.pk, "status": row.status, "draft": row.draft if row.status == ManualParseRequest.Status.SUCCEEDED else None,
+        "error": error, "created_at": utc_datetime(row.created_at), "finished_at": utc_datetime(row.finished_at),
+        "executor": executor_object(),
+    }
+
+
+class ManualParseView(LocalAPIView):
+    """``POST`` — поставить текст «Трата словами» в очередь воркера; ``202`` и строка запроса."""
+
+    http_method_names = ["post", "options"]
+    parser_classes = [JsonObjectParser]
+
+    def post(self, request):
+        data = manual_body(request)
+        errors = {key: ["Неизвестное поле."] for key in data if key not in ("text", "today")}
+        text = data.get("text")
+        if not isinstance(text, str) or not text.strip():
+            errors["text"] = ["Напишите, на что потрачено и сколько."]
+        elif len(text.strip()) > manual_parse.TEXT_MAX:
+            errors["text"] = [f"Не длиннее {manual_parse.TEXT_MAX} символов."]
+        today = None
+        if data.get("today") is not None and (today := manual_parse.client_today(data["today"])) is None:
+            errors["today"] = ["Дата в формате ГГГГ-ММ-ДД, не дальше суток от даты сервера."]
+        if errors:
+            raise InvalidParameter(errors)
+        try:
+            row = manual_parse.request(request_user(request), text.strip(), today)
+        except manual_parse.ParseLimit:
+            raise RecognitionApiError("parse_limit") from None
+        return Response(parse_object(row), status=status.HTTP_202_ACCEPTED)
+
+
+class ManualParseDetailView(LocalAPIView):
+    """``GET`` — состояние запроса и черновик формы; чужой запрос — ``404``."""
+
+    def get(self, request, pk):
+        return Response(parse_object(get_or_404(ManualParseRequest.objects.filter(owner_q(request)), path_id(pk))))
+
+
+def statement_object(receipt):
+    """Пометка «из выписки» карточки чека: ``{"bank", "label"}`` либо ``None`` (одним запросом)."""
+    from statements.drafts import SOURCE_NOTE
+
+    bank = manual.statement_bank(receipt)
+    return None if bank is None else {"bank": bank, "label": SOURCE_NOTE.get(bank, "Выписка")}
 
 
 class ReceiptView(LocalAPIView):
+    """Чек; ``PATCH`` — правка любой видимой траты (с фото, ручной, из выписки) одним путём ``receipts.manual.update``.
+
+    Единая форма траты (2026-10-13): правило v1 «чек с фото не правится» (``409 receipt_read_only``) снято.
+    Доступ — как у удаления: свой чек либо члена семьи (``visible_receipts_q``, «видит с»), скрытый — только главному.
+    Карточка несёт ``statement`` — банк выписки, из которой сохранена трата, либо null.
+
+    ``DELETE`` — любой видимый чек (свой либо члена семьи). Чек с фото удаляется со строками, его вырезки
+    остаются без связи; ``?with_photo=1`` удаляет и исходное фото со всеми заданиями, вырезками, попытками и
+    файлами (``receipts.deletion``). Отказы: ``409 job_active``, ``409 photo_shared``.
+    """
+
+    http_method_names = ["get", "patch", "delete", "head", "options"]
+    parser_classes = [ManualBodyParser]
+
     def get(self, request, pk):
-        return Response(receipt_object(get_or_404(receipts_queryset(request), path_id(pk))))
+        receipt = get_or_404(receipts_queryset(request, include_hidden=True), path_id(pk))
+        return Response({**receipt_object(receipt), **base_total(receipt, receipt_converter(request, [receipt])),
+                         "statement": statement_object(receipt)})
+
+    def patch(self, request, pk):
+        receipt = own_receipt(request, pk)
+        data = manual_body(request)
+        try:
+            manual.update(receipt.pk, data)
+        except manual.ManualInvalid as error:
+            raise manual_invalid(error) from None
+        receipt = get_or_404(receipts_queryset(request, include_hidden=True), receipt.pk)
+        return Response({**receipt_object(receipt), "statement": statement_object(receipt)})
+
+    def delete(self, request, pk):
+        receipt = own_receipt(request, pk)
+        params = Params(request.query_params)
+        with_photo = params.boolean("with_photo", default=False)
+        params.check()
+        if receipt.source == Receipt.Source.MANUAL:
+            manual.delete(receipt.pk)
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        try:
+            deletion.delete_receipt(receipt.pk, with_photo=with_photo)
+        except Receipt.DoesNotExist:
+            raise ObjectNotFound() from None
+        except deletion.DeleteRefused as refused:
+            raise RecognitionApiError(refused.code) from None
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class ReceiptLinesView(LocalAPIView):
@@ -59,7 +358,7 @@ class ReceiptLinesView(LocalAPIView):
         kind = params.choice("kind", ReceiptLine.Kind.values)
         matching = params.choice("matching", ("matched", "unmatched"))
         params.check()
-        lines = receipt.lines.select_related("product", "tax_rate")
+        lines = receipt.lines.select_related("product", "tax_rate", "category")
         if kind is not None:
             lines = lines.filter(kind=kind)
         if matching is not None:

@@ -1,0 +1,133 @@
+{
+  "format": "checkist-export",
+  "version": 1,
+  "exported_at": "2026-10-12T09:15:00Z",
+  "filters": {
+    "from": "2026-10-01",
+    "to": "2026-10-31",
+    "category": [],
+    "source": [],
+    "owner": [],
+    "store": [],
+    "currency": null,
+    "q": null,
+    "min_total": null,
+    "max_total": null,
+    "include": ["receipts", "lines", "categories", "stores", "limits", "summary", "media", "incomes"]
+  },
+  "people": [
+    {"username": "andrey", "display_name": "Андрей"},
+    {"username": "liza", "display_name": "Лиза"}
+  ],
+  "categories": [
+    {"id": 7, "name": "Дом", "parent_id": null, "path": "Дом"},
+    {"id": 1, "name": "Продукты", "parent_id": null, "path": "Продукты"},
+    {"id": 3, "name": "Молочное", "parent_id": 1, "path": "Продукты / Молочное"}
+  ],
+  "stores": [
+    {"id": 12, "name": "Magnum", "address": "г. Алматы, пр. Абая, 10", "city": "Алматы", "country": "KZ"}
+  ],
+  "receipts": [
+    {
+      "id": 501,
+      "source": "photo",
+      "operation": "sale",
+      "purchased_on": "2026-10-03",
+      "purchased_at": "2026-10-03T12:41:00Z",
+      "store_id": 12,
+      "store_name": "Magnum",
+      "currency": "KZT",
+      "total": "1290.00",
+      "discount_total": "0.00",
+      "note": "",
+      "owner": "andrey",
+      "owner_name": "Андрей",
+      "created_at": "2026-10-03T13:02:11Z",
+      "categories": ["Продукты / Молочное"],
+      "lines": [
+        {
+          "position": 1,
+          "kind": "product",
+          "name": "МОЛОКО 3,2% 1Л",
+          "quantity": "2.000",
+          "unit": "pcs",
+          "unit_price": "645.0000",
+          "amount": "1290.00",
+          "discount_amount": "0.00",
+          "paid_amount": "1290.00",
+          "category_id": 3,
+          "category_path": "Продукты / Молочное",
+          "product_id": 44,
+          "product_name": "Молоко 3,2% 1 л"
+        }
+      ],
+      "media": {
+        "display_url": "https://checkist.example/media/display/crops/0b6f.../crop.png",
+        "download_url": "https://checkist.example/media/originals/9c1e.../source.jpg?download=1"
+      }
+    },
+    {
+      "id": 502,
+      "source": "statement",
+      "operation": "sale",
+      "purchased_on": "2026-10-05",
+      "purchased_at": "2026-10-05T06:00:00Z",
+      "store_id": null,
+      "store_name": null,
+      "currency": "KZT",
+      "total": "4500.00",
+      "discount_total": "0.00",
+      "note": "Коммуналка · Выписка Kaspi 10.2026",
+      "owner": "liza",
+      "owner_name": "Лиза",
+      "created_at": "2026-10-06T08:00:00Z",
+      "categories": ["Дом"],
+      "lines": [
+        {
+          "position": 1,
+          "kind": "product",
+          "name": "Коммуналка",
+          "quantity": "1.000",
+          "unit": "pcs",
+          "unit_price": "4500.0000",
+          "amount": "4500.00",
+          "discount_amount": "0.00",
+          "paid_amount": "4500.00",
+          "category_id": 7,
+          "category_path": "Дом",
+          "product_id": null,
+          "product_name": null
+        }
+      ],
+      "media": null
+    }
+  ],
+  "limits": [
+    {"category_id": 1, "category_path": "Продукты", "currency": "KZT", "amount": "150000.00"}
+  ],
+  "summary": {
+    "receipts_count": 2,
+    "lines_count": 2,
+    "max_receipts": 20000,
+    "currencies": [
+      {
+        "currency": "KZT",
+        "receipts_count": 2,
+        "lines_count": 2,
+        "total": "5790.00",
+        "category_total": null,
+        "by_category": [
+          {"category_id": 7, "name": "Дом", "amount": "4500.00", "lines_count": 1},
+          {"category_id": 1, "name": "Продукты", "amount": "1290.00", "lines_count": 1}
+        ],
+        "by_month": [
+          {"month": "2026-10", "receipts_count": 2, "total": "5790.00"}
+        ]
+      }
+    ]
+  },
+  "incomes": [
+    {"id": 3, "received_on": "2026-10-05", "currency": "KZT", "amount": "650000.00", "category": "Зарплата",
+     "note": "", "owner": "andrey", "owner_name": "Андрей"}
+  ]
+}

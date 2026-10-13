@@ -1,10 +1,12 @@
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Exists, OuterRef
 from django.middleware.csrf import get_token
 from rest_framework.exceptions import ParseError
 from rest_framework.response import Response
 
-from accounts.access import owner_q
+from accounts.access import photos_q
+from accounts.ai import use_ai
 from api.common import get_or_404
 from api.pagination import paginate
 from api.params import MAX_ID, Params
@@ -14,9 +16,10 @@ from api.recognition_serialization import (
 )
 from config.exceptions import InvalidParameter, InvalidRequest, ObjectNotFound, RecognitionApiError
 from recognition.images import ImageError
-from recognition.models import ProcessingJob, SourcePhoto
+from recognition.models import ProcessingJob, ReceiptImage, SourcePhoto
+from recognition.pdf import PDF_CONTENT_TYPE, PDF_MAX_PAGES
 from recognition.queue import QueueError, create_job, create_retry, request_cancel
-from recognition.statuses import ACTIVE_JOB_STATUSES, JobStatus
+from recognition.statuses import ACTIVE_JOB_STATUSES, ImageStatus, JobStatus
 from recognition.storage import StorageError, accept_upload
 
 from .recognition_base import BoundedMultiPartParser, EmptyObjectParser, LocalAPIView, request_owner
@@ -46,10 +49,11 @@ class CsrfView(LocalAPIView):
     def get(self, request):
         return Response({
             "csrf_token": get_token(request._request),
-            "limits": {"formats": ["image/jpeg", "image/png", "image/webp"],
+            "limits": {"formats": ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", PDF_CONTENT_TYPE],
                        "max_bytes": settings.RECEIPT_IMAGE_MAX_BYTES,
                        "max_pixels": settings.RECEIPT_IMAGE_MAX_PIXELS,
-                       "max_receipts": settings.RECEIPT_IMAGE_MAX_RECEIPTS},
+                       "max_receipts": settings.RECEIPT_IMAGE_MAX_RECEIPTS,
+                       "max_pdf_pages": PDF_MAX_PAGES},
             "executor": executor_object(),
         })
 
@@ -72,8 +76,11 @@ class PhotosView(LocalAPIView):
             raise InvalidRequest()
         if len(request.FILES.getlist("file")) != 1 or len(data.getlist("file")) != 1:
             raise InvalidParameter({"file": ["Выберите один файл."]})
+        owner = request_owner(request)
+        # Фото уходит модели: ИИ семьи выключен — 403 ai_disabled, квота суток исчерпана — 429 ai_quota.
+        use_ai(owner)
         try:
-            photo, created = accept_upload(request.FILES["file"], owner=request_owner(request))
+            photo, created = accept_upload(request.FILES["file"], owner=owner)
         except ImageError as exc:
             raise RecognitionApiError("upload_too_large" if exc.code == "file_too_large" else exc.code) from None
         except StorageError:
@@ -104,12 +111,19 @@ class JobsView(LocalAPIView):
         params, page, ordering = list_controls(request)
         photo = params.integer("photo")
         status = params.choice("status", JobStatus.values)
+        needs_review = params.boolean("needs_review")
         params.check()
         jobs = jobs_queryset(request)
         if photo is not None:
             jobs = jobs.filter(photo_id=photo)
         if status is not None:
             jobs = jobs.filter(status=status)
+        if needs_review:
+            # Waiting for a person: a crop to confirm, and the job was not retried (the retry replaces it).
+            jobs = jobs.filter(
+                Exists(ReceiptImage.objects.filter(job=OuterRef("pk"), status=ImageStatus.NEEDS_REVIEW)),
+                retries__isnull=True,
+            )
         executor = executor_object()
         return Response(paginate(jobs.order_by(*ordering), page, lambda job: job_object(job, executor)))
 
@@ -135,7 +149,7 @@ class JobMutationView(LocalAPIView):
 
     def own_job(self, request, pk):
         # The same place as the existence check: another user's job answers as a missing one.
-        return get_or_404(ProcessingJob.objects.filter(owner_q(request, "photo__")), path_id(pk))
+        return get_or_404(ProcessingJob.objects.filter(photos_q(request, "photo__")), path_id(pk))
 
 
 class CancelView(JobMutationView):
@@ -156,6 +170,8 @@ class RetryView(JobMutationView):
         self.empty_body(request)
         previous = self.own_job(request, pk)
         with transaction.atomic():
+            # Повтор снова отправляет фото модели; отказы ниже откатывают и счёт запроса.
+            use_ai(request_owner(request))
             SourcePhoto.objects.select_for_update().get(pk=previous.photo_id)
             if ProcessingJob.objects.filter(photo_id=previous.photo_id, status__in=ACTIVE_JOB_STATUSES).exists():
                 raise RecognitionApiError("job_active")

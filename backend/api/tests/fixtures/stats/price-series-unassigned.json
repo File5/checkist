@@ -28,6 +28,7 @@
       "country": "DE",
       "currency": "EUR",
       "unit": "pcs",
+      "manual": false,
       "comparable": false,
       "observations": 14,
       "points": [
@@ -120,6 +121,7 @@
       "country": "DE",
       "currency": "EUR",
       "unit": "pcs",
+      "manual": false,
       "comparable": false,
       "observations": 5,
       "points": [

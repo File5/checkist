@@ -1,38 +1,56 @@
-import { Fragment, useEffect, useLayoutEffect, useRef } from 'react'
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { buildRoute, Link, navigate, useNavigation } from './navigation'
 import type { NavigationSnapshot, Route } from './navigation'
-import HealthPage from './pages/HealthPage'
-import CatalogPage from './features/catalog/CatalogPage'
-import CategoryPage from './features/catalog/CategoryPage'
-import ProductPage from './features/product/ProductPage'
 import RequestState from './components/RequestState'
-import { UploadPage, JobsPage, JobPage } from './features/recognition'
-import { ReceiptsPage, ReceiptPage } from './features/receipts'
-import { MergesPage, MergePage } from './features/merges'
-import { ClassificationPage } from './features/classification'
-import { SpendingPage, ReceiptsStatsPage } from './features/stats'
-import { LoginPage, AccountPage } from './features/auth'
+import ScreenBoundary, { ScreenFallback, ScreenSkeleton } from './components/ScreenBoundary'
+import NetworkBar from './components/NetworkBar'
+import Icon from './components/Icon'
+import { PageHeaderContext } from './components/page-header'
+import type { PageHeaderSlots } from './components/page-header'
+// The screens come in parts of the build (screens.ts); only the sign-in is in the shell: a guest sees it first.
+import {
+  AccountPage, AskPage, CatalogPage, CategoryPage, CategorySpendsPage, ClassificationPage, DashboardPage, ExpensePage, ExportPage,
+  FamilyPage, GoalPage, GoalsPage, HealthPage, IncomesPage, IncomesStatsPage, JobPage, JobsPage, LimitsPage, MergePage, MergesPage, MorePage,
+  NewFamilyPage, NewFamilySignedIn, ProductPage, ReceiptPage, ReceiptsPage, ReceiptsStatsPage, RecurringPage, ReviewPage, SpendingPage,
+  StatementPage, StatementRulesPage, StoresPage, TrendsPage, UploadPage, UploadStatementPage,
+  preloadRoute, warmScreens,
+} from './screens'
+import { rememberStats, statsTabHref, statsTabs } from './features/stats/stats-memory'
+import LoginPage from './features/auth/LoginPage'
 import { pageKey, shellView, watchSession } from './features/auth/auth-state'
 import type { ShellView } from './features/auth/auth-state'
 import { moderatorOnlyText } from './features/auth/labels'
 import { canModerate, loadSession, useSession } from './session'
 import { menuKey, useCurrentItemInView } from './menu-view'
 import MainMenu from './menu/MainMenu'
+import { useWarmUp } from './menu/warm-up'
+import { headerAction, isFocusRoute, isMoreSection } from './menu/back-target'
 import { ThemeToggle } from './theme'
+import OfflineBanner from './offline/OfflineBanner'
+import { usePendingSync } from './offline/pending-store'
 import emblem from './assets/brand/emblem-96.webp'
 import emblem2x from './assets/brand/emblem-192.webp'
 
 function pageTitle(route: Route) {
   switch (route.kind) {
+    case 'dashboard': return 'Главная'
+    case 'limits': return 'Лимиты на месяц'
+    case 'category-spends': return 'Траты категории'
     case 'catalog': return 'Каталог продуктов'
     case 'category': return 'Категория продуктов'
     case 'product': return 'Товар и история цен'
     case 'spending': return 'Траты за период'
     case 'receipts-stats': return 'Средний чек'
+    case 'trends': return 'Динамика'
+    case 'stats-incomes': return 'Доходы'
     case 'health': return 'Состояние сервисов'
-    case 'receipts': return 'Чеки'
+    case 'receipts': return 'Траты'
     case 'upload': return 'Загрузка фото чеков'
+    case 'expense-new': return route.income ? 'Новый доход' : 'Новая трата'
+    case 'expense-edit': return 'Изменить трату'
+    case 'incomes': return 'Доходы'
+    case 'income-edit': return 'Изменить доход'
     case 'receipt': return 'Чек'
     case 'jobs': return 'Обработка'
     case 'job': return 'Задание обработки'
@@ -41,6 +59,19 @@ function pageTitle(route: Route) {
     case 'classification': return 'Категории товаров'
     case 'login': return 'Вход'
     case 'account': return 'Аккаунт'
+    case 'export': return 'Выгрузка'
+    case 'more': return 'Ещё'
+    case 'family': return 'Семья'
+    case 'recurring': return 'Регулярные платежи'
+    case 'stores': return 'Магазины'
+    case 'family-new': return 'Новая семья'
+    case 'statement-new': return 'Загрузить выписку'
+    case 'statement': return 'Выписка'
+    case 'statement-rules': return 'Правила выписок'
+    case 'review': return 'Разбор месяца'
+    case 'ask': return 'Вопрос о тратах'
+    case 'goals': return 'Цели'
+    case 'goal': return 'Цель'
     case 'invalid-query': return 'Некорректная ссылка'
     case 'not-found': return 'Страница не найдена'
   }
@@ -52,7 +83,8 @@ function shellTitle(view: ShellView, route: Route) {
     case 'page': return pageTitle(route)
     case 'loading': return 'Проверяем вход'
     case 'error': return 'Вход не проверен'
-    case 'login': return 'Вход'
+    // A guest with the invite of a new family sees its own screen in place of the sign-in.
+    case 'login': return route.kind === 'family-new' ? pageTitle(route) : 'Вход'
     case 'forbidden': return 'Раздел модератора каталога'
     case 'not-found': return 'Страница не найдена'
   }
@@ -62,23 +94,45 @@ const notFound = <RequestState kind="empty" message="Такой страницы
 
 function pageContent({ route, returnTo }: NavigationSnapshot, username: string) {
   switch (route.kind) {
+    case 'dashboard': return <DashboardPage month={route.month} />
+    case 'limits': return <LimitsPage />
+    case 'category-spends': return <CategorySpendsPage key={route.categoryId} categoryId={route.categoryId} month={route.month} />
     case 'catalog': return <CatalogPage query={route.query} />
     case 'category': return <CategoryPage categoryId={route.categoryId} query={route.query} />
     case 'product': return <ProductPage productId={route.productId} query={route.query} returnTo={returnTo} />
     case 'spending': return <SpendingPage query={route.query} />
     case 'receipts-stats': return <ReceiptsStatsPage query={route.query} />
+    case 'trends': return <TrendsPage query={route.query} />
+    case 'stats-incomes': return <IncomesStatsPage query={route.query} />
     case 'health': return <HealthPage />
     case 'receipts': return <ReceiptsPage query={route.query} />
     case 'upload': return <UploadPage />
+    case 'expense-new': return <ExpensePage key={`new-${route.income ? 'income' : route.repeat ?? ''}`} repeat={route.repeat} income={route.income} />
+    case 'expense-edit': return <ExpensePage key={route.receiptId} receiptId={route.receiptId} />
+    case 'incomes': return <IncomesPage month={route.month} />
+    case 'income-edit': return <ExpensePage key={`income-${route.incomeId}`} incomeId={route.incomeId} />
     case 'receipt': return <ReceiptPage receiptId={route.receiptId} returnTo={returnTo} />
     case 'jobs': return <JobsPage query={route.query} />
     case 'job': return <JobPage jobId={route.jobId} returnTo={returnTo} />
     case 'merges': return <MergesPage query={route.query} />
     case 'merge': return <MergePage groupId={route.groupId} returnTo={returnTo} />
     case 'classification': return <ClassificationPage query={route.query} />
-    // A signed-in person has nothing to do at the sign-in address: the shell sends them to the catalog.
+    // A signed-in person has nothing to do at the sign-in address: the shell sends them to «Главная».
     case 'login': return null
     case 'account': return <AccountPage username={username} />
+    case 'export': return <ExportPage query={route.query} />
+    case 'more': return <MorePage />
+    case 'family': return <FamilyPage joinToken={route.token} />
+    case 'recurring': return <RecurringPage />
+    case 'stores': return <StoresPage />
+    case 'family-new': return <NewFamilySignedIn />
+    case 'statement-new': return <UploadStatementPage />
+    case 'statement': return <StatementPage key={route.statementId} statementId={route.statementId} />
+    case 'statement-rules': return <StatementRulesPage />
+    case 'review': return <ReviewPage key={route.month ?? ''} month={route.month} />
+    case 'ask': return <AskPage q={route.q} />
+    case 'goals': return <GoalsPage />
+    case 'goal': return <GoalPage key={route.goalId} goalId={route.goalId} />
     case 'invalid-query': return <RequestState kind="empty" message="В адресе указаны некорректные фильтры или номер страницы. Сбросьте параметры и попробуйте снова." action={<Link className="action-link" to={route.resetTo} replace>Сбросить параметры</Link>} />
     case 'not-found': return notFound
   }
@@ -99,7 +153,34 @@ export default function App() {
   const contentKey = route.kind === 'health' ? 'health' : pageKey(session)
   const shell = `${view}:${contentKey}`
 
+  // The header row of the shell takes the controls and the heading of a page (components/PageHeader.tsx).
+  const [headStart, setHeadStart] = useState<HTMLElement | null>(null)
+  const [headEnd, setHeadEnd] = useState<HTMLElement | null>(null)
+  const [pageHeading, setPageHeading] = useState<{ path: string; text: string } | undefined>()
+  // Pages set it from their effects, after the address has changed: the address of the window is the new one.
+  const setTitle = useCallback((text: string | undefined) => setPageHeading(text === undefined ? undefined : { path: window.location.pathname, text }), [])
+  const headerSlots = useMemo<PageHeaderSlots>(() => ({ start: headStart, end: headEnd, setTitle }), [headStart, headEnd, setTitle])
+  // A heading given by the page of another address is never shown: a page leaving the screen takes its own back.
+  const heading1 = view === 'page' && pageHeading?.path === pathname ? pageHeading.text : title
+
+  // Where «✕» of a focus screen (a new spend) leads: the page the person came from, inside of the app.
+  // `more` — the section opened from the screen «Ещё», kept while the person stays in it (its own filters and months).
+  const [trail, setTrail] = useState<{ href: string; focus: boolean; from?: string; more?: Route['kind'] }>({ href: navigation.href, focus: isFocusRoute(route) })
+  if (trail.href !== navigation.href) {
+    const more = (trail.href === '/more' && isMoreSection(route)) || trail.more === route.kind ? route.kind : undefined
+    setTrail({ href: navigation.href, focus: isFocusRoute(route), from: trail.focus ? trail.from : trail.href, more })
+  }
+
   useEffect(() => watchSession(loadSession, document), [])
+  // The script of the opened screen starts at once, beside the check of the session; the others follow when it is shown.
+  useEffect(() => { void preloadRoute(route.kind) }, [route.kind])
+  const shown = view === 'page'
+  useEffect(() => { if (shown) warmScreens(preloadRoute(route.kind)) }, [shown, route.kind])
+  // Spends kept on the phone without network belong to one person and are sent when the network is back — once the
+  // server confirmed who that person is (a session started from the device is `provisional` until then).
+  usePendingSync(session.kind === 'user' && !session.provisional ? session.user.username : null)
+  // The other screens of the bar are read on the first idle moment: a tap on them shows them at once (menu/warm-up.ts).
+  useWarmUp(session, route)
 
   useLayoutEffect(() => {
     const previous = previousNavigation.current
@@ -138,8 +219,8 @@ export default function App() {
 
   const leaveLogin = route.kind === 'login' && view === 'page'
   useLayoutEffect(() => {
-    // After the sign-in on /login, and for a signed-in person who opens it: the catalog, without a history entry.
-    if (leaveLogin) navigate('/catalog', { replace: true })
+    // After the sign-in on /login, and for a signed-in person who opens it: «Главная», without a history entry.
+    if (leaveLogin) navigate('/', { replace: true })
   }, [leaveLogin])
 
   useEffect(() => {
@@ -147,32 +228,50 @@ export default function App() {
   }, [title])
 
   const mainNavigation = useCurrentItemInView(menuKey(view, session, route))
+  // «Назад» before the heading on a nested page (to the list the person came from, or to the parent list), or «✕»
+  // after it on a focus screen: a new or changed spend, drawn without the bottom bar of a phone.
+  const action = view === 'page' ? headerAction(navigation, trail.from, trail.more === route.kind) : undefined
+  const focus = view === 'page' && isFocusRoute(route)
+  useLayoutEffect(() => {
+    document.documentElement.classList.toggle('ck-focus-mode', focus)
+    return () => document.documentElement.classList.remove('ck-focus-mode')
+  }, [focus])
 
   const mergesActive = route.kind === 'merges' || route.kind === 'merge'
   const classificationActive = route.kind === 'classification'
   const catalogActive = route.kind === 'catalog' || route.kind === 'category' || route.kind === 'product' || mergesActive || classificationActive
-  const statsActive = route.kind === 'spending' || route.kind === 'receipts-stats'
+  const statsActive = statsTabs.some((tab) => tab.kind === route.kind)
+  // «Статистика» of the menu and the tabs lead to the address each tab was left with (features/stats/stats-memory.ts).
+  useEffect(() => { if (view === 'page') rememberStats(route) }, [route, view])
   const signedIn = session.kind === 'user'
   const username = signedIn ? session.user.username : ''
   // The sign-in is drawn alone, on the address the person opened: no header, menu or footer.
   // Its form is labelled by this heading, so the heading goes into the screen, which draws its own <main>.
-  if (view === 'login') return (
-    <LoginPage expired={session.kind === 'guest' && session.expired}
-      heading={<h1 id="page-heading" ref={heading} tabIndex={-1}>{title}</h1>} />
-  )
+  if (view === 'login') {
+    const guestHeading = <h1 id="page-heading" ref={heading} tabIndex={-1}>{title}</h1>
+    // The link of a new family is for a guest: its form takes the place of the sign-in on its own address.
+    return route.kind === 'family-new'
+      ? <><NetworkBar /><ScreenBoundary resetKey={navigation.href}><Suspense fallback={<ScreenFallback kind={route.kind} />}><NewFamilyPage key={route.token ?? ''} token={route.token} heading={guestHeading} /></Suspense></ScreenBoundary></>
+      : <><NetworkBar /><LoginPage expired={session.kind === 'guest' && session.expired} heading={guestHeading} /></>
+  }
   let body: ReactNode
   switch (view) {
-    case 'page': body = <Fragment key={contentKey}>{pageContent(navigation, username)}</Fragment>; break
-    case 'loading': body = <RequestState kind="loading" message="Проверяем вход…" />; break
+    // A screen whose script is still on its way shows its skeleton; a script that did not come — «Повторить».
+    case 'page': body = <ScreenBoundary key={contentKey} resetKey={navigation.href}>
+      <Suspense fallback={<ScreenFallback kind={route.kind} />}>{pageContent(navigation, username)}</Suspense>
+    </ScreenBoundary>; break
+    case 'loading': body = <ScreenSkeleton kind={route.kind} message="Проверяем вход…" />; break
     case 'error': body = <RequestState kind="error" message="Не удалось проверить вход. Проверьте соединение и повторите попытку." onRetry={() => { void loadSession() }} />; break
     case 'forbidden': body = <RequestState kind="empty" message={`${moderatorOnlyText}.`} action={<Link className="action-link" to="/catalog">В каталог</Link>} />; break
     case 'not-found': body = notFound; break
   }
   return (
-    <>
+    <PageHeaderContext.Provider value={headerSlots}>
       <a className="skip-link" href="#page-heading">К содержимому</a>
+      <NetworkBar />
+      <OfflineBanner />
       <header className="brand-bar">
-        <Link className="brand" to="/catalog" aria-label="Чекист — каталог">
+        <Link className="brand" to="/" aria-label="Чекист — главная">
           <img className="brand-mark" src={emblem} srcSet={`${emblem} 1x, ${emblem2x} 2x`} width={44} height={44} alt="" />
           <span>Чекист</span>
         </Link>
@@ -184,24 +283,28 @@ export default function App() {
 
       <div className="page">
         <main id="main" ref={content}>
+          {/* One header row on the page background; on a phone it is pinned to the top of the window. */}
           <div className="intro">
-            <p className="eyebrow">Доверяй, но проверяй чек</p>
-            <h1 id="page-heading" ref={heading} tabIndex={-1}>{title}</h1>
-            {route.kind === 'health' && <p className="intro-note">Сводка о состоянии служб.</p>}
+            {action?.kind === 'back' && <Link className="ck-back ck-round" to={action.to} aria-label={action.label}><Icon name="back" size={20} /></Link>}
+            <div className="intro-slot" ref={setHeadStart} />
+            <h1 id="page-heading" ref={heading} tabIndex={-1}>{heading1}</h1>
+            <div className="intro-slot" ref={setHeadEnd} />
+            {action?.kind === 'close' && <Link className="ck-close ck-round" to={action.to} aria-label={action.label}><Icon name="close" size={20} /></Link>}
           </div>
+          {route.kind === 'health' && <p className="intro-note intro-note-after">Сводка о состоянии служб.</p>}
           {catalogActive && view === 'page' && canModerate(session) && <nav className="main-navigation section-navigation" aria-label="Раздел каталога">
             <Link to="/catalog" aria-current={mergesActive || classificationActive ? undefined : 'page'}>Товары</Link>
             <Link to="/catalog/merges" aria-current={mergesActive ? 'page' : undefined}>Дубли</Link>
             <Link to="/catalog/classification" aria-current={classificationActive ? 'page' : undefined}>Категории</Link>
           </nav>}
           {statsActive && view === 'page' && <nav className="main-navigation section-navigation" aria-label="Раздел статистики">
-            <Link to="/stats" aria-current={route.kind === 'spending' ? 'page' : undefined}>Траты</Link>
-            <Link to="/stats/receipts" aria-current={route.kind === 'receipts-stats' ? 'page' : undefined}>Средний чек</Link>
+            {statsTabs.map((tab) => <Link key={tab.kind} to={statsTabHref(tab.kind, route)} aria-current={route.kind === tab.kind ? 'page' : undefined}>{tab.label}</Link>)}
           </nav>}
           {body}
         </main>
-        <footer>Чекист · Продуктовая разведка · Совершенно несекретно</footer>
+        {/* The old jokes of the brand stay, quietly, in the footer line. */}
+        <footer>Чекист — семейный бюджет · Доверяй, но проверяй чек</footer>
       </div>
-    </>
+    </PageHeaderContext.Provider>
   )
 }

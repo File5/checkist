@@ -14,15 +14,20 @@
 только на совпавших товарах и перенесён на всю корзину — покрытие отдаётся рядом.
 
 Арифметика (``months``, ``match``, ``price_index``, ``change``, ``decompose``,
-``compare``) — чистые функции на ``Decimal`` без БД. ``series`` и ``collect`` читают
-БД постоянным числом запросов. Валюты не складываются: на каждую свой блок.
+``compare``, ``series``, ``collect``) — чистые функции на ``Decimal`` без БД; ``series_rows`` и
+``compare_rows`` читают БД тремя запросами. Валюты не складываются: на каждую свой блок.
+
+Основная валюта семьи (2026-10-13): ``series`` и ``collect`` с ``converter`` (``rates.convert``)
+переводят итоги чеков и суммы строк в неё по курсу дня покупки и складывают все валюты в один
+блок; чеки без курса остаются блоками своей валюты. Поэтому БД отдаёт итог каждого чека, а
+сложение и медиана — в Python: медиана как ``percentile_cont(0.5)``, середина двух средних.
 """
 from dataclasses import dataclass
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import NamedTuple
 
-from django.db.models import Aggregate, Case, CharField, Count, DateField, DecimalField, F, Q, Sum, Value, When
-from django.db.models.functions import Trunc
+from django.db.models import Count, F, Q, Sum
 
 from catalog.models import Product
 from receipts.decimal_math import price_context, round_decimal
@@ -285,19 +290,6 @@ def compare(data, limit=20):
 
 # --- БД ---
 
-class Median(Aggregate):
-    """Медиана суммы: ``percentile_cont(0.5)``, точная до половины цента.
-
-    ``percentile_cont`` считает в ``double precision``. Сумма в центах — целое число
-    (до 14 цифр), поэтому и сама она, и середина двух соседних представимы без
-    потерь; обратно в ``numeric`` значение приводится уже точным.
-    """
-
-    function = "PERCENTILE_CONT"
-    template = "(%(function)s(0.5) WITHIN GROUP (ORDER BY %(expressions)s * 100))::numeric / 100"
-    output_field = DecimalField()
-
-
 class Bucket(NamedTuple):
     period_start: object  # date
     visits: Visits
@@ -309,40 +301,96 @@ class Series(NamedTuple):
     buckets: list
 
 
-def series(receipts, interval):
-    """Ряды походов по валютам из queryset ``Receipt``; три запроса.
+class SeriesRows(NamedTuple):
+    """Сырые данные рядов: итог каждого чека продажи, строки товаров по дням и возвраты по валютам."""
 
-    ``interval`` — ``month``, ``week`` (с понедельника), ``quarter``, ``year``; начало
-    интервала считается от локальной даты чека. Интервалы без походов не включаются,
-    валюта без походов блока не даёт. Больше ``MAX_BUCKETS`` интервалов суммарно —
-    ``TooManyBuckets``.
-    """
+    sales: list  # (currency, day, total) — по чеку
+    lines: list  # (currency, day, count)
+    refunds: dict  # {currency: count}
+
+    def needs(self):
+        return {(currency, day) for currency, day, _total in self.sales}
+
+
+def series_rows(receipts):
+    """Данные рядов по queryset ``Receipt``; три запроса, дальше расчёт без БД (``series``)."""
     sales = receipts.filter(operation=_SALE)
-    rows = list(
-        sales.annotate(bucket=Trunc("purchased_on", interval, output_field=DateField()))
-        .values("currency_id", "bucket")
-        .annotate(count=Count("pk"), total_sum=Sum("total"), median=Median("total"))
-        .order_by("currency_id", "bucket")
-        .values_list("currency_id", "bucket", "count", "total_sum", "median")[:MAX_BUCKETS + 1]
-    )
-    if len(rows) > MAX_BUCKETS:
-        raise TooManyBuckets()
-    lines = dict(
-        ((currency, bucket), count) for currency, bucket, count in
+    rows = list(sales.order_by().values_list("currency_id", "purchased_on", "total"))
+    lines = list(
         ReceiptLine.objects.filter(receipt__in=sales.values("pk"), kind=ReceiptLine.Kind.PRODUCT, quantity__gt=0)
-        .annotate(bucket=Trunc("receipt__purchased_on", interval, output_field=DateField()))
-        .values("receipt__currency_id", "bucket").annotate(count=Count("pk")).order_by()
-        .values_list("receipt__currency_id", "bucket", "count")
+        .values("receipt__currency_id", "receipt__purchased_on").annotate(count=Count("pk")).order_by()
+        .values_list("receipt__currency_id", "receipt__purchased_on", "count")
     )
     refunds = dict(
         receipts.filter(operation=_REFUND).values("currency_id").annotate(count=Count("pk")).order_by()
         .values_list("currency_id", "count")
     )
+    return SeriesRows(rows, lines, refunds)
+
+
+def bucket_start(day, interval):
+    """Начало интервала ``interval`` (``month``, ``week`` с понедельника, ``quarter``, ``year``), как ``date_trunc``."""
+    if interval == "week":
+        return day - timedelta(days=day.weekday())
+    if interval == "quarter":
+        return date(day.year, (day.month - 1) // 3 * 3 + 1, 1)
+    if interval == "year":
+        return date(day.year, 1, 1)
+    return date(day.year, day.month, 1)
+
+
+def median(values):
+    """Медиана как ``percentile_cont(0.5)``: средний элемент либо середина двух средних; ``None`` без значений."""
+    ordered = sorted(values)
+    if not ordered:
+        return None
+    middle = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[middle]
+    with price_context():
+        return (ordered[middle - 1] + ordered[middle]) / 2
+
+
+def _moved(converter, currency, day, amount):
+    """``(валюта, сумма)`` в основной валюте по курсу ``day``; без ``converter`` или без курса — как была."""
+    if converter is None or currency == converter.base:
+        return currency, amount
+    converted = converter.convert(amount, currency, day)
+    return (currency, amount) if converted is None else (converter.base, converted)
+
+
+def _visits(values, lines=0):
+    with price_context():
+        return Visits(len(values), sum(values, _ZERO), median(values), lines)
+
+
+def series(rows, interval, converter=None):
+    """Ряды походов по валютам из ``series_rows``; без БД.
+
+    ``interval`` — ``month``, ``week`` (с понедельника), ``quarter``, ``year``; начало интервала
+    считается от локальной даты чека. Интервалы без походов не включаются, валюта без походов
+    блока не даёт; порядок — по коду валюты. С ``converter`` (``rates.convert``) итоги чеков
+    переводятся в основную валюту по курсу дня покупки и складываются в её ряд, чеки без курса
+    остаются рядами своей валюты, возвраты в ряду основной валюты — всех валют. Больше
+    ``MAX_BUCKETS`` интервалов суммарно — ``TooManyBuckets``.
+    """
+    totals, counts = {}, {}
+    for currency, day, total in rows.sales:
+        currency, total = _moved(converter, currency, day, total)
+        totals.setdefault((currency, bucket_start(day, interval)), []).append(total)
+    if len(totals) > MAX_BUCKETS:
+        raise TooManyBuckets()
+    for currency, day, count in rows.lines:
+        currency, _ = _moved(converter, currency, day, _ZERO)
+        key = (currency, bucket_start(day, interval))
+        counts[key] = counts.get(key, 0) + count
+    refunds = dict(rows.refunds)
+    if converter is not None:
+        refunds = {converter.base: sum(refunds.values())}
     found = {}
-    for currency, bucket, count, total, median in rows:
-        found.setdefault(currency, []).append(
-            Bucket(bucket, Visits(count, total, median, lines.get((currency, bucket), 0))),
-        )
+    for currency, start in sorted(totals):
+        visits = _visits(totals[currency, start], counts.get((currency, start), 0))
+        found.setdefault(currency, []).append(Bucket(start, visits))
     return [Series(currency, refunds.get(currency, 0), buckets) for currency, buckets in found.items()]
 
 
@@ -350,12 +398,22 @@ def _within(period, prefix=""):
     return Q(**{f"{prefix}purchased_on__gte": period.date_from, f"{prefix}purchased_on__lte": period.date_to})
 
 
-def _period(base, prefix=""):
-    """Метка периода чека; чек уже отобран в один из двух непересекающихся периодов."""
-    return Case(When(_within(base, prefix), then=Value(BASE)), default=Value(CURRENT), output_field=CharField())
+class CompareRows(NamedTuple):
+    """Сырые данные сравнения: чеки обоих периодов, строки товаров по дням и имена товаров."""
+
+    receipts: list  # (currency, operation, day, total) — по чеку
+    lines: list  # (currency, day, owner, unit, paid, quantity, lines)
+    names: dict  # {product_id: name} товаров, купленных в обоих периодах
+
+    def needs(self):
+        return {(currency, day) for currency, _operation, day, _total in self.receipts}
 
 
-def collect(receipts, base, current, product_ref=None):
+def _side(base, day):
+    return BASE if base.date_from <= day <= base.date_to else CURRENT
+
+
+def compare_rows(receipts, base, current, product_ref=None):
     """Данные сравнения периодов ``base`` и ``current`` по queryset ``Receipt``; три запроса.
 
     Периоды — объекты с ``date_from`` и ``date_to`` (обе заданы, включительно), не
@@ -363,35 +421,66 @@ def collect(receipts, base, current, product_ref=None):
     умолчанию ``product_id``. Слой API передаёт выражение, относящее строку
     поглощённого слиянием товара к оставляемому.
     """
-    visits, refunds = {}, {}
-    for currency, operation, period, count, total, median in (
-        receipts.filter(_within(base) | _within(current))
-        .values("currency_id", "operation").annotate(period=_period(base))
-        .annotate(count=Count("pk"), total_sum=Sum("total"), median=Median("total")).order_by()
-        .values_list("currency_id", "operation", "period", "count", "total_sum", "median")
-    ):
-        if operation == _SALE:
-            visits[currency, period] = Visits(count, total, median)
-        else:
-            refunds[currency, period] = count
-    sales = receipts.filter(_within(base) | _within(current), operation=_SALE)
-    purchases = {}
-    for currency, period, *row in (
-        ReceiptLine.objects.filter(receipt__in=sales.values("pk"), kind=ReceiptLine.Kind.PRODUCT, quantity__gt=0)
-        .values("receipt__currency_id", "unit")
+    inside = receipts.filter(_within(base) | _within(current))
+    rows = list(inside.order_by().values_list("currency_id", "operation", "purchased_on", "total"))
+    lines = list(
+        ReceiptLine.objects.filter(receipt__in=inside.filter(operation=_SALE).values("pk"),
+                                   kind=ReceiptLine.Kind.PRODUCT, quantity__gt=0)
+        .values("receipt__currency_id", "receipt__purchased_on", "unit")
         .annotate(
-            period=_period(base, "receipt__"),
             owner=product_ref if product_ref is not None else F("product_id"),
             paid=Sum(F("amount") - F("discount_amount")), quantity_sum=Sum("quantity"), lines=Count("pk"),
         )
         .order_by()
-        .values_list("receipt__currency_id", "period", "owner", "unit", "paid", "quantity_sum", "lines")
-    ):
-        purchases.setdefault((currency, period), []).append(Purchase(*row))
-    bought = {
-        period: {row.product_id for key, rows in purchases.items() if key[1] == period for row in rows}
-        for period in (BASE, CURRENT)
-    }
+        .values_list("receipt__currency_id", "receipt__purchased_on", "owner", "unit", "paid", "quantity_sum", "lines")
+    )
+    bought = {BASE: set(), CURRENT: set()}
+    for _currency, day, owner, *_rest in lines:
+        bought[_side(base, day)].add(owner)
     ids = (bought[BASE] & bought[CURRENT]) - {None}
     names = dict(Product.objects.filter(pk__in=ids).values_list("pk", "name"))
-    return Collected(visits, refunds, purchases, names)
+    return CompareRows(rows, lines, names)
+
+
+def collect(rows, base, converter=None):
+    """``Collected`` из ``compare_rows``; ``base`` — базовый период. Без БД.
+
+    С ``converter`` (``rates.convert``) итоги чеков и суммы строк переводятся в основную валюту
+    по курсу дня покупки и складываются в её блок; чеки без курса остаются в своей валюте.
+    """
+    totals, refunds = {}, {}
+    for currency, operation, day, total in rows.receipts:
+        currency, total = _moved(converter, currency, day, total)
+        key = (currency, _side(base, day))
+        if operation == _SALE:
+            totals.setdefault(key, []).append(total)
+        else:
+            refunds[key] = refunds.get(key, 0) + 1
+    visits = {key: _visits(values) for key, values in totals.items()}
+    grouped = {}
+    with price_context():
+        for currency, day, owner, unit, paid, quantity, count in rows.lines:
+            currency, paid = _moved(converter, currency, day, paid)
+            key = (currency, _side(base, day), owner, unit)
+            before = grouped.get(key, (_ZERO, Decimal(0), 0))
+            grouped[key] = (before[0] + paid, before[1] + quantity, before[2] + count)
+    purchases = {}
+    for (currency, period, owner, unit), (paid, quantity, count) in grouped.items():
+        purchases.setdefault((currency, period), []).append(Purchase(owner, unit, paid, quantity, count))
+    return Collected(visits, refunds, purchases, rows.names)
+
+
+def unconverted(sales, converter):
+    """Чеки продажи без курса из ``(валюта, день, итог)``: ``[(валюта, чеков, сумма)]`` по коду валюты."""
+    found = {}
+    with price_context():
+        for currency, day, total in sales:
+            if currency != converter.base and converter.factor(currency, day) is None:
+                count, amount = found.get(currency, (0, _ZERO))
+                found[currency] = (count + 1, amount + total)
+    return [(currency, count, total) for currency, (count, total) in sorted(found.items())]
+
+
+def compare_sales(rows):
+    """``(валюта, день, итог)`` чеков продажи ``compare_rows``: для ``unconverted``."""
+    return [(currency, day, total) for currency, operation, day, total in rows.receipts if operation == _SALE]

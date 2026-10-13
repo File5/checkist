@@ -12,9 +12,18 @@ from rest_framework.exceptions import ParseError, UnsupportedMediaType
 from rest_framework.permissions import SAFE_METHODS, AllowAny, BasePermission
 from rest_framework.response import Response
 
-from accounts.access import LOCAL_SINGLE, LocalOrSignedIn, SignedIn, is_moderator, mode, request_user
+from accounts import profile
+from accounts.access import (
+    LOCAL_SINGLE, LocalOrSignedIn, SignedIn, household, is_head, is_moderator, mode, request_user,
+)
+from accounts.models import Membership
+from accounts.people import display_name, household_people
 from config.exceptions import AuthApiError, InvalidParameter, InvalidRequest, ObjectNotFound, PasswordRejected
+from push import services as push
+from rates.convert import request_base_currency
 from recognition.auth import enforce_csrf
+
+from stores.models import Currency
 
 from .recognition_base import EmptyObjectParser, JsonObjectParser, LocalAPIView
 
@@ -31,13 +40,39 @@ PASSWORD_ISSUES = {
 PASSWORD_REJECTED = "Пароль не подходит."
 
 
+def household_object(request):
+    """Семья пользователя запроса либо ``None``.
+
+    ``{"id", "name", "members": [логины по алфавиту], "people": [{"username", "display_name"}]}``:
+    ``people`` — те же люди в том же порядке с именем для показа (``accounts.people``);
+    ``head`` — логин главного в семье либо ``null``, пока администратор его не назначил.
+    """
+    family = household(request)
+    if family is None:
+        return None
+    people = household_people(family)
+    head = (Membership.objects.filter(household=family, role=Membership.Role.HEAD)
+            .values_list("user__username", flat=True).first())
+    return {"id": family.pk, "name": family.name, "members": [item["username"] for item in people], "people": people,
+            "head": head}
+
+
+def settings_object(user):
+    """Настройки пользователя: ``{"default_currency": код | null}``."""
+    return {"default_currency": profile.default_currency(user)}
+
+
 def me_object(request):
-    """Объект «Я»: режим, пользователь запроса, его права и токен CSRF текущей сессии."""
+    """Объект «Я»: режим, пользователь запроса, его семья, права и токен CSRF текущей сессии."""
     user = request_user(request)
     return {
         "mode": mode(),
-        "user": {"id": user.pk, "username": user.get_username(), "is_staff": user.is_staff},
+        "user": {"id": user.pk, "username": user.get_username(), "display_name": display_name(user),
+                 "is_staff": user.is_staff},
+        "household": household_object(request),
         "permissions": {"moderate_catalog": is_moderator(request)},
+        "is_head": is_head(request),
+        "settings": settings_object(user),
         "csrf_token": get_token(request._request),
     }
 
@@ -113,6 +148,57 @@ class MeView(LocalAPIView):
         return Response(me_object(request))
 
 
+class SettingsView(LocalAPIView):
+    """``GET`` — настройки и известные серверу валюты; ``PATCH`` — правка, ответ как у ``GET``.
+
+    Тело ``PATCH`` — объект с полями настроек (сейчас одно: ``default_currency`` — код валюты
+    либо ``null``); неизвестное поле, чужой код — ``400 invalid_parameter``.
+    """
+
+    http_method_names = ["get", "patch", "head", "options"]
+    parser_classes = [JsonObjectParser]
+
+    def get_permissions(self):
+        if self.request.method in SAFE_METHODS:
+            return [SignedIn()]
+        return [LocalOrSignedIn()]
+
+    def answer(self, request):
+        currencies = [{"code": code, "name": name} for code, name in Currency.objects.order_by("code").values_list("code", "name")]
+        # base_currency — основная валюта семьи (главного; без семьи — своя): в ней итоги и лимиты (rates.convert).
+        return Response({**settings_object(request_user(request)), "currencies": currencies,
+                         "base_currency": request_base_currency(request)})
+
+    def get(self, request):
+        return self.answer(request)
+
+    def patch(self, request):
+        if request.content_type != "application/json":
+            raise UnsupportedMediaType(request.content_type)
+        if request._request.META.get("CONTENT_LENGTH") in (None, "", "0"):
+            raise InvalidRequest()
+        try:
+            data = request.data
+        except ParseError:
+            raise InvalidRequest() from None
+        if not isinstance(data, dict):
+            raise InvalidRequest()
+        errors = {key: ["Неизвестное поле."] for key in data if key != "default_currency"}
+        changes = {}
+        if "default_currency" in data:
+            code = data["default_currency"]
+            if code is None:
+                changes["default_currency"] = None
+            elif isinstance(code, str) and Currency.objects.filter(code=code.upper()).exists():
+                changes["default_currency"] = code.upper()
+            else:
+                errors["default_currency"] = ["Неизвестная валюта."]
+        if errors:
+            raise InvalidParameter(errors)
+        profile.save(request_user(request), **changes)
+        return self.answer(request)
+
+
 class LoginView(AuthMutationView):
     def post(self, request):
         data = self.body(request, ("username", "password"))
@@ -162,6 +248,9 @@ class PasswordView(AuthMutationView):
         account.set_password(data["new_password"])
         account.save(update_fields=["password"])
         # Эта сессия остаётся, остальные сессии пользователя перестают действовать.
+        session_key = request._request.session.session_key
         update_session_auth_hash(request._request, account)
+        # Новый ключ сессии: уведомления этого устройства остаются (push.services.signed_in).
+        push.session_moved(session_key, request._request.session.session_key)
         request.user = account
         return Response(me_object(request))

@@ -31,11 +31,20 @@ describe('fields of a date keep the width of their panel (text of the rules and 
     const found = files.filter((path) => path.endsWith('.tsx') && !path.includes('.test.') && !preview(path))
       .flatMap((path) => [...raw(path).matchAll(written)].map((match) => `${path}: ${match[1] ?? match[2]}`))
     expect(found.sort()).toEqual([
+      'features/expense/ExpensePage.tsx: date',
+      'features/export/ExportPage.tsx: date',
+      'features/export/ExportPage.tsx: date',
+      'features/goals/GoalForms.tsx: date',
+      'features/goals/GoalForms.tsx: date',
+      'features/goals/GoalForms.tsx: date',
       'features/product/ProductPage.tsx: date',
       'features/receipts/ReceiptFilters.tsx: date',
       'features/receipts/ReceiptFilters.tsx: date',
       'features/recognition/ReviewForm.tsx: date',
+      'features/recurring/RecurringPay.tsx: date',
       'features/stats/receipts-filters.tsx: date',
+      'features/stats/spending-filters.tsx: date',
+      // «Свой период» of the period sheet of a phone (feature/stats-compact).
       'features/stats/spending-filters.tsx: date',
     ])
     for (const item of found) expect(kinds).toContain(item.split(': ')[1])
@@ -66,7 +75,13 @@ describe('fields of a date keep the width of their panel (text of the rules and 
   it('lets no screen bring the own look or a least width back', () => {
     const sheets = files.filter((path) => path.endsWith('.css') && path !== 'App.css' && !preview(path))
     expect(sheets).toContain('features/receipts/Receipts.css')
-    expect(sheets.filter((path) => /(^|[\s;{-])appearance\s*:/.test(read(path)))).toEqual([])
+    // A select drawn as the value of a row (the field rows of the artifact, Export.css) may drop its own look;
+    // a rule that reaches a field of a date may not.
+    const own = (path: string) => [...read(path).replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+      .filter((match) => /(^|[\s;-])appearance\s*:/.test(match[2]))
+      .flatMap((match) => match[1].split(',').map((selector) => selector.trim()))
+      .filter((selector) => !/(^|[\s>])select(?![\w-])/.test(selector))
+    expect(sheets.filter((path) => own(path).length)).toEqual([])
     expect(sheets.filter((path) => new RegExp(`type="(${kind})"`).test(read(path)))).toEqual([])
   })
 })

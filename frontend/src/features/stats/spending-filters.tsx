@@ -1,16 +1,23 @@
-import { useId, useReducer, useRef } from 'react'
+import { useId, useReducer, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import type { CountryEntry } from '../../api/countries'
 import type { Page, Results, StoreEntry } from '../../api/types'
+import ChipScroller from '../../components/ChipScroller'
+import ResponsiveFilters from '../../components/ResponsiveFilters'
+import { useNarrow } from '../../lib/cards'
 import { Link, navigate, spendingHref } from '../../navigation'
 import type { SpendingQuery } from '../../navigation'
 import { maxStatsStores } from '../../navigation/routes'
 import { storeLabel } from '../product/state'
+import { useChipInView } from './chip-in-view'
 import type { RequestState } from '../product/state'
+import { DateRange, PeriodDate } from './period'
 import {
-  activePreset, applyFilters, filterDraft, formReducer, hasScopeFilters, initForm, presetHref, presetLabels, presets,
-  requestKey, resetFiltersHref, sameDraft, serverFieldErrors,
+  activePreset, applyFilters, filterCount, filterDraft, filterMessages, formReducer, initForm, presetHref, presetLabels, presets,
+  requestKey, sameDraft, serverFieldErrors,
 } from './spending-state'
-import type { FilterField, SpendingFailure, TextField } from './spending-state'
+import type { FilterErrors, FilterField, SpendingFailure, TextField } from './spending-state'
+import { PeriodSheet } from './stats-period'
 
 /** Reference lists for the selects; the filters stay usable without them. */
 export type SpendingReference = {
@@ -21,8 +28,56 @@ export type SpendingReference = {
 
 const sorted = (values: Iterable<string>) => [...new Set(values)].sort()
 
-export default function SpendingFilters({ query, failure, reference, today }: {
+/** «С» and «По» of the period sheet: the other filters, the breakdown and the place in the drill-down stay. */
+function SpendingPeriodForm({ query, onDone }: { query: SpendingQuery; onDone: () => void }) {
+  const id = useId()
+  const [dates, setDates] = useState({ date_from: query.date_from ?? '', date_to: query.date_to ?? '' })
+  const [errors, setErrors] = useState<FilterErrors>({})
+  const field = (name: 'date_from' | 'date_to', label: string) => <div className="spending-field">
+    <label htmlFor={`${id}-${name}`}>{label}</label>
+    <input id={`${id}-${name}`} name={name} type="date" value={dates[name]} aria-invalid={Boolean(errors[name])}
+      aria-describedby={errors[name] ? `${id}-${name}-error` : `${id}-note`}
+      onChange={(event) => { setDates({ ...dates, [name]: event.target.value }); setErrors({}) }} />
+    {errors[name] && <p className="spending-field-error" id={`${id}-${name}-error`}>{errors[name]}</p>}
+  </div>
+  return <form className="spending-form" noValidate aria-label="Свой период" onSubmit={(event) => {
+    event.preventDefault()
+    const result = applyFilters(query, { ...filterDraft(query), ...dates })
+    const wrong: FilterErrors = {}
+    for (const name of ['date_from', 'date_to'] as const) if (result.errors[name]) wrong[name] = filterMessages[name]
+    setErrors(wrong)
+    const first = Object.keys(wrong)[0]
+    if (first) { event.currentTarget.querySelector<HTMLInputElement>(`[name="${first}"]`)?.focus(); return }
+    onDone()
+    navigate(spendingHref(result.query))
+  }}>
+    <div className="spending-grid">{field('date_from', 'С')}{field('date_to', 'По')}</div>
+    <p className="spending-note" id={`${id}-note`}>Обе даты включительно, по дате покупки в магазине. Без дат — вся история.</p>
+    <button type="submit">Показать период</button>
+  </form>
+}
+
+/** «Всё время», «Этот год» or the dates themselves. */
+function spendingPeriodLabel(query: SpendingQuery, today: string): ReactNode {
+  const preset = activePreset(query, today)
+  if (preset) return presetLabels[preset]
+  if (query.date_from && query.date_to) return <DateRange from={query.date_from} to={query.date_to} />
+  return query.date_from ? <>с <PeriodDate date={query.date_from} /></> : <>по <PeriodDate date={query.date_to ?? ''} /></>
+}
+
+/** «Период: …» of «Траты» on a phone: the ready periods and «Свой период» in a sheet. `open` — for the tests. */
+export function SpendingPeriodSheet({ query, today, open }: { query: SpendingQuery; today: string; open?: boolean }) {
+  const active = activePreset(query, today)
+  return <PeriodSheet label={spendingPeriodLabel(query, today)} open={open}
+    choices={presets.map((preset) => ({ key: preset, label: presetLabels[preset], href: presetHref(query, preset, today), active: active === preset }))}>
+    {(close) => <SpendingPeriodForm query={query} onDone={close} />}
+  </PeriodSheet>
+}
+
+export default function SpendingFilters({ query, failure, reference, today, narrow: narrowProp }: {
   query: SpendingQuery; failure?: SpendingFailure; reference: SpendingReference; today: string
+  /** For the tests: the phone view without a browser. */
+  narrow?: boolean
 }) {
   // Without `other`: showing or hiding the composition of «Прочее» keeps the unsaved edits of the form.
   const source = requestKey(query)
@@ -73,17 +128,23 @@ export default function SpendingFilters({ query, failure, reference, today }: {
     {error(field)}
   </div>
   const active = activePreset(query, today)
+  const measured = useNarrow()
+  const narrow = narrowProp ?? measured
+  const presetsRef = useChipInView<HTMLElement>(`${active ?? ''}-${narrow}`)
+  // The ready periods: on a wide screen chips above the form; on a phone «Период: …» opens them in a sheet, beside the
+  // picture of the filters, and the dates of the form move into that sheet as «Свой период».
+  const chips = <nav ref={presetsRef} className="spending-presets" aria-label="Быстрый выбор периода">
+    <ChipScroller label="Готовые периоды">
+      {presets.map((preset) => <Link key={preset} className="ck-chip" to={presetHref(query, preset, today)}
+        aria-current={active === preset ? 'true' : undefined}>{presetLabels[preset]}</Link>)}
+    </ChipScroller>
+  </nav>
 
-  return <section className="spending-panel" aria-labelledby={`${id}-heading`}>
+  return <section className="spending-panel spending-filters" aria-labelledby={`${id}-heading`}>
     <h2 id={`${id}-heading`}>Период и фильтры</h2>
-    <nav aria-label="Быстрый выбор периода">
-      <ul className="spending-chips">
-        {presets.map((preset) => <li key={preset}>
-          <Link to={presetHref(query, preset, today)} aria-current={active === preset ? 'true' : undefined}>{presetLabels[preset]}</Link>
-        </li>)}
-      </ul>
-    </nav>
-    <form ref={formRef} noValidate onSubmit={(event) => {
+    {!narrow && chips}
+    <ResponsiveFilters count={filterCount(query)} summary={<SpendingPeriodSheet query={query} today={today} />} compact narrow={narrowProp}>
+    <form ref={formRef} className="spending-form" noValidate onSubmit={(event) => {
       event.preventDefault()
       const result = applyFilters(query, draft)
       dispatch({ type: 'invalid', errors: result.errors })
@@ -91,8 +152,10 @@ export default function SpendingFilters({ query, failure, reference, today }: {
       if (invalid) focusField(invalid)
       else navigate(spendingHref(result.query))
     }}>
-      <div className="spending-grid">{dateInput('date_from', 'Период с')}{dateInput('date_to', 'Период по')}</div>
-      <p className="spending-note" id={`${id}-period-help`}>Обе даты включительно, по дате покупки в магазине. Без дат — вся история.</p>
+      {!narrow && <>
+        <div className="spending-grid">{dateInput('date_from', 'Период с')}{dateInput('date_to', 'Период по')}</div>
+        <p className="spending-note" id={`${id}-period-help`}>Обе даты включительно, по дате покупки в магазине. Без дат — вся история.</p>
+      </>}
       <div className="spending-grid">
         {select('country', 'Страна магазина', 'Все страны', countryCodes.map((code) => {
           const name = countries.find((entry) => entry.code === code)?.name
@@ -134,15 +197,18 @@ export default function SpendingFilters({ query, failure, reference, today }: {
         <p>Списки стран и магазинов не загрузились. Период и уже выбранные значения можно применить и без них.</p>
         <button type="button" className="spending-secondary" onClick={reference.retry}>Повторить загрузку списков</button>
       </div>}
-      {Object.keys(errors).length > 0 && <p className="spending-field-error" role="alert">Исправьте отмеченные фильтры.</p>}
+      {/* On a phone the dates are in the sheet of the period: their refusal is not one of these fields. */}
+      {Object.keys(errors).some((field) => !narrow || !field.startsWith('date_')) && <p className="spending-field-error" role="alert">Исправьте отмеченные фильтры.</p>}
       <div className="spending-actions ck-action-bar">
-        <button type="submit">Применить фильтры</button>
-        {(hasScopeFilters(query) || !sameDraft(draft, applied)) && <button type="button" className="spending-secondary" onClick={() => {
+        <button type="submit">{narrow ? 'Применить' : 'Применить фильтры'}</button>
+        {/* «Сбросить» brings the default view back: the screen remembers the last one (stats-memory.ts). */}
+        {(source !== '' || !sameDraft(draft, applied)) && <button type="button" className="spending-secondary" onClick={() => {
           dispatch({ type: 'reset' })
-          navigate(resetFiltersHref(query))
-          focusField('date_from')
-        }}>Сбросить фильтры</button>}
+          navigate(spendingHref())
+          focusField(narrow ? 'country' : 'date_from')
+        }}>Сбросить</button>}
       </div>
     </form>
+    </ResponsiveFilters>
   </section>
 }

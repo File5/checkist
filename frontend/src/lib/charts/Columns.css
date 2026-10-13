@@ -1,0 +1,33 @@
+/* Stacked columns (StackedColumns.tsx). Colours are tokens only: a category is --ck-cat-N in both themes, the same
+   number as on «Главная» (src/lib/category-tone.ts); 0 is what has no category. */
+.ck-columns-tone-0 { --ck-col: var(--ck-series-other); }
+.ck-columns-tone-1 { --ck-col: var(--ck-cat-1); }
+.ck-columns-tone-2 { --ck-col: var(--ck-cat-2); }
+.ck-columns-tone-3 { --ck-col: var(--ck-cat-3); }
+.ck-columns-tone-4 { --ck-col: var(--ck-cat-4); }
+.ck-columns-tone-5 { --ck-col: var(--ck-cat-5); }
+.ck-columns-tone-6 { --ck-col: var(--ck-cat-6); }
+
+/* The legend reads as rows of a list: a dot, the name and its total on the right, a divider between the rows; as
+   many columns as fit 220px each, so a wide screen keeps it short and a phone has one column. */
+.ck-columns-legend { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); column-gap: 24px; margin: 0; padding: 0; list-style: none; }
+.ck-columns-legend li { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 36px; border-bottom: 1px solid var(--ck-divider); }
+.ck-columns-label { flex: 1 1 auto; min-width: 0; font-size: var(--ck-text-sm); font-weight: 600; }
+.ck-columns-note { flex: none; color: var(--ck-text); font-size: var(--ck-text-sm); font-weight: 700; font-variant-numeric: tabular-nums; }
+.ck-columns-swatch { flex: 0 0 auto; width: 10px; height: 10px; border-radius: 50%; background: var(--ck-col); }
+
+/* The drawing is shown one to one (usePlotWidth): its text stays 12px. */
+.ck-columns-plot { position: relative; width: 100%; touch-action: pan-y pinch-zoom; }
+.ck-columns-svg { display: block; width: 100%; height: auto; }
+/* A thin line of the card's surface between segments: two neighbouring categories never melt into one. */
+.ck-columns-segment { fill: var(--ck-col); stroke: var(--ck-chart-surface); stroke-width: 1; }
+.ck-columns-stack[data-state="dim"] .ck-columns-segment { opacity: 0.45; }
+.ck-columns-active { fill: var(--ck-chart-highlight); }
+.ck-chart svg text.ck-columns-tick-active { fill: var(--ck-chart-ink); font-weight: 600; }
+
+/* Every column is a link over its whole slot, so a finger does not have to hit a thin bar. */
+.ck-columns-hits { position: absolute; inset: 0; margin: 0; padding: 0; list-style: none; pointer-events: none; }
+.ck-columns-hits li { position: absolute; display: flex; }
+.ck-columns-hit { flex: 1 1 auto; border-radius: var(--ck-radius-sm); pointer-events: auto; }
+.ck-columns-hit:hover { background: var(--ck-chart-highlight); opacity: 0.35; }
+.ck-columns-hit:focus-visible { outline: 3px solid var(--ck-chart-focus); outline-offset: -3px; }

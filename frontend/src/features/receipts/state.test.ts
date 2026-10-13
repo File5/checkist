@@ -3,7 +3,7 @@ import { buildReceiptsQuery, parseReceiptsQuery } from '../../navigation'
 import type { ReceiptsQuery } from '../../navigation'
 import { applyMe } from '../../session'
 import { resetSession } from '../../session/store'
-import { applyFilters, errorMessage, filterDraft, hasFilters, money, price, receiptParams, recognizedText } from './state'
+import { activeFilterCount, applyFilters, errorMessage, filterDraft, hasFilters, money, price, receiptParams, recognizedText } from './state'
 
 describe('receipt URL filters and display values', () => {
   it('uses newest purchases first while honouring an explicit sort', () => {
@@ -45,19 +45,19 @@ describe('receipt URL filters and display values', () => {
     expect(hasFilters({ page: 1, currency: 'EUR' })).toBe(true)
   })
   it('keeps Decimal precision, zero and negative refunds, and labels unknowns', () => {
-    expect(money('9999999999999999.12', 'EUR')).toBe('9 999 999 999 999 999,12 EUR')
-    expect(money('0.00', 'EUR')).toBe('0,00 EUR')
-    expect(price('-1.2345', 'EUR')).toBe('-1,23 EUR')
-    expect(money('-2.38', 'EUR')).toBe('-2,38 EUR')
+    expect(money('9999999999999999.12', 'EUR')).toBe('10 000 000 000 000 000 €')
+    expect(money('0.00', 'EUR')).toBe('0 €')
+    expect(price('-1.2345', 'EUR')).toBe('-1,23 €')
+    expect(money('-2.38', 'EUR')).toBe('-3 €')
     expect(money(null, 'EUR')).toBe('Не распознано')
-    expect(money('2.38')).toBe('2,38')
+    expect(money('2.38')).toBe('3')
     expect(recognizedText('  ')).toBe('Не распознано')
   })
   it('names the missing right instead of the local mode to a user of accounts', () => {
     const denied = { kind: 'error' as const, reason: 'permission_denied' as const }
     const former = errorMessage(denied)
     const me = (mode: 'accounts' | 'local_single') =>
-      ({ mode, user: { id: 3, username: 'anna', is_staff: false }, permissions: { moderate_catalog: mode === 'local_single' }, csrf_token: 'token' })
+      ({ mode, user: { id: 3, username: 'anna', is_staff: false }, household: null, permissions: { moderate_catalog: mode === 'local_single' }, csrf_token: 'token' })
     try {
       applyMe(me('accounts'))
       expect(errorMessage(denied)).toBe('Нет права модератора каталога.')
@@ -69,5 +69,15 @@ describe('receipt URL filters and display values', () => {
   it('uses local messages for inaccessible local API and stale pages', () => {
     expect(errorMessage({ kind: 'error', reason: 'permission_denied' })).toContain('локальном режиме')
     expect(errorMessage({ kind: 'error', reason: 'page_out_of_range' })).toContain('первую страницу')
+  })
+})
+
+describe('«Фильтры (N)» of a phone', () => {
+  it('counts the conditions of the form and of the link, not the family chip, the page or the default order', () => {
+    expect(activeFilterCount({ page: 3 })).toBe(0)
+    expect(activeFilterCount({ page: 1, owner: 'liza', ordering: '-purchased_at' })).toBe(0)
+    // The words of the search line are seen anyway (2026-10-13): they are not counted.
+    expect(activeFilterCount({ page: 1, q: 'MILCH', date_from: '2026-10-01', date_to: '2026-10-31', operation: 'refund' })).toBe(3)
+    expect(activeFilterCount({ page: 1, store: 7, currency: 'KZT', ordering: 'purchased_at' })).toBe(3)
   })
 })

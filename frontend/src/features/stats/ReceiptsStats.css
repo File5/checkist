@@ -9,25 +9,29 @@
   --stats-effect-price_per_line: color-mix(in srgb, var(--ck-series-4) 70%, var(--ck-surface));
   display: grid; gap: 24px; min-width: 0;
 }
-.stats-receipts h3 { margin: 0; font-size: 1.15rem; }
-.stats-receipts h4 { margin: 0; font-size: 1.05rem; }
-.stats-receipts h5 { margin: 0; font-size: 0.95rem; }
-.stats-intro { color: var(--ck-text-muted); max-width: 720px; }
-.stats-panel { display: grid; gap: 18px; min-width: 0; padding: 24px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius); background: var(--ck-surface); }
-.stats-panel form { display: grid; gap: 16px; min-width: 0; }
-.stats-panel fieldset { min-width: 0; margin: 0; padding: 14px 16px 16px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius); }
-.stats-panel legend { padding: 0 6px; font-weight: 600; }
-.stats-note { color: var(--ck-text-muted); font-size: 0.9rem; }
+/* A panel is a card of the artifact (2026-10-13): the surface on the page, radius 20, inner 20, the theme's shadow, no
+   frame; its heading 18 / 800 with an optional link on the right, the explanation in small print at the end. */
+.stats-receipts > h2 { margin: 0; font-size: var(--ck-text-xl); font-weight: 800; }
+.stats-receipts h3 { margin: 0; font-size: var(--ck-text-lg); font-weight: 800; line-height: 1.3; }
+.stats-receipts h4 { margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-sm); font-weight: 600; }
+.stats-receipts h5 { margin: 0; font-size: var(--ck-text-sm); font-weight: 700; }
+.stats-intro { margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-sm); max-width: 720px; }
+.stats-panel { display: grid; gap: 16px; min-width: 0; padding: 20px; border-radius: var(--ck-radius); background: var(--ck-surface); box-shadow: var(--ck-card-shadow); }
+.stats-panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; min-width: 0; }
+.stats-panel-link { flex: none; display: inline-flex; align-items: center; min-height: 44px; margin-block: -12px; color: var(--ck-link); font-size: var(--ck-text-sm); font-weight: 700; text-decoration: none; }
+.stats-panel-link:hover { color: var(--ck-link-hover); text-decoration: underline; text-underline-offset: 3px; }
+.stats-form { display: grid; gap: 16px; min-width: 0; }
+.stats-form fieldset { min-width: 0; margin: 0; padding: 14px 16px 16px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius-sm); }
+.stats-form legend { padding: 0 6px; font-weight: 600; }
+.stats-note { margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-xs); line-height: 1.45; }
+.stats-footnote { padding-top: 12px; border-top: 1px solid var(--ck-divider); }
 /* A value is never torn, in a table or outside it. */
 .stats-number { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .stats-number-note { display: block; font-weight: 400; }
 
-.stats-presets, .stats-intervals { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
-.stats-presets ul, .stats-intervals ul, .stats-inline-links { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; margin: 0; padding: 0; }
-.stats-presets-title { color: var(--ck-text-muted); font-size: 0.9rem; }
-.stats-chip { display: inline-flex; align-items: center; min-height: 44px; padding: 8px 14px; border: 1px solid var(--ck-border-field); border-radius: 22px; color: var(--ck-link); text-decoration: none; }
-.stats-chip:hover { background: var(--ck-surface-raised); }
-.stats-chip[aria-current="true"] { background: var(--ck-accent); border-color: var(--ck-accent-text); color: var(--ck-on-accent); }
+.stats-presets { display: grid; gap: 8px; min-width: 0; }
+.stats-inline-links, .stats-chip-row { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; margin: 0; padding: 0; }
+.stats-presets-title { color: var(--ck-text-muted); font-size: var(--ck-text-xs); font-weight: 600; }
 
 .stats-periods, .stats-sides { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 /* One column until two fields of 160px fit: a date field narrower than that hides a part of «дд.мм.гггг». */
@@ -35,9 +39,9 @@
 .stats-scope { display: grid; gap: 10px; min-width: 0; }
 .stats-field { display: grid; gap: 6px; min-width: 0; align-content: start; }
 .stats-field label { font-weight: 600; }
-.stats-field input, .stats-field select { width: 100%; min-height: 44px; padding: 8px 12px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-surface); color: inherit; }
+.stats-field input, .stats-field select { width: 100%; min-height: 48px; padding: 10px 12px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-surface); color: inherit; }
 .stats-field [aria-invalid="true"] { border-color: var(--ck-error-border); border-width: 2px; }
-.stats-field-error { color: var(--ck-error-text); }
+.stats-field-error { margin: 0; color: var(--ck-error-text); font-size: var(--ck-text-xs); }
 .stats-stores { display: grid; gap: 10px; }
 .stats-store-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 16px; max-height: 232px; overflow-y: auto; list-style: none; margin: 0; padding: 4px; }
 .stats-check { display: flex; align-items: flex-start; gap: 10px; min-height: 44px; padding: 10px 4px; cursor: pointer; }
@@ -47,13 +51,20 @@
 .stats-secondary { background: var(--ck-surface); border-color: var(--ck-border-field); color: var(--ck-link); }
 .stats-secondary:hover:not(:disabled) { background: var(--ck-surface-raised); }
 
-.stats-currency { display: grid; gap: 18px; min-width: 0; padding-top: 18px; border-top: 1px solid var(--ck-divider); }
-.stats-verdict { display: grid; gap: 8px; padding: 18px; border-radius: var(--ck-radius); background: var(--ck-neutral-bg); border-left: 6px solid var(--ck-neutral-border); }
-.stats-verdict[data-kind="grew"] { background: var(--ck-warning-bg); border-left-color: var(--ck-warning-border); }
-.stats-verdict[data-kind="fell"] { background: var(--ck-success-bg); border-left-color: var(--ck-success-border); }
-.stats-verdict-headline { font-size: 1.2rem; font-weight: 650; }
+.stats-currency { display: grid; gap: 16px; min-width: 0; }
+/* Currencies of one panel are parted by a divider; the first one follows the heading directly. */
+.stats-currency + .stats-currency { padding-top: 20px; border-top: 1px solid var(--ck-divider); }
+/* The answer in words: a tinted plate in the tone of the change — grew is the over tone, fell the success tone. */
+.stats-verdict { display: grid; gap: 8px; padding: 16px; border-radius: var(--ck-radius-button); background: var(--ck-neutral-bg); color: var(--ck-text); }
+.stats-verdict p { margin: 0; }
+.stats-verdict[data-kind="grew"] { background: var(--ck-warning-bg); }
+.stats-verdict[data-kind="grew"] .stats-verdict-headline { color: var(--ck-over-text); }
+.stats-verdict[data-kind="fell"] { background: var(--ck-success-bg); }
+.stats-verdict[data-kind="fell"] .stats-verdict-headline { color: var(--ck-success-text); }
+.stats-verdict-headline { font-size: var(--ck-text-lg); font-weight: 800; }
 .stats-verdict-parts { display: grid; gap: 4px; margin: 0; padding-left: 20px; }
-.stats-side { display: grid; gap: 8px; align-content: start; min-width: 0; padding: 16px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius); }
+.stats-side { display: grid; gap: 8px; align-content: start; min-width: 0; padding: 16px; border-radius: var(--ck-radius-button); background: var(--ck-surface-raised); }
+.stats-side p { margin: 0; }
 .stats-facts { display: grid; gap: 6px; margin: 0; }
 .stats-facts > div { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 16px; padding-bottom: 6px; border-bottom: 1px solid var(--ck-divider); }
 .stats-facts > div:last-child { border-bottom: 0; padding-bottom: 0; }
@@ -62,10 +73,10 @@
 
 .stats-decomposition, .stats-index, .stats-products { display: grid; gap: 12px; min-width: 0; }
 .stats-bar { display: grid; gap: 6px; }
-.stats-bar-track { display: flex; height: 36px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); overflow: hidden; background: var(--ck-bg); }
+.stats-bar-track { display: flex; height: 24px; border-radius: var(--ck-radius-pill); overflow: hidden; background: var(--ck-track); }
 .stats-bar-segment { flex: 0 0 auto; min-width: 2px; height: 100%; border-right: 1px solid var(--ck-surface); }
 .stats-bar-zero { flex: 0 0 3px; background: var(--ck-text); }
-.stats-bar-scale { display: flex; justify-content: space-between; gap: 12px; color: var(--ck-text-muted); font-size: 0.85rem; }
+.stats-bar-scale { display: flex; justify-content: space-between; gap: 12px; color: var(--ck-text-muted); font-size: var(--ck-text-xs); }
 .stats-bar-scale-end { margin-left: auto; }
 .stats-effect-quantity { background-color: var(--stats-effect-quantity); }
 .stats-effect-price { background-color: var(--stats-effect-price); }
@@ -74,20 +85,20 @@
 .stats-bar-segment[data-sign="negative"], .stats-swatch[data-sign="negative"] {
   background-image: repeating-linear-gradient(135deg, transparent 0 5px, var(--ck-text) 5px 7px);
 }
-.stats-swatch { display: inline-block; width: 14px; height: 14px; margin-right: 8px; border: 1px solid var(--ck-text-muted); border-radius: 3px; vertical-align: -2px; }
+.stats-swatch { display: inline-block; width: 12px; height: 12px; margin-right: 8px; border-radius: 50%; vertical-align: -1px; }
 .stats-effect-title { font-weight: 600; }
-.stats-effect-phrase { display: block; color: var(--ck-text-muted); font-size: 0.9rem; font-weight: 400; }
+.stats-effect-phrase { display: block; color: var(--ck-text-muted); font-size: var(--ck-text-xs); font-weight: 400; }
 .stats-index-headline { font-weight: 600; }
 .stats-warning { padding: 12px 14px; border: 1px solid var(--ck-warning-border); border-left-width: 6px; border-radius: var(--ck-radius-sm); background: var(--ck-warning-bg); color: var(--ck-warning-text); }
 
 .stats-table-scroll { max-width: 100%; overflow-x: auto; border: 1px solid var(--ck-border); border-radius: var(--ck-radius); overscroll-behavior-x: contain; }
 .stats-table-scroll:focus-visible { outline-offset: 2px; }
 .stats-table { width: 100%; border-collapse: collapse; }
-.stats-table caption { padding: 12px; text-align: left; color: var(--ck-text-muted); font-size: 0.9rem; }
+.stats-table caption { padding: 12px; text-align: left; color: var(--ck-text-muted); font-size: var(--ck-text-xs); }
 .stats-table th, .stats-table td { padding: 10px 12px; text-align: left; vertical-align: top; border-top: 1px solid var(--ck-divider); }
 .stats-table thead { background: var(--ck-surface-raised); }
 /* `break-word`, unlike the inherited `anywhere`, keeps a whole word in the least width of a column. */
-.stats-table thead th { font-size: 0.85rem; vertical-align: bottom; overflow-wrap: break-word; }
+.stats-table thead th { font-size: var(--ck-text-xs); vertical-align: bottom; overflow-wrap: break-word; }
 .stats-table tbody th { font-weight: 400; }
 .stats-table tfoot th, .stats-table tfoot td { font-weight: 650; border-top: 2px solid var(--ck-border-field); }
 .stats-table .stats-number { text-align: right; white-space: nowrap; }
@@ -99,13 +110,29 @@
 .stats-products-table tbody th { min-width: 200px; }
 .stats-products-table a { display: inline-block; padding-block: 6px; color: var(--ck-link); text-underline-offset: 3px; }
 
-@media (max-width: 640px) {
-  .stats-panel { padding: 16px; }
+/* The phone view of a table inside a card (lib/cards): rows of the list of the card, not cards in a card — no frame and
+   no shadow, a divider between the rows, the facts as quiet label-value lines. */
+.stats-panel .ck-cards-list { gap: 0; }
+.stats-panel .ck-cards-list > .ck-card { gap: 6px; padding: 12px 0; border: 0; border-radius: 0; background: none; box-shadow: none; }
+.stats-panel .ck-cards-list > .ck-card + .ck-card { border-top: 1px solid var(--ck-divider); }
+.stats-panel .ck-cards-list > .ck-card .ck-card-title { font-weight: 700; }
+.stats-panel .ck-cards-list > .ck-card .ck-card-fact { padding-top: 0; border-top: 0; }
+.stats-panel .ck-cards-caption { color: var(--ck-text-muted); }
+/* An empty answer or a loading block inside a card is a quiet line, not a card in a card; a refusal keeps its frame. */
+.stats-panel .request-state:not(.request-state-error) { min-height: 0; padding: 4px 0; border-color: transparent; background: none; box-shadow: none; }
+@media (max-width: 540px) {
+  /* The screen is named by the bar at the top; its own heading stays for a screen reader, the intro in small print. */
+  .stats-receipts > h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .stats-receipts { gap: 16px; }
+  /* The filters are a row of chips beside «Фильтры» on the page itself, the form opens in a sheet. */
+  .stats-filters { padding: 0; background: none; box-shadow: none; }
+  .stats-filters > h3 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .stats-filters .ck-filters { margin-bottom: 0; }
+  /* The intro is the table of contents of a wide screen; on a phone the blocks speak for themselves. */
+  .stats-intro { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
   .stats-periods, .stats-sides, .stats-store-list { grid-template-columns: minmax(0, 1fr); }
   .stats-actions > * { flex: 1 1 200px; }
-  .stats-verdict-headline { font-size: 1.05rem; }
-}
-@media (max-width: 540px) {
+  .stats-verdict-headline { font-size: var(--ck-text-base); }
   .stats-table th, .stats-table td { padding-inline: 8px; }
   /* The share of every term and of the whole change is already in the answer above the table. */
   .stats-effects-table .stats-effect-share { display: none; }

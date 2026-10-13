@@ -1,7 +1,8 @@
 import { renderToStaticMarkup } from 'react-dom/server'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { NavigationSnapshot } from '../src/navigation'
 import App from '../src/App'
+import { preloadScreens } from '../src/screens'
 
 const navigation = vi.hoisted(() => ({ snapshot: undefined as NavigationSnapshot | undefined }))
 vi.mock('../src/navigation', async (importOriginal) => ({
@@ -11,10 +12,13 @@ vi.mock('../src/navigation', async (importOriginal) => ({
 // The shell needs to know who works: these tests check the unchanged interface of local_single.
 vi.mock('../src/session', async (importOriginal) => ({
   ...await importOriginal<typeof import('../src/session')>(),
-  useSession: () => ({ kind: 'user', mode: 'local_single', user: { id: 1, username: 'local', is_staff: false }, permissions: { moderate_catalog: true } }),
+  useSession: () => ({ kind: 'user', mode: 'local_single', user: { id: 1, username: 'local', is_staff: false }, household: null, permissions: { moderate_catalog: true } }),
 }))
 
 beforeEach(() => { navigation.snapshot = { href: '/catalog', route: { kind: 'catalog', query: { page: 1 } } } })
+
+// The screens come in parts (src/screens.ts): loaded first, the shell renders their real markup at once.
+beforeAll(preloadScreens)
 
 describe('App feature connections (Node server markup, not browser behavior)', () => {
   it('connects the catalog and passes the search query', () => {
@@ -53,6 +57,33 @@ describe('App feature connections (Node server markup, not browser behavior)', (
     expect(renderToStaticMarkup(<App />)).toContain('href="/catalog"')
   })
 
+  it('connects «Главная» at the root with the month of the address and hides the floating actions there', () => {
+    navigation.snapshot = { href: '/?month=2026-09', route: { kind: 'dashboard', month: '2026-09' } }
+    const html = renderToStaticMarkup(<App />)
+    expect(html).toContain('<h1 id="page-heading" tabindex="-1">Главная</h1>')
+    expect(html).toContain('Загружаем траты месяца…')
+    expect(html).not.toContain('ck-quick-actions')
+    expect(html.match(/<h1\b/g)).toHaveLength(1)
+  })
+
+  it('draws the skeletons of «Главная» and «Траты» while their data loads, not the fallback of a script on its way', () => {
+    navigation.snapshot = { href: '/', route: { kind: 'dashboard' } }
+    const home = renderToStaticMarkup(<App />)
+    expect(home).toContain('<p class="ck-skel-message">Загружаем траты месяца…</p><div class="ck-skel ck-skel-home" data-skeleton="home" aria-hidden="true">')
+    expect(home).not.toContain('Открываем экран…')
+    navigation.snapshot = { href: '/receipts', route: { kind: 'receipts', query: { page: 1 } } }
+    const spends = renderToStaticMarkup(<App />)
+    expect(spends).toContain('<p class="ck-skel-message">Загружаем: список трат…</p><div class="ck-skel ck-skel-spends" data-skeleton="spends" aria-hidden="true">')
+    expect(spends).not.toContain('Открываем экран…')
+  })
+
+  it('connects the limits screen', () => {
+    navigation.snapshot = { href: '/budget/limits', route: { kind: 'limits' } }
+    const html = renderToStaticMarkup(<App />)
+    expect(html).toContain('<h1 id="page-heading" tabindex="-1">Лимиты на месяц</h1>')
+    expect(html).toContain('Загружаем лимиты…')
+  })
+
   it('keeps health available independently', () => {
     navigation.snapshot = { href: '/health', route: { kind: 'health' } }
     const html = renderToStaticMarkup(<App />)
@@ -62,14 +93,15 @@ describe('App feature connections (Node server markup, not browser behavior)', (
     expect(html).not.toContain('Распознавание магазина и адреса, товаров и их стоимостей')
   })
 
-  it('draws the header bar with the brand, five sections and the theme switch; local_single has no sign-in link', () => {
+  it('draws the header bar with the brand, the sections and the theme switch; local_single has no sign-in link', () => {
     const html = renderToStaticMarkup(<App />)
     const header = html.slice(html.indexOf('<header'), html.indexOf('</header>'))
     expect(header).toContain('<span>Чекист</span>')
     expect(header).toMatch(/<img class="brand-mark" src="[^"]*emblem-96[^"]*" srcSet="[^"]*emblem-96[^"]* 1x, [^"]*emblem-192[^"]* 2x" width="44" height="44" alt=""\/>/)
     expect(header.match(/<a\b[^>]*href="[^"]*"/g)).toEqual([
-      '<a class="brand" aria-label="Чекист — каталог" href="/catalog"', '<a aria-current="page" href="/catalog"',
-      '<a href="/receipts"', '<a href="/stats"', '<a href="/recognition/jobs"', '<a href="/health"',
+      '<a class="brand" aria-label="Чекист — главная" href="/"', '<a href="/"', '<a href="/receipts"',
+      // «Добавить трату» lives in the «＋» sheet (components/Sheet), which is closed until «＋» is pressed.
+      '<a href="/stats"', '<a class="main-more-toggle" aria-label="Ещё, текущий раздел: Каталог" data-current="" href="/more"', '<a href="/incomes"', '<a href="/recurring"', '<a href="/goals"', '<a href="/review"', '<a aria-current="page" href="/catalog"', '<a href="/stores"', '<a href="/statements/rules"', '<a href="/recognition/jobs"', '<a href="/export"', '<a href="/health"',
     ])
     expect(html).not.toContain('href="/login"')
     expect(header.match(/<button\b[^>]*class="ck-theme-toggle ck-theme-toggle-header"/g)).toHaveLength(1)

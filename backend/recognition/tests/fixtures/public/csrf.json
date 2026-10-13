@@ -4,11 +4,15 @@
     "formats": [
       "image/jpeg",
       "image/png",
-      "image/webp"
+      "image/webp",
+      "image/heic",
+      "image/heif",
+      "application/pdf"
     ],
     "max_bytes": 20971520,
     "max_pixels": 40000000,
-    "max_receipts": 10
+    "max_receipts": 10,
+    "max_pdf_pages": 3
   },
   "executor": {
     "available": false,

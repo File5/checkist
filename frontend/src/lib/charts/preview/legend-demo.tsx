@@ -2,7 +2,8 @@
    Nothing here is used by the application; names and sums are invented, the «requests» are local state. */
 import { useMemo, useState } from 'react'
 import type { MouseEvent, ReactNode } from 'react'
-import { formatAmount, formatPercent } from '../../format.ts'
+import { formatPercent } from '../../format.ts'
+import { formatMoney } from '../../money.ts'
 import { PieChart } from '../index.ts'
 import type { ChartLinkProps, PieChartChild, PieChartItem } from '../index.ts'
 
@@ -16,7 +17,7 @@ const tails: { key: Tail; label: string }[] = [
 ]
 
 const total = 2500
-const eur = (cents: number) => formatAmount((cents / 100).toFixed(2), 'EUR')
+const eur = (cents: number) => formatMoney((cents / 100).toFixed(2), 'EUR')
 const share = (cents: number) => formatPercent(((cents / 100 / total) * 100).toFixed(2))
 const top: [string, number][] = [
   ['Demo молоко и сливки', 52000], ['Demo хлеб и выпечка', 41000], ['Demo сыр', 33000], ['Demo овощи', 27000], ['Demo фрукты', 21000],

@@ -2,19 +2,18 @@ from django.db.models import CharField, Count, Exists, F, Max, OuterRef, Q, Valu
 from django.db.models.functions import Cast, Coalesce, Concat, NullIf
 from rest_framework.response import Response
 
-from accounts.access import owner_q
+from accounts.access import visible_receipts_q
 from api.common import (
     CategoryTree, brand_brief, generic_brief, get_or_404, iso_date, package, price, store_name, store_object,
     utc_datetime,
 )
 from api.pagination import paginate
 from api.params import MAX_ID, Params
-from api.projection import own_annotation
+from api.projection import own_annotation, seen_products, seen_products_q
 from catalog.models import Brand, GenericProduct, Product
 from config.exceptions import ObjectNotFound
-from merges.visibility import visible, visible_q
 from receipts.models import ProductAlias, Receipt, ReceiptLine
-from receipts.prices import observation_q, price_history, price_summary
+from receipts.prices import is_manual, observation_q, price_history, price_summary
 from stores.models import Country, Store
 
 from .base import ReadOnlyAPIView
@@ -31,14 +30,14 @@ def _object_pk(pk):
     return pk
 
 
-def _observations():
-    """Строки-наблюдения цены без аннотаций ``price_history`` — для счётчиков."""
-    return ReceiptLine.objects.filter(observation_q()).order_by()
+def _observations(request):
+    """Строки-наблюдения цены без аннотаций ``price_history`` — для счётчиков; траты вручную — видимые запросу."""
+    return ReceiptLine.objects.filter(observation_q(request=request)).order_by()
 
 
-def _products_count():
-    """Счётчик товаров связи ``products`` без поглощённых ожидающим слиянием."""
-    return Count("products", filter=visible_q("products__"))
+def _products_count(request):
+    """Счётчик товаров связи ``products``, которые видит запрос (``api.projection.seen_products``)."""
+    return Count("products", filter=seen_products_q(request, "products__"))
 
 
 # --- справочники ---
@@ -55,7 +54,8 @@ class CountriesView(ReadOnlyAPIView):
         for country, currency in pairs:
             currencies.setdefault(country, []).append(currency)
         products = dict(
-            _observations().values_list("receipt__store__country_id").annotate(Count("product_id", distinct=True))
+            _observations(request).values_list("receipt__store__country_id")
+            .annotate(Count("product_id", distinct=True))
         )
         countries = Country.objects.order_by("pk")
         if not include_all:
@@ -80,14 +80,15 @@ class StoresView(ReadOnlyAPIView):
         page = params.page()
         params.check()
 
-        stores = Store.objects.select_related("merchant").annotate(
+        # Склеенный магазин — только вариант написания главного (stores.merging): в списке его нет.
+        stores = Store.objects.filter(merged_into__isnull=True).select_related("merchant").annotate(
             # То же правило, что у api.common.store_name, — для сортировки в БД.
             display_name=Coalesce(
                 NullIf("merchant__brand_name", Value("")), NullIf("name", Value("")),
                 Concat(Value("Магазин №"), Cast("pk", CharField())), output_field=CharField(),
             ),
             # Чеки личные: счётчик — по чекам запроса, магазин без своих чеков остаётся в списке.
-            receipts_count=Count("receipts", filter=owner_q(request, "receipts__")),
+            receipts_count=Count("receipts", filter=visible_receipts_q(request, "receipts__")),
         )
         if country is not None:
             stores = stores.filter(country=country)
@@ -108,7 +109,7 @@ class BrandsView(ReadOnlyAPIView):
         page = params.page()
         params.check()
 
-        brands = Brand.objects.annotate(products_count=_products_count())
+        brands = Brand.objects.annotate(products_count=_products_count(request))
         if query is not None:
             brands = brands.filter(name__icontains=query)
         return Response(paginate(brands.order_by("name", "pk"), page, lambda brand: {
@@ -124,11 +125,11 @@ class BrandsView(ReadOnlyAPIView):
 class _CategoryCounts:
     """Счётчики всех категорий: два сгруппированных запроса на HTTP-запрос."""
 
-    def __init__(self, tree):
+    def __init__(self, tree, request):
         self.tree = tree
         self.generics = dict(GenericProduct.objects.order_by().values_list("category_id").annotate(Count("pk")))
         self.products = dict(
-            visible(Product.objects.order_by()).values_list("generic__category_id").annotate(Count("pk"))
+            seen_products(request, Product.objects.order_by()).values_list("generic__category_id").annotate(Count("pk"))
         )
         # Обход в глубину перечисляет родителя раньше потомков: в обратном порядке
         # сумма узла готова к моменту, когда она прибавляется к родителю.
@@ -169,7 +170,7 @@ class CategoriesView(ReadOnlyAPIView):
                 if needle in tree.name(pk).casefold():
                     keep.update(tree.path_ids(pk))
             ordered = [pk for pk in ordered if pk in keep]
-        counts = _CategoryCounts(tree)
+        counts = _CategoryCounts(tree, request)
         return Response({"results": [counts.node(pk) for pk in ordered]})
 
 
@@ -178,10 +179,10 @@ class CategoryView(ReadOnlyAPIView):
         tree = CategoryTree.load()
         if pk not in tree:
             raise ObjectNotFound()
-        counts = _CategoryCounts(tree)
+        counts = _CategoryCounts(tree, request)
         generics = (
             GenericProduct.objects.filter(category=pk)
-            .annotate(products_count=_products_count())
+            .annotate(products_count=_products_count(request))
             .order_by("name", "pk")
         )
         return Response({
@@ -195,16 +196,16 @@ class CategoryView(ReadOnlyAPIView):
 
 # --- обобщённые продукты ---
 
-def _generics():
-    return GenericProduct.objects.annotate(products_count=_products_count())
+def _generics(request):
+    return GenericProduct.objects.annotate(products_count=_products_count(request))
 
 
-def _generic_objects(generics, tree):
+def _generic_objects(generics, tree, request):
     """Объекты обобщённых продуктов; страны всего набора — одним запросом."""
     countries = {}
     if generics:
         pairs = (
-            _observations().filter(product__generic__in=[generic.pk for generic in generics])
+            _observations(request).filter(product__generic__in=[generic.pk for generic in generics], receipt__store__isnull=False)
             .values_list("product__generic_id", "receipt__store__country_id").distinct()
         )
         for generic_id, country in pairs:
@@ -229,20 +230,20 @@ class GenericProductsView(ReadOnlyAPIView):
         params.check()
 
         tree = CategoryTree.load()
-        generics = _generics()
+        generics = _generics(request)
         if category is not None:
             generics = generics.filter(category__in=tree.descendant_ids(category) if category in tree else [])
         if query is not None:
             generics = generics.filter(name__icontains=query)
         body = paginate(generics.order_by("name", "pk"), page)
-        body["results"] = _generic_objects(body["results"], tree)
+        body["results"] = _generic_objects(body["results"], tree, request)
         return Response(body)
 
 
 class GenericProductView(ReadOnlyAPIView):
     def get(self, request, pk):
-        generic = get_or_404(_generics(), _object_pk(pk))
-        return Response(_generic_objects([generic], CategoryTree.load())[0])
+        generic = get_or_404(_generics(request), _object_pk(pk))
+        return Response(_generic_objects([generic], CategoryTree.load(), request)[0])
 
 
 # --- продукты ---
@@ -261,7 +262,7 @@ def _last_moment(lasts):
 
 def _product_objects(products, tree, request):
     """Объекты товаров; сводка цен всего набора — двумя запросами ``price_summary``."""
-    summary = price_summary([product.pk for product in products], own=own_annotation(request))
+    summary = price_summary([product.pk for product in products], own=own_annotation(request), request=request)
     objects = []
     for product in products:
         generic = product.generic
@@ -280,6 +281,7 @@ def _product_objects(products, tree, request):
                     "comparable": last.normalized_unit is not None and last.normalized_unit == generic.base_unit,
                     "purchased_on": iso_date(last.receipt.purchased_on),
                     "store_id": last.receipt.store_id,
+                    "manual": is_manual(last),
                 },
             })
         objects.append({
@@ -297,8 +299,8 @@ def _product_objects(products, tree, request):
     return objects
 
 
-def _product_observation(**filters):
-    return Exists(ReceiptLine.objects.filter(observation_q(), product=OuterRef("pk"), **filters))
+def _product_observation(request, **filters):
+    return Exists(ReceiptLine.objects.filter(observation_q(request=request), product=OuterRef("pk"), **filters))
 
 
 class ProductsView(ReadOnlyAPIView):
@@ -315,7 +317,7 @@ class ProductsView(ReadOnlyAPIView):
         params.check()
 
         tree = CategoryTree.load()
-        products = visible(Product.objects.select_related("generic__category", "brand"))
+        products = seen_products(request, Product.objects.select_related("generic__category", "brand"))
         if query is not None:
             products = products.filter(
                 Q(name__icontains=query) | Q(brand__name__icontains=query) | Q(model__icontains=query)
@@ -330,15 +332,15 @@ class ProductsView(ReadOnlyAPIView):
         if brand is not None:
             products = products.filter(brand=brand)
         if country is not None:
-            products = products.filter(_product_observation(receipt__store__country=country))
+            products = products.filter(_product_observation(request, receipt__store__country=country))
         if has_prices is not None:
-            observed = _product_observation()
+            observed = _product_observation(request)
             products = products.filter(observed if has_prices else ~observed)
 
         if ordering.endswith("last_observed_at"):
             # Товары без наблюдений — в конце при любом направлении.
             products = products.annotate(last_observed_at=Max(
-                "receipt_lines__receipt__purchased_at", filter=observation_q("receipt_lines__"),
+                "receipt_lines__receipt__purchased_at", filter=observation_q("receipt_lines__", request),
             ))
             moment = F("last_observed_at")
             first = moment.desc(nulls_last=True) if ordering.startswith("-") else moment.asc(nulls_last=True)
@@ -383,10 +385,11 @@ def alias_objects(aliases):
     ]
 
 
-def _store_objects(product):
-    """Магазины, где встречался товар: сначала с самой поздней покупкой, затем по ``id``."""
+def _store_objects(product, request):
+    """Магазины, где встречался товар: сначала с самой поздней покупкой, затем по ``id``; трата вручную без
+    места в список не входит, чужая трата вручную — тоже."""
     rows = list(
-        price_history(product=product).order_by().values("receipt__store_id")
+        price_history(product=product, request=request).filter(receipt__store__isnull=False).order_by().values("receipt__store_id")
         .annotate(observations=Count("pk"), last_purchased_on=Max("receipt__purchased_on"))
         .order_by("-last_purchased_on", "receipt__store_id")[:DETAIL_LIST_LIMIT]
     )
@@ -403,13 +406,14 @@ def _store_objects(product):
 
 class ProductView(ReadOnlyAPIView):
     def get(self, request, pk):
-        product = get_or_404(visible(Product.objects.select_related("generic__category", "brand")), _object_pk(pk))
+        product = get_or_404(seen_products(request, Product.objects.select_related("generic__category", "brand")),
+                             _object_pk(pk))
         return Response({
             **_product_objects([product], CategoryTree.load(), request)[0],
             "attributes": product.attributes,
             "aliases": _alias_objects(product),
-            "stores": _store_objects(product),
-            "alternatives_count": visible(
-                Product.objects.filter(generic=product.generic_id).exclude(pk=product.pk)
+            "stores": _store_objects(product, request),
+            "alternatives_count": seen_products(
+                request, Product.objects.filter(generic=product.generic_id).exclude(pk=product.pk)
             ).count(),
         })

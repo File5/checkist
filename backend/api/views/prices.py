@@ -6,15 +6,14 @@ from rest_framework.response import Response
 
 from catalog.models import Product
 from config.exceptions import ObjectNotFound, RangeTooLarge
-from merges.visibility import visible
 from receipts.decimal_math import change_percent, decimal_average, price_context
-from receipts.prices import price_history
+from receipts.prices import is_manual, price_history
 from stores.models import Store
 
 from .. import common
 from ..pagination import HISTORY_MAX_PAGE_SIZE, HISTORY_PAGE_SIZE, paginate
 from ..params import MAX_ID, Params
-from ..projection import own_annotation
+from ..projection import own_annotation, seen_products
 from .base import ReadOnlyAPIView
 
 # Порядок наблюдений: момент покупки, затем чек и позиция — стабилен при равных моментах.
@@ -44,18 +43,19 @@ _DEFERRED = (
 )
 
 
-def _product(pk):
-    """Товар с обобщённым продуктом либо ``404 not_found``; поглощённый слиянием — тоже ``404``."""
+def _product(request, pk):
+    """Товар с обобщённым продуктом либо ``404 not_found``; поглощённый слиянием и чужой личный
+    (``api.projection.seen_products``) — тоже ``404``."""
     if pk > MAX_ID:
         raise ObjectNotFound()
-    return common.get_or_404(visible(Product.objects.select_related("generic")), pk)
+    return common.get_or_404(seen_products(request, Product.objects.select_related("generic")), pk)
 
 
 def _product_brief(product):
     return {"id": product.pk, "name": product.name, "base_unit": product.generic.base_unit}
 
 
-def _observations(product, params):
+def _observations(product, params, request):
     """Наблюдения цены товара с общими фильтрами обоих эндпоинтов.
 
     Ошибки параметров копятся в ``params``; пока вызывающий код не вызвал
@@ -65,7 +65,8 @@ def _observations(product, params):
     country = params.country()
     currency = params.currency()
     store = params.object_id("store", Store.objects.all(), message="Магазин не найден.")
-    lines = price_history(product=product, store=store, country=country, date_from=date_from, date_to=date_to)
+    lines = price_history(product=product, store=store, country=country, date_from=date_from, date_to=date_to,
+                          request=request)
     if currency is not None:
         lines = lines.filter(receipt__currency=currency)
     return lines
@@ -75,7 +76,8 @@ def _point(line, base_unit):
     """Точка истории цен; ``line.own`` — аннотация ``own_annotation``.
 
     У чужого наблюдения нет полей, по которым находится чек: точного момента, количества,
-    скидки, id чека и позиции. Цена, день и магазин общие.
+    скидки, id чека и позиции. Цена, день и магазин общие. ``manual`` — цена траты, внесённой
+    вручную (у неё ``store`` бывает ``null`` — «Без места»).
     """
     own = line.own
     return {
@@ -94,6 +96,7 @@ def _point(line, base_unit):
         "receipt_id": line.receipt_id if own else None,
         "position": line.position if own else None,
         "own": own,
+        "manual": is_manual(line),
     }
 
 
@@ -101,9 +104,9 @@ class ProductPricesView(ReadOnlyAPIView):
     """``GET /api/products/{id}/prices/`` — точки истории цен товара."""
 
     def get(self, request, pk):
-        product = _product(pk)
+        product = _product(request, pk)
         params = Params(request.query_params)
-        lines = _observations(product, params)
+        lines = _observations(product, params, request)
         ordering = params.choice("ordering", tuple(ORDERINGS), default="observed_at")
         page = params.page(default=HISTORY_PAGE_SIZE, maximum=HISTORY_MAX_PAGE_SIZE)
         params.check()
@@ -206,9 +209,9 @@ class ProductPriceSummaryView(ReadOnlyAPIView):
     """``GET /api/products/{id}/prices/summary/`` — агрегаты цен товара по группам и интервалам."""
 
     def get(self, request, pk):
-        product = _product(pk)
+        product = _product(request, pk)
         params = Params(request.query_params)
-        lines = _observations(product, params)
+        lines = _observations(product, params, request)
         group_by = params.choice("group_by", tuple(GROUPS), default="country")
         interval = params.choice("interval", INTERVALS, default="none")
         price = params.choice("price", tuple(PRICES), default="paid")
@@ -235,7 +238,7 @@ class ProductPriceSummaryView(ReadOnlyAPIView):
             if group_by == "country":
                 head = {"country": owner[0]}
             elif group_by == "store":
-                head = {"store": common.store_object(stores[owner[0]])}
+                head = {"store": common.store_object(stores[owner[0]]) if owner[0] is not None else None}
             else:
                 head = {}
             groups.append({**head, "currency": currency, "unit": unit, **_group(rows, interval, value_field)})

@@ -1,14 +1,21 @@
 import type { LocalApiResult } from '../../api/types'
-import type { ReceiptParams } from '../../api/receipts'
+import type { Receipt, ReceiptParams } from '../../api/receipts'
 import { buildReceiptsQuery, parseReceiptsQuery } from '../../navigation'
 import type { ReceiptsQuery } from '../../navigation'
-import { formatAmount, formatPrice } from '../../lib/format'
+import { formatPrice } from '../../lib/format'
+import { formatMoney } from '../../lib/money'
 import { getSession, permissionDeniedText } from '../../session'
+import type { Session } from '../../session'
 
 export const unknown = 'Не распознано'
+/** «Добавил: имя» — only for a member of a family: without one every receipt is the user's own. */
+export const ownerShown = (session: Session) => session.kind === 'user' && session.household !== null
 export const recognizedText = (value: string | null | undefined) => value?.trim() || unknown
 export const recognizedValue = (value: string) => value === '—' ? unknown : value
-export const money = (value: string | null, currency?: string) => recognizedValue(formatAmount(value, currency ?? '').trim())
+/** Without a store only a manual spend comes: «Без места». */
+export const noPlace = 'Без места'
+export const receiptPlace = (receipt: Receipt) => receipt.store ? recognizedText(receipt.store.name) : noPlace
+export const money = (value: string | null, currency?: string) => recognizedValue(formatMoney(value, currency ?? '').trim())
 export const price = (value: string | null, currency?: string) => recognizedValue(formatPrice(value, currency ?? '').trim())
 
 export type FilterField = 'q' | 'date_from' | 'date_to' | 'operation' | 'ordering'
@@ -45,11 +52,20 @@ export function applyFilters(query: ReceiptsQuery, draft: FilterDraft): { query:
 }
 
 export function receiptParams(query: ReceiptsQuery): ReceiptParams {
-  return { ...query, ordering: query.ordering ?? '-purchased_at' }
+  const { hidden, ...rest } = query
+  return { ...rest, ordering: query.ordering ?? '-purchased_at', ...(hidden === 1 && { hidden: '1' as const }) }
 }
 
 export function hasFilters(query: ReceiptsQuery): boolean {
-  return Boolean(query.q || query.date_from || query.date_to || query.operation || query.store || query.product || query.country || query.currency)
+  return Boolean(query.q || query.date_from || query.date_to || query.operation || query.store || query.product || query.country || query.currency || query.owner)
+}
+
+/** «Фильтры (N)» on a phone: the conditions of the filters form and of the link (not the words of the search line above), and «Показать скрытые» of the family
+ * head that lives in the same sheet; the family chips are seen anyway. */
+export function activeFilterCount(query: ReceiptsQuery): number {
+  const set = [query.date_from, query.date_to, query.operation, query.store, query.product, query.country, query.currency]
+    .filter((value) => value !== undefined && value !== null && value !== '').length
+  return set + (query.ordering && query.ordering !== '-purchased_at' ? 1 : 0) + (query.hidden === 1 ? 1 : 0)
 }
 
 /** With accounts a refused access is a missing right, not a switched off local mode. */

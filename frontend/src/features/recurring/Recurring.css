@@ -1,0 +1,123 @@
+/* «Регулярные платежи»: блок «Осталось оплатить» на «Главной» и экран /recurring в языке артефакта — карточки .ck-panel,
+   строки .ck-list / .ck-row, главное действие залито --ck-primary (обычная кнопка App.css), второе — .ck-button-secondary.
+   Цвета — только токены, размеры текста — шкала --ck-text-*; телефон (≤ 540 px) — одна колонка без прокрутки вбок. */
+.rec-card { gap: 12px; }
+.rec-card h2 { margin: 0; font-size: var(--ck-text-lg); font-weight: 800; }
+.ck-panel-head > .rec-card-link { display: inline-flex; align-items: center; min-height: 44px; margin-block: -12px; color: var(--ck-link); font-size: var(--ck-text-sm); font-weight: 700; text-decoration: none; white-space: nowrap; }
+.rec-card-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+.rec-note { margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-sm); }
+.rec-head-meta { flex: none; color: var(--ck-text-muted); font-size: var(--ck-text-sm); font-weight: 600; white-space: nowrap; }
+.rec-sum { margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-sm); font-weight: 600; }
+.rec-sum-value { color: var(--ck-text); font-weight: 800; white-space: nowrap; }
+.rec-list > li:first-child { border-top: 1px solid var(--ck-divider); }
+.rec-row { min-height: 60px; }
+
+/* The day of the due date in the badge: paid — the success tint, overdue — the error tint, open — neutral. */
+.rec-day { background: var(--ck-neutral-bg); color: var(--ck-text); font-size: var(--ck-text-base); font-variant-numeric: tabular-nums; }
+.rec-day-paid { background: var(--ck-success-bg); color: var(--ck-success-text); }
+.rec-day-overdue { background: var(--ck-error-bg); color: var(--ck-error-text); }
+.rec-day-before, .rec-day-inactive { background: var(--ck-disabled-bg); color: var(--ck-disabled-text); }
+.rec-day-suggested { background: var(--ck-accent-bg); color: var(--ck-accent-text); }
+.rec-meta-overdue { color: var(--ck-error-text); font-weight: 700; }
+.rec-meta-paid { color: var(--ck-success-text); }
+.rec-change { color: var(--ck-over-text); font-weight: 700; }
+
+.rec-all-paid { margin: 0; color: var(--ck-success-text); font-size: var(--ck-text-sm); font-weight: 700; }
+/* «Оплачено 3 из 5»: folded under the open ones, a 44 px line to tap. */
+.rec-closed > summary { display: flex; align-items: center; gap: 8px; min-height: 44px; color: var(--ck-link); font-size: var(--ck-text-sm); font-weight: 700; cursor: pointer; list-style: none; }
+.rec-closed > summary::-webkit-details-marker { display: none; }
+/* A chevron that turns down when the list is open: the state is in the element itself (`open`) for a screen reader. */
+.rec-closed > summary::before { content: ""; width: 7px; height: 7px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); }
+.rec-closed[open] > summary::before { transform: rotate(45deg); }
+.rec-closed > summary:hover { color: var(--ck-link-hover); }
+.rec-more { margin: 0; padding-top: 12px; border-top: 1px solid var(--ck-divider); }
+.rec-hint { display: block; padding-block: 16px; }
+.rec-hint-link, .rec-inline-link { color: var(--ck-link); font-size: var(--ck-text-sm); font-weight: 700; text-decoration: none; }
+.rec-hint-link:hover, .rec-inline-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+.rec-notice { margin: 0; padding: 12px 16px; border-radius: var(--ck-radius-sm); background: var(--ck-info-bg); color: var(--ck-info-text); font-size: var(--ck-text-sm); font-weight: 600; }
+
+/* The question about the month before: the name and its due date, the main answer filled, two quiet ones under it. */
+.rec-ask { border: 2px solid var(--ck-warning-border); }
+.rec-ask-list { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.rec-ask-item { display: grid; gap: 10px; padding-block: 14px; border-top: 1px solid var(--ck-divider); }
+.rec-ask-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 12px; min-width: 0; }
+.rec-ask-name { min-width: 0; font-size: var(--ck-text-base); font-weight: 800; overflow-wrap: anywhere; }
+.rec-ask-meta { color: var(--ck-text-muted); font-size: var(--ck-text-xs); font-weight: 600; white-space: nowrap; }
+.rec-ask-add { width: 100%; min-height: 48px; }
+.rec-ask-add .ck-figures { white-space: nowrap; }
+.rec-ask-other { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.rec-ask-other button { min-height: 44px; padding-inline: 8px; font-size: var(--ck-text-sm); }
+
+/* The page: what «оплачен» means, then the cards. */
+.rec-page { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; min-width: 0; max-width: 760px; }
+.rec-intro { margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-sm); }
+/* A payment of the list is one button: the row opens its form. */
+.rec-row-button { width: 100%; margin: 0; padding: 12px 0; border: 0; border-radius: 0; background: transparent; color: var(--ck-text); font-weight: inherit; text-align: left; }
+.rec-row-button:hover, .rec-row-button:active { border: 0; background: transparent; color: var(--ck-text); }
+.rec-row-button:hover .ck-row-title { text-decoration: underline; }
+.rec-row-button .ck-row-meta { white-space: normal; }
+
+/* Six months as dots: a gap («не оплачен») is seen at a glance; the words are in the label of the strip. */
+.rec-history { display: inline-flex; gap: 4px; margin-top: 4px; }
+.rec-dot { width: 10px; height: 10px; border: 1.5px solid var(--ck-border-field); border-radius: 50%; background: transparent; }
+.rec-dot-paid { border-color: var(--ck-success-text); background: var(--ck-success-text); }
+.rec-dot-overdue { border-color: var(--ck-error-text); background: var(--ck-error-bg); }
+.rec-dot-skipped, .rec-dot-elsewhere { border-color: var(--ck-neutral-border); background: var(--ck-neutral-bg); }
+.rec-dot-before, .rec-dot-inactive { border-style: dashed; border-color: var(--ck-divider); }
+
+.rec-suggestion { display: grid; gap: 4px; padding-bottom: 12px; }
+.rec-suggestion .ck-row-meta { white-space: normal; }
+.rec-suggestion-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.rec-suggestion-actions button { min-height: 44px; padding-inline: 8px; font-size: var(--ck-text-sm); }
+.rec-add { width: 100%; min-height: 48px; }
+
+/* The form in the sheet: rows of 56 px — the words on the left, the field on the right — like «Семья». */
+.rec-form { display: grid; gap: 16px; padding-bottom: 4px; }
+.rec-fields { display: grid; border-top: 1px solid var(--ck-divider); }
+.rec-field-wrap { border-bottom: 1px solid var(--ck-divider); }
+.rec-field { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; min-height: 56px; cursor: text; }
+.rec-field > span { flex: none; font-size: var(--ck-text-sm); font-weight: 600; }
+.rec-field input, .rec-field select { flex: 1; width: 100%; min-width: 0; min-height: 48px; padding: 0 2px; border: 0; border-radius: var(--ck-radius-sm); background: transparent; color: var(--ck-text); font-size: var(--ck-text-base); text-align: right; text-align-last: right; }
+.rec-field input::placeholder { color: var(--ck-text-muted); opacity: 1; }
+.rec-field input[aria-invalid="true"], .rec-field select[aria-invalid="true"] { box-shadow: inset 0 -2px 0 var(--ck-error-border); }
+.rec-field-check { cursor: pointer; }
+.rec-field-check input { flex: none; width: 24px; min-height: 24px; height: 24px; accent-color: var(--ck-primary); }
+.rec-field-error { margin: 0 0 10px; color: var(--ck-error-text); font-size: var(--ck-text-xs); font-weight: 600; }
+.rec-save { width: 100%; min-height: 52px; }
+.rec-confirm { display: grid; gap: 10px; }
+.rec-confirm p { margin: 0; font-size: var(--ck-text-sm); }
+.rec-form button[aria-disabled="true"], .rec-card button[aria-disabled="true"] { border-color: var(--ck-disabled-border); background: var(--ck-disabled-bg); color: var(--ck-disabled-text); cursor: default; }
+
+@media (forced-colors: active) {
+  .rec-dot, .rec-day { border: 1px solid CanvasText; }
+  .rec-dot-paid { background: CanvasText; }
+}
+
+/* «Оплатил» (feature/payment-method): the main action of the sheet of a payment and a small one under the amount of an open
+   payment on «Главная»; the small form — rows like the form of a payment, the keys of the calculator of a spend
+   (Expense.css), the chips of the way of payment. Then «История оплат»: the year by ways of payment and a row a month. */
+.rec-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.rec-row-end { display: flex; flex: none; flex-direction: column; align-items: flex-end; gap: 6px; }
+/* The row with «Оплатил» is tall anyway: its state wraps instead of ending in «…» on a narrow phone. */
+.rec-row:has(.rec-row-end) .ck-row-meta { white-space: normal; }
+.rec-pay-open { min-height: 44px; padding: 0 14px; border-radius: var(--ck-radius-pill); font-size: var(--ck-text-sm); white-space: nowrap; }
+.rec-pay { display: grid; gap: 12px; margin-bottom: 20px; }
+.rec-pay-main { width: 100%; min-height: 52px; font-size: var(--ck-text-base); }
+.rec-pay-form { gap: 14px; }
+.rec-pay-calc { display: flex; align-items: center; gap: 12px; padding-bottom: 10px; }
+.rec-pay-method { display: grid; gap: 10px; }
+.rec-pay-label { font-size: var(--ck-text-sm); font-weight: 600; }
+@media (pointer: fine) {
+  .rec-pay-calc:not(:has(.expense-calc-result)) { display: none; }
+}
+.rec-year { display: grid; gap: 8px; min-width: 0; }
+.rec-year h3, .rec-pay-heading { margin: 0; font-size: var(--ck-text-base); font-weight: 800; }
+.rec-pay-heading { margin-top: 8px; }
+.rec-year-total, .rec-year-methods { margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-sm); font-weight: 600; }
+.rec-year-method { white-space: nowrap; }
+.rec-year-method .ck-figures { color: var(--ck-text); font-weight: 800; }
+.rec-year-list > li:first-child { border-top: 1px solid var(--ck-divider); }
+.rec-year-row { min-height: 52px; padding-block: 8px; }
+/* A paid month is a link to its spend: the arrow says so, a press shows it. */
+.rec-year-go { flex: none; color: var(--ck-text-muted); }
+.rec-year-link:where(:hover) .ck-row-title { text-decoration: underline; }

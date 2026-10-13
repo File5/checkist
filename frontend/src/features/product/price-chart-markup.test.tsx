@@ -66,8 +66,8 @@ describe('price chart block (SSR in Node, not browser acceptance)', () => {
     expect(html).toContain('Вертикальная ось: KZT/шт.')
     expect(html).toContain('<caption>Цены, EUR/шт</caption>')
     expect(html).toContain('<th scope="row">сентябрь 2026</th>')
-    expect(html).toContain('1,07 EUR/шт')
-    expect(html).toContain('695,00 KZT/шт')
+    expect(html).toContain('1,07 €/шт')
+    expect(html).toContain('695,00 ₸/шт')
     expect(html).toContain('<th scope="col">Месяц</th>')
     // The legend is offered only where there is something to switch.
     expect(count(html, '<legend>Серии на графике</legend>')).toBe(1)

@@ -4,15 +4,16 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { LoginPage } from '../features/auth'
 import { ThemeToggle } from './ThemeToggle'
-import { createThemeStore, defaultTheme, nextTheme, parseTheme, themeColors, themeLabel, themeStorageKey, useTheme } from './theme'
+import { createThemeStore, defaultTheme, lightSchemeQuery, nextTheme, parseTheme, themeColors, themeLabel, themeStorageKey, useTheme } from './theme'
 import type { Theme, ThemeEnvironment } from './theme'
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8')
 
-function environment(saved: string | null = null) {
-  const state = { saved, applied: [] as Theme[], external: undefined as (() => void) | undefined, stopped: 0 }
+function environment(saved: string | null = null, system?: Theme) {
+  const state = { saved, system, applied: [] as Theme[], external: undefined as (() => void) | undefined, stopped: 0 }
   const env: ThemeEnvironment = {
     read: () => state.saved,
+    system: () => state.system ?? 'dark',
     write: (theme) => { state.saved = theme },
     apply: (theme) => { state.applied.push(theme) },
     listen: (listener) => {
@@ -24,14 +25,19 @@ function environment(saved: string | null = null) {
 }
 
 describe('saved theme value', () => {
-  it('reads only the two known values, anything else is the dark theme', () => {
-    expect(parseTheme('light')).toBe('light')
-    expect(parseTheme('dark')).toBe('dark')
-    for (const value of [null, undefined, '', 'Light', ' light', 'system', 'auto', '1', 0, true, {}, ['light']]) {
-      expect(parseTheme(value)).toBe('dark')
+  it('reads only the two known values as a choice; anything else is the theme of the system', () => {
+    for (const system of ['dark', 'light'] as Theme[]) {
+      expect(parseTheme('light', system)).toBe('light')
+      expect(parseTheme('dark', system)).toBe('dark')
+      for (const value of [null, undefined, '', 'Light', ' light', 'system', 'auto', '1', 0, true, {}, ['light']]) {
+        expect(parseTheme(value, system)).toBe(system)
+      }
     }
+    // Without a system preference: the dark theme.
+    expect(parseTheme(null)).toBe('dark')
     expect(defaultTheme).toBe('dark')
     expect(themeStorageKey).toBe('checkist.theme')
+    expect(lightSchemeQuery).toBe('(prefers-color-scheme: light)')
   })
 
   it('switches between the two themes and names the current one', () => {
@@ -43,11 +49,39 @@ describe('saved theme value', () => {
 })
 
 describe('theme store', () => {
-  it('starts dark on the first visit and with a garbage value, light only when it was saved', () => {
+  it('follows the system on the first visit and with a garbage value; a saved choice wins', () => {
     expect(createThemeStore(environment().env).getSnapshot()).toBe('dark')
+    expect(createThemeStore(environment(null, 'light').env).getSnapshot()).toBe('light')
+    expect(createThemeStore(environment('blue', 'light').env).getSnapshot()).toBe('light')
     expect(createThemeStore(environment('blue').env).getSnapshot()).toBe('dark')
     expect(createThemeStore(environment('light').env).getSnapshot()).toBe('light')
+    expect(createThemeStore(environment('dark', 'light').env).getSnapshot()).toBe('dark')
+    expect(createThemeStore(environment('light', 'dark').env).getSnapshot()).toBe('light')
     expect(createThemeStore(environment('light').env).getServerSnapshot()).toBe('dark')
+    // An environment without the system preference (an old browser, a test): the dark theme.
+    expect(createThemeStore({ read: () => null, write: () => {}, apply: () => {} }).getSnapshot()).toBe('dark')
+  })
+
+  it('follows a change of the system theme while the person has not chosen, and not after the choice', () => {
+    const { state, env } = environment(null, 'dark')
+    const store = createThemeStore(env)
+    const seen: Theme[] = []
+    const unsubscribe = store.subscribe(() => seen.push(store.getSnapshot()))
+    state.system = 'light'
+    state.external?.()
+    expect(seen).toEqual(['light'])
+    store.setTheme('dark')
+    expect(state.saved).toBe('dark')
+    state.system = 'light'
+    state.external?.()
+    expect(store.getSnapshot()).toBe('dark')
+    unsubscribe()
+  })
+
+  it('still follows the system when the storage refuses to be read, and a failing system query reads dark', () => {
+    const refuse = () => { throw new DOMException('denied', 'SecurityError') }
+    expect(createThemeStore({ read: refuse, write: () => {}, apply: () => {}, system: () => 'light' }).getSnapshot()).toBe('light')
+    expect(createThemeStore({ read: () => null, write: () => {}, apply: () => {}, system: refuse }).getSnapshot()).toBe('dark')
   })
 
   it('does not touch the environment until it is asked', () => {
@@ -106,7 +140,7 @@ describe('theme store', () => {
   it('survives a failing localStorage: reads dark, still switches for the open page', () => {
     const applied: Theme[] = []
     const refuse = () => { throw new DOMException('denied', 'SecurityError') }
-    const store = createThemeStore({ read: refuse, write: refuse, apply: (theme) => { applied.push(theme) }, listen: refuse })
+    const store = createThemeStore({ read: refuse, write: refuse, apply: (theme) => { applied.push(theme) }, listen: refuse, system: refuse })
     expect(store.getSnapshot()).toBe('dark')
     let notified = 0
     expect(() => store.subscribe(() => { notified += 1 })).not.toThrow()
@@ -183,12 +217,14 @@ describe('theme contract in the files', () => {
     expect(new Set(darkNames).size).toBe(darkNames.length)
     expect(new Set(lightNames).size).toBe(lightNames.length)
     expect(lightNames.filter((name) => !darkNames.includes(name))).toEqual([])
-    // The header bar, the logo plate, radii and fonts are the same in both themes.
+    // The logo plate, radii and fonts are the same in both themes; the header takes the colours of each theme.
     expect(darkNames.filter((name) => !lightNames.includes(name))).toEqual([
-      '--ck-header-bg', '--ck-header-text', '--ck-header-text-muted', '--ck-header-accent', '--ck-header-hover-bg', '--ck-header-border',
-      '--ck-header-focus', '--ck-logo-bg', '--ck-radius-sm', '--ck-radius', '--ck-font-body', '--ck-font-display',
-      '--ck-bottom-nav-height', '--ck-safe-bottom', '--ck-bottom-occupied', '--ck-action-bar-room',
-      '--ck-z-action-bar', '--ck-z-bottom-nav', '--ck-z-menu-sheet', '--ck-z-skip-link',
+      '--ck-logo-bg', '--ck-radius-sm', '--ck-radius', '--ck-radius-button', '--ck-radius-pill', '--ck-font-body', '--ck-font-display',
+      // Mobile design 2026-10-12: the fonts of figures, the text scale, the teeth of the tape and the fades of a chip row.
+      '--ck-font-figures', '--ck-font-display-figures',
+      '--ck-text-2xs', '--ck-text-xs', '--ck-text-sm', '--ck-text-base', '--ck-text-lg', '--ck-text-xl', '--ck-text-hero', '--ck-tape-tooth', '--ck-fade-size',
+      '--ck-bottom-nav-height', '--ck-top-bar-height', '--ck-safe-bottom', '--ck-bottom-occupied', '--ck-action-bar-room',
+      '--ck-z-action-bar', '--ck-z-top-bar', '--ck-z-bottom-nav', '--ck-z-menu-sheet', '--ck-z-sheet', '--ck-z-skip-link',
     ])
   })
 
@@ -201,12 +237,16 @@ describe('theme contract in the files', () => {
       'header-bg', 'header-text', 'header-accent', 'logo-bg', 'radius-sm', 'radius', 'font-body', 'font-display',
       ...Array.from({ length: 8 }, (_, index) => `series-${index + 1}`), 'series-other', 'series-special', 'plot-grid', 'plot-axis',
       'bottom-nav-height', 'safe-bottom', 'bottom-occupied', 'action-bar-room', 'z-action-bar', 'z-bottom-nav', 'z-menu-sheet', 'z-skip-link',
+      'radius-button', 'radius-pill', 'header-text-muted', 'header-hover-bg', 'header-border', 'header-focus',
     ]
     expect(required.filter((name) => !names(dark).includes(`--ck-${name}`))).toEqual([])
-    expect(dark).toContain('--ck-radius-sm: 4px;')
-    expect(dark).toContain('--ck-radius: 6px;')
+    expect(dark).toContain('--ck-radius-sm: 12px;')
+    expect(dark).toContain('--ck-radius: 20px;')
+    expect(dark).toContain('--ck-radius-button: 16px;')
+    expect(dark).toContain('--ck-radius-pill: 999px;')
     expect(dark).toContain('--ck-logo-bg: #0f0f0e;')
-    expect(dark).toContain('--ck-font-display: "Oswald", "Arial Narrow", "Roboto Condensed", "Segoe UI", sans-serif;')
+    expect(dark).toContain('--ck-font-body: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;')
+    expect(dark).toContain('--ck-font-display: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;')
     // Names kept by Charts.css must not be defined here: it points them at these tokens.
     expect(tokens).not.toMatch(/^\s*--ck-chart-/m)
   })
@@ -215,7 +255,9 @@ describe('theme contract in the files', () => {
     expect(dark).toContain(`--ck-bg: ${themeColors.dark};`)
     expect(light).toContain(`--ck-bg: ${themeColors.light};`)
     expect(html).toContain(`<meta name="theme-color" content="${themeColors.dark}" />`)
-    expect(html).toContain(`localStorage.getItem('${themeStorageKey}') === 'light'`)
+    expect(html).toContain(`localStorage.getItem('${themeStorageKey}')`)
+    // A saved choice wins; without one the system preference decides.
+    expect(html).toContain(`saved === 'light' || (saved !== 'dark' && window.matchMedia('${lightSchemeQuery}').matches)`)
     expect(html).toContain(`'${themeColors.light}'`)
     expect(html).toContain('<title>Чекист</title>')
     expect(html).toContain('<link rel="icon" type="image/svg+xml" href="/favicon.svg" />')
@@ -226,13 +268,64 @@ describe('theme contract in the files', () => {
     expect(html.indexOf('<script>')).toBeLessThan(html.indexOf('<script type="module"'))
   })
 
-  it('ships the heading font as a local file with its licence', () => {
-    expect(tokens).toContain('font-display: swap;')
-    expect(tokens).toContain('url("../assets/fonts/oswald-latin-cyrillic.woff2") format("woff2")')
-    expect(tokens).not.toMatch(/url\(["']?https?:/)
-    const font = readFileSync(new URL('../assets/fonts/oswald-latin-cyrillic.woff2', import.meta.url))
-    expect(font.subarray(0, 4).toString('latin1')).toBe('wOF2')
-    expect(read('../assets/fonts/Oswald-OFL.txt')).toContain('SIL Open Font License, Version 1.1')
+  it('paints the installed app and the tab icon in the red/gold palette', () => {
+    // The splash and the bar of an installed app take the dark page colour; the icon background is the red brand.
+    const manifest = JSON.parse(read('../../public/manifest.json')) as { theme_color: string; background_color: string }
+    expect(manifest.theme_color.toLowerCase()).toBe(themeColors.dark)
+    expect(manifest.background_color.toLowerCase()).toBe(themeColors.dark)
+    expect(read('../../public/favicon.svg')).toContain('fill="#B01212"')
+    expect(read('../../brand/app-icon.svg')).toContain('<rect width="512" height="512" fill="#B01212"/>')
+  })
+
+  it('loads Manrope from Google Fonts with display=swap and no font file of its own', () => {
+    // No Content-Security-Policy of the project forbids Google Fonts (deploy/Caddyfile, deploy/docker/Caddyfile).
+    expect(html).toContain('<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />')
+    expect(html).toContain('<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400..800&amp;display=swap" />')
+    expect(tokens).not.toContain('@font-face')
+    expect(tokens).not.toMatch(/url\(/)
+    expect(tokens).not.toContain('Oswald')
+  })
+
+  it('loads the fonts of figures the same way, with only the weights the design uses', () => {
+    // Artifact design 2026-10-13: figures are Manrope (tabular-nums in .ck-figures), one font request for the page.
+    expect(html.match(/fonts\.googleapis\.com\/css2/g)).toHaveLength(1)
+    expect(dark).toContain('--ck-font-figures: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;')
+    expect(dark).toContain('--ck-font-display-figures: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;')
+  })
+
+  it('defines the text scale of a phone: 12 (the words of the bottom bar) / 13 / 15 / 16 / 18 / 22 / 40 px', () => {
+    const scale = Object.fromEntries([...dark.matchAll(/--ck-text-(2xs|xs|sm|base|lg|xl|hero): ([\d.]+)rem;/g)].map((match) => [match[1], Number(match[2]) * 16]))
+    expect(scale).toEqual({ '2xs': 12, xs: 13, sm: 15, base: 16, lg: 18, xl: 22, hero: 40 })
+  })
+
+  it('orders the layers: action bar, top bar, bottom navigation, menu, sheet, skip link', () => {
+    const layer = (name: string) => Number(new RegExp(`--ck-z-${name}: (\\d+);`).exec(dark)?.[1])
+    const order = ['action-bar', 'top-bar', 'bottom-nav', 'menu-sheet', 'sheet', 'skip-link'].map(layer)
+    expect(order.every((value, index) => index === 0 || value > order[index - 1])).toBe(true)
+  })
+
+  it('defines the shared tokens of the family budget in both themes, the gold accent with dark text on it', () => {
+    const contract = [
+      ...Array.from({ length: 6 }, (_, index) => [`--ck-cat-${index + 1}`, `--ck-cat-${index + 1}-tint`]).flat(),
+      '--ck-over-text', '--ck-over-bar', '--ck-track', '--ck-on-accent',
+    ]
+    for (const name of contract) {
+      expect(names(dark), name).toContain(name)
+      expect(names(light), name).toContain(name)
+    }
+    expect(tokens.match(/\/\* family-budget tokens \*\//g)).toHaveLength(2)
+    // Red/gold palette (back 2026-10-12): the red brand under white text, the gold accent under dark text, in both themes.
+    for (const theme of [dark, light]) {
+      expect(theme).toContain('--ck-brand: #b01212;')
+      expect(theme).toContain('--ck-on-brand: #ffffff;')
+      expect(theme).toContain('--ck-accent: #f0c24b;')
+      expect(theme).toContain('--ck-on-accent: #2a1b16;')
+      // The header bar is dark in both themes, with the red line under it.
+      expect(theme).toContain('--ck-header-bg: #1a0c0a;')
+      expect(theme).toContain('--ck-header-border: #b01212;')
+    }
+    // No card shadow in the dark theme: the colour of the shadow is transparent there.
+    expect(dark).toContain('--ck-panel-shadow: #00000000;')
   })
 
   it('styles the switch with tokens only', () => {

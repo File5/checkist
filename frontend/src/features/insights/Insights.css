@@ -1,0 +1,53 @@
+/* «Разбор месяца» и «Вопрос о тратах» (feature/ai-insights) в языке артефакта: карточки .ck-panel, строки .ck-list /
+   .ck-row, главное действие — обычная кнопка (--ck-primary), второе — .ck-button-secondary. Цвета — только токены,
+   размеры текста — шкала --ck-text-*; телефон (≤ 540 px) — одна колонка без прокрутки вбок, широкий экран — текст ИИ
+   слева, цифры сервера справа. Текст модели — обычный текст абзацами. */
+.ins-page { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; min-width: 0; max-width: 1100px; }
+.ins-col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+@media (min-width: 900px) {
+  .ins-page:not(.ins-ask-page) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+}
+.ins-ask-page { max-width: 760px; }
+.ins-page h2 { margin: 0; font-size: var(--ck-text-lg); font-weight: 800; }
+
+/* The month: «‹ Сентябрь 2026 ›», the hero figure and the comparisons in their colours. */
+.ins-month { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.ins-month h2 { text-align: center; }
+.ins-month-gap { flex: none; width: 44px; }
+.ins-label { margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-sm); font-weight: 600; }
+.ins-total { margin: 0; }
+.ins-compare { margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-sm); font-weight: 600; }
+.ins-compare-less { color: var(--ck-success-text); }
+.ins-compare-more { color: var(--ck-over-text); }
+.ins-value { color: var(--ck-text); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ins-delta { font-size: var(--ck-text-xs); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ins-delta-more { color: var(--ck-over-text); }
+.ins-delta-less { color: var(--ck-success-text); }
+.ins-amount { display: flex; flex: none; flex-direction: column; align-items: flex-end; gap: 2px; }
+.ins-over { color: var(--ck-over-text); font-weight: 700; }
+/* A meta line of figures may take two lines on a phone: every amount is glued, only « · » parts them. */
+.ck-row-meta.ins-meta { white-space: normal; }
+
+/* The card of the model: «Обновить» in its head, the state, the text, the numbers it could not check. */
+.ins-ai .ck-panel-head { align-items: center; }
+.ins-refresh { min-height: 44px; padding-inline: 16px; font-size: var(--ck-text-sm); white-space: nowrap; }
+.ins-status { margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-sm); font-weight: 600; }
+.ins-status-failed { color: var(--ck-error-text); }
+.ins-text { display: grid; gap: 8px; min-width: 0; }
+.ins-text > p { margin: 0; font-size: var(--ck-text-base); line-height: 1.5; overflow-wrap: anywhere; }
+.ins-text > h3 { margin: 8px 0 0; color: var(--ck-text-muted); font-size: var(--ck-text-sm); font-weight: 800; }
+.ins-advice { display: grid; gap: 6px; margin: 0; padding-left: 22px; font-size: var(--ck-text-base); line-height: 1.5; overflow-wrap: anywhere; }
+.ins-text > .ins-unverified { padding: 10px 12px; border-radius: var(--ck-radius-sm); background: var(--ck-warning-bg); color: var(--ck-warning-text); font-size: var(--ck-text-sm); font-weight: 600; }
+.ins-note, .ins-text > .ins-note { margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-xs); line-height: 1.4; }
+.ins-link { display: inline-flex; align-self: flex-start; align-items: center; min-height: 44px; color: var(--ck-link); font-size: var(--ck-text-sm); font-weight: 700; text-decoration: none; }
+.ins-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+/* «Вопрос о тратах»: the field and «Спросить» in one row, the answer, the person's past questions. */
+.ins-ask-row { display: flex; gap: 8px; min-width: 0; }
+.ins-ask-row input { flex: 1; min-width: 0; }
+.ins-ask-row button { flex: none; }
+.ins-page .ins-question { font-size: var(--ck-text-base); overflow-wrap: anywhere; }
+.ins-past { display: grid; gap: 4px; padding-block: 12px; }
+.ins-past > p { margin: 0; }
+.ins-past-question { font-size: var(--ck-text-sm); font-weight: 700; overflow-wrap: anywhere; }
+.ins-past-answer { font-size: var(--ck-text-sm); line-height: 1.45; overflow-wrap: anywhere; }

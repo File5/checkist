@@ -1,9 +1,10 @@
 import { renderToStaticMarkup } from 'react-dom/server'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Me } from '../../api/session'
 import { detail, pageOf, product } from '../../api/test-support'
 import type { NavigationSnapshot } from '../../navigation'
 import App from '../../App'
+import { preloadScreens } from '../../screens'
 import { applyMe } from '../../session'
 import { resetSession } from '../../session/store'
 import ProductList from '../catalog/ProductList'
@@ -26,7 +27,7 @@ vi.mock('../../navigation', async (importOriginal) => ({
 }))
 // «Я» as the server answers: without accounts everyone moderates, with them — only the holder of the right.
 const me = (mode: Me['mode'], moderate_catalog: boolean): Me =>
-  ({ mode, user: { id: 3, username: 'anna', is_staff: false }, permissions: { moderate_catalog }, csrf_token: 'token' })
+  ({ mode, user: { id: 3, username: 'anna', is_staff: false }, household: null, permissions: { moderate_catalog }, csrf_token: 'token' })
 const local = me('local_single', true)
 const moderator = me('accounts', true)
 const reader = me('accounts', false)
@@ -40,6 +41,9 @@ const loading = { kind: 'loading' as const }
 const kept = { ...product, id: 5, name: 'Steinhof.PizzaSpezial' }
 const other = { ...product, id: 77, name: 'Pizza Hot Dog' }
 const route = { kind: 'catalog' as const, query: { q: 'pizza', page: 1 } }
+
+// The screens come in parts (src/screens.ts): loaded first, the shell renders their real markup at once.
+beforeAll(preloadScreens)
 
 describe('catalog list marks', () => {
   it('marks the kept product of a pending group with a link to the group', () => {
@@ -233,7 +237,7 @@ describe('App shell routes of the catalog section', () => {
     expect(html).toContain('<option value="all" selected="">Все группы</option>')
     expect(sectionNav(html)).toContain('<a aria-current="page" href="/catalog/merges">Дубли</a>')
     expect(sectionNav(html)).toContain('<a href="/catalog">Товары</a>')
-    expect(html).toMatch(/aria-label="Основная навигация">\s*<a aria-current="page" href="\/catalog">Каталог<\/a>/)
+    expect(html).toMatch(/aria-label="Основная навигация">[\s\S]*<a aria-current="page" href="\/catalog">(?:<svg[^>]*>[\s\S]*?<\/svg>)?Каталог<\/a>/)
   })
   it('connects the group screen and passes the list context', () => {
     const html = app({ href: '/catalog/merges/7', route: { kind: 'merge', groupId: 7 }, returnTo: '/catalog/merges?status=confirmed' })

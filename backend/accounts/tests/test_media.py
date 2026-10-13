@@ -3,13 +3,16 @@
 Маршрут ``/media/`` подключён без условия ``DEBUG``; правило выбирает режим. MEDIA
 временный, файлы и пользователи вымышленные.
 """
+import io
 import tempfile
 import uuid
 from pathlib import Path
 
 from django.test import TestCase, override_settings, tag
+from PIL import Image
 from rest_framework.test import APIClient
 
+from accounts.models import Household, Membership
 from api.tests.accounts_helpers import TwoUsers, accounts_mode, make_user, signed_in
 from config.robots import NOINDEX
 from receipts.ownership import local_user
@@ -248,3 +251,116 @@ class MediaLocalSingleTests(MediaMixin, TestCase):
                     response = APIClient().get(f"/media/{path}")
                     self.assert_refused(response)
                     self.assertEqual(refusal(response), expected)
+
+
+VARIANT_CACHE_CONTROL = "private, max-age=31536000, immutable"
+
+
+def png_bytes(size=(1200, 2400)):
+    with io.BytesIO() as stream, Image.new("RGB", size, (10, 120, 200)) as image:
+        image.save(stream, format="PNG")
+        return stream.getvalue()
+
+
+@tag("integration")
+@accounts_mode()
+class MediaPreviewAndDownloadTests(MediaMixin, TestCase):
+    """Сжатые копии пишутся при первом своём запросе; чужая семья получает тот же пустой 404."""
+
+    def setUp(self):
+        super().setUp()
+        for photo in (self.own, self.foreign):
+            for directory in ("originals", "crops"):
+                self.write(photo[directory], png_bytes())
+        self.pdf = self.write(f"originals/{self.own['uuid']}/source.pdf", b"%PDF-1.4 synthetic bill")
+
+    def variant(self, photo, directory, name):
+        return f"{Path(photo[directory]).parent.as_posix()}/{name}"
+
+    def test_owner_gets_previews_written_on_first_request(self):
+        client = self.client_of(self.first)
+        for directory, version in (("originals", "v1"), ("crops", "v2")):
+            for name, longest in ((f"preview-1600-{version}.webp", 1600), (f"thumb-400-{version}.webp", 400)):
+                with self.subTest(directory=directory, name=name):
+                    path = self.variant(self.own, directory, name)
+                    self.assertFalse((self.root / path).exists())
+                    response = client.get(f"/media/{path}")
+                    self.assertEqual(response.status_code, 200)
+                    self.assertEqual(response["Content-Type"], "image/webp")
+                    self.assertEqual(response["Cache-Control"], VARIANT_CACHE_CONTROL)
+                    with Image.open(io.BytesIO(body(response))) as image:
+                        self.assertEqual((image.format, max(image.size)), ("WEBP", longest))
+                    written = (self.root / path).read_bytes()
+                    self.assertEqual(body(client.get(f"/media/{path}")), written)
+        # The originals stay as they were: the pipeline never sees the previews.
+        self.assertEqual((self.root / self.own["originals"]).read_bytes(), png_bytes())
+        # A crop has only the v2 copies (straightened): its v1 name is a plain missing file.
+        self.assert_refused(client.get(f"/media/{self.variant(self.own, 'crops', 'thumb-400-v1.webp')}"))
+
+    def test_foreign_or_anonymous_preview_is_refused_and_not_written(self):
+        expected = refusal(self.client_of(self.first).get(f"/media/originals/{uuid.uuid4()}/source.png"))
+        for client in (self.client_of(self.first), APIClient(), signed_in(self.moderator)):
+            for directory, name in (("originals", "thumb-400-v1.webp"), ("crops", "thumb-400-v2.webp")):
+                path = self.variant(self.foreign, directory, name)
+                with self.subTest(directory=directory):
+                    response = client.get(f"/media/{path}")
+                    self.assert_refused(response)
+                    self.assertEqual(refusal(response), expected)
+                    self.assertFalse((self.root / path).exists())
+            download = client.get(f"/media/{self.foreign['originals']}?download=1")
+            self.assert_refused(download)
+            self.assertNotIn("Content-Disposition", download)
+
+    def test_household_member_gets_the_preview_and_the_download(self):
+        family = Household.objects.create(name="Синтетическая семья")
+        for account in (self.first, self.second):
+            Membership.objects.create(user=account, household=family)
+        client = self.client_of(self.second)
+        response = client.get(f"/media/{self.variant(self.own, 'originals', 'preview-1600-v1.webp')}")
+        self.assertEqual(response.status_code, 200)
+        body(response)
+        download = client.get(f"/media/{self.pdf}?download=1")
+        self.assertEqual(download.status_code, 200)
+        body(download)
+
+    def test_preview_without_a_source_is_the_same_404(self):
+        bare = uuid.uuid4()
+        make_photo(self.first, storage_uuid=bare, original_file=f"originals/{bare}/source.png")
+        for name in ("preview-1600-v1.webp", "thumb-400-v1.webp"):
+            with self.subTest(name=name):
+                self.assert_refused(self.client_of(self.first).get(f"/media/originals/{bare}/{name}"))
+        # A variant name in `prepared` is not a variant: a missing file there, refused as before.
+        prepared = self.variant(self.own, "prepared", "preview-1600-v1.webp")
+        self.assert_refused(self.client_of(self.first).get(f"/media/{prepared}"))
+        self.assertFalse((self.root / prepared).exists())
+
+    def test_download_sends_the_original_as_an_attachment(self):
+        client = self.client_of(self.first)
+        stem = self.own["uuid"][:8]
+        for path, content, content_type, name in (
+                (self.pdf, b"%PDF-1.4 synthetic bill", "application/pdf", f"checkist-{stem}.pdf"),
+                (self.own["originals"], png_bytes(), "image/png", f"checkist-{stem}.png")):
+            with self.subTest(name=name):
+                response = client.get(f"/media/{path}?download=1")
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(body(response), content)
+                self.assertEqual(response["Content-Type"], content_type)
+                self.assertEqual(response["Content-Disposition"], f'attachment; filename="{name}"')
+                self.assertEqual(response["Cache-Control"], CACHE_CONTROL)
+        inline = client.get(f"/media/{self.pdf}")
+        self.assertEqual(inline.status_code, 200)
+        body(inline)
+        self.assertNotIn("attachment", inline.get("Content-Disposition", ""))
+
+
+@tag("integration")
+@override_settings(CHECKIST_AUTH_MODE="local_single", DEBUG=True)
+class MediaPreviewLocalSingleTests(MediaMixin, TestCase):
+    def test_previews_are_written_without_sign_in(self):
+        self.write(self.own["crops"], png_bytes((300, 900)))
+        path = f"{Path(self.own['crops']).parent.as_posix()}/thumb-400-v2.webp"
+        response = APIClient().get(f"/media/{path}")
+        self.assertEqual(response.status_code, 200)
+        body(response)
+        self.assertEqual(response["Cache-Control"], VARIANT_CACHE_CONTROL)
+        self.assertTrue((self.root / path).is_file())

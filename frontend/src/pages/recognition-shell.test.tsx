@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 import App from '../App'
+import { preloadScreens } from '../screens'
 import type { NavigationSnapshot } from '../navigation'
 import { buildRoute } from '../navigation'
 import type { NavigableRoute } from '../navigation'
@@ -12,14 +13,17 @@ vi.mock('../navigation', async (importOriginal) => ({
 // The shell needs to know who works: these tests check the unchanged interface of local_single.
 vi.mock('../session', async (importOriginal) => ({
   ...await importOriginal<typeof import('../session')>(),
-  useSession: () => ({ kind: 'user', mode: 'local_single', user: { id: 1, username: 'local', is_staff: false }, permissions: { moderate_catalog: true } }),
+  useSession: () => ({ kind: 'user', mode: 'local_single', user: { id: 1, username: 'local', is_staff: false }, household: null, permissions: { moderate_catalog: true } }),
 }))
+
+// The screens come in parts (src/screens.ts): loaded first, the shell renders their real markup at once.
+beforeAll(preloadScreens)
 
 describe('new page wiring (SSR only, no browser interaction)', () => {
   it.each<[NavigableRoute, string, string, string]>([
-    [{ kind: 'receipts', query: { page: 2 } }, 'Чеки', 'Страница 2', '/receipts'],
+    [{ kind: 'receipts', query: { page: 2 } }, 'Траты', 'Страница 2', '/receipts'],
     [{ kind: 'upload' }, 'Загрузка фото чеков', 'Получаем лимиты и токен безопасности…', '/receipts'],
-    [{ kind: 'receipt', receiptId: 71 }, 'Чек', 'Страница чека\u00a0№71', '/receipts'],
+    [{ kind: 'receipt', receiptId: 71 }, 'Чек', 'Чек\u00a0№71', '/receipts'],
     [{ kind: 'jobs', query: { page: 3 } }, 'Обработка', 'Задания · Страница 3', '/recognition/jobs'],
     [{ kind: 'job', jobId: 31 }, 'Задание обработки', 'Задание\u00a0№31', '/recognition/jobs'],
   ])('mounts %j with the shell title, props and active menu', (route, title, text, menu) => {

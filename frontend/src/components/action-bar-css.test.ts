@@ -6,7 +6,8 @@ const raw = (path: string) => readFileSync(new URL(path, source), 'utf8')
 const read = (path: string) => raw(path).replace(/\/\*[\s\S]*?\*\//g, '')
 const css = read('components/ActionBar.css')
 const tokens = read('theme/tokens.css')
-const main = raw('main.tsx')
+// Every stylesheet is imported by styles.ts, in the order of the cascade (main.tsx imports it first).
+const styles = raw('styles.ts')
 
 const rules = (text: string) => [...text.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
   .flatMap((match) => match[1].split(',').map((selector) => ({ selector: selector.trim(), body: match[2].trim().replace(/\s+/g, ' ') })))
@@ -24,7 +25,9 @@ describe('layout tokens (text of the file, not rendering)', () => {
     expect(token('--ck-safe-bottom')).toBe('env(safe-area-inset-bottom, 0px)')
     expect(token('--ck-bottom-occupied')).toBe('calc(var(--ck-bottom-nav-height) + var(--ck-safe-bottom))')
     expect(token('--ck-action-bar-room')).toMatch(/^\d+px$/)
-    const light = tokens.slice(tokens.indexOf('\n:root[data-theme="light"] {'))
+    // The light block only: blocks of branches after it (feature/spends-home: --ck-z-toast) are the same in both themes.
+    const start = tokens.indexOf('\n:root[data-theme="light"] {')
+    const light = tokens.slice(start, tokens.indexOf('\n}', start))
     expect(light).not.toMatch(/--ck-(bottom|safe|action-bar|z)-/)
   })
 
@@ -66,12 +69,12 @@ describe('action bar guards (text of the rules, not rendering)', () => {
 
   it('reads only tokens that the theme defines', () => {
     const used = [...new Set([...css.matchAll(/var\((--[a-z0-9-]+)/g)].map((match) => match[1]))].sort()
-    expect(used).toEqual(['--ck-action-bar-room', '--ck-border', '--ck-bottom-occupied', '--ck-safe-bottom', '--ck-surface', '--ck-z-action-bar'])
+    expect(used).toEqual(['--ck-action-bar-room', '--ck-border', '--ck-bottom-occupied', '--ck-safe-bottom', '--ck-surface', '--ck-top-bar-height', '--ck-z-action-bar'])
     for (const name of used) expect(token(name), name).toBeDefined()
   })
 
   it('keeps a focused field and a link target above the bar', () => {
-    expect(rule('html')).toBe('scroll-padding-bottom: calc(var(--ck-action-bar-room) + var(--ck-bottom-occupied));')
+    expect(rule('html')).toBe('scroll-padding-top: var(--ck-top-bar-height); scroll-padding-bottom: calc(var(--ck-action-bar-room) + var(--ck-bottom-occupied));')
   })
 
   it('holds the only scroll padding of the project', () => {
@@ -86,8 +89,8 @@ describe('action bar guards (text of the rules, not rendering)', () => {
     expect(css).not.toMatch(/font-size|!important|transition|animation|@keyframes/)
   })
 
-  it('is imported by main.tsx right after App.css', () => {
-    const imports = [...main.matchAll(/^import '(\.[^']+\.css)'$/gm)].map((match) => match[1])
-    expect(imports).toEqual(['./theme/tokens.css', './App.css', './components/ActionBar.css'])
+  it('is imported right after App.css, the last stylesheet of the cascade', () => {
+    const imports = [...styles.matchAll(/^import '(\.[^']+\.css)'$/gm)].map((match) => match[1])
+    expect(imports.slice(-3)).toEqual(['./theme/tokens.css', './App.css', './components/ActionBar.css'])
   })
 })

@@ -63,8 +63,8 @@ describe('panels of the backend fixtures', () => {
       ['similar:2:DE', 'Demo Landmilch 3,5% 1L · DE', 'похожий товар'],
     ])
     expect(panels[1].series.map((item) => [item.key, item.label])).toEqual([['similar:3:KZ', 'Демо Молоко 2,5% 1 л · KZ']])
-    expect(panels[0].series[0].points[0]).toEqual({ x: '2025-01-01', value: 1.05, valueText: '1,05 EUR/шт' })
-    expect(panels[1].series[0].points[0].valueText).toBe('617,00 KZT/шт')
+    expect(panels[0].series[0].points[0]).toEqual({ x: '2025-01-01', value: 1.05, valueText: '1,05 €/шт' })
+    expect(panels[1].series[0].points[0].valueText).toBe('617,00 ₸/шт')
   })
   it('milk, normalized: litres are comparable, so there is no package warning', () => {
     const panels = chartPanels(fixture('milk-normalized'))
@@ -85,7 +85,7 @@ describe('panels of the backend fixtures', () => {
   it('splits one shop by unit and tells apart two points of one chain in one city by ID', () => {
     const data = fixture('unassigned')
     const [first, second] = data.series as OwnPriceSeries[]
-    second.store = { ...first.store, id: 9 }
+    second.store = { ...first.store!, id: 9 }
     const third: OwnPriceSeries = { ...first, unit: 'kg', points: [point] }
     const panels = chartPanels({ ...data, series: [first, second, third] })
     expect(panels.map((panel) => panel.key)).toEqual(['EUR:pcs', 'EUR:kg'])
@@ -98,7 +98,7 @@ describe('labels and texts', () => {
   it('labels own lines by shop and city and similar ones by product and country, with fallbacks', () => {
     const [own, similar] = fixture('milk-paid').series as [OwnPriceSeries, SimilarPriceSeries]
     expect(seriesLabel(own)).toBe('Zahlenfrisch · Musterstadt')
-    expect(seriesLabel({ ...own, store: { ...own.store, name: ' ', city: '' } })).toBe('Не указано')
+    expect(seriesLabel({ ...own, store: { ...own.store!, name: ' ', city: '' } })).toBe('Не указано')
     expect(seriesLabel(similar)).toBe('Demo Landmilch 3,5% 1L · DE')
     expect(seriesLabel({ ...similar, product: { id: 2, name: '' } })).toBe('Не указано · DE')
   })
@@ -116,8 +116,8 @@ describe('labels and texts', () => {
     expect(formatAxisValue(1.0725)).toBe('1,07')
   })
   it('shows the spread of an interval next to its average', () => {
-    expect(pointText(point, 'EUR', 'pcs')).toBe('1,07 EUR/шт')
-    expect(pointText({ ...point, count: 3, min: '0.9900', max: '1.2000', avg: '1.0867' }, 'EUR', 'l')).toBe('1,09 EUR/л (мин. 0,99, макс. 1,20)')
+    expect(pointText(point, 'EUR', 'pcs')).toBe('1,07 €/шт')
+    expect(pointText({ ...point, count: 3, min: '0.9900', max: '1.2000', avg: '1.0867' }, 'EUR', 'l')).toBe('1,09 €/л (мин. 0,99, макс. 1,20)')
   })
   it('explains every similar status of the fixtures', () => {
     expect(noteKeys(fixture('milk-paid'))).toEqual([])

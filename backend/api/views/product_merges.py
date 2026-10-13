@@ -6,19 +6,21 @@ A decision is recorded with the user of the request (``local`` in ``local_single
 """
 import json
 
+from django.db.models import Q
 from rest_framework.exceptions import ParseError, UnsupportedMediaType
 from rest_framework.parsers import BaseParser
 from rest_framework.response import Response
 from rest_framework import status
 
-from accounts.access import Moderator, is_moderator, owner_q, request_user
+from accounts.access import Moderator, is_moderator, request_user, visible_receipts_q
 from api.pagination import paginate
 from api.params import MAX_ID, Params
 from api.product_merge_serialization import group_briefs, group_object, line_object
-from api.projection import own_annotation
+from api.projection import own_annotation, seen_refs_q
 from config.exceptions import ApiError, InvalidParameter, InvalidRequest, ObjectNotFound
 from merges import services
 from merges.models import ProductMerge
+from receipts.models import Receipt
 
 from .recognition import path_id
 from .recognition_base import LocalAPIView, invalid_constant, unique_object
@@ -135,24 +137,41 @@ class GroupsView(MergeAPIView):
         group_status = params.choice("status", ProductMerge.Status.values)
         product = params.integer("product")
         params.check()
-        body = paginate(services.groups(status=group_status, product=product), page)
+        groups = services.groups(status=group_status, product=product).filter(_seen(request))
+        body = paginate(groups, page)
         body["results"] = group_briefs(body["results"])
         return Response(body)
 
 
+def _seen(request):
+    """Группа без товаров, которых запрос не видит (личный товар чужой траты вручную, ``api.projection``)."""
+    return seen_refs_q(request, "members__product_ref")
+
+
+def _group(request, pk):
+    """Группа, которую видит запрос, одним запросом; иначе ``404``, как у несуществующей."""
+    group = ProductMerge.objects.filter(_seen(request), pk=path_id(pk)).first()
+    if group is None:
+        raise services.MergeNotFound(services.MergeNotFound.code)
+    return group
+
+
 class GroupView(MergeAPIView):
     def get(self, request, pk):
-        return Response(group_object(services.get_group(path_id(pk))))
+        return Response(group_object(_group(request, pk)))
 
 
 class GroupLinesView(MergeAPIView):
     def get(self, request, pk):
-        group = services.get_group(path_id(pk))
+        group = _group(request, pk)
         params = Params(request.query_params)
         page = params.page()
         params.check()
-        # Чеки личные: все строки группы видит только модератор, и чужие — без ссылки на чек.
-        mine = None if is_moderator(request) else owner_q(request, "receipt__")
+        # Чеки личные: все строки группы видит только модератор, и чужие — без ссылки на чек; строки чужих трат
+        # вручную (личное название и цена) не видит никто, кроме тех, кому видна сама трата.
+        mine = visible_receipts_q(request, "receipt__")
+        if is_moderator(request):
+            mine = Q(receipt__source=Receipt.Source.PHOTO) | mine
         lines = services.group_lines(group, mine).annotate(own=own_annotation(request))
         return Response(paginate(lines, page, lambda line: line_object(line, line.own)))
 

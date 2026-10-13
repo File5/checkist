@@ -1,32 +1,45 @@
-.ck-rec { display: grid; gap: 20px; min-width: 0; overflow-wrap: anywhere; }
-.ck-rec-panel { display: grid; gap: 16px; min-width: 0; padding: 24px; background: var(--ck-surface); border: 1px solid var(--ck-border); border-radius: var(--ck-radius); }
+/* «Обработка» and the job with its crops in the language of the artifact (docs/plans/2026-10-13-artifact-mobile-design.md):
+   cards of 20 px on the page background, headings of 18 px / 800, the jobs of the list as rows with dividers, states
+   as pills, counters as small tiles. Colours are tokens only, sizes from the text scale. */
+.ck-rec { display: grid; gap: 16px; min-width: 0; overflow-wrap: anywhere; }
+.ck-rec > * { min-width: 0; }
+.ck-rec-panel { display: grid; gap: 16px; min-width: 0; padding: 20px; border-radius: var(--ck-radius); background: var(--ck-surface); box-shadow: var(--ck-card-shadow); }
+.ck-rec-panel > h2 { font-size: var(--ck-text-lg); font-weight: 800; line-height: 1.3; }
+/* The ways to other screens: quiet pills, not main buttons. */
+.ck-rec-nav .action-link { min-height: 44px; padding: 8px 16px; border-color: var(--ck-border-field); border-radius: var(--ck-radius-pill); background: var(--ck-surface); font-size: var(--ck-text-sm); font-weight: 700; text-decoration: none; }
+.ck-rec-nav { gap: 8px; }
 .ck-rec-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
 .ck-rec-action-block { display: grid; gap: 12px; }
 .ck-rec-actions > * { max-width: 100%; }
 .ck-rec label { font-weight: 600; }
-.ck-rec input, .ck-rec select { width: 100%; padding: 10px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-surface); color: var(--ck-text); min-width: 0; }
+.ck-rec input, .ck-rec select { width: 100%; padding: 10px 14px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-surface); color: var(--ck-text); min-width: 0; }
 .ck-rec input[type="file"] { padding: 8px; }
 .ck-rec input::file-selector-button { min-height: 44px; font: inherit; margin-right: 12px; }
-.ck-rec-warning { color: var(--ck-warning-text); background: var(--ck-warning-bg); border: 1px solid var(--ck-warning-border); padding: 14px; border-radius: var(--ck-radius-sm); }
+.ck-rec-warning { color: var(--ck-warning-text); background: var(--ck-warning-bg); border: 1px solid var(--ck-warning-border); padding: 12px 14px; border-radius: var(--ck-radius-sm); font-size: var(--ck-text-sm); }
 .ck-rec-error { color: var(--ck-error-text); }
-.ck-rec-note { color: var(--ck-text-muted); font-size: 0.9rem; }
+.ck-rec-note { color: var(--ck-text-muted); font-size: var(--ck-text-xs); }
 /* A word with its number or a number with its unit («Фото №3», «2,5 МиБ»): never split, the pair wraps as a whole. */
 .ck-rec-pair { white-space: nowrap; }
 .ck-rec-summary { display: grid; gap: 12px; }
-.ck-rec-status { font-weight: 650; padding: 12px; background: var(--ck-neutral-bg); border-radius: var(--ck-radius-sm); }
+.ck-rec-status { justify-self: start; padding: 4px 12px; border-radius: var(--ck-radius-pill); background: var(--ck-neutral-bg); color: var(--ck-neutral-text); font-size: var(--ck-text-xs); font-weight: 700; }
 .ck-rec-status-succeeded { color: var(--ck-success-text); background: var(--ck-success-bg); }
 .ck-rec-status-failed { color: var(--ck-error-text); background: var(--ck-error-bg); }
 .ck-rec-status-partial_succeeded, .ck-rec-status-cancel_requested { color: var(--ck-warning-text); background: var(--ck-warning-bg); }
-.ck-rec-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr)); gap: 16px; margin: 0; }
-.ck-rec-facts > div { min-width: 0; }
-.ck-rec-facts dt { color: var(--ck-text-muted); font-size: 0.9rem; }
-.ck-rec-facts dd { margin: 4px 0 0; }
-.ck-rec-list { display: grid; gap: 16px; padding: 0; margin: 0; list-style: none; }
+/* Counters as small tiles on the tint of the page: the words over the figure. */
+.ck-rec-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 128px), 1fr)); gap: 8px; margin: 0; }
+.ck-rec-facts > div { min-width: 0; padding: 10px 12px; border-radius: var(--ck-radius-sm); background: var(--ck-bg); }
+.ck-rec-facts dt { color: var(--ck-text-muted); font-size: var(--ck-text-xs); }
+.ck-rec-facts dd { margin: 2px 0 0; font-size: var(--ck-text-lg); font-weight: 800; font-variant-numeric: tabular-nums; }
+/* The jobs of the list and the crops of a job: rows of their card with a divider between them. */
+.ck-rec-list { display: grid; gap: 0; padding: 0; margin: 0; list-style: none; }
 .ck-rec-list > li { min-width: 0; }
-.ck-rec-card { display: grid; gap: 16px; padding: 18px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius); min-width: 0; }
+.ck-rec-card { display: grid; gap: 16px; min-width: 0; padding-block: 18px; border-top: 1px solid var(--ck-divider); }
+.ck-rec-list > .ck-rec-card:last-child { padding-bottom: 0; }
 .ck-rec h3, .ck-rec h4 { margin: 0; }
-.ck-rec h3 a { display: inline-flex; min-height: 44px; align-items: center; text-underline-offset: 4px; }
-.ck-rec-image { display: flex; align-items: center; justify-content: center; min-height: 220px; background: var(--ck-neutral-bg); border-radius: var(--ck-radius-sm); overflow-wrap: anywhere; }
+.ck-rec h3 { font-size: var(--ck-text-base); font-weight: 800; }
+.ck-rec h3 a { display: inline-flex; min-height: 44px; align-items: center; color: var(--ck-link); text-decoration: none; }
+.ck-rec h3 a:hover { text-decoration: underline; }
+.ck-rec-image { display: flex; align-items: center; justify-content: center; min-height: 220px; background: var(--ck-bg); border-radius: var(--ck-radius-sm); overflow-wrap: anywhere; }
 .ck-rec-image img { display: block; width: 100%; height: 360px; object-fit: contain; }
 .ck-rec-image-placeholder { padding: 24px; }
 .ck-rec-image-placeholder a { display: inline-block; min-height: 44px; padding-block: 8px; }
@@ -36,13 +49,21 @@
 .ck-rec summary:focus-visible { outline: 3px solid var(--ck-focus); outline-offset: 4px; }
 .ck-rec ul:not(.ck-rec-list), .ck-rec ol:not(.ck-rec-list) { padding-left: 22px; }
 @media (max-width: 540px) {
-  .ck-rec-panel { padding: 16px; }
-  .ck-rec-card { padding: 14px; }
-  .ck-rec-actions button, .ck-rec-actions .action-link { flex: 1 1 180px; }
+  /* The main action takes its own row; «Отменить» and «Повторить обработку» share the next one. */
+  .ck-rec-actions button, .ck-rec-actions .action-link { flex: 1 1 140px; }
+  .ck-rec-action-block > .ck-rec-actions > button:first-child:not(.ck-rec-cancel) { flex-basis: 100%; }
+  .ck-rec-nav .action-link { flex: none; }
   .ck-rec-image img { height: 280px; }
+  /* The filters of the list are one button on a phone: no card around it. */
+  .ck-rec-panel.ck-rec-filters { padding: 0; background: none; box-shadow: none; }
 }
+/* «Отменить» of a job: a quiet danger, never a fill; disabled it keeps the grey of the shell. */
+.ck-rec-cancel:not(:disabled) { border: 1.5px solid var(--ck-error-border); background: var(--ck-surface); color: var(--ck-error-text); }
+.ck-rec-cancel:not(:disabled):hover, .ck-rec-cancel:not(:disabled):active { border-color: var(--ck-error-text); background: var(--ck-error-bg); color: var(--ck-error-text); }
 .ck-rec-result { margin: 0; padding: 14px; border-radius: var(--ck-radius-sm); color: var(--ck-success-text); background: var(--ck-success-bg); border: 1px solid var(--ck-success-border); font-weight: 600; }
-.ck-rec-result:empty { display: block; padding: 0; border: 0; margin-top: -16px; }
+/* An empty result takes no room: it cancels the gap above it and is not stretched by its grid (a stretched item
+   with a negative margin grows by that margin and showed its green background as a strip). */
+.ck-rec-result:empty { display: block; align-self: start; height: 0; padding: 0; border: 0; margin-top: -16px; }
 .ck-rec-result-failed { color: var(--ck-error-text); background: var(--ck-error-bg); border-color: var(--ck-error-border); }
 .ck-rec-confirmed { margin: 0; color: var(--ck-success-text); font-weight: 600; }
 /* The form keeps the width it had on the 920 px page: on the wide page its fields and notes do not stretch further. */
@@ -52,15 +73,16 @@
 .ck-review > .ck-rec-action-block + .ck-rec-note { margin-top: -4px; }
 .ck-review-body { display: grid; gap: 16px; min-width: 0; margin: 0; padding: 0; border: 0; }
 .ck-review-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.ck-review-group { display: grid; gap: 14px; min-width: 0; margin: 0; padding: 14px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius); }
-.ck-review-group legend { padding: 0 6px; font-weight: 650; }
+.ck-review-group { display: grid; gap: 14px; min-width: 0; margin: 0; padding: 14px; border: 0; border-radius: var(--ck-radius-button); background: var(--ck-bg); }
+/* A floated legend is a plain child of the block: it stands inside it, not on its edge. */
+.ck-review-group > legend { float: left; width: 100%; padding: 0; font-size: var(--ck-text-sm); font-weight: 800; }
 .ck-review-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 14px; align-items: start; }
 .ck-review-field { display: grid; gap: 6px; min-width: 0; align-content: start; }
 .ck-review-field input, .ck-review-field select { min-height: 44px; }
 .ck-review-field input:disabled, .ck-review-field select:disabled { background: var(--ck-disabled-bg); color: var(--ck-disabled-text); }
 .ck-review-field [aria-invalid="true"] { border: 2px solid var(--ck-error-border); background: var(--ck-error-bg); }
 .ck-review-error { color: var(--ck-error-text); font-weight: 600; }
-.ck-review-unread { color: var(--ck-warning-text); font-size: 0.9rem; }
+.ck-review-unread { color: var(--ck-warning-text); font-size: var(--ck-text-xs); }
 .ck-review-unread::before { content: "● "; }
 .ck-review-store { display: grid; gap: 12px; min-width: 0; }
 .ck-review-chosen { padding: 12px; border-radius: var(--ck-radius-sm); background: var(--ck-accent-bg); }
@@ -68,11 +90,43 @@
 .ck-review-search input { flex: 1 1 180px; width: auto; }
 .ck-rec ul.ck-review-stores { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .ck-review-stores button { width: 100%; text-align: left; }
-.ck-rec .ck-review-secondary { background: var(--ck-surface); border-color: var(--ck-border-field); color: var(--ck-link); justify-self: start; max-width: 100%; }
-.ck-rec .ck-review-secondary:hover:not(:disabled) { background: var(--ck-surface-raised); }
+.ck-rec .ck-review-secondary { background: var(--ck-surface); border: 1.5px solid var(--ck-link); color: var(--ck-link); justify-self: start; max-width: 100%; }
+.ck-rec .ck-review-secondary:hover:not(:disabled) { background: var(--ck-surface-raised); border-color: var(--ck-link-hover); color: var(--ck-link-hover); }
 .ck-rec .ck-review-secondary:disabled { background: var(--ck-disabled-bg); border-color: var(--ck-disabled-border); color: var(--ck-disabled-text); }
 .ck-review-notice:empty { display: block; margin-top: -16px; }
 .ck-review-refusal { padding: 14px; border-radius: var(--ck-radius-sm); color: var(--ck-error-text); background: var(--ck-error-bg); border: 1px solid var(--ck-error-border); font-weight: 600; }
 .ck-review-refusal:empty { display: block; padding: 0; border: 0; margin-top: -16px; }
 .ck-rec button[aria-disabled="true"], .ck-rec button[aria-disabled="true"]:hover { background: var(--ck-disabled-bg); border-color: var(--ck-disabled-border); color: var(--ck-disabled-text); cursor: default; }
 .ck-review [tabindex="-1"]:focus-visible, .ck-rec-result:focus-visible { outline: 3px solid var(--ck-focus); outline-offset: 4px; }
+
+/* ---- Phone view (docs/frontend.md, «Мобильный дизайн: распознавание и каталог»). The markup below is drawn only on a
+   phone (useNarrow), so these rules need no width condition of their own. ---- */
+/* A row of the jobs list: the miniature of the photo, the job and its photo, the status pill and the date. */
+.ck-rec-job-head { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.ck-rec-job-title { display: grid; gap: 2px; min-width: 0; }
+.ck-rec-job-title p { margin: 0; color: var(--ck-text-muted); }
+.ck-rec-thumb { flex: none; width: 64px; height: 64px; overflow: hidden; border-radius: var(--ck-radius-sm); background: var(--ck-neutral-bg); }
+.ck-rec-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.ck-rec-summary-compact { gap: 8px; }
+.ck-rec-summary-compact p { margin: 0; }
+.ck-rec-pill { justify-self: start; }
+.ck-rec-more summary { min-height: 44px; padding-block: 10px; cursor: pointer; font-weight: 600; color: var(--ck-link); }
+.ck-rec-more > * + * { margin-top: 12px; }
+
+/* The crop being checked, pinned at the top of its card while the form scrolls under it. Pinch-zoom is the browser's. */
+.ck-rec-crop-pin { position: sticky; top: 0; z-index: var(--ck-z-action-bar); display: grid; gap: 8px; min-width: 0; padding-block: 8px; border-bottom: 1px solid var(--ck-divider); background: var(--ck-surface); }
+.ck-rec .ck-rec-crop-toggle { justify-self: end; }
+.ck-rec-crop-image[hidden] { display: none; }
+.ck-rec-crop-image .ck-rec-image { min-height: 0; }
+.ck-rec-crop-image .ck-rec-image img { height: auto; max-height: 38vh; touch-action: pan-x pan-y pinch-zoom; }
+
+/* The correction form as line cards: «name ……… amount», the main fields, «Подробнее» with the rest. */
+.ck-review-line { min-width: 0; }
+.ck-review-line-sum { font-weight: 600; }
+.ck-review-line-more summary { min-height: 44px; padding-block: 10px; cursor: pointer; font-weight: 600; color: var(--ck-link); }
+.ck-review-line-more > .ck-review-grid { padding-top: 8px; }
+.ck-review-field input[inputmode="decimal"] { font-family: var(--ck-font-figures); font-variant-numeric: tabular-nums; }
+/* The lines with problems, linked to their cards, at the top of the form. */
+.ck-review-jumps { display: grid; gap: 8px; min-width: 0; padding: 14px; border: 1px solid var(--ck-error-border); border-radius: var(--ck-radius-sm); background: var(--ck-error-bg); color: var(--ck-error-text); }
+.ck-rec .ck-review-jumps ul { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.ck-review-jumps a { display: inline-block; min-height: 44px; padding-block: 10px; color: var(--ck-error-text); font-weight: 600; text-underline-offset: 3px; }

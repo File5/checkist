@@ -19,8 +19,13 @@ export type LocalApiErrorReason = ApiErrorReason
   | 'merge_conflict' | 'merge_resolved' | 'merge_changed' | 'merge_busy'
   | 'review_unavailable' | 'review_resolved' | 'review_busy' | 'review_invalid'
   | 'classification_resolved' | 'classification_changed' | 'classification_busy'
+  | 'receipt_read_only' | 'photo_shared' | 'parse_limit' | 'store_merge_conflict'
   | 'upload_too_large' | 'unsupported_media_type' | 'unsupported_format' | 'invalid_image' | 'image_too_large'
+  | 'invalid_pdf' | 'pdf_encrypted' | 'pdf_too_many_pages'
+  | 'statement_unsupported_bank' | 'statement_empty' | 'statement_too_large'
   | 'storage_unavailable' | 'database_unavailable' | 'method_not_allowed' | 'not_acceptable'
+  | 'ai_disabled' | 'ai_quota'
+  | 'push_not_configured'
 export type ApiFailure = {
   kind: 'error'
   reason: ApiErrorReason
@@ -34,9 +39,16 @@ export type LocalApiFailure = Omit<ApiFailure, 'reason'> & {
   reason: LocalApiErrorReason
   /** Only with review_invalid: causes in the shape of crop issues, indexed by the arrays of the sent body. */
   issues?: RecognitionIssue[]
+  /** Only with ai_quota: when the family's requests to the model start again (UTC ISO 8601). */
+  resetsAt?: string
 }
 export type LocalApiResult<T> = { kind: 'ok'; data: T } | LocalApiFailure | { kind: 'aborted' }
-export type RequestOptions = { signal?: AbortSignal; baseUrl?: string }
+export type RequestOptions = {
+  signal?: AbortSignal; baseUrl?: string
+  /** Skips the memory of answers (`answer-cache.ts`) and asks the network; a good answer is still kept.
+   * For a form that loads an object to send it back whole. */
+  fresh?: boolean
+}
 export type Results<T> = { results: T[] }
 export type Page<T> = Results<T> & { count: number; page: number; page_size: number; pages: number }
 export type PageParams = { page?: number; page_size?: number }
@@ -81,10 +93,14 @@ export type NormalizedPrice = {
 export type LastProductPrice = NormalizedPrice & {
   paid_unit_price: Decimal
   purchased_on: ISODate
-  store_id: number
+  /** Null — a manual spend without a place. */
+  store_id: number | null
+  /** The price was typed by a person (a named purchase of a manual spend, 2026-10-13); missing from an older server. */
+  manual?: boolean
 }
 export type ProductPrice = {
-  country: CountryCode
+  /** Null — manual spends without a place. */
+  country: CountryCode | null
   currency: CurrencyCode
   observations: number
   last: LastProductPrice
@@ -112,7 +128,10 @@ export type ProductDetail = Product & {
 export type PriceProduct = NamedObject & { base_unit: BaseUnit }
 type PricePointBase = NormalizedPrice & {
   purchased_on: ISODate
-  store: StoreBrief
+  /** Null — «Без места»: a manual spend without a place. */
+  store: StoreBrief | null
+  /** The price was typed by a person (a named purchase of a manual spend, 2026-10-13); missing from an older server. */
+  manual?: boolean
   currency: CurrencyCode
   unit: Unit
   list_unit_price: Decimal
@@ -181,7 +200,7 @@ export type PriceSummaryGroup = {
 }
 type PriceSummaryBody = { product: PriceProduct; interval: PriceInterval } & (
   | { group_by: 'country'; groups: (PriceSummaryGroup & { country: CountryCode })[] }
-  | { group_by: 'store'; groups: (PriceSummaryGroup & { store: Store })[] }
+  | { group_by: 'store'; groups: (PriceSummaryGroup & { store: Store | null })[] }
   | { group_by: 'none'; groups: PriceSummaryGroup[] }
 )
 export type PriceSummary = PriceSummaryBody & (

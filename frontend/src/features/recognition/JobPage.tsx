@@ -7,8 +7,9 @@ import { Link, navigate } from '../../navigation'
 import type { JobPageProps } from '../../pages/types'
 import ActionButtons from './ActionButtons'
 import JobSummary from './JobSummary'
-import MediaImage from './MediaImage'
+import MediaImage, { DownloadOriginal } from './MediaImage'
 import ReceiptImages from './ReceiptImages'
+import { toReviewCrop } from './review-crop'
 import RequestBlock from './RequestBlock'
 import { acceptJob, isActive, jobExecutorNote } from './labels'
 import { getJobNotice, retryNotice, setJobNotice } from './upload-state'
@@ -49,7 +50,9 @@ function JobImages({ job, busy, review, register }: { job: JobDetail; busy: bool
   }, [job.stage, photo.request])
   return <>
     <RequestBlock title="Исходное фото" id="recognition-photo-title" state={photo.state} retry={photo.request.refresh}>
-      {(data) => <><MediaImage url={data.preview_url ?? data.original_url} alt={`Исходное фото №${data.id}`} /><p><span className="ck-rec-pair">{glue(data.width, '×', data.height, 'пикселей')}</span> · {data.content_type.replace('image/', '').toUpperCase()}</p></>}
+      {(data) => <><MediaImage url={data.preview_url ?? data.original_url} display={data.display_url} size={data} alt={`Исходное фото №${data.id}`} />
+        <p className="ck-media-meta"><span className="ck-rec-pair">{glue(data.width, '×', data.height, 'пикселей')}</span> · {data.content_type.replace('image/', '').toUpperCase()}{data.document && <> · <span className="ck-rec-pair">{glue('из PDF,', data.document.pages, 'стр.')}</span></>}</p>
+        <DownloadOriginal url={data.download_url} /></>}
     </RequestBlock>
     <RequestBlock title={`Вырезки чеков (${job.items_count})`} id="recognition-images-title" state={images.state} retry={images.request.refresh}>
       {(data) => <ReceiptImages images={data.results} finished={!isActive(job)} busy={busy} review={review} />}
@@ -77,7 +80,7 @@ export default function JobPage({ jobId, returnTo }: JobPageProps) {
   const review = useReviewActions(reviewLifecycle)
   const notice = getJobNotice(jobId)
   return <div className="ck-rec">
-    <div className="ck-rec-actions"><Link className="action-link" to={returnTo ?? '/recognition/jobs'}>{returnTo?.startsWith('/receipts/') ? 'К чеку' : 'К обработке'}</Link><Link className="action-link" to="/receipts/upload">Загрузить другое фото</Link></div>
+    <div className="ck-rec-actions ck-rec-nav"><Link className="action-link" to={returnTo ?? '/recognition/jobs'}>{returnTo?.startsWith('/receipts/') ? 'К чеку' : 'К обработке'}</Link><Link className="action-link" to="/receipts/upload">Загрузить другое фото</Link></div>
     {notice && <p role="status" className="ck-rec-warning">{notice}</p>}
     <RequestBlock title={<span className="ck-rec-pair">{numbered('Задание', jobId)}</span>} id="recognition-job-title" state={state} retry={request.refresh}>
       {(job) => { const executorNote = state.kind === 'ok' && !state.refreshError ? jobExecutorNote(job) : undefined; return <>
@@ -85,7 +88,7 @@ export default function JobPage({ jobId, returnTo }: JobPageProps) {
         {job.retry_of !== null && <p>Повтор <Link to={{ kind: 'job', jobId: job.retry_of }} className="ck-rec-pair">{numbered('задания', job.retry_of)}</Link>.</p>}
         {executorNote && <p className={executorNote.warning ? 'ck-rec-warning' : undefined}>{executorNote.text}</p>}
         {job.status === 'cancel_requested' && <p>Ждём подтверждения отмены от воркера. Уже сохранённые чеки не удаляются.</p>}
-        <ActionButtons job={job} state={actions.state} run={actions.run} busy={review.state.kind === 'pending'} />
+        <ActionButtons job={job} state={actions.state} run={actions.run} busy={review.state.kind === 'pending'} onReview={toReviewCrop} />
         <Link to={{ kind: 'jobs', query: { page: 1, photo: job.photo_id } }}>Все задания этого фото</Link>
       </> }}
     </RequestBlock>

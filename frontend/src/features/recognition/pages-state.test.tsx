@@ -121,7 +121,9 @@ describe('page block states with public API data (SSR)', () => {
     mocked.states = [{ kind: 'error', error: { kind: 'error', reason: 'permission_denied' } }]
     const html = renderToStaticMarkup(<UploadPage />)
     expect(html).toContain('Локальный сервис недоступен'); expect(html).toContain('Повторить')
-    expect(html).toMatch(/type="submit"[^>]*disabled=""/)
+    // Nothing to send without a photo, and nothing can be picked without the conditions.
+    expect(html).not.toContain('type="submit"')
+    expect(html).toMatch(/<button type="button" class="ck-upload-file-button[^"]*" disabled=""/)
   })
   it('renders page links that preserve status and photo and detail links for shell focus return', () => {
     const job = fixture('job-running.json', isJobDetail)
@@ -148,7 +150,8 @@ describe('page block states with public API data (SSR)', () => {
   it('keeps job and photo available when the crop block fails', () => {
     mocked.states = [success(fixture('job.json', isJobDetail)), success(fixture('photo.json', isPhoto)), { kind: 'error', error: { kind: 'error', reason: 'network' } }]
     const html = renderToStaticMarkup(<JobPage jobId={31} />)
-    expect(html).toContain('Завершено частично'); expect(html).toContain('src="/media/originals/test/source.png"')
+    expect(html).toContain('Завершено частично'); expect(html).toContain('src="/media/originals/test/preview-1600-v1.webp"')
+    expect(html).toContain('<a class="action-link ck-media-download" href="/media/originals/test/source.png?download=1" download="">Скачать оригинал</a>')
     expect(html).toContain('Вырезки чеков (2)'); expect(html).toContain('Нет ответа сервера'); expect(html).toContain('Повторить')
   })
   it('keeps review crops available when the source photo fails', () => {

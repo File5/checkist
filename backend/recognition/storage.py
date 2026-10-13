@@ -12,7 +12,8 @@ from pathlib import Path
 from django.conf import settings
 from django.db import transaction
 
-from .images import ImageError, crop_receipt, inspect_image, prepare_upright
+from .images import ImageError, convert_heif, crop_receipt, inspect_image, prepare_upright
+from .pdf import is_pdf, render_pdf
 from .models import ReceiptImage, SourcePhoto
 from .queue import QueueError, fenced_job
 
@@ -53,6 +54,21 @@ def _publish(staged, relative_name):
     return target
 
 
+def _publish_beside(staged, relative_name):
+    """A second file into the fresh directory that ``_publish`` has just created."""
+    root = Path(settings.MEDIA_ROOT).resolve()
+    target = (root / relative_name).resolve()
+    if not target.is_relative_to(root) or not target.parent.is_dir() or target.exists():
+        raise StorageError()
+    os.replace(staged, target)
+    return target
+
+
+def _remove_beside(path):
+    if path is not None:
+        path.unlink(missing_ok=True)
+
+
 def _staging():
     root = Path(settings.MEDIA_ROOT).resolve()
     root.mkdir(parents=True, exist_ok=True)
@@ -83,12 +99,18 @@ def accept_upload(upload, *, owner):
     Duplicate uploads of the same owner reuse the existing row/files, including
     concurrent uploads; created=False only for the owner's own photo. The same
     bytes of another owner are a separate row and a separate directory.
+    HEIF/HEIC is converted to JPEG first and then handled exactly like an uploaded
+    JPEG: limits, sha256 and replay are those of the JPEG bytes.
+    A PDF (at most PDF_MAX_PAGES pages) is rendered to one PNG/JPEG that becomes
+    ``original_file``; the PDF is kept as ``document_file`` in the same directory.
+    sha256 and replay are those of the PDF bytes: the same file again is the same photo,
+    found before rendering.
     Preview preparation happens separately in the fenced worker.
     """
     owner_id = getattr(owner, "pk", owner)
     if type(owner_id) is not int:
         raise TypeError("owner must be a saved user or its id")
-    published = None
+    published = published_document = None
     try:
         with _staging() as directory:
             staged = Path(directory) / "source"
@@ -103,8 +125,23 @@ def accept_upload(upload, *, owner):
                         raise ImageError("file_too_large")
                     stream.write(chunk)
                     digest.update(chunk)
+            document = None
+            if size and is_pdf(staged):
+                sha256 = digest.hexdigest()
+                existing = SourcePhoto.objects.filter(owner_id=owner_id, sha256=sha256).first()
+                if existing:
+                    media_path(existing.original_file.name)
+                    return existing, False
+                document, rendered = staged, render_pdf(staged, directory)
+                staged = rendered.path
+            else:
+                converted = Path(directory) / "converted.jpg"
+                if convert_heif(staged, converted):
+                    staged = converted
+                    sha256 = _digest(converted)
+                else:
+                    sha256 = digest.hexdigest()
             info = inspect_image(staged)
-            sha256 = digest.hexdigest()
             existing = SourcePhoto.objects.filter(owner_id=owner_id, sha256=sha256).first()
             if existing:
                 media_path(existing.original_file.name)
@@ -112,21 +149,29 @@ def accept_upload(upload, *, owner):
             storage_uuid = uuid.uuid4()
             name = f"originals/{storage_uuid}/source.{info.extension}"
             published = _publish(staged, name)
+            document_fields = {}
+            if document is not None:
+                document_name = f"originals/{storage_uuid}/source.pdf"
+                published_document = _publish_beside(document, document_name)
+                document_fields = {"document_file": document_name, "document_bytes": size, "document_pages": rendered.pages}
             with transaction.atomic(durable=True):
                 photo, created = SourcePhoto.objects.get_or_create(owner_id=owner_id, sha256=sha256, defaults={
                     "storage_uuid": storage_uuid, "original_file": name, "content_type": info.content_type,
                     "bytes": info.bytes, "raw_width": info.raw_width, "raw_height": info.raw_height,
                     "width": info.width, "height": info.height, "exif_orientation": info.exif_orientation,
+                    **document_fields,
                 })
                 if not created:
                     media_path(photo.original_file.name)
             if not created:
+                _remove_beside(published_document)
                 _remove_owned(published)
-            published = None  # referenced and committed, or already removed.
+            published = published_document = None  # referenced and committed, or already removed.
             return photo, created
     except OSError:
         raise StorageError() from None
     finally:
+        _remove_beside(published_document)
         _remove_owned(published)
 
 

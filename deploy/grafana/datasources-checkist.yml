@@ -1,0 +1,33 @@
+
+  # Checkist — metrics with cluster="checkist" only (checkist-prom-proxy). Appended to
+  # provisioning/datasources/datasources.yml of /opt/suslicketeam-grafana (docs/observability.md).
+  - name: Checkist · Prometheus
+    type: prometheus
+    uid: checkist-prometheus
+    access: proxy
+    url: http://checkist-prom-proxy:8080
+    editable: false
+    jsonData:
+      timeInterval: 30s
+      queryTimeout: 60s
+      httpMethod: POST
+    version: 1
+
+  # Checkist spends — role checkist_grafana (`manage.py grafana_reader`): SELECT on listed columns
+  # only, read-only transactions; reached over the pair network checkist-grafana-db (alias checkist-pg).
+  - name: Checkist · Postgres
+    type: grafana-postgresql-datasource
+    uid: checkist-postgres
+    url: checkist-pg:5432
+    user: checkist_grafana
+    editable: false
+    jsonData:
+      database: checkist
+      sslmode: disable
+      postgresVersion: 1700
+      timescaledb: false
+      maxOpenConns: 3
+      maxIdleConns: 1
+    secureJsonData:
+      password: $CHECKIST_PG_PASSWORD
+    version: 1

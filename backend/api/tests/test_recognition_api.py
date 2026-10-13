@@ -21,6 +21,7 @@ from recognition.management.commands.recognition_worker import worker_slot
 from recognition.models import ProcessingJob, ReceiptImage, SourcePhoto
 from recognition.queue import WORKER_LOCK, claim_job, request_cancel
 from recognition.storage import StorageError
+from recognition.tests.pdf_factories import pdf_bytes
 
 
 NOW = datetime(2026, 10, 4, 12, 35, tzinfo=dt_timezone.utc)
@@ -264,7 +265,7 @@ def public_data():
     merchant = Merchant.objects.create(id=51, country_id="DE", legal_name="PRIVATE LEGAL", brand_name="Тестовый магазин", tax_id="PRIVATE TAX")
     store = Store.objects.create(id=51, merchant=merchant, country_id="DE", city="Berlin",
         address_raw="Teststrasse 12", timezone="Europe/Berlin")
-    category = Category.objects.create(name="Тест")
+    category = Category.objects.create(id=81, name="Тест")
     generic = GenericProduct.objects.create(name="Молоко", category=category, base_unit="l")
     product = Product.objects.create(id=61, generic=generic, name="Молоко 1 л")
     receipt = Receipt.objects.create(id=71, owner=photo.owner, store=store, currency_id="EUR", operation="sale",
@@ -353,8 +354,57 @@ class RecognitionAPITests(TestCase):
         self.assertEqual(repaired.status_code, 200)
         self.assertEqual(repaired.json()["job"]["status"], "queued")
 
+    def test_heic_and_mpo_uploads_become_jpeg_photos(self):
+        for format, name, content_type in (("HEIF", "IMG.HEIC", "image/heic"), ("MPO", "IMG.JPG", "image/jpeg")):
+            with self.subTest(format=format):
+                stream = BytesIO()
+                with Image.new("RGB", (10, 20), "white") as image, Image.new("RGB", (5, 10)) as gain:
+                    extra = {"save_all": True, "append_images": [gain]} if format == "MPO" else {}
+                    image.save(stream, format=format, **extra)
+                response = self.client.post("/api/recognition/photos/", {"file": upload(stream.getvalue(), name, content_type)}, format="multipart")
+                self.assertEqual(response.status_code, 202, response.content)
+                photo = response.json()["photo"]
+                self.assertEqual((photo["content_type"], photo["width"], photo["height"]), ("image/jpeg", 10, 20))
+                self.assertTrue(photo["original_url"].endswith("/source.jpg"))
+
+    def test_pdf_upload_becomes_an_image_photo_with_its_document(self):
+        data = pdf_bytes(pages=2)
+        response = self.client.post("/api/recognition/photos/", {"file": upload(data, "Квитанция.pdf", "application/pdf")}, format="multipart")
+        self.assertEqual(response.status_code, 202, response.content)
+        photo = response.json()["photo"]
+        self.assertEqual(photo["content_type"], "image/png")
+        self.assertEqual(photo["document"], {"content_type": "application/pdf", "bytes": len(data), "pages": 2})
+        base = photo["original_url"].rsplit("/", 1)[0]
+        self.assertEqual(photo["original_url"], base + "/source.png")
+        self.assertEqual(photo["download_url"], base + "/source.pdf?download=1")
+        self.assertEqual(photo["display_url"], base + "/preview-1600-v1.webp")
+        self.assertEqual(photo["thumb_url"], base + "/thumb-400-v1.webp")
+        self.assertEqual(response.json()["job"]["status"], "queued")
+        download = self.client.get(photo["download_url"])
+        self.assertEqual(b"".join(download.streaming_content), data)
+        self.assertTrue(download["Content-Disposition"].startswith("attachment;"))
+        replay = self.client.post("/api/recognition/photos/", {"file": upload(data, "again.pdf", "application/pdf")}, format="multipart")
+        self.assertEqual(replay.status_code, 200)
+        self.assertTrue(replay.json()["reused"])
+        self.assertEqual(SourcePhoto.objects.count(), 1)
+
+    def test_refused_pdfs_have_their_own_codes(self):
+        for data, code in ((pdf_bytes(pages=4), "pdf_too_many_pages"), (pdf_bytes(encrypted=True), "pdf_encrypted"),
+                           (b"%PDF-1.7\nbroken", "invalid_pdf")):
+            with self.subTest(code=code):
+                self.error(self.client.post("/api/recognition/photos/", {"file": upload(data, "bill.pdf", "application/pdf")},
+                                            format="multipart"), 400, code)
+        self.assertEqual(SourcePhoto.objects.count(), 0)
+        self.assertEqual(ProcessingJob.objects.count(), 0)
+
+    def test_image_photo_downloads_its_original(self):
+        photo = self.post_photo().json()["photo"]
+        self.assertIsNone(photo["document"])
+        self.assertEqual(photo["download_url"], photo["original_url"] + "?download=1")
+
     def test_file_validation_and_no_records(self):
-        cases = [(b"\x00\x00\x00\x18ftypheic" + b"\0" * 20, "unsupported_format"),
+        cases = [(b"\x00\x00\x00\x18ftypheic" + b"\0" * 20, "invalid_image"),
+                 (b"\x00\x00\x00\x18ftypavif" + b"\0" * 20, "unsupported_format"),
                  (b"\x89PNG\r\n\x1a\ninvalid", "invalid_image"),
                  (b"", "invalid_image"), (image_bytes("GIF"), "unsupported_format")]
         for data, code in cases:
@@ -516,6 +566,25 @@ class RecognitionAPITests(TestCase):
         slash = self.client.post("/api/recognition/photos", {}, format="json")
         self.assertEqual(slash.status_code, 400)
         self.assertEqual(slash.json()["error"]["code"], "invalid_request")
+
+    def test_needs_review_filter_lists_only_jobs_waiting_for_a_person(self):
+        statuses = ReceiptImage.Status
+        waiting = ProcessingJob.objects.create(photo=make_photo())
+        make_image(waiting, status=statuses.IMPORTED)
+        make_image(waiting, position=2, status=statuses.NEEDS_REVIEW)
+        # A failed crop next to an imported one (a partial job): nothing to confirm.
+        failed = ProcessingJob.objects.create(photo=make_photo())
+        make_image(failed, status=statuses.IMPORTED)
+        make_image(failed, position=2, status=statuses.FAILED)
+        # Retried: the new job replaces it even though a crop still says needs_review.
+        retried = ProcessingJob.objects.create(photo=make_photo())
+        make_image(retried, status=statuses.NEEDS_REVIEW)
+        ProcessingJob.objects.create(photo=make_photo(), retry_of=retried)  # a finished job would share the photo
+        body = self.client.get("/api/recognition/jobs/?needs_review=1").json()
+        self.assertEqual((body["count"], [job["id"] for job in body["results"]]), (1, [waiting.pk]))
+        self.assertEqual(self.client.get("/api/recognition/jobs/?needs_review=0").json()["count"], 4)
+        self.assertEqual(self.client.get("/api/recognition/jobs/").json()["count"], 4)
+        self.error(self.client.get("/api/recognition/jobs/?needs_review=yes"), 400, "invalid_parameter")
 
     def test_no_n_plus_one_on_lists(self):
         for _ in range(5):

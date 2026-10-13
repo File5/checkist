@@ -10,9 +10,24 @@ class Receipt(models.Model):
         SALE = "sale", "Продажа"
         REFUND = "refund", "Возврат"
 
+    class Source(models.TextChoices):
+        PHOTO = "photo", "Фото чека"
+        MANUAL = "manual", "Вручную"
+
+    class PaymentMethod(models.TextChoices):
+        NONE = "", "Не указан"
+        KASPI_GOLD = "kaspi_gold", "Kaspi Gold"
+        FORTE = "forte", "ForteBank"
+        CASH = "cash", "Наличные"
+        CRYPTO = "crypto", "Криптовалюта"
+        CARD = "card", "Другая карта"
+
     # Значения по умолчанию нет: забытый владелец — ошибка, а не тихий local.
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="receipts")
-    store = models.ForeignKey("stores.Store", on_delete=models.PROTECT, related_name="receipts")
+    # NULL — «Без места»: бывает только у траты, внесённой вручную.
+    store = models.ForeignKey("stores.Store", null=True, blank=True, on_delete=models.PROTECT, related_name="receipts")
+    # manual — трата без чека (receipts.manual): к ней не применяются три правила дедупликации.
+    source = models.CharField(max_length=8, choices=Source.choices, default=Source.PHOTO)
     currency = models.ForeignKey("stores.Currency", on_delete=models.PROTECT, related_name="receipts")
     operation = models.CharField(max_length=8, choices=Operation.choices)
     purchased_at = models.DateTimeField()  # момент покупки, хранится в UTC
@@ -30,26 +45,35 @@ class Receipt(models.Model):
     prices_include_tax = models.BooleanField(default=True)
     raw_text = models.TextField(blank=True, default="")
     extra = models.JSONField(default=dict, blank=True)  # кассир, способ оплаты, реклама
+    note = models.TextField(blank=True, default="")  # комментарий человека к трате
+    # Чем заплачено (2026-10-13): форма траты, разбор словами, импорт выписки, «Оплатил» регулярного платежа.
+    payment_method = models.CharField(max_length=16, choices=PaymentMethod.choices, blank=True, default="")
+    # Скрытый платёж (решает главный в семье): не виден остальным и не входит ни в какие суммы.
+    hidden = models.BooleanField(default=False)
+    hidden_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+                                  related_name="+")
+    hidden_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         constraints = [
-            # Три уровня дедупликации, каждый в пределах владельца. Между уровнями ищет
+            # Три уровня дедупликации, каждый в пределах владельца и только у чеков с фото:
+            # две одинаковые ручные траты за день — две траты. Между уровнями ищет
             # receipts.dedup.find_duplicates.
             models.UniqueConstraint(
                 fields=["owner", "fiscal_key"],
-                condition=~Q(fiscal_key=""),
+                condition=~Q(fiscal_key="") & Q(source="photo"),
                 name="receipts_receipt_owner_fiscal_key_uniq",
             ),
             models.UniqueConstraint(
                 fields=["owner", "store", "purchased_on", "shift_number", "register_code", "receipt_number"],
-                condition=~Q(receipt_number=""),
+                condition=~Q(receipt_number="") & Q(source="photo"),
                 name="receipts_receipt_owner_store_number_uniq",
             ),
             models.UniqueConstraint(
                 fields=["owner", "store", "purchased_at", "total"],
-                condition=Q(receipt_number="", fiscal_key=""),
+                condition=Q(receipt_number="", fiscal_key="", source="photo"),
                 name="receipts_receipt_owner_store_time_total_uniq",
             ),
         ]
@@ -97,6 +121,11 @@ class ReceiptLine(models.Model):
     # Пусто, пока товар не сопоставлен.
     product = models.ForeignKey(
         "catalog.Product", null=True, blank=True, on_delete=models.SET_NULL, related_name="receipt_lines",
+    )
+    # Категория строки траты вручную (и обслуживания/чаевых без товара); важнее категории товара:
+    # названная покупка траты вручную — товар каталога, но лежит в категории, выбранной человеком.
+    category = models.ForeignKey(
+        "catalog.Category", null=True, blank=True, on_delete=models.PROTECT, related_name="receipt_lines",
     )
     extra = models.JSONField(default=dict, blank=True)
 
@@ -215,3 +244,45 @@ class ProductAlias(models.Model):
 
     def __str__(self):
         return self.raw_name
+
+
+class ManualParseRequest(models.Model):
+    """«Трата словами»: текст человека ждёт воркера, ответ — черновик формы траты.
+
+    Строка ничего не меняет в чеках и каталоге: черновик человек проверяет и сохраняет
+    обычной ручной тратой. Очередь и исполнение — ``receipts.manual_parse``.
+    """
+
+    class Status(models.TextChoices):
+        QUEUED = "queued"
+        RUNNING = "running"
+        SUCCEEDED = "succeeded"
+        FAILED = "failed"
+
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="manual_parse_requests")
+    text = models.CharField(max_length=500)
+    # «Сегодня» для относительных дат текста: дата клиента либо сервера.
+    today = models.DateField()
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.QUEUED)
+    draft = models.JSONField(null=True, blank=True)
+    error_code = models.CharField(max_length=32, blank=True, default="")
+    run_token = models.UUIDField(null=True, blank=True)
+    lease_expires_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["status", "id"], name="receipts_parse_status_idx"),
+            models.Index(fields=["owner", "created_at"], name="receipts_parse_owner_idx"),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(status__in=["queued", "running", "succeeded", "failed"]),
+                name="receipts_parse_status_check",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.pk} {self.status}"

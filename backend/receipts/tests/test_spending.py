@@ -237,6 +237,52 @@ class SummarizeTests(SimpleTestCase):
         self.assertEqual(spending.summarize(Collected([], [], {}), tree=TREE), [])
 
 
+def manual(receipt, category, paid, *, store=None, currency="EUR"):
+    """Строка ручной траты: без товара, с категорией строки."""
+    return LineRow(currency, receipt, store, None, "product", "pcs", D(paid), 1, D("1"), category)
+
+
+class ManualLineTests(SimpleTestCase):
+    """Строка без товара с категорией (трата вручную) и чек без магазина."""
+
+    LINES = [line(1, 10, "3.00"), manual(2, 4, "5.00"), manual(3, 3, "2.00"), manual(4, None, "1.00")]
+
+    def block(self, **options):
+        options.setdefault("tree", TREE)
+        options.setdefault("stores", STORES)
+        blocks = spending.summarize(data(self.LINES), **options)
+        self.assertEqual(len(blocks), 1)
+        return blocks[0]
+
+    def test_category_of_line_without_product_is_its_own(self):
+        block = self.block()
+        self.assertEqual(brief(block), [("category", 1, D("10.00")), ("unmatched", None, D("1.00"))])
+        drill = self.block(category=2)
+        # Молоко (товар) лежит в «Молочных» напрямую, ручная строка «Сыры» — в подкатегории.
+        self.assertEqual(brief(drill), [("category", 2, D("3.00")), ("category", 3, D("2.00"))])
+
+    def test_line_without_product_is_no_product_by_generic_and_product(self):
+        for group_by in ("generic", "product"):
+            block = self.block(group_by=group_by)
+            self.assertEqual(
+                [(item.kind, item.amount) for item in block.items],
+                [(group_by, D("3.00")), ("unmatched", D("1.00")), ("no_product", D("7.00"))], group_by,
+            )
+            self.assertIsNone(block.items[-1].name)
+
+    def test_category_filter_keeps_manual_lines_inside_and_generic_filter_drops_them(self):
+        block = self.block(group_by="generic", category=1)
+        self.assertEqual(brief(block), [("generic", 100, D("3.00")), ("no_product", None, D("7.00"))])
+        self.assertEqual(block.receipts_count, 3)
+        self.assertEqual(brief(self.block(group_by="product", generic=100)), [("product", 10, D("3.00"))])
+
+    def test_receipt_without_store_is_no_store(self):
+        block = self.block(group_by="store")
+        self.assertEqual(brief(block), [("store", 1, D("3.00")), ("no_store", None, D("8.00"))])
+        self.assertEqual(block.items[-1].receipts_count, 3)
+        self.assertIsNone(block.items[-1].name)
+
+
 class FoldTests(SimpleTestCase):
     def items(self, *amounts):
         return [Item("product", pk, f"Товар {pk}", D(amount), 1, 1) for pk, amount in enumerate(amounts, 1)]

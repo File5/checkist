@@ -266,8 +266,8 @@ try {
     const { csrf_token: _answerToken, ...signedIn } = answer
     assert.deepEqual(read, signedIn, `${name}: «Я» of the sign-in and of /api/me/ differ`)
     assert.deepEqual(read, {
-      mode: 'accounts', user: { id: seed.users[role].id, username: seed.users[role].username, is_staff: false },
-      permissions: { moderate_catalog: role === 'moderator' },
+      mode: 'accounts', user: { id: seed.users[role].id, username: seed.users[role].username, display_name: seed.users[role].username, is_staff: false },
+      household: null, permissions: { moderate_catalog: role === 'moderator' },
     }, `${name}: unexpected «Я»`)
     me[name] = read
   }

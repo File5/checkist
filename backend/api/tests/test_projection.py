@@ -40,13 +40,13 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures/auth"
 PRIVATE_POINT_KEYS = ("observed_at", "quantity", "discount_amount", "receipt_id", "position")
 POINT_KEYS = {
     "observed_at", "purchased_on", "store", "currency", "quantity", "unit", "list_unit_price", "paid_unit_price",
-    "discount_amount", "normalized_price", "normalized_unit", "comparable", "receipt_id", "position", "own",
+    "discount_amount", "normalized_price", "normalized_unit", "comparable", "receipt_id", "position", "own", "manual",
 }
 PRODUCT_KEYS = {
     "id", "name", "brand", "model", "gtin", "package", "generic", "category", "last_observed_at", "prices",
 }
 LAST_PRICE_KEYS = {
-    "paid_unit_price", "normalized_price", "normalized_unit", "comparable", "purchased_on", "store_id",
+    "paid_unit_price", "normalized_price", "normalized_unit", "comparable", "purchased_on", "store_id", "manual",
 }
 EMPTY_PAGE = {"count": 0, "page": 1, "page_size": 50, "pages": 0, "results": []}
 PAGE_OUT_OF_RANGE = "page_out_of_range"
@@ -440,12 +440,30 @@ SKIPPED_ROUTES = {
         ("auth-login", "auth-logout", "auth-password", "recognition-cancel", "recognition-retry",
          "recognition-image-confirm", "product-merges-detect", "product-merges-confirm", "product-merges-cancel",
          "product-merges-exclude", "product-classifications-confirm-many", "product-classifications-confirm",
-         "product-classifications-reject"),
+         "product-classifications-reject", "receipts-manual-parse", "receipts-hide", "receipts-unhide",
+         "family-members", "family-member", "family-head", "family-leave", "family-invites", "family-invite",
+         "family-join", "recurring-decision", "recurring-pay", "recurring-suggestion-accept", "recurring-suggestion-dismiss",
+         "store-merges-merge", "store-merges-dismiss", "family-ai", "family-new-invites", "family-new-invite",
+         "auth-new-family", "auth-new-family-check", "statements-save", "statements-goal", "goal-contributions",
+         "push-subscribe", "push-unsubscribe", "push-test", "goal-reconcile"),
         "только POST",
     ),
+    "recurring-payment": "регулярный платёж семьи или пользователя; id чеков в нём нет",
+    "statements-rule": "только PATCH и DELETE",
+    "goal-contribution": "только PATCH и DELETE",
+    "goal": "цель семьи или пользователя; id чеков в ней нет",
+    "statements-detail": "черновик выписки своего пользователя: receipt_id и duplicate_of — его же траты",
+    "receipts-manual-parse-detail": "запрос «Трата словами» своего пользователя; id чеков в нём нет",
+    "family": "только в accounts (в local_single — 404); id чеков в ответе нет",
+    "budget-limit": "лимит семьи или пользователя; id чеков в нём нет",
+    "api-category-icon": "значок общей категории; id чеков в ответе нет",
+    "income": "доход, видимый автору и главному; id чеков в нём нет",
+    "insights-detail": "запрос к ИИ своего пользователя (чужой — 404); id чеков в нём нет",
     **dict.fromkeys(
         ("api-not-found", "recognition-not-found", "receipts-not-found", "product-merges-not-found",
-         "product-classifications-not-found", "stats-not-found"),
+         "product-classifications-not-found", "stats-not-found", "budget-not-found", "export-not-found",
+         "family-not-found", "recurring-not-found", "store-merges-not-found", "statements-not-found",
+         "incomes-not-found", "goals-not-found", "push-not-found", "insights-not-found"),
         "ответ 404 без данных",
     ),
     **dict.fromkeys(
@@ -505,18 +523,30 @@ class NoForeignReceiptIdTests(ProjectionMixin, TestCase):
     def paths(self, receipts, recognition):
         """Адреса обхода: каталог и цены целиком, свои чеки и распознавание, статистика, слияния."""
         paths = [
-            "/api/me/", "/api/auth/csrf/",
+            "/api/me/", "/api/me/settings/", "/api/auth/csrf/",
             "/api/countries/", "/api/countries/?all=1", "/api/stores/", "/api/brands/", "/api/categories/",
             "/api/generic-products/", "/api/products/", "/api/products/?ordering=-last_observed_at",
-            "/api/receipts/", "/api/receipts/?ordering=purchased_at",
+            "/api/receipts/", "/api/receipts/?ordering=purchased_at", "/api/receipts/manual/",
+            "/api/receipts/manual/suggest/", "/api/receipts/manual/suggest/?q=пицца", "/api/store-merges/",
             "/api/recognition/csrf/", "/api/recognition/photos/", "/api/recognition/jobs/",
             "/api/recognition/receipt-images/",
             "/api/stats/spending/", "/api/stats/spending/?group_by=product", "/api/stats/spending/?group_by=store",
             "/api/stats/receipts/series/", f"/api/stats/receipts/compare/?{PERIODS}",
+            "/api/stats/trends/monthly/", "/api/stats/trends/category/", "/api/stats/trends/prices/", "/api/stats/trends/limits/",
+            "/api/stats/trends/range/", "/api/stats/trends/monthly/?from=2026-01&to=2026-09",
             "/api/product-merges/", "/api/product-classifications/", "/api/product-classifications/status/",
-            "/api/product-classifications/runs/",
+            "/api/product-classifications/runs/", "/api/budget/limits/", "/api/budget/limits/history/", "/api/budget/month/",
+            "/api/dashboard/",
+            "/api/dashboard/?month=2026-06", "/api/export/",
+            "/api/export/?include=receipts,lines,media,stores,summary", "/api/recurring/",
+            "/api/statements/", "/api/statements/rules/",
+            "/api/incomes/", "/api/incomes/summary/", "/api/incomes/categories/", "/api/stats/trends/incomes/", "/api/stats/incomes/",
+            "/api/goals/", "/api/push/", "/api/insights/review/", "/api/insights/ask/",
         ]
         paths += [f"/api/categories/{pk}/" for pk in Category.objects.values_list("pk", flat=True)]
+        months = sorted({day.strftime("%Y-%m") for day in Receipt.objects.values_list("purchased_on", flat=True)})
+        paths += [f"/api/stats/category-spends/?category={pk}&month={month}"
+                  for pk in Category.objects.values_list("pk", flat=True) for month in months or ["2026-06"]]
         for pk in GenericProduct.objects.values_list("pk", flat=True):
             paths += [f"/api/generic-products/{pk}/", f"/api/generic-products/{pk}/comparison/"]
         for pk in visible(Product.objects.order_by("pk")).values_list("pk", flat=True):
@@ -548,6 +578,8 @@ class NoForeignReceiptIdTests(ProjectionMixin, TestCase):
                 self.assertLessEqual({pk for pk in ids if pk is not None}, receipts)
                 links = {int(pk) for pk in RECEIPT_LINK.findall(response.content.decode("utf-8"))}
                 self.assertLessEqual(links, receipts)
+                if path.startswith("/api/dashboard/"):  # последние траты несут id чека в «id»
+                    self.assertLessEqual({row["id"] for row in response.json()["recent"]}, receipts)
                 if path.startswith("/api/receipts/?") or path == "/api/receipts/":
                     self.assertEqual({row["id"] for row in response.json()["results"]}, receipts)
         return routes, found

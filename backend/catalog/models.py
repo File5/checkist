@@ -5,6 +5,29 @@ from django.db.models.functions import Lower
 from catalog.units import BaseUnit, Unit
 
 
+class CategoryIcon(models.TextChoices):
+    """Pictures of spend rows (2026-10-13); the client draws each key (frontend/src/components/Icon.tsx)."""
+
+    CART = "cart", "Тележка"
+    BUS = "bus", "Автобус"
+    CAR = "car", "Машина"
+    DINING = "dining", "Вилка и нож"
+    HOME = "home", "Дом"
+    PHONE = "phone", "Телефон"
+    HEART = "heart", "Сердце"
+    SHIRT = "shirt", "Футболка"
+    TICKET = "ticket", "Билет"
+    GIFT = "gift", "Подарок"
+    BABY = "baby", "Мишка"
+    BOX = "box", "Коробка"
+    BANK = "bank", "Банк"
+    BEAUTY = "beauty", "Ножницы"
+    PLANE = "plane", "Самолёт"
+    BOOK = "book", "Книга"
+    PAW = "paw", "Лапа"
+    TAG = "tag", "Ярлык"
+
+
 class Category(models.Model):
     """Category tree as an adjacency list."""
 
@@ -12,6 +35,8 @@ class Category(models.Model):
     parent = models.ForeignKey(
         "self", null=True, blank=True, on_delete=models.PROTECT, related_name="children",
     )
+    # Empty — the icon of the nearest ancestor that has one (api.common.CategoryTree.icon).
+    icon = models.CharField(max_length=16, blank=True, default="", choices=CategoryIcon.choices)
 
     class Meta:
         verbose_name_plural = "categories"
@@ -76,6 +101,9 @@ class Product(models.Model):
         max_length=8, choices=Unit.choices, blank=True, default="",
     )
     attributes = models.JSONField(default=dict, blank=True)
+    # Empty — a shared product. «user:<id>» — made from a named purchase of that person's manual spend
+    # (receipts.manual): its name is private text, so namesakes of different people live side by side.
+    scope = models.CharField(max_length=32, blank=True, default="")
 
     class Meta:
         # Decisions about the shared catalog: product merges and suggested categories.
@@ -85,7 +113,8 @@ class Product(models.Model):
                 fields=["gtin"], condition=~Q(gtin=""), name="catalog_product_gtin_uniq",
             ),
             models.UniqueConstraint(
-                fields=["brand", "name", "package_quantity", "package_unit"],
+                # scope first: the admin's message still ends with «Package unit уже существует».
+                fields=["scope", "brand", "name", "package_quantity", "package_unit"],
                 nulls_distinct=False, name="catalog_product_brand_name_package_uniq",
             ),
             models.CheckConstraint(

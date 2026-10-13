@@ -13,7 +13,7 @@ Views read neither ``request.user`` nor the setting: they take ``request_user``,
 import ipaddress
 
 from django.conf import settings
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q, Subquery
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import NotAuthenticated
 from rest_framework.permissions import SAFE_METHODS, BasePermission
@@ -25,6 +25,8 @@ from recognition.auth import enforce_csrf
 ACCOUNTS = "accounts"
 LOCAL_SINGLE = "local_single"
 MODERATE_CATALOG = "catalog.moderate_catalog"
+# A photo (and its jobs, crops, MEDIA) is dated by its upload day (``photos_q``).
+UPLOADED = "created_at__date"
 
 
 def mode():
@@ -52,17 +54,113 @@ def request_user(request):
     return user
 
 
-def owner_q(request, prefix=""):
-    """owner_q(request, prefix="") -> Q; rows of the request's user.
+def owner_q(request, prefix="", since=None):
+    """owner_q(request, prefix="", since=None) -> Q; rows of the request's user.
 
     ``prefix`` is the path to the model with ``owner``: ``"receipt__"`` from a line,
     ``"photo__"`` from a job or a receipt image, ``"receipts__"`` from a store.
     ``local_single`` filters by the username through a JOIN, without a query for the user.
     An anonymous request in ``accounts`` matches nothing: ``owner`` is never NULL.
+
+    ``accounts``: the rows of the user and of every member of the user's household
+    (``accounts.Membership``); without a household — only the user's own rows. One
+    subquery, no separate query for the household.
+
+    ``since`` — the date of a row, relative to ``prefix`` (``"purchased_on"`` of a receipt,
+    ``"created_at__date"`` of a photo, ``"received_on"`` of an income): a member whose head set
+    ``Membership.visible_from`` sees rows of the other members dated from that month only; own
+    rows always. The head and a member without ``visible_from`` see everything, as before.
     """
     if mode() == LOCAL_SINGLE:
         return Q(**{f"{prefix}owner__username": LOCAL_USERNAME})
-    return Q(**{f"{prefix}owner_id": request.user.pk})
+    pk = request.user.pk
+    own = Q(**{f"{prefix}owner_id": pk})
+    if pk is None:
+        return own
+    from accounts.models import Membership
+
+    family = Q(**{f"{prefix}owner_id__in": Membership.objects.filter(
+        household_id__in=Membership.objects.filter(user_id=pk).values("household_id")).values("user_id")})
+    if since:
+        # Два несвязанных подзапроса (PostgreSQL считает их один раз): отдельного запроса нет.
+        cutoff = Membership.objects.filter(user_id=pk, role=Membership.Role.MEMBER,
+                                           visible_from__isnull=False).values("visible_from")
+        family &= Q(~Exists(cutoff)) | Q(**{f"{prefix}{since}__gte": Subquery(cutoff)})
+    return own | family
+
+
+def is_head(request):
+    """is_head(request) -> bool; may hide and show payments of the household.
+
+    ``local_single``: always (one user). ``accounts``: the ``head`` member of the household;
+    a user without a household is the head of their own data; anonymous — ``False``.
+    """
+    if mode() == LOCAL_SINGLE:
+        return True
+    pk = request.user.pk
+    if pk is None:
+        return False
+    from accounts.models import Membership
+
+    role = Membership.objects.filter(user_id=pk).values_list("role", flat=True).first()
+    return role is None or role == Membership.Role.HEAD
+
+
+def visible_receipts_q(request, prefix="", include_hidden=False):
+    """visible_receipts_q(request, prefix="", include_hidden=False) -> Q; receipts the request reads.
+
+    ``owner_q`` without hidden payments (``Receipt.hidden``): every receipt and line read path
+    (lists, details, dashboard, stats, export, manual defaults) goes through here. Receipts of the
+    other members are cut at the request's ``visible_from`` by the purchase date (``owner_q``). ``prefix``
+    is the path to ``Receipt`` (``"receipt__"`` from a line). ``include_hidden=True`` keeps
+    hidden receipts only for the head (``is_head``): the receipts list with ``?hidden=1`` and
+    the receipt detail; totals never pass it, so a hidden payment counts for nobody.
+    """
+    condition = owner_q(request, prefix, since="purchased_on")
+    shown = Q(**{f"{prefix}hidden": False})
+    if include_hidden:
+        # «Запрос — главный» подзапросом, без отдельного запроса: число запросов карточки прежнее.
+        if mode() == LOCAL_SINGLE:
+            return condition
+        pk = request.user.pk
+        if pk is not None:
+            from accounts.models import Membership
+
+            mine = Membership.objects.filter(user_id=pk)
+            head = ~Exists(mine) | Exists(mine.filter(role=Membership.Role.HEAD))
+            return condition & (shown | Q(head))
+    return condition & shown
+
+
+def photos_q(request, prefix=""):
+    """photos_q(request, prefix="") -> Q; source photos the request reads, and through them jobs, crops and MEDIA.
+
+    ``prefix`` is the path to ``SourcePhoto``: ``"photo__"`` from a job or a receipt image. A photo is read like
+    a row of the family dated by its upload day (``owner_q(..., since=UPLOADED)``) and only while no crop of it
+    leads to a receipt the request does not see (``visible_receipts_q`` with ``include_hidden=True``: a payment
+    hidden by the head, a purchase before ``visible_from``): the picture of a receipt is never shown where the
+    receipt is not, its author included; the head sees everything. All crops of one photo go together. One
+    correlated subquery, no separate query.
+    """
+    from receipts.models import Receipt
+    from recognition.models import ReceiptImage
+
+    visible = Receipt.objects.filter(visible_receipts_q(request, include_hidden=True), pk=OuterRef("receipt_id"))
+    photo = f"{prefix.removesuffix('__')}_id" if prefix else "pk"
+    unseen = ReceiptImage.objects.filter(photo_id=OuterRef(photo), receipt__isnull=False).filter(~Exists(visible))
+    return owner_q(request, prefix, since=UPLOADED) & ~Exists(unseen)
+
+
+def household(request):
+    """household(request) -> Household | None; the household of the request's user.
+
+    ``local_single`` and an anonymous request: ``None``.
+    """
+    if mode() == LOCAL_SINGLE or request.user.pk is None:
+        return None
+    from accounts.models import Household
+
+    return Household.objects.filter(memberships__user_id=request.user.pk).first()
 
 
 def is_moderator(request):

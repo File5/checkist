@@ -14,7 +14,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from api.tests.accounts_helpers import (
-    MISSING, NOT_FOUND, TwoUsers, accounts_mode, local_single_mode, signed_in,
+    MISSING, NOT_FOUND, TwoUsers, accounts_mode, allow_ai, local_single_mode, signed_in,
 )
 from api.tests.factories import make_product, make_receipt
 from api.tests.test_recognition_api import upload
@@ -178,6 +178,8 @@ class RecognitionIsolationTests(IsolationMixin, TestCase):
     @classmethod
     def setUpTestData(cls):
         super().setUpTestData()
+        # Загрузка и повтор отправляют фото модели: без семьи — только администратору сервера.
+        allow_ai(cls.first, cls.second)
         store, product = samples.lidl_store(), milk()
         cls.rows = {}
         for account in (cls.first, cls.second):
@@ -563,6 +565,8 @@ class QueryCountTests(IsolationMixin, TestCase):
     """
 
     SESSION_AND_USER = 2
+    # Суммы в основной валюте семьи (2026-10-13): её запрос и курсы чеков другой валюты (здесь EUR).
+    IN_BASE = 2
 
     def build(self, owner, other):
         store, product = samples.lidl_store(), milk()
@@ -585,8 +589,9 @@ class QueryCountTests(IsolationMixin, TestCase):
     def measure(self, client, own, extra):
         receipt = f"/api/receipts/{own['receipt'].pk}/"
         # Путь, число запросов, число своих строк: чужие пять в счёт и на страницу не попадают.
+        # Список чеков: count + страница + дерево категорий (строки страницы с категорией) + основная валюта и курсы.
         lists = (
-            ("/api/receipts/", 2, 5), (receipt + "lines/", 3, 1), (receipt + "discounts/", 3, 1),
+            ("/api/receipts/", 3 + self.IN_BASE, 5), (receipt + "lines/", 3, 1), (receipt + "discounts/", 3, 1),
             (receipt + "taxes/", 3, 1), ("/api/recognition/photos/", 2, 5),
             ("/api/recognition/jobs/", 4, 5),  # count + page + executing lease + worker slot
             ("/api/recognition/receipt-images/", 2, 5),
@@ -599,11 +604,12 @@ class QueryCountTests(IsolationMixin, TestCase):
                 self.assertEqual(response.json()["count"], rows)
                 self.assertEqual(len(response.json()["results"]), min(rows, size))
         details = (
-            (receipt, 1), (f"/api/recognition/photos/{own['photo'].pk}/", 1),
+            (receipt, 1 + self.IN_BASE), (f"/api/recognition/photos/{own['photo'].pk}/", 1),
             (f"/api/recognition/jobs/{own['job'].pk}/", 4),  # job + items + executor
             (f"/api/recognition/receipt-images/{own['image'].pk}/", 1),
             # spending: дерево категорий + три запроса расчёта; compare: расчёт + названия товаров.
-            (SPENDING, 4), (f"{SPENDING}?group_by=product", 3), (SERIES, 3), (f"{COMPARE}?{PERIODS}", 3),
+            (SPENDING, 4 + self.IN_BASE), (f"{SPENDING}?group_by=product", 3 + self.IN_BASE),
+            (SERIES, 3 + self.IN_BASE), (f"{COMPARE}?{PERIODS}", 3 + self.IN_BASE),
         )
         for path, queries in details:
             with self.subTest(path=path), self.assertNumQueries(queries + extra):

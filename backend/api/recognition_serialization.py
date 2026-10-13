@@ -4,15 +4,17 @@ from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
 from django.db import connection
-from django.db.models import Count, Exists, IntegerField, OuterRef, Q, Subquery, Value
+from django.db.models import Count, Exists, F, IntegerField, OuterRef, Q, Subquery, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
-from accounts.access import owner_q
+from accounts.access import photos_q, visible_receipts_q
+from accounts.people import display_name
 from api.common import amount, iso_date, percent, price, quantity, store_object, utc_datetime
 from receipts.decimal_math import price_context
 from receipts.models import Receipt, ReceiptLine
 from recognition.models import ProcessingJob, ReceiptImage, SourcePhoto
+from recognition.previews import variant_url
 from recognition.queue import WORKER_LOCK
 from recognition.statuses import EXECUTING_JOB_STATUSES
 
@@ -135,6 +137,18 @@ def media_url(file):
     return file.url if file else None
 
 
+def download_url(photo):
+    """The file the person gave: the PDF of a PDF upload, otherwise the original image; as an attachment."""
+    file = photo.document_file or photo.original_file
+    return file.url + "?download=1" if file else None
+
+
+def document_object(photo):
+    if not photo.document_file:
+        return None
+    return {"content_type": "application/pdf", "bytes": photo.document_bytes, "pages": photo.document_pages}
+
+
 def related_count(queryset, group):
     return Coalesce(Subquery(queryset.order_by().values(group).annotate(n=Count("pk")).values("n")[:1]),
                     Value(0), output_field=IntegerField())
@@ -154,7 +168,7 @@ def annotate_photos(photos):
 
 
 def photos_queryset(request):
-    return annotate_photos(SourcePhoto.objects.filter(owner_q(request)))
+    return annotate_photos(SourcePhoto.objects.filter(photos_q(request)))
 
 
 def photo_object(photo):
@@ -165,6 +179,9 @@ def photo_object(photo):
         "width": photo.width, "height": photo.height,
         "original_url": media_url(photo.original_file), "preview_url": media_url(photo.upright_file),
         "latest_job_id": photo.latest_job_id, "receipt_images_count": photo.image_count,
+        "display_url": variant_url(photo.original_file.name, "display"),
+        "thumb_url": variant_url(photo.original_file.name, "thumb"),
+        "download_url": download_url(photo), "document": document_object(photo),
     }
 
 
@@ -212,15 +229,18 @@ def annotate_jobs(jobs):
                          .filter(REVIEW_IMAGES)),
         has_active_sibling=Exists(ProcessingJob.objects.filter(photo_id=OuterRef("photo_id"),
                                   status__in=["queued", "running", "cancel_requested"])),
+        owner_username=F("photo__owner__username"),
+        # The same join as the owner: the compressed copies of the source photo cost no query of their own.
+        photo_original_name=F("photo__original_file"),
     )
 
 
 def jobs_queryset(request):
-    return annotate_jobs(ProcessingJob.objects.filter(owner_q(request, "photo__")))
+    return annotate_jobs(ProcessingJob.objects.filter(photos_q(request, "photo__")))
 
 
 def images_queryset(request):
-    return ReceiptImage.objects.filter(owner_q(request, "photo__"))
+    return ReceiptImage.objects.filter(photos_q(request, "photo__")).select_related("photo")
 
 
 def job_object(job, executor, *, items=None):
@@ -230,7 +250,7 @@ def job_object(job, executor, *, items=None):
         code = code if code in ISSUE_MESSAGES else "provider_error"
         error = {"code": code, "message": ISSUE_MESSAGES[code]}
     result = {
-        "id": job.pk, "photo_id": job.photo_id, "retry_of": job.retry_of_id,
+        "id": job.pk, "photo_id": job.photo_id, "retry_of": job.retry_of_id, "owner": job.owner_username,
         "status": job.status, "stage": job.stage, "version": job.version,
         **{key: utc_datetime(getattr(job, key)) for key in
            ("created_at", "started_at", "finished_at", "cancel_requested_at", "heartbeat_at")},
@@ -245,6 +265,9 @@ def job_object(job, executor, *, items=None):
                     "can_retry": job.status in {"cancelled", "partial_succeeded", "failed"}
                     and not job.has_active_sibling},
         "items_count": job.items_count,
+        # Copies of the source photo, as `display_url`/`thumb_url` of Photo: the miniature of a row of the jobs list.
+        "display_url": variant_url(job.photo_original_name, "display"),
+        "thumb_url": variant_url(job.photo_original_name, "thumb"),
     }
     if items is not None:
         result["items"] = [{"image_id": image.pk, "position": image.position, "status": image.status,
@@ -369,18 +392,24 @@ def image_object(image, *, detail=False):
             image.issues, status=image.status, normalized=normalized),
         "normalized_result": normalized_public(image.normalized_result) if image.status == "needs_review" else None,
         "confirmed_at": confirmed_at(confirmed),
+        "display_url": variant_url(image.file.name, "display"), "thumb_url": variant_url(image.file.name, "thumb"),
+        "download_url": download_url(image.photo),
     }
     if detail:
         result.update(quad=quad, rotation_degrees=rotation)
     return result
 
 
-def receipts_queryset(request):
+def receipts_queryset(request, include_hidden=False):
+    """Видимые запросу чеки (``visible_receipts_q``) с полями списка и карточки."""
     images = ReceiptImage.objects.filter(receipt_id=OuterRef("pk"))
     lines = ReceiptLine.objects.filter(receipt_id=OuterRef("pk"))
-    return Receipt.objects.filter(owner_q(request)).select_related("store__merchant").annotate(
+    return Receipt.objects.filter(visible_receipts_q(request, include_hidden=include_hidden)).select_related(
+        "store__merchant", "owner").annotate(
         lines_count=related_count(lines, "receipt_id"),
-        unmatched_products_count=related_count(lines.filter(kind="product", product__isnull=True), "receipt_id"),
+        # Строка ручной траты с категорией не «несопоставленный товар»: она вписана суммой в категорию.
+        unmatched_products_count=related_count(
+            lines.filter(kind="product", product__isnull=True, category__isnull=True), "receipt_id"),
         image_count=related_count(images, "receipt_id"),
         preview_file=Subquery(images.order_by("-created_at", "-id").values("file")[:1]),
         has_review=Exists(images.filter(REVIEW_IMAGES)),
@@ -390,15 +419,20 @@ def receipts_queryset(request):
 def receipt_object(receipt):
     base = f"/api/receipts/{receipt.pk}"
     return {
-        "id": receipt.pk, "store": store_object(receipt.store), "currency": receipt.currency_id,
+        "id": receipt.pk, "owner": receipt.owner.get_username(), "owner_name": display_name(receipt.owner),
+        "source": receipt.source,
+        # null — «Без места»: только у траты, внесённой вручную.
+        "store": None if receipt.store_id is None else store_object(receipt.store), "currency": receipt.currency_id,
         "operation": receipt.operation, "purchased_on": iso_date(receipt.purchased_on),
         "purchased_at": utc_datetime(receipt.purchased_at), "total": amount(receipt.total),
         "discount_total": amount(receipt.discount_total), "prices_include_tax": receipt.prices_include_tax,
         "origin": "recognized" if receipt.image_count else "legacy/manual",
         "review_required": bool(receipt.has_review or receipt.unmatched_products_count),
         "lines_count": receipt.lines_count, "unmatched_products_count": receipt.unmatched_products_count,
-        "receipt_images_count": receipt.image_count,
+        "receipt_images_count": receipt.image_count, "note": receipt.note, "payment_method": receipt.payment_method,
+        "hidden": receipt.hidden, "hidden_at": utc_datetime(receipt.hidden_at),
         "preview_image_url": settings.MEDIA_URL + receipt.preview_file if receipt.preview_file else None,
+        "preview_thumb_url": variant_url(receipt.preview_file, "thumb"),
         "created_at": utc_datetime(receipt.created_at), "updated_at": utc_datetime(receipt.updated_at),
         "lines_url": base + "/lines/", "discounts_url": base + "/discounts/", "taxes_url": base + "/taxes/",
         "images_url": f"/api/recognition/receipt-images/?receipt={receipt.pk}",
@@ -421,6 +455,7 @@ def line_object(line):
         "quantity": quantity(line.quantity), "unit": line.unit, "unit_price": price(line.unit_price),
         "amount": amount(line.amount), "discount_amount": amount(line.discount_amount), "paid_amount": amount(paid),
         "product": {"id": line.product_id, "name": line.product.name} if line.product_id else None,
+        "category": {"id": line.category_id, "name": line.category.name} if line.category_id else None,
         "matching_status": "matched" if line.product_id else "unmatched",
         "tax_rate": tax_rate_object(line.tax_rate), "tax_code": line.tax_code, "tax_amount": amount(line.tax_amount),
         "is_excise": line.is_excise, "is_marked": line.is_marked,

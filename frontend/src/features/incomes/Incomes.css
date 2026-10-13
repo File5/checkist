@@ -1,0 +1,52 @@
+/* «Доходы» (2026-10-13): строка дохода на «Главной» и экран /incomes в языке артефакта — карточки .ck-panel, строки
+   .ck-list / .ck-row, главное действие залито --ck-primary. Цвета — только токены, размеры текста — шкала --ck-text-*;
+   телефон (≤ 540 px) — одна колонка без прокрутки вбок. */
+
+/* «Доход · Потрачено · Отложено»: три числа в ряд, подпись над числом; без дохода — одна строка-просьба. */
+.inc-summary { gap: 8px; padding-block: 16px; }
+.inc-summary-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.inc-summary-item { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.inc-summary-item dt { color: var(--ck-text-muted); font-size: var(--ck-text-xs); font-weight: 600; }
+.inc-summary-item dd { margin: 0; font-size: var(--ck-text-sm); font-weight: 800; white-space: nowrap; }
+.inc-summary-item:first-child dd { color: var(--ck-success-text); }
+.inc-summary-note { color: var(--ck-text-muted); font-weight: 600; }
+.inc-summary-link, .inc-summary-empty a { align-self: flex-start; color: var(--ck-link); font-size: var(--ck-text-sm); font-weight: 700; text-decoration: none; }
+.inc-summary-link:hover, .inc-summary-empty a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.inc-summary-empty { display: block; margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-sm); font-weight: 600; }
+@media (max-width: 540px) {
+  /* Three figures in a third of a phone each: the note of the percent goes under its amount. */
+  .inc-summary-note { display: block; }
+}
+
+/* The page: the month with its total and the records, then the categories. Low controls as in «Статистика»
+   (feature/stats-compact): headings 18 px, the steps of a month 36 px, the actions 40 px, the chips 32 px. */
+.inc-page { max-width: 760px; }
+.inc-page .ck-panel-head { align-items: center; }
+.inc-page .ck-panel-head > h2 { font-size: var(--ck-text-lg); font-weight: 800; }
+.inc-months { display: flex; flex: none; gap: 8px; }
+.inc-months .ck-round { width: 36px; height: 36px; min-height: 36px; }
+.inc-total { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-sm); font-weight: 600; }
+.inc-total strong { color: var(--ck-success-text); font-size: var(--ck-text-xl); font-weight: 800; white-space: nowrap; }
+.inc-day { background: var(--ck-success-bg); color: var(--ck-success-text); font-size: var(--ck-text-base); font-variant-numeric: tabular-nums; }
+.inc-amount { color: var(--ck-success-text); }
+.inc-note { margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-sm); }
+.inc-notice { margin: 0; padding: 12px 16px; border-radius: var(--ck-radius-sm); background: var(--ck-info-bg); color: var(--ck-info-text); font-size: var(--ck-text-sm); font-weight: 600; }
+.inc-add { display: flex; align-items: center; justify-content: center; min-height: 40px; padding: 0 20px; border: 1px solid var(--ck-primary); border-radius: var(--ck-radius-button); background: var(--ck-primary); color: var(--ck-on-primary); font-weight: 800; text-decoration: none; white-space: nowrap; }
+.inc-add:hover { border-color: var(--ck-primary-hover); background: var(--ck-primary-hover); color: var(--ck-on-primary); }
+.inc-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.inc-chip { display: inline-flex; align-items: center; min-height: 32px; padding: 0 12px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-pill); font-size: var(--ck-text-xs); font-weight: 700; white-space: nowrap; }
+.inc-category-form { display: grid; gap: 8px; }
+.inc-category-form label { color: var(--ck-text-muted); font-size: var(--ck-text-sm); font-weight: 600; }
+.inc-category-row { display: flex; gap: 8px; min-width: 0; }
+.inc-category-row input { flex: 1; min-width: 0; min-height: 40px; padding: 0 14px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-surface); color: var(--ck-text); font-size: var(--ck-text-base); }
+.inc-category-row button { flex: none; min-height: 40px; padding: 0 16px; border-radius: var(--ck-radius-pill); }
+.inc-category-row button[aria-disabled="true"] { border-color: var(--ck-disabled-border); background: var(--ck-disabled-bg); color: var(--ck-disabled-text); cursor: default; }
+.inc-failure { margin: 0; color: var(--ck-error-text); font-size: var(--ck-text-sm); font-weight: 600; }
+
+/* Регулярный доход на «Главной» (features/recurring): «Зарплата 650 000 ₸ — внести?», сумма правится в поле. */
+.inc-due-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 12px; padding-block: 12px; }
+.inc-due-name { min-width: 0; font-size: var(--ck-text-sm); font-weight: 800; overflow-wrap: anywhere; }
+.inc-due-form { display: flex; grid-column: 1 / -1; gap: 8px; min-width: 0; }
+.inc-due-form input { flex: 1; width: 100%; min-width: 0; min-height: 48px; padding: 0 14px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-surface); color: var(--ck-text); font-size: var(--ck-text-base); font-weight: 700; font-variant-numeric: tabular-nums; }
+.inc-due-form button { flex: none; min-height: 48px; }
+.inc-due-form button[aria-disabled="true"] { border-color: var(--ck-disabled-border); background: var(--ck-disabled-bg); color: var(--ck-disabled-text); cursor: default; }

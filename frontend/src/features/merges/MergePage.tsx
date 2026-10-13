@@ -71,7 +71,7 @@ function MergeScreen({ groupId, returnTo }: MergePageProps) {
   const run = (action: Parameters<typeof actions.run>[0]) => { focus.remember(); void actions.run(action) }
   const missing = state.kind === 'error' && state.error.reason === 'not_found'
   return <div className="ck-merge">
-    <div className="ck-merge-actions"><Link className="action-link" to={returnTo ?? '/catalog/merges'}>К списку групп</Link></div>
+    <div className="ck-merge-actions ck-merge-nav"><Link className="action-link" to={returnTo ?? '/catalog/merges'}>К списку групп</Link></div>
     <MergeBlock title={numbered('Группа', groupId)} id="merge-group-title" state={state} retry={request.refresh}
       recovery={missing ? <Link className="action-link" to="/catalog/merges">К списку групп</Link> : undefined}>
       {(data) => <MergeSummary group={data} />}

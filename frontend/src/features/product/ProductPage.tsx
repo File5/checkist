@@ -20,6 +20,7 @@ import { MergedProductHint, ProductMergeNotice } from '../merges/MergeMarks'
 import { useProductMergeLookup } from '../merges/marks'
 import { ProductClassificationNotice } from '../classification/ClassificationMarks'
 import { markFor, useProductClassificationMarks } from '../classification/marks'
+import ResponsiveFilters from '../../components/ResponsiveFilters'
 import './Product.css'
 
 function FilterForm({ query, product, stores, selectedStore, failures, apply, reset, onStores }: {
@@ -60,10 +61,14 @@ function FilterForm({ query, product, stores, selectedStore, failures, apply, re
     <section className="product-panel" aria-labelledby="product-filters-heading">
       <h2 id="product-filters-heading">Фильтры истории и сводки</h2>
       {!product && <p className="product-note">Страны и валюты появятся после загрузки карточки товара. Выбранные в ссылке значения сохранены.</p>}
+      {/* A phone: the form opens from «Фильтры (N)» in a sheet; the period of «График цен» follows it as before. */}
+      <ResponsiveFilters count={[query.store, query.country, query.currency, query.date_from, query.date_to].filter((value) => value !== undefined && value !== '').length} title="Фильтры истории и сводки">
       <form ref={formRef} noValidate onSubmit={(event) => {
         event.preventDefault()
         const result = validateFilters(form.draft)
         if (Object.keys(result.errors).length) {
+          // On a phone the form is in a sheet that a submit closes: a refused submit stays there, next to its messages.
+          event.stopPropagation()
           setForm({ ...form, errors: result.errors })
           const field = Object.keys(result.errors)[0]
           formRef.current?.querySelector<HTMLElement>(`#product-${field}`)?.focus()
@@ -81,6 +86,7 @@ function FilterForm({ query, product, stores, selectedStore, failures, apply, re
           <button type="button" className="product-secondary" onClick={() => { setForm({ source: '', draft: filterDraft({ page: 1 }), errors: {} }); reset() }}>Сбросить фильтры</button>
         </div>
       </form>
+      </ResponsiveFilters>
     </section>
   )
 }
@@ -109,10 +115,10 @@ function ProductScreen({ productId, query, returnTo }: ProductPageProps) {
   const failures = [historyRequest.state, summaryRequest.state].filter((state): state is ApiFailure => state.kind === 'error')
   // Store-grouped summary already includes full stores beyond the card's 50-item limit.
   const summaryStores = summaryRequest.state.kind === 'ok' && summaryRequest.state.data.group_by === 'store'
-    ? summaryRequest.state.data.groups.map((group) => group.store) : []
+    ? summaryRequest.state.data.groups.flatMap((group) => group.store ? [group.store] : []) : []
   const stores = mergeStores(mergeStores(directoryStores, product?.stores ?? []), summaryStores)
   const selectedStore = historyRequest.state.kind === 'ok'
-    ? historyRequest.state.data.results.find((point) => point.store.id === query.store)?.store : undefined
+    ? historyRequest.state.data.results.find((point) => point.store?.id === query.store)?.store ?? undefined : undefined
   const missing = productRequest.state.kind === 'error' && productRequest.state.reason === 'not_found'
   // Independent of the card: a refusal of the local API leaves the card and «не найден» as they were.
   const merges = useProductMergeLookup(productId)
@@ -150,7 +156,8 @@ function ProductScreen({ productId, query, returnTo }: ProductPageProps) {
       </section>
       {!missing && <>
         <aside className="product-limitations" aria-label="Ограничения данных о ценах">
-          <p>Это наблюдения покупок из чеков, а не текущие цены магазинов. Скидка всего чека не распределена по товарам. Налоговая база цен не указана.</p>
+          <p>Это наблюдения покупок из чеков, а не текущие цены магазинов. Скидка всего чека не распределена по товарам. Налоговая база цен не указана.
+            Цена с пометкой «вручную» внесена человеком в трате без чека.</p>
           <p>Сопоставимость обозначает совместимость единиц; она не подтверждает одинаковую налоговую базу. Валюты и единицы не объединяются.</p>
         </aside>
         <FilterForm query={query} product={product} stores={stores} selectedStore={selectedStore}

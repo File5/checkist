@@ -1,21 +1,23 @@
-.spending-page { display: grid; gap: 24px; min-width: 0; }
-.spending-panel { display: grid; gap: 18px; min-width: 0; padding: 24px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius); background: var(--ck-surface); }
-.spending-panel form { display: grid; gap: 16px; min-width: 0; }
-.spending-panel h3 { margin: 0; font-size: 1.2rem; }
-.spending-chips, .spending-crumbs, .spending-store-list { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; padding: 0; margin: 0; }
-.spending-chips a { display: inline-flex; align-items: center; min-height: 44px; padding: 8px 14px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); color: var(--ck-link); text-decoration: none; }
-.spending-chips a:hover { background: var(--ck-surface-raised); }
-.spending-chips a[aria-current] { border-color: var(--ck-accent-text); background: var(--ck-accent); color: var(--ck-on-accent); font-weight: 600; }
+/* «Траты за период» (/stats) в языке артефакта (2026-10-13): панели — карточки на фоне страницы (поверхность, радиус
+   20, поле 20, тень темы, без рамки), заголовок карточки 18 / 800, итог валюты — сумма-герой, легенда — строки списка
+   с точкой, суммой справа и тонкой полосой доли. Цвета — только токены, размеры текста — только шкала --ck-text-*. */
+.spending-page { display: grid; gap: 16px; min-width: 0; }
+.spending-panel { display: grid; gap: 16px; min-width: 0; padding: 20px; border-radius: var(--ck-radius); background: var(--ck-surface); box-shadow: var(--ck-card-shadow); }
+.spending-panel > h2 { margin: 0; font-size: var(--ck-text-lg); font-weight: 800; line-height: 1.3; }
+/* The form stands in the panel on a wide screen and in the sheet on a phone: its rules do not lean on the panel. */
+.spending-form { display: grid; gap: 16px; min-width: 0; }
+.spending-presets, .spending-groupings { min-width: 0; }
 .spending-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .spending-field { display: grid; gap: 6px; min-width: 0; align-content: start; }
 .spending-field label, .spending-stores legend { font-weight: 600; }
-.spending-field input, .spending-field select { width: 100%; padding: 8px 12px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-surface); color: inherit; }
+.spending-field input, .spending-field select { width: 100%; min-height: 48px; padding: 10px 12px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-surface); color: inherit; }
 .spending-field [aria-invalid="true"] { border-color: var(--ck-error-border); }
-.spending-field-error { color: var(--ck-error-text); }
-.spending-note { color: var(--ck-text-muted); font-size: 0.9rem; }
-.spending-stores { display: grid; gap: 10px; min-width: 0; margin: 0; padding: 14px 16px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius); }
+.spending-field-error { margin: 0; color: var(--ck-error-text); font-size: var(--ck-text-xs); }
+.spending-note { margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-xs); line-height: 1.45; }
+.spending-stores { display: grid; gap: 10px; min-width: 0; margin: 0; padding: 14px 16px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius-sm); }
 .spending-stores legend { padding: 0 6px; }
-.spending-store-list { flex-direction: column; flex-wrap: nowrap; gap: 0; max-height: 264px; overflow-y: auto; overscroll-behavior: contain; }
+.spending-store-list { display: flex; flex-direction: column; flex-wrap: nowrap; gap: 0; max-height: 264px; margin: 0; padding: 0; overflow-y: auto; overscroll-behavior: contain; list-style: none; }
+.spending-store-list li + li { border-top: 1px solid var(--ck-divider); }
 .spending-store-list label { display: flex; align-items: flex-start; gap: 10px; min-height: 44px; padding: 10px 4px; cursor: pointer; }
 .spending-store-list input { flex: 0 0 auto; width: 20px; height: 20px; min-height: 0; margin: 2px 0 0; accent-color: var(--ck-brand); }
 .spending-store-list input:focus-visible { outline-offset: 2px; }
@@ -24,38 +26,54 @@
 .spending-actions { display: flex; flex-wrap: wrap; gap: 12px; }
 .spending-secondary { justify-self: start; background: var(--ck-surface); border-color: var(--ck-border-field); color: var(--ck-link); }
 .spending-secondary:hover:not(:disabled) { background: var(--ck-surface-raised); }
-.spending-path { display: grid; gap: 12px; justify-items: start; min-width: 0; }
-.spending-crumbs { align-items: center; gap: 4px 8px; }
+
+/* The way back in the drill-down: the crumbs in one quiet line, «На уровень выше» a pill with a chevron. */
+.spending-path { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; min-width: 0; }
+.spending-crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 0 8px; min-width: 0; margin: 0; padding: 0; list-style: none; font-size: var(--ck-text-sm); }
 .spending-crumbs li { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
 .spending-crumbs li + li::before { content: "/"; color: var(--ck-text-muted); }
-.spending-crumbs a { display: inline-flex; align-items: center; min-height: 44px; color: var(--ck-link); text-underline-offset: 3px; }
-.spending-crumbs [aria-current] { font-weight: 600; }
+.spending-crumbs a { display: inline-flex; align-items: center; min-height: 44px; color: var(--ck-link); font-weight: 600; text-underline-offset: 3px; }
+.spending-crumbs [aria-current] { font-weight: 700; }
+.spending-up { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px 0 14px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-pill); background: var(--ck-surface); color: var(--ck-link); font-weight: 700; text-decoration: none; white-space: nowrap; }
+.spending-up::before { content: ""; flex: none; width: 7px; height: 7px; border-bottom: 2px solid currentColor; border-left: 2px solid currentColor; transform: rotate(45deg); }
+.spending-up:hover { border-color: var(--ck-link); color: var(--ck-link-hover); }
 /* Always one line tall, so the text coming and going does not move the blocks below. */
-.spending-status { min-height: 1.5em; color: var(--ck-text-muted); font-size: 0.9rem; }
-.spending-blocks { display: grid; gap: 28px; min-width: 0; }
+.spending-status { min-height: 1.5em; margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-xs); }
+.spending-blocks { display: grid; gap: 20px; min-width: 0; }
 .spending-blocks[data-stale] .spending-currency { opacity: 0.55; }
+.spending-footnote { padding-top: 12px; border-top: 1px solid var(--ck-divider); }
 .spending-currency { display: grid; gap: 16px; min-width: 0; padding-top: 20px; border-top: 1px solid var(--ck-divider); }
-/* As many columns as fit 180px each: a total is not squeezed into a third of a narrow panel. */
-.spending-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 16px; margin: 0; }
-.spending-facts dt { color: var(--ck-text-muted); font-size: 0.9rem; }
-.spending-facts dd { margin: 4px 0 0; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.spending-total { font-size: 1.35rem; font-weight: 700; white-space: nowrap; }
-/* Long names wrap inside the name column; sums keep their own width. */
+
+/* The total of a currency: the label over the sum, like the hero card of «Главная»; the first block carries the
+   one hero sum of the screen (.ck-hero-figure), the others a large one. */
+.spending-summary { display: grid; gap: 4px; min-width: 0; }
+.spending-summary-label { margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-sm); font-weight: 600; }
+.spending-total { margin: 0; font-size: var(--ck-text-xl); font-weight: 800; line-height: 1.15; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.spending-summary-meta { margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-xs); }
+.spending-figure { white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* The legend of the ring as rows of a list: the caption repeats the heading of the panel and is kept for a screen
+   reader only; a name is the bold title of the row and opens the next level, a chevron says so. */
+.spending-currency .ck-pie-legend caption { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .spending-currency .ck-pie-legend { table-layout: auto; }
-.spending-currency .ck-pie-legend a { display: inline-block; padding-block: 6px; color: var(--ck-link); }
+.spending-currency .ck-pie-legend a { display: inline-block; padding-block: 0; color: var(--ck-text); font-weight: 700; text-decoration: none; }
+.spending-currency .ck-pie-legend a:hover { color: var(--ck-link); text-decoration: underline; text-underline-offset: 3px; }
 /* Under the composition of «Прочее»: loading, a refusal with its button, a remark. The status paragraph stays in
    every state; when there is nothing to say to the eye it is kept for a screen reader only and its row takes no room. */
-.spending-tail { display: grid; gap: 10px; justify-items: start; min-width: 0; color: var(--ck-text-muted); font-size: 0.9rem; }
+.spending-tail { display: grid; gap: 10px; justify-items: start; min-width: 0; color: var(--ck-text-muted); font-size: var(--ck-text-xs); }
 .spending-tail[data-kind="failed"] .spending-tail-status { color: var(--ck-error-text); }
 .spending-tail[data-kind="changed"] .spending-tail-status { color: var(--ck-warning-text); }
 .spending-tail[data-quiet] .spending-tail-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .spending-currency .ck-pie-child-status:has(.spending-tail[data-quiet]) td { padding: 0; border: 0; }
+/* An empty answer or a loading block inside a card is a quiet line, not a card in a card; a refusal keeps its frame. */
+.stats-panel .request-state:not(.request-state-error) { min-height: 0; padding: 4px 0; border-color: transparent; background: none; box-shadow: none; }
 @media (max-width: 540px) {
-  .spending-panel { padding: 16px; }
+  /* On a phone the filters are a row of chips beside «Фильтры» on the page itself; the heading stays for a screen reader. */
+  .spending-filters { padding: 0; background: none; box-shadow: none; }
+  .spending-filters > h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .spending-filters .ck-filters { margin-bottom: 0; }
   .spending-grid { grid-template-columns: minmax(0, 1fr); }
-  .spending-actions > *, .spending-chips li { flex: 1 1 140px; }
-  .spending-chips a { width: 100%; justify-content: center; text-align: center; }
-  .spending-currency .ck-pie-legend th, .spending-currency .ck-pie-legend td { padding-inline: 6px; }
+  .spending-actions > * { flex: 1 1 140px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .spending-currency .ck-pie-shape, .spending-currency .ck-pie-legend tbody tr { transition: none; }

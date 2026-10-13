@@ -60,7 +60,8 @@ class ReceiptsAPITests(TestCase):
         image.issues = [{"code": "operation_defaulted", "field": "/operation", "message": "PRIVATE"},
                         {"code": "optional_omitted", "field": "/fiscal/register_serial", "message": "PRIVATE"}]
         image.save()
-        with self.assertNumQueries(1):
+        # The receipt, the family's base currency and the rate of its day (EUR).
+        with self.assertNumQueries(3):
             header = self.client.get("/api/receipts/71/").json()
         self.assertFalse(header["review_required"])
         job = self.client.get(f"/api/recognition/jobs/{self.job.pk}/").json()
@@ -138,7 +139,9 @@ class ReceiptsAPITests(TestCase):
                 purchased_at=self.receipt.purchased_at + timedelta(minutes=i), purchased_on=self.receipt.purchased_on,
                 total="1", receipt_number=f"PRIVATE {i}")
         for size in (1, 5):
-            for path, queries in (("/api/receipts/", 2), ("/api/receipts/71/lines/", 3),
+            # The list reads the category tree once when its page has a line with a category (only receipt 71 here),
+            # the family's base currency and the rates of the page (EUR).
+            for path, queries in (("/api/receipts/", 4 if size == 1 else 5), ("/api/receipts/71/lines/", 3),
                                   ("/api/receipts/71/discounts/", 3), ("/api/receipts/71/taxes/", 3)):
                 with self.subTest(path=path, size=size), self.assertNumQueries(queries):
                     response = self.client.get(path + f"?page_size={size}")

@@ -1,17 +1,20 @@
 import { useId, useMemo } from 'react'
+import { excludedNote } from '../../lib/base-currency'
 import type { MouseEvent } from 'react'
 import type { SpendingCurrency, SpendingGroupBy } from '../../api/stats'
 import { spendingGroupings } from '../../api/stats'
 import RequestState from '../../components/RequestState'
 import { useLocalRequestFocus } from '../../components/useLocalRequestFocus'
 import { PieChart } from '../../lib/charts'
+import { currencySymbol } from '../../lib/money'
 import { Link } from '../../navigation'
 import type { SpendingQuery } from '../../navigation'
 import { PeriodText } from './period'
 import {
-  breadcrumbs, failureView, grouping, groupingCaptions, groupingHref, groupingLabels, hasFilters, needsAddressReset, resetHref, shownResult, upHref,
+  breadcrumbs, failureView, grouping, groupingCaptions, groupingHref, groupingShortLabels, hasFilters, needsAddressReset, resetHref, shownResult, upHref,
 } from './spending-state'
 import type { Shown, SpendingFailure, SpendingRequestState } from './spending-state'
+import './StatsBar.css'
 import { blockTail } from './spending-tail'
 import { blockView, tailSharesNote, unassignedHint } from './spending-view'
 import type { BlockView, TailView } from './spending-view'
@@ -58,8 +61,10 @@ const failedTail: TailView = { kind: 'failed' }
  * One currency: the block of the usual answer and, when «Прочее» is open, its composition from the long answer.
  * The view is kept between renders, so the rows of a long composition are not rendered again without a reason.
  */
-function CurrencyBlock({ block, groupBy, query, tail, retryTail, refresh }: {
+function CurrencyBlock({ block, groupBy, query, tail, retryTail, refresh, hero }: {
   block: SpendingCurrency; groupBy: SpendingGroupBy; query: SpendingQuery
+  /** The first block carries the one big number of the screen. */
+  hero: boolean
   /** The long answer; read only while the address says `other=open`. */
   tail?: SpendingRequestState; retryTail?: () => void; refresh: () => void
 }) {
@@ -77,18 +82,20 @@ function CurrencyBlock({ block, groupBy, query, tail, retryTail, refresh }: {
       childrenStatus: <TailStatus tail={state} count={item.children?.length ?? 0} failure={failure} retry={retryTail} refresh={refresh} /> })
   }, [view, failure, retryTail, refresh])
   const shownView = useMemo(() => ({ ...view, items }), [view, items])
-  return <SpendingBlock view={shownView} groupBy={groupBy} />
+  return <SpendingBlock view={shownView} groupBy={groupBy} hero={hero} />
 }
 
-export function SpendingBlock({ view, groupBy }: { view: BlockView; groupBy: SpendingGroupBy }) {
+export function SpendingBlock({ view, groupBy, hero = false }: { view: BlockView; groupBy: SpendingGroupBy; hero?: boolean }) {
   const heading = useId()
   return <section className="spending-currency" aria-labelledby={heading}>
-    <h3 id={heading}>{view.currency}</h3>
-    <dl className="spending-facts">
-      <div><dt>{view.total.label}</dt><dd className="spending-total">{view.total.text}</dd></div>
-      <div><dt>Чеков</dt><dd>{view.receipts}</dd></div>
-      {view.total.text !== view.linesPaid && <div><dt>Сумма строк</dt><dd>{view.linesPaid}</dd></div>}
-    </dl>
+    <div className="spending-summary">
+      <h3 id={heading} className="spending-summary-label">{view.total.label}, {currencySymbol(view.currency)}</h3>
+      <p className={hero ? 'spending-total ck-hero-figure' : 'spending-total'}>{view.total.text}</p>
+      <p className="spending-summary-meta">
+        <span className="spending-figure">{view.receipts}</span>
+        {view.total.text !== view.linesPaid && <> · сумма строк <span className="spending-figure">{view.linesPaid}</span></>}
+      </p>
+    </div>
     <PieChart title={view.title} items={view.items} centerLabel={view.center.label} centerValue={view.center.value}
       headers={{ name: nameHeaders[groupBy], value: 'Сумма', share: 'Доля' }} linkComponent={Link}
       excludedNote="Сумма не положительная: в диаграмму не входит, доля не считается." />
@@ -127,12 +134,10 @@ export default function SpendingResults({ query, state, retry, last, genericName
 
   return <section ref={block} className="spending-panel" aria-labelledby={heading} aria-busy={loading}>
     <h2 id={heading} data-request-focus-target tabIndex={-1}>Траты {groupingCaptions[by]}</h2>
-    <nav aria-label="Разбивка трат">
-      <ul className="spending-chips">
-        {spendingGroupings.map((value) => <li key={value}>
-          <Link to={groupingHref(query, value)} aria-current={value === by ? 'true' : undefined}>{groupingLabels[value]}</Link>
-        </li>)}
-      </ul>
+    {/* A low switch on the width of the card, short words: four segments fit a 360 px phone without a cut. */}
+    <nav className="spending-groupings stats-segments" aria-label="Разбивка трат">
+      {spendingGroupings.map((value) => <Link key={value} className="stats-segment" to={groupingHref(query, value)}
+        aria-current={value === by ? 'true' : undefined}>{groupingShortLabels[value]}</Link>)}
     </nav>
     {crumbs.length > 0 && <nav className="spending-path" aria-label="Путь в тратах">
       <ol className="spending-crumbs">
@@ -140,25 +145,28 @@ export default function SpendingResults({ query, state, retry, last, genericName
           {crumb.href ? <Link to={crumb.href}>{crumb.label}</Link> : <span aria-current="page">{crumb.label}</span>}
         </li>)}
       </ol>
-      {up && <Link className="action-link" to={up}>На уровень выше</Link>}
+      {up && <Link className="spending-up" to={up}>На уровень выше</Link>}
     </nav>}
     <p className="spending-status" role="status">
       {shown && (shown.stale ? 'Обновляем данные по новым фильтрам…' : <PeriodText period={shown.data} />)}
     </p>
     {state.kind === 'error' && <Failure failure={state} query={query} retry={retry} />}
     {loading && !shown && <RequestState kind="loading" message="Загружаем траты…" />}
-    {shown && (shown.data.currencies.length === 0
+    {shown && (shown.data.currencies.length === 0 && !shown.data.excluded?.length
       ? <RequestState kind="empty"
         message={hasFilters(shown.query) ? 'По выбранным фильтрам трат нет.' : 'Чеков пока нет: статистике не из чего считать. Загрузите первое фото чека.'}
         action={hasFilters(shown.query)
           ? <Link className="action-link" to={resetHref(shown.query)}>Сбросить фильтры</Link>
           : <Link className="action-link" to="/receipts/upload">Загрузить фото</Link>} />
       : <div className="spending-blocks" data-stale={shown.stale ? 'true' : undefined}>
-        <p className="spending-note">
+        {shown.data.currencies.map((currency, index) => <CurrencyBlock key={currency.currency} block={currency} groupBy={shown.data.group_by}
+          query={shown.query} tail={tail} retryTail={retryTail} refresh={retry} hero={index === 0} />)}
+        {/* Under the blocks it explains: the numbers come first, as on «Главная». */}
+        {shown.data.currencies.length > 1 && <p className="spending-note spending-footnote">
           Суммы в разных валютах не складываются и не пересчитываются: у каждой валюты свой блок со своим итогом.
-        </p>
-        {shown.data.currencies.map((currency) => <CurrencyBlock key={currency.currency} block={currency} groupBy={shown.data.group_by}
-          query={shown.query} tail={tail} retryTail={retryTail} refresh={retry} />)}
+        </p>}
+        {/* In the family's base currency: what has no rate of the National Bank yet is named, never silently left out. */}
+        {shown.data.excluded?.length ? <p className="spending-note spending-footnote">{excludedNote(shown.data.excluded)}</p> : null}
       </div>)}
   </section>
 }

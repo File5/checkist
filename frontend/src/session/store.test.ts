@@ -18,8 +18,8 @@ function me(name = 'me.json', change: Partial<Me> = {}): Me {
 }
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status })
 const guestAnswer = () => json({ error: { code: 'not_authenticated', message: 'Требуется вход.' } }, 401)
-const reader: Session = { kind: 'user', mode: 'accounts', user: { id: 1, username: 'synthetic-reader', is_staff: false }, permissions: { moderate_catalog: false } }
-const local: Session = { kind: 'user', mode: 'local_single', user: { id: 1, username: 'local', is_staff: false }, permissions: { moderate_catalog: true } }
+const reader: Session = { kind: 'user', mode: 'accounts', user: { id: 1, username: 'synthetic-reader', display_name: 'synthetic-reader', is_staff: false }, household: null, permissions: { moderate_catalog: false }, isHead: true, settings: { default_currency: null } }
+const local: Session = { kind: 'user', mode: 'local_single', user: { id: 1, username: 'local', display_name: 'local', is_staff: false }, household: null, permissions: { moderate_catalog: true }, isHead: true, settings: { default_currency: null } }
 
 const fetchMock = vi.fn<typeof fetch>()
 const urls = () => fetchMock.mock.calls.map(([url]) => url)
@@ -32,7 +32,8 @@ beforeEach(() => {
 afterEach(() => { off(); resetSession(); clearRecognitionCsrf(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 describe('reading «Я»', () => {
-  it('starts as loading and becomes the user of GET /api/me/', async () => {
+  // A device that remembers nobody (here: no window at all); the start from the device is in remembered.test.ts.
+  it('starts as loading on a device that remembers nobody and becomes the user of GET /api/me/', async () => {
     expect(getSession()).toEqual({ kind: 'loading' })
     fetchMock.mockResolvedValue(json(me()))
     await loadSession()
@@ -130,6 +131,39 @@ describe('re-reading a known session', () => {
     await loadSession()
     expect(getSession()).toMatchObject({ kind: 'user', user: { id: 2 } })
     expect(seen).toHaveLength(3)
+  })
+  it('applies a joined family and a new member, and keeps the snapshot for the same family', async () => {
+    const family = { id: 4, name: 'Демо-семья', members: ['synthetic-reader', 'synthetic-two'] }
+    fetchMock.mockResolvedValueOnce(json(me('me.json', { household: family })))
+    await loadSession()
+    expect(getSession()).toEqual({ ...reader, household: family })
+    const snapshot = getSession()
+    fetchMock.mockResolvedValueOnce(json(me('me.json', { household: { ...family, members: [...family.members] } })))
+    await loadSession()
+    expect(getSession()).toBe(snapshot)
+    fetchMock.mockResolvedValueOnce(json(me('me.json', { household: { ...family, members: [...family.members, 'synthetic-three'] } })))
+    await loadSession()
+    expect(getSession()).toMatchObject({ household: { members: ['synthetic-reader', 'synthetic-two', 'synthetic-three'] } })
+    fetchMock.mockResolvedValueOnce(json(me()))
+    await loadSession()
+    expect(getSession()).toEqual(reader)
+    expect(seen).toHaveLength(3)
+  })
+  it('keeps the names of the family and wakes subscribers when a name changes', async () => {
+    const people = [{ username: 'synthetic-reader', display_name: 'Андрей' }, { username: 'synthetic-two', display_name: 'Лиза' }]
+    const family = { id: 4, name: 'Демо-семья', members: ['synthetic-reader', 'synthetic-two'], people }
+    fetchMock.mockResolvedValueOnce(json(me('me.json', { household: family })))
+    await loadSession()
+    expect(getSession()).toEqual({ ...reader, household: family })
+    const snapshot = getSession()
+    fetchMock.mockResolvedValueOnce(json(me('me.json', { household: { ...family, people: people.map((person) => ({ ...person })) } })))
+    await loadSession()
+    expect(getSession()).toBe(snapshot)
+    const renamed = [people[0], { username: 'synthetic-two', display_name: 'Елизавета' }]
+    fetchMock.mockResolvedValueOnce(json(me('me.json', { household: { ...family, people: renamed } })))
+    await loadSession()
+    expect(getSession()).toMatchObject({ household: { people: renamed } })
+    expect(seen).toHaveLength(2)
   })
 })
 

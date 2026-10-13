@@ -1,7 +1,8 @@
 import type { SpendingCurrency, SpendingGroupBy, SpendingItem } from '../../api/stats'
 import { chartNumber } from '../../lib/charts'
 import type { PieChartChild, PieChartItem } from '../../lib/charts'
-import { formatAmount, formatPercent, formatQuantity } from '../../lib/format'
+import { formatPercent, formatQuantity } from '../../lib/format'
+import { formatMoney } from '../../lib/money'
 import type { SpendingQuery } from '../../navigation/routes'
 import { groupingCaptions, itemHref, otherHref } from './spending-state'
 import type { BlockTail } from './spending-tail'
@@ -17,13 +18,17 @@ const counted = (count: number, one: string, few: string, many: string) => `${co
 export const receiptsText = (count: number) => counted(count, 'чек', 'чека', 'чеков')
 const linesText = (count: number) => counted(count, 'строка', 'строки', 'строк')
 
-export const specialLabels = { unmatched: 'Строки без товара', service: 'Услуги', deposit: 'Залог за тару' } as const
+export const specialLabels = {
+  unmatched: 'Строки без товара', service: 'Услуги', deposit: 'Залог за тару', no_product: 'Траты без товара', no_store: 'Без места',
+} as const
 export const otherLabel = 'Прочее'
 export const unassignedHint = 'Категорию и обобщённый продукт товару назначают в админке.'
 const specialNotes = {
   unmatched: 'Строки чеков, не сопоставленные с товаром каталога. Товар строке назначают в админке.',
   service: 'Строки услуг: в категории товаров не входят.',
   deposit: 'Залог и возврат тары, чистой суммой.',
+  no_product: 'Траты, внесённые вручную суммой в категорию: товара каталога у них нет.',
+  no_store: 'Траты, внесённые вручную без места.',
 } as const
 const otherNouns: Record<SpendingGroupBy, [string, string, string]> = {
   category: ['категория', 'категории', 'категорий'], generic: ['обобщённый продукт', 'обобщённых продукта', 'обобщённых продуктов'],
@@ -52,7 +57,7 @@ export function itemKey(item: SpendingItem): string {
 
 export function itemLabel(item: SpendingItem): string {
   switch (item.kind) {
-    case 'unmatched': case 'service': case 'deposit': return specialLabels[item.kind]
+    case 'unmatched': case 'service': case 'deposit': case 'no_product': case 'no_store': return specialLabels[item.kind]
     case 'store': return [item.name, item.city, item.country, `ID ${item.id}`].filter(Boolean).join(' · ')
     case 'category': return item.direct ? `${item.name}: товары без подкатегории` : item.name
     default: return item.name
@@ -63,7 +68,7 @@ function itemNote(item: SpendingItem): string {
   const parts = [linesText(item.lines_count), receiptsText(item.receipts_count)]
   if (item.quantity !== null) parts.push(formatQuantity(item.quantity, item.unit))
   const facts = `${parts.join(' · ')}.`
-  if (item.kind === 'unmatched' || item.kind === 'service' || item.kind === 'deposit') return `${specialNotes[item.kind]} ${facts}`
+  if (item.id === null) return `${specialNotes[item.kind]} ${facts}`
   return item.unassigned ? `${unassignedHint} ${facts}` : facts
 }
 
@@ -72,11 +77,11 @@ export function tailChildren(block: SpendingCurrency, groupBy: SpendingGroupBy, 
   if (tail?.kind !== 'ok') return []
   const rows: PieChartChild[] = tail.items.map((item) => ({
     key: itemKey(item), label: itemLabel(item), href: itemHref(query, item), note: itemNote(item),
-    valueText: formatAmount(item.amount, block.currency), shareText: formatPercent(item.share_percent),
+    valueText: formatMoney(item.amount, block.currency), shareText: formatPercent(item.share_percent),
   }))
   if (tail.rest) rows.push({
     key: 'rest', label: `Ещё ${counted(tail.rest.count, ...otherNouns[groupBy])} с меньшими суммами, одной строкой`, note: restHints[groupBy],
-    valueText: formatAmount(tail.rest.amount, block.currency), shareText: formatPercent(tail.rest.share_percent),
+    valueText: formatMoney(tail.rest.amount, block.currency), shareText: formatPercent(tail.rest.share_percent),
   })
   return rows
 }
@@ -88,14 +93,14 @@ export function tailChildren(block: SpendingCurrency, groupBy: SpendingGroupBy, 
 export function pieItems(block: SpendingCurrency, groupBy: SpendingGroupBy, query: SpendingQuery, tail?: TailView): PieChartItem[] {
   const items: PieChartItem[] = block.items.map((item) => ({
     key: itemKey(item), label: itemLabel(item), value: chartNumber(item.amount) ?? 0,
-    valueText: formatAmount(item.amount, block.currency), shareText: formatPercent(item.share_percent),
+    valueText: formatMoney(item.amount, block.currency), shareText: formatPercent(item.share_percent),
     href: itemHref(query, item), note: itemNote(item),
     ...(item.id === null && { tone: 'muted' as const }),
   }))
   if (block.other) {
     const row: PieChartItem = {
       key: 'other', label: otherLabel, value: chartNumber(block.other.amount) ?? 0, tone: 'other',
-      valueText: formatAmount(block.other.amount, block.currency), shareText: formatPercent(block.other.share_percent),
+      valueText: formatMoney(block.other.amount, block.currency), shareText: formatPercent(block.other.share_percent),
       note: tail ? `${counted(block.other.count, ...otherNouns[groupBy])} с меньшими суммами.`
         : `Ещё ${counted(block.other.count, ...otherNouns[groupBy])} с меньшими суммами, одной строкой.`,
       action: {
@@ -134,7 +139,7 @@ export function differenceText(block: SpendingCurrency): string {
   if (receipts_total === null || difference === null) {
     return 'Выбрана категория или обобщённый продукт: считаются только строки сопоставленных товаров, поэтому сумма чеков и её разница с суммой строк не показываются.'
   }
-  const money = (value: string) => formatAmount(value, block.currency)
+  const money = (value: string) => formatMoney(value, block.currency)
   if (/^-?0+(\.0+)?$/.test(difference)) return `Сумма чеков совпадает с суммой строк: ${money(lines_paid)}.`
   return `Сумма чеков — ${money(receipts_total)}, сумма строк — ${money(lines_paid)}, разница — ${money(difference)}. `
     + 'Разница — это скидки на весь чек, налог сверх цен и округление: по строкам они не распределяются.'
@@ -144,13 +149,13 @@ export function blockView(block: SpendingCurrency, groupBy: SpendingGroupBy, que
   const { receipts_total, lines_paid, receipts_count } = block.totals
   // A block without «Прочее» has nothing to open, whatever the address says.
   const opened = block.other ? tail : undefined
-  const linesPaid = formatAmount(lines_paid, block.currency)
+  const linesPaid = formatMoney(lines_paid, block.currency)
   return {
     currency: block.currency,
     title: `Траты ${groupingCaptions[groupBy]}, ${block.currency}`,
     total: receipts_total === null
       ? { label: 'Сумма строк товаров', text: linesPaid }
-      : { label: 'Итого по чекам', text: formatAmount(receipts_total, block.currency) },
+      : { label: 'Итого по чекам', text: formatMoney(receipts_total, block.currency) },
     receipts: receiptsText(receipts_count),
     linesPaid,
     difference: differenceText(block),

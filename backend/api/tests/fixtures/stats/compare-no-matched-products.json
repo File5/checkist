@@ -51,5 +51,14 @@
       "products": [],
       "products_total": 0
     }
+  ],
+  "base_currency": "KZT",
+  "in_base": null,
+  "excluded": [
+    {
+      "currency": "EUR",
+      "receipts_count": 2,
+      "total": "68.44"
+    }
   ]
 }

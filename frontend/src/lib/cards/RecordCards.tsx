@@ -11,6 +11,8 @@ export interface CardFact {
   value: ReactNode
   /** `value` (default) — one unbreakable value; `text` — free text; `block` — a list or a `dl` under the label. */
   kind?: CardFactKind
+  /** A sum, a quantity or a price: drawn by the figures font (`.ck-figures`, mobile design 2026-10-12). */
+  figure?: boolean
 }
 
 export type CardListProps = ({ label: string; labelledBy?: undefined } | { labelledBy: string; label?: undefined }) & {
@@ -53,7 +55,7 @@ export function Card({ id, title, facts, footer, tone }: CardProps) {
           {shown.map((fact) => (
             <div className="ck-card-fact" data-kind={fact.kind ?? 'value'} key={fact.key}>
               <dt>{fact.label}</dt>
-              <dd>{fact.value}</dd>
+              <dd className={fact.figure ? 'ck-figures' : undefined}>{fact.value}</dd>
             </div>
           ))}
         </dl>

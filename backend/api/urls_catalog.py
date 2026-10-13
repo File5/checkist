@@ -1,6 +1,7 @@
 from django.urls import path
 
 from .views import catalog
+from .views.category_icons import CategoryIconView
 
 urlpatterns = [
     path("countries/", catalog.CountriesView.as_view(), name="api-countries"),
@@ -8,6 +9,7 @@ urlpatterns = [
     path("brands/", catalog.BrandsView.as_view(), name="api-brands"),
     path("categories/", catalog.CategoriesView.as_view(), name="api-categories"),
     path("categories/<int:pk>/", catalog.CategoryView.as_view(), name="api-category"),
+    path("categories/<int:pk>/icon/", CategoryIconView.as_view(), name="api-category-icon"),
     path("generic-products/", catalog.GenericProductsView.as_view(), name="api-generic-products"),
     path("generic-products/<int:pk>/", catalog.GenericProductView.as_view(), name="api-generic-product"),
     path("products/", catalog.ProductsView.as_view(), name="api-products"),

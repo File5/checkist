@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '../App'
+import { preloadScreens } from '../screens'
 import type { NavigationSnapshot, Route } from '../navigation'
 import type { Session } from '../session'
 
@@ -22,15 +23,19 @@ vi.mock('../features/recognition', () => ({
 vi.mock('../features/receipts', () => ({ ReceiptsPage: () => <pre data-screen="receipts" />, ReceiptPage: () => <pre data-screen="receipt" /> }))
 vi.mock('../features/merges', () => ({ MergesPage: () => <pre data-screen="merges" />, MergePage: () => <pre data-screen="merge" /> }))
 vi.mock('../features/classification', () => ({ ClassificationPage: () => <pre data-screen="classification" /> }))
+vi.mock('../features/dashboard', () => ({ DashboardPage: () => <pre data-screen="dashboard" />, LimitsPage: () => <pre data-screen="limits" /> }))
 vi.mock('../features/stats', () => ({ SpendingPage: () => <pre data-screen="spending" />, ReceiptsStatsPage: () => <pre data-screen="receipts-stats" /> }))
 
 const guest: Session = { kind: 'guest', expired: false }
-const reader: Session = { kind: 'user', mode: 'accounts', user: { id: 1, username: 'synthetic-reader', is_staff: false }, permissions: { moderate_catalog: false } }
-const moderator: Session = { kind: 'user', mode: 'accounts', user: { id: 2, username: 'synthetic-moderator', is_staff: false }, permissions: { moderate_catalog: true } }
-const local: Session = { kind: 'user', mode: 'local_single', user: { id: 1, username: 'local', is_staff: false }, permissions: { moderate_catalog: true } }
+const reader: Session = { kind: 'user', mode: 'accounts', user: { id: 1, username: 'synthetic-reader', is_staff: false }, household: null, permissions: { moderate_catalog: false } }
+const moderator: Session = { kind: 'user', mode: 'accounts', user: { id: 2, username: 'synthetic-moderator', is_staff: false }, household: null, permissions: { moderate_catalog: true } }
+const local: Session = { kind: 'user', mode: 'local_single', user: { id: 1, username: 'local', is_staff: false }, household: null, permissions: { moderate_catalog: true } }
 
 /** Every data route with the address a person could open directly. */
 const pages: [Route, string][] = [
+  [{ kind: 'dashboard' }, '/'],
+  [{ kind: 'dashboard', month: '2026-09' }, '/?month=2026-09'],
+  [{ kind: 'limits' }, '/budget/limits'],
   [{ kind: 'catalog', query: { q: 'молоко', page: 2 } }, '/catalog?q=%D0%BC%D0%BE%D0%BB%D0%BE%D0%BA%D0%BE&page=2'],
   [{ kind: 'category', categoryId: 3, query: { page: 1 } }, '/catalog/categories/3'],
   [{ kind: 'product', productId: 5, query: { currency: 'EUR', page: 1 } }, '/catalog/products/5?currency=EUR'],
@@ -66,16 +71,26 @@ function render(session: Session, route: Route, href: string) {
 }
 const screens = (html: string) => (html.match(/<pre data-screen="[^"]*"/g) ?? []).map((item) => item.slice(18, -1))
 const h1 = (html: string) => html.match(/<h1\b[^>]*>([^<]*)<\/h1>/)?.[1]
+/** The pictures of the menu (the bottom bar of a phone) are left out: the words name the links. */
+const noIcons = (html: string) => html.replace(/<svg\b.*?<\/svg>/g, '')
 const mainNav = (html: string) => {
-  const nav = html.split('aria-label="Основная навигация">')[1].split('</nav>')[0]
+  const nav = noIcons(html).split('aria-label="Основная навигация">')[1].split('</nav>')[0]
   return [...nav.matchAll(/<a\b[^>]*>([^<]*)<\/a>/g)].map((match) => match[1])
 }
-const navLink = (html: string, text: string) => html.match(new RegExp(`<a\\b[^>]*>${text}</a>`))?.[0] ?? ''
-const fullMenu = ['Каталог', 'Чеки', 'Статистика', 'Обработка', 'Состояние сервисов']
+const navLink = (html: string, text: string) => noIcons(html).match(new RegExp(`<a\\b[^>]*>${text}</a>`))?.[0] ?? ''
+/** The links of the header row; «Добавить трату» lives in the «＋» sheet, which a server render draws closed. */
+/** «Ещё» (a link to its screen, drawn in the phone's bar only), then «Деньги», «Данные» and «Настройки»: the family and the
+ * account (accounts) before the health page (2026-10-13). */
+const menuWith = (...people: string[]) => ['Главная', 'Траты', 'Статистика', 'Ещё', 'Доходы', 'Платежи', 'Цели', 'Разбор месяца', 'Каталог', 'Магазины',
+  'Правила выписок', 'Обработка чеков', 'Выгрузка', ...people, 'Состояние сервисов']
+const fullMenu = menuWith()
 
 const fetchMock = vi.fn<typeof fetch>()
 beforeEach(() => { fetchMock.mockReset(); vi.stubGlobal('fetch', fetchMock) })
 afterEach(() => { expect(fetchMock).not.toHaveBeenCalled(); vi.unstubAllGlobals() })
+
+// The screens come in parts (src/screens.ts): loaded first, the shell renders their real markup at once.
+beforeAll(preloadScreens)
 
 describe('session gate of the shell (SSR only, no browser interaction)', () => {
   it.each([...everywhere, loginRoute])('a guest at %j sees the sign-in alone on that very address: no shell and no data screen', (route, href) => {
@@ -129,8 +144,8 @@ describe('session gate of the shell (SSR only, no browser interaction)', () => {
     ['error', { kind: 'error' }, ['Состояние сервисов']],
     ['guest', guest, ['Состояние сервисов', 'Войти']],
     ['guest after an ended session', { kind: 'guest', expired: true }, ['Состояние сервисов', 'Войти']],
-    ['reader', reader, [...fullMenu, 'synthetic-reader']],
-    ['moderator', moderator, [...fullMenu, 'synthetic-moderator']],
+    ['reader', reader, menuWith('Семья', 'synthetic-reader')],
+    ['moderator', moderator, menuWith('Семья', 'synthetic-moderator')],
     ['local_single', local, fullMenu],
   ])('keeps health available for %s', (_name, session, menu) => {
     const html = render(session, { kind: 'health' }, '/health')
@@ -151,9 +166,16 @@ describe('signed-in shell (SSR only, no browser interaction)', () => {
     const html = render(reader, route, href)
     expect(screens(html)).toEqual([route.kind])
     expect(html.match(/<h1\b/g)).toHaveLength(1)
-    expect(mainNav(html)).toEqual([...fullMenu, 'synthetic-reader'])
+    expect(mainNav(html)).toEqual(menuWith('Семья', 'synthetic-reader'))
     expect(navLink(html, 'synthetic-reader')).toBe('<a class="account-link" aria-label="Аккаунт: synthetic-reader" href="/account">synthetic-reader</a>')
     expect(html).not.toContain('login-username')
+  })
+  it.each(pages)('opens %j at once for the person remembered on the device, before «Я» answers', (route, href) => {
+    // session/store.ts starts as the last «Я» of this device: the screen mounts without «Проверяем вход…».
+    const html = render({ ...reader, provisional: true } as Session, route, href)
+    expect(screens(html)).toEqual([route.kind])
+    expect(html).not.toContain('Проверяем вход')
+    expect(mainNav(html)).toEqual(menuWith('Семья', 'synthetic-reader'))
   })
   it('hides «Дубли» and «Категории» from a reader', () => {
     for (const [route, href] of pages) {
@@ -180,6 +202,27 @@ describe('signed-in shell (SSR only, no browser interaction)', () => {
     expect(html).toContain('aria-label="Раздел каталога"')
     expect(html).not.toContain('Раздел доступен модератору каталога')
   })
+  it('offers «Снять чек» and «Добавить трату» behind «＋» of the menu to a signed-in person only', () => {
+    for (const [route, href] of [[{ kind: 'catalog', query: { page: 1 } }, '/catalog'], [{ kind: 'upload' }, '/receipts/upload'], [{ kind: 'expense-new' }, '/receipts/new']] as const) {
+      const html = render(reader, route, href)
+      expect(html.match(/<div class="main-add">/g), route.kind).toHaveLength(1)
+      // «Снять чек», «Из галереи» and «Добавить трату» are in the sheet (components/Sheet), closed until «＋» is pressed.
+      expect(html).toContain('<button type="button" class="main-add-toggle" aria-haspopup="dialog" aria-expanded="false"')
+      expect(html).not.toContain('role="dialog"')
+      expect(html).toContain('class="ck-quick-shot-input"')
+      // The floating stack of the former design is gone: its function lives in «＋».
+      expect(html).not.toMatch(/ck-quick-(actions|expense)|class="ck-quick-shot"/)
+    }
+    expect(render(reader, { kind: 'expense-edit', receiptId: 9 }, '/receipts/9/edit')).toContain('Изменить трату</h1>')
+    expect(render(guest, { kind: 'health' }, '/health')).not.toContain('main-add')
+  })
+  it('keeps the old jokes in the footer line only, with no eyebrow over the heading', () => {
+    const html = render(reader, { kind: 'catalog', query: { page: 1 } }, '/catalog')
+    expect(html).toContain('<footer>Чекист — семейный бюджет · Доверяй, но проверяй чек</footer>')
+    expect(html).not.toContain('class="eyebrow"')
+    expect(html).not.toContain('Совершенно несекретно')
+    expect(html).toContain('<a class="brand" aria-label="Чекист — главная" href="/">')
+  })
   it('shows the catalog subsections to a moderator on the catalog itself', () => {
     const html = render(moderator, { kind: 'catalog', query: { page: 1 } }, '/catalog')
     expect(html).toContain('<a href="/catalog/merges">Дубли</a>')
@@ -197,7 +240,7 @@ describe('signed-in shell (SSR only, no browser interaction)', () => {
       expect(screens(html)).toEqual([])
     }
   })
-  it('mounts nothing at /login for a signed-in person: the shell sends them to the catalog', () => {
+  it('mounts nothing at /login for a signed-in person: the shell sends them to «Главная»', () => {
     // The transition itself is a layout effect and is not run here; the person checks it by hand.
     for (const session of [reader, moderator]) {
       const html = render(session, { kind: 'login' }, '/login')
@@ -209,9 +252,9 @@ describe('signed-in shell (SSR only, no browser interaction)', () => {
     }
   })
   it('renders a name that looks like markup as text', () => {
-    const tricky: Session = { kind: 'user', mode: 'accounts', user: { id: 3, username: '<i>x</i>', is_staff: false }, permissions: { moderate_catalog: false } }
+    const tricky: Session = { kind: 'user', mode: 'accounts', user: { id: 3, username: '<i>x</i>', is_staff: false }, household: null, permissions: { moderate_catalog: false } }
     const html = render(tricky, { kind: 'catalog', query: { page: 1 } }, '/catalog')
-    expect(html).toContain('aria-label="Аккаунт: &lt;i&gt;x&lt;/i&gt;" href="/account">&lt;i&gt;x&lt;/i&gt;</a>')
+    expect(noIcons(html)).toContain('aria-label="Аккаунт: &lt;i&gt;x&lt;/i&gt;" href="/account">&lt;i&gt;x&lt;/i&gt;</a>')
     expect(html).not.toContain('<i>x</i>')
   })
   it('keeps unknown and invalid addresses as before for a signed-in person', () => {
@@ -248,5 +291,51 @@ describe('local_single keeps the previous interface (SSR only, no browser intera
     expect(html).toContain('Такой страницы нет.')
     expect(html).not.toContain('data-auth-logout')
     expect(html.toLowerCase()).not.toContain('autocomplete="new-password"')
+  })
+})
+
+describe('header row of a screen: «назад», the slots of a page, the heading, «✕» (SSR only; the pinning is CSS, checked by a person)', () => {
+  const back = /<a class="ck-back ck-round" aria-label="([^"]*)" href="([^"]*)"><svg class="ck-icon" viewBox="0 0 24 24" width="20" height="20"/
+  const slot = '<div class="intro-slot"></div>'
+  /** The row up to its own end: after the heading come the slot of the page and, on a focus screen, «✕». */
+  const intro = (html: string) => {
+    const after = html.indexOf(`</h1>${slot}`) + `</h1>${slot}`.length
+    return html.slice(html.indexOf('<div class="intro">'), html.indexOf('</div>', after) + 6)
+  }
+
+  it('leads a nested page back to its list, before the heading in the same row', () => {
+    const html = render(reader, { kind: 'receipt', receiptId: 7 }, '/receipts/7')
+    expect(intro(html)).toMatch(new RegExp(`^<div class="intro"><a class="ck-back ck-round" aria-label="Назад к тратам" href="/receipts"><svg[^>]*>.*</svg></a>${slot}<h1 id="page-heading" tabindex="-1">Чек</h1>${slot}</div>$`))
+  })
+
+  it('returns to the very list the person came from', () => {
+    state.session = reader
+    state.snapshot = { route: { kind: 'product', productId: 5, query: { page: 1 } }, href: '/catalog/products/5', returnTo: '/catalog/categories/4?page=3' }
+    const html = renderToStaticMarkup(<App />)
+    expect(back.exec(html)?.slice(1)).toEqual(['Назад к категории', '/catalog/categories/4?page=3'])
+  })
+
+  it('has no «назад» on a page of a section, nor in place of a page the person may not see', () => {
+    for (const [route, href] of [[{ kind: 'dashboard' }, '/'], [{ kind: 'receipts', query: { page: 1 } }, '/receipts'], [{ kind: 'catalog', query: { page: 1 } }, '/catalog']] as const) {
+      expect(render(reader, route, href)).not.toContain('ck-back')
+    }
+    // A merge group is a moderator's page: a reader sees the refusal of the shell and no way back into it.
+    expect(render(reader, { kind: 'merge', groupId: 2 }, '/catalog/merges/2')).not.toContain('ck-back')
+    expect(back.exec(render(moderator, { kind: 'merge', groupId: 2 }, '/catalog/merges/2'))?.slice(1)).toEqual(['Назад к дублям', '/catalog/merges'])
+  })
+
+  it('closes a focus screen with «✕» after the heading and no «назад»', () => {
+    const fresh = intro(render(reader, { kind: 'expense-new' }, '/receipts/new'))
+    expect(fresh).toMatch(new RegExp(`^<div class="intro">${slot}<h1 id="page-heading" tabindex="-1">Новая трата</h1>${slot}<a class="ck-close ck-round" aria-label="Закрыть" href="/"><svg[^>]*>.*</svg></a></div>$`))
+    const edit = intro(render(reader, { kind: 'expense-edit', receiptId: 9 }, '/receipts/9/edit'))
+    expect(edit).toContain('<h1 id="page-heading" tabindex="-1">Изменить трату</h1>')
+    expect(edit).toContain('<a class="ck-close ck-round" aria-label="Закрыть" href="/receipts/9">')
+    expect(edit).not.toContain('ck-back')
+  })
+
+  it('keeps the note of the health page out of the pinned row', () => {
+    const html = render(reader, { kind: 'health' }, '/health')
+    expect(intro(html)).not.toContain('intro-note')
+    expect(html).toContain(`</h1>${slot}</div><p class="intro-note intro-note-after">Сводка о состоянии служб.</p>`)
   })
 })

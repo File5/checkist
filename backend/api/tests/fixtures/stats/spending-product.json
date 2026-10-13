@@ -166,5 +166,81 @@
         "share_percent": "41.92"
       }
     }
+  ],
+  "base_currency": "KZT",
+  "base": {
+    "currency": "KZT",
+    "totals": {
+      "receipts_count": 9,
+      "receipts_total": "67312.93",
+      "lines_paid": "67462.93",
+      "difference": "-150.00"
+    },
+    "items": [
+      {
+        "kind": "product",
+        "id": 37,
+        "name": "Демо Курица охлаждённая 1 кг",
+        "direct": false,
+        "unassigned": false,
+        "amount": "20186.00",
+        "share_percent": "29.92",
+        "lines_count": 6,
+        "receipts_count": 6,
+        "quantity": "6.000",
+        "unit": "pcs"
+      },
+      {
+        "kind": "product",
+        "id": 3,
+        "name": "Демо Молоко 2,5% 1 л",
+        "direct": false,
+        "unassigned": false,
+        "amount": "9496.00",
+        "share_percent": "14.08",
+        "lines_count": 9,
+        "receipts_count": 9,
+        "quantity": "14.000",
+        "unit": "pcs"
+      },
+      {
+        "kind": "product",
+        "id": 31,
+        "name": "Демо Чай чёрный 100 г",
+        "direct": false,
+        "unassigned": false,
+        "amount": "7504.00",
+        "share_percent": "11.12",
+        "lines_count": 6,
+        "receipts_count": 6,
+        "quantity": "6.000",
+        "unit": "pcs"
+      },
+      {
+        "kind": "unmatched",
+        "id": null,
+        "name": null,
+        "direct": false,
+        "unassigned": false,
+        "amount": "1999.00",
+        "share_percent": "2.96",
+        "lines_count": 3,
+        "receipts_count": 3,
+        "quantity": null,
+        "unit": null
+      }
+    ],
+    "other": {
+      "count": 8,
+      "amount": "28277.93",
+      "share_percent": "41.92"
+    }
+  },
+  "excluded": [
+    {
+      "currency": "EUR",
+      "receipts_count": 37,
+      "total": "1638.94"
+    }
   ]
 }

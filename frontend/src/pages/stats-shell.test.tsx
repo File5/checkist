@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 import App from '../App'
+import { preloadScreens } from '../screens'
 import type { NavigationSnapshot } from '../navigation'
 import { buildRoute } from '../navigation'
 import type { NavigableRoute } from '../navigation'
@@ -12,41 +13,53 @@ vi.mock('../navigation', async (importOriginal) => ({
 // The shell needs to know who works: these tests check the unchanged interface of local_single.
 vi.mock('../session', async (importOriginal) => ({
   ...await importOriginal<typeof import('../session')>(),
-  useSession: () => ({ kind: 'user', mode: 'local_single', user: { id: 1, username: 'local', is_staff: false }, permissions: { moderate_catalog: true } }),
+  useSession: () => ({ kind: 'user', mode: 'local_single', user: { id: 1, username: 'local', is_staff: false }, household: null, permissions: { moderate_catalog: true } }),
 }))
 // The shell is checked apart from what the screens show: their content belongs to the tests of features/stats.
 vi.mock('../features/stats', () => ({
   SpendingPage: ({ query }: { query: unknown }) => <pre data-screen="spending">{JSON.stringify(query)}</pre>,
   ReceiptsStatsPage: ({ query }: { query: unknown }) => <pre data-screen="receipts-stats">{JSON.stringify(query)}</pre>,
+  TrendsPage: ({ query }: { query: unknown }) => <pre data-screen="trends">{JSON.stringify(query)}</pre>,
+  IncomesStatsPage: ({ query }: { query: unknown }) => <pre data-screen="stats-incomes">{JSON.stringify(query)}</pre>,
 }))
 
+/** The pictures of the main menu (the bottom bar of a phone) are left out: the words name the links. */
 function render(route: NavigableRoute) {
   state.snapshot = { route, href: buildRoute(route) }
-  return renderToStaticMarkup(<App />)
+  return renderToStaticMarkup(<App />).replace(/<svg\b.*?<\/svg>/g, '')
 }
 
 const activeLinks = (html: string) => html.match(/<a\b[^>]*aria-current="page"[^>]*>[^<]*/g) ?? []
+
+// The screens come in parts (src/screens.ts): loaded first, the shell renders their real markup at once.
+beforeAll(preloadScreens)
 
 describe('statistics section in the shell (SSR only, no browser interaction)', () => {
   it.each<[NavigableRoute, string, string, string]>([
     [{ kind: 'spending', query: {} }, 'Траты за период', 'Траты', '/stats'],
     [{ kind: 'receipts-stats', query: {} }, 'Средний чек', 'Средний чек', '/stats/receipts'],
+    [{ kind: 'trends', query: { months: 24 } }, 'Динамика', 'Динамика', '/stats/trends?months=24'],
+    [{ kind: 'stats-incomes', query: { from: '2026-01', to: '2026-10' } }, 'Доходы', 'Доходы', '/stats/incomes?from=2026-01&amp;to=2026-10'],
   ])('mounts %j with the shell title, the active menu item and the active subsection', (route, title, section, href) => {
     const html = render(route)
     expect(html.match(/<h1\b/g)).toHaveLength(1)
     expect(html).toContain(`${title}</h1>`)
+    // The menu item and the tab lead to the address shown: it is what the device remembers (stats-memory.ts).
     expect(activeLinks(html)).toEqual([
-      '<a aria-current="page" href="/stats">Статистика',
+      `<a aria-current="page" href="${href}">Статистика`,
       `<a aria-current="page" href="${href}">${section}`,
     ])
     expect(html).toContain('aria-label="Раздел статистики"')
-    expect(html.match(/<pre data-screen="[^"]*"/g)).toEqual([`<pre data-screen="${route.kind === 'spending' ? 'spending' : 'receipts-stats'}"`])
+    expect(html.match(/<pre data-screen="[^"]*"/g)).toEqual([`<pre data-screen="${route.kind}"`])
     expect(html).not.toContain('aria-label="Раздел каталога"')
   })
   it('keeps both subsections reachable as ordinary links', () => {
     const html = render({ kind: 'spending', query: {} })
     expect(html).toContain('<a href="/stats/receipts">Средний чек</a>')
     expect(render({ kind: 'receipts-stats', query: {} })).toContain('<a href="/stats">Траты</a>')
+    expect(html).toContain('<a href="/stats/trends">Динамика</a>')
+    expect(html).toContain('<a href="/stats/incomes">Доходы</a>')
+    expect(render({ kind: 'trends', query: {} })).toContain('<a href="/stats/receipts">Средний чек</a>')
   })
   it('shows the menu item everywhere and the subsection only inside statistics', () => {
     for (const route of [{ kind: 'health' }, { kind: 'receipts', query: { page: 1 } }, { kind: 'merges', query: { page: 1 } }] as NavigableRoute[]) {

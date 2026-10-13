@@ -12,12 +12,17 @@
     "original_url": "/media/originals/test/source.png",
     "preview_url": null,
     "latest_job_id": 31,
-    "receipt_images_count": 2
+    "receipt_images_count": 2,
+    "display_url": "/media/originals/test/preview-1600-v1.webp",
+    "thumb_url": "/media/originals/test/thumb-400-v1.webp",
+    "download_url": "/media/originals/test/source.png?download=1",
+    "document": null
   },
   "job": {
     "id": 31,
     "photo_id": 11,
     "retry_of": null,
+    "owner": "local",
     "status": "partial_succeeded",
     "stage": "finished",
     "version": 1,
@@ -49,6 +54,8 @@
       "can_retry": true
     },
     "items_count": 2,
+    "display_url": "/media/originals/test/preview-1600-v1.webp",
+    "thumb_url": "/media/originals/test/thumb-400-v1.webp",
     "items": [
       {
         "image_id": 41,

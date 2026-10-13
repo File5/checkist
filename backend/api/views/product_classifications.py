@@ -12,6 +12,7 @@ from rest_framework.response import Response
 
 from accounts.access import Moderator, request_user
 from api.pagination import paginate
+from api.projection import seen_refs_q
 from api.params import MAX_ID, Params
 from api.product_classification_serialization import record_object, record_objects, run_object, status_object
 from api.recognition_serialization import executor_object
@@ -129,14 +130,19 @@ class RecordsView(ClassificationAPIView):
             "ordering": params.choice("ordering", ORDERINGS, default=ORDERINGS[0]),
         }
         params.check()
-        body = paginate(services.records(**filters), page)
+        body = paginate(services.records(**filters).filter(_seen(request)), page)
         body["results"] = record_objects(body["results"])
         return Response(body)
 
 
+def _seen(request):
+    """Запись о товаре, который видит запрос (не личный товар чужой траты вручную, ``api.projection``)."""
+    return seen_refs_q(request, "product_ref", "origin_product_ref")
+
+
 class RecordView(ClassificationAPIView):
     def get(self, request, pk):
-        return Response(record_object(services.get_record(path_id(pk))))
+        return Response(record_object(services.get_record(path_id(pk), _seen(request))))
 
 
 class ConfirmView(ClassificationMutationView):

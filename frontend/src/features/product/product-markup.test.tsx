@@ -156,7 +156,8 @@ describe('price content and semantic markup (SSR in Node, not browser acceptance
     expect(html).not.toContain('UTC')
     expect(html).not.toContain('null')
     expect(rowLabels(html)).toEqual(['ID 7 · Учебный магазин · DE · адрес неизвестен'])
-    for (const price of ['1,1', '1,2', '1,3']) expect(html).toContain(`<td class="product-number">${price}`)
+    // A price is printed in the figures font of the money, in the table as in the cards.
+    for (const price of ['1,1', '1,2', '1,3']) expect(html).toContain(`<td class="product-number"><span class="ck-figures">${price}`)
   })
   it('renders my and foreign purchases side by side in the server order', () => {
     const html = renderToStaticMarkup(<PriceHistory state={{ kind: 'ok', data: { ...history, ...pageOf([foreignPoint, point], 200) } }} query={{ page: 1 }} stores={[]} retry={noop} reset={noop} buildPageHref={buildPageHref} />)
@@ -173,7 +174,7 @@ describe('price content and semantic markup (SSR in Node, not browser acceptance
       { ...point, receipt_id: 13, position: 0, paid_unit_price: '4.0000' },
     ], 200) })
     expect(rowLabels(html)).toHaveLength(3)
-    for (const price of ['2', '3', '4']) expect(html).toContain(`${price},00\u00a0EUR/шт`)
+    for (const price of ['2', '3', '4']) expect(html).toContain(`${price},00\u00a0€/шт`)
     expect(keys).toEqual(['0', '1', '2'])
   })
   it('renders row prices, unknown normalization, UTC fallback and a keyboard scroll region', () => {
@@ -194,7 +195,7 @@ describe('price content and semantic markup (SSR in Node, not browser acceptance
     expect(html).toContain('tabindex="0"')
     expect(html).toContain('Нет данных для пересчёта')
     expect(html).toContain('Не сопоставимо с базовой единицей товара')
-    expect(html).toContain('-1,05 EUR/шт')
+    expect(html).toContain('-1,05 €/шт')
     expect(html).toContain('04.10.2026')
     expect(html).toContain('UTC')
     expect(html).toContain('Учебный магазин · DE')
@@ -203,7 +204,7 @@ describe('price content and semantic markup (SSR in Node, not browser acceptance
     const data = { ...history, results: [{ ...point, normalized_price: '12.3456', normalized_unit: 'm' as const }] }
     const html = renderToStaticMarkup(<PriceHistory state={{ kind: 'ok', data }} query={{ page: 1 }} stores={[store]} retry={noop} reset={noop} buildPageHref={buildPageHref} />)
     expect(html).toContain('Учебная улица, 1')
-    expect(html).toContain('12,35 EUR/м')
+    expect(html).toContain('12,35 €/м')
     expect(html).not.toContain('UTC')
   })
   it('distinguishes no purchases from no matches and offers page recovery', () => {

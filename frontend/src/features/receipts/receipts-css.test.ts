@@ -23,7 +23,7 @@ const weight = (selector: string) => {
   return (text.replace(/::[\w-]+/g, '').replace(/:not\(|\)/g, ' ').match(/\.[\w-]+|\[[^\]]*\]|:[\w-]+/g) ?? []).length
 }
 
-/** Screen stylesheets: the build puts every one of them BEFORE App.css (main.tsx imports App first). */
+/** Screen stylesheets: the build puts every one of them BEFORE App.css (src/styles.ts lists them first). */
 const screens = (readdirSync(new URL('.', source), { recursive: true }) as string[])
   .map((path) => path.replaceAll('\\', '/'))
   .filter((path) => path.endsWith('.css') && path !== 'App.css' && path !== 'theme/tokens.css' && !path.includes('/preview/'))
@@ -63,9 +63,15 @@ describe('filled action link guards (text of the rules, not rendering)', () => {
     // Hover, press and focus of the shell must not repaint the text or the border of a screen element that is as specific.
     const states = rules(app).filter((item) => /:(hover|active|focus-visible)/.test(item.selector) && (declares(item.body, 'color') || declares(item.body, 'border-color')))
     expect(states.map((item) => item.selector)).toEqual([
+      // The round control of the header row (artifact design 2026-10-13): «назад», «✕», the steps of a month.
+      '.ck-round:where(:hover)',
       'button:where(:hover:not(:disabled))', 'button:where(:active:not(:disabled))', '.action-link:where(:hover)',
+      // The secondary and the quiet danger looks of a button (mobile design 2026-10-12).
+      '.ck-button-secondary:where(:hover:not(:disabled))', '.ck-button-secondary:where(:active:not(:disabled))',
+      '.ck-button-danger:where(:hover:not(:disabled))', '.ck-button-danger:where(:active:not(:disabled))',
+      '.expense-danger:where(:hover:not(:disabled))', '.expense-danger:where(:active:not(:disabled))',
     ])
-    expect(states.map((item) => weight(item.selector))).toEqual([0, 0, 1])
+    expect(states.map((item) => weight(item.selector))).toEqual([1, 0, 0, 1, 1, 1, 1, 1, 1, 1])
   })
 })
 
@@ -145,5 +151,11 @@ describe('whole values and the lines table (text of the rules, not rendering)', 
 
   it('writes no colour of its own', () => {
     expect(receipts).not.toMatch(/#[0-9a-f]{3,8}\b|\brgba?\(|\bhsla?\(/i)
+  })
+
+  it('draws the focus ring of a spend row inside the list that clips it', () => {
+    // .spends-rows has overflow: hidden; the general ring (offset 4px, outside) would be cut away on every row.
+    expect(rule('.spends-rows', receipts)).toContain('overflow: hidden;')
+    expect(rule('.spends-row:focus-visible', receipts)).toBe('outline-offset: -3px;')
   })
 })

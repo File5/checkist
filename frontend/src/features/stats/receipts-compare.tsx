@@ -1,9 +1,11 @@
 import { useId, useMemo } from 'react'
+import { excludedNote } from '../../lib/base-currency'
 import type { CompareCurrency, CompareProduct, ComparePriceIndex, ReceiptCompare } from '../../api/stats'
 import RequestState from '../../components/RequestState'
 import { useLocalRequestFocus } from '../../components/useLocalRequestFocus'
 import { useNarrow } from '../../lib/cards'
-import { formatAmount, formatPrice, formatQuantity } from '../../lib/format'
+import { formatPrice, formatQuantity } from '../../lib/format'
+import { currencySymbol, formatMoney } from '../../lib/money'
 import { Link, receiptsStatsHref } from '../../navigation'
 import type { ReceiptsStatsQuery } from '../../navigation'
 import { DateRange } from './period'
@@ -113,8 +115,8 @@ function Products({ block }: { block: CompareCurrency }) {
       <td className="stats-number">{signedPercent(item.price_change_percent)}</td>
       <td className="stats-number">{formatQuantity(item.base.quantity, item.unit)}</td>
       <td className="stats-number">{formatQuantity(item.current.quantity, item.unit)}</td>
-      <td className="stats-number">{formatAmount(item.base.amount, currency)}</td>
-      <td className="stats-number">{formatAmount(item.current.amount, currency)}</td>
+      <td className="stats-number">{formatMoney(item.base.amount, currency)}</td>
+      <td className="stats-number">{formatMoney(item.current.amount, currency)}</td>
     </tr>
   )
   return (
@@ -155,7 +157,7 @@ export function CompareCurrencySection({ block, data }: { block: CompareCurrency
   )
   return (
     <article className="stats-currency" aria-labelledby={id}>
-      <h4 id={id}>{block.currency}</h4>
+      <h4 id={id}>Чеки в {currencySymbol(block.currency)}</h4>
       <div className="stats-verdict" data-kind={result.kind}>
         <p className="stats-verdict-headline">{result.headline}</p>
         {result.lead && <p>{result.lead}</p>}
@@ -181,9 +183,9 @@ export function CompareCurrencySection({ block, data }: { block: CompareCurrency
 function CompareBody({ state, query, onRetry }: CompareBlockProps) {
   switch (state.kind) {
     case 'idle': return <RequestState kind="empty"
-      message="Выберите базовый и текущий периоды в форме выше или готовую пару периодов — здесь появится разбор: изменился ли средний чек и что на него повлияло." />
+      message="Выберите готовую пару периодов или свои периоды — здесь появится разбор: изменился ли средний чек и что на него повлияло." />
     case 'invalid': return <RequestState kind="empty"
-      message={`Сравнение не построено. ${[...new Set(Object.values(state.errors))].join(' ')} Исправьте отмеченные поля в форме выше.`} />
+      message={`Сравнение не построено. ${[...new Set(Object.values(state.errors))].join(' ')} Исправьте периоды.`} />
     case 'loading': return <RequestState kind="loading" message="Считаем сравнение периодов…" />
     case 'error': return canRetry(state)
       ? <RequestState kind="error" message={failureMessage(state)} onRetry={onRetry} />
@@ -191,7 +193,7 @@ function CompareBody({ state, query, onRetry }: CompareBlockProps) {
         action={<Link className="action-link" to={receiptsStatsHref(query.interval ? { interval: query.interval } : {})}>Сбросить периоды и фильтры</Link>} />
     case 'ok': {
       const { data } = state
-      if (data.currencies.length === 0) {
+      if (data.currencies.length === 0 && !data.excluded?.length) {
         return hasScope(query)
           ? <RequestState kind="empty" message="По выбранным стране, валюте и магазинам походов нет ни в одном из периодов."
             action={<Link className="action-link" to={receiptsStatsHref(withoutScope(query))}>Убрать фильтры, оставить периоды</Link>} />
@@ -203,6 +205,7 @@ function CompareBody({ state, query, onRetry }: CompareBlockProps) {
             Валюты не складываются и не пересчитываются: по каждой валюте чеков — свой разбор.
           </p>}
           {data.currencies.map((block) => <CompareCurrencySection key={block.currency} block={block} data={data} />)}
+          {data.excluded?.length ? <p className="stats-note">{excludedNote(data.excluded)}</p> : null}
         </>
       )
     }

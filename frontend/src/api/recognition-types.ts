@@ -2,6 +2,8 @@ import type { Decimal, ISODate, ISODateTime, PageParams, Unit } from './types.ts
 import type { LineKind, ReceiptOperation, TaxKind } from './receipts-types.ts'
 
 export type ImageFormat = 'image/jpeg' | 'image/png' | 'image/webp'
+/** What an upload may be: the server stores HEIF/HEIC as a JPEG, so a Photo is never one. */
+export type UploadFormat = ImageFormat | 'image/heic' | 'image/heif' | 'application/pdf'
 export const jobStatuses = ['queued', 'running', 'cancel_requested', 'cancelled', 'succeeded', 'partial_succeeded', 'failed'] as const
 export type JobStatus = typeof jobStatuses[number]
 export type JobStage = 'waiting' | 'prepare' | 'detect' | 'crop' | 'recognize' | 'validate' | 'import' | 'finished'
@@ -17,13 +19,22 @@ export const executorStates = ['idle', 'busy', 'absent'] as const
 export type ExecutorState = typeof executorStates[number] | 'unknown'
 /** Absent does not prohibit upload/retry. last_seen_at is the heartbeat of a running job, null for an idle worker. */
 export type Executor = { available: boolean; state: ExecutorState; last_seen_at: ISODateTime | null }
-export type RecognitionLimits = { formats: ImageFormat[]; max_bytes: number; max_pixels: number; max_receipts: number }
+/** `max_pdf_pages` — the longest PDF the server renders into one image. */
+export type RecognitionLimits = { formats: UploadFormat[]; max_bytes: number; max_pixels: number; max_receipts: number; max_pdf_pages: number }
+/** The file the person sent when it was a PDF: `original_url` is then the image rendered from it. */
+export type PhotoDocument = { content_type: 'application/pdf'; bytes: number; pages: number }
+/** Display copies and the download of the original: `display_url`/`thumb_url` are WebP made on first
+ * request (longest side 1600 / 400 px), `download_url` — the PDF of a PDF upload, otherwise the original
+ * photo, sent as an attachment (`?download=1`).
+ */
+export type MediaVariants = { display_url: string | null; thumb_url: string | null; download_url: string | null }
 export type RecognitionCsrf = { csrf_token: string; limits: RecognitionLimits; executor: Executor }
 export type Photo = {
   id: number; created_at: ISODateTime; content_type: ImageFormat; bytes: number
   raw_width: number; raw_height: number; width: number; height: number
   original_url: string | null; preview_url: string | null; latest_job_id: number | null; receipt_images_count: number
-}
+  document: PhotoDocument | null
+} & MediaVariants
 export type JobProgress = {
   detected: number | null; current_position: number | null
   completed: number; imported: number; reused: number; review: number; failed: number; cancelled: number
@@ -39,10 +50,13 @@ export type RecognitionIssue = RecognitionError & { field: string; reason?: stri
 export type JobItem = { image_id: number; position: number; status: ReceiptImageStatus; receipt_id: number | null }
 /** List projection. The detail and mutation responses add items. */
 export type Job = {
-  id: number; photo_id: number; retry_of: number | null; status: JobStatus; stage: JobStage; version: number
+  /** `owner` — username of who uploaded the photo. */
+  id: number; photo_id: number; retry_of: number | null; owner: string; status: JobStatus; stage: JobStage; version: number
   created_at: ISODateTime; started_at: ISODateTime | null; finished_at: ISODateTime | null
   cancel_requested_at: ISODateTime | null; heartbeat_at: ISODateTime | null; stalled: boolean; executor: Executor
   progress: JobProgress; review_required: boolean; error: RecognitionError | null; actions: JobActions; items_count: number
+  /** Copies of the source photo (as of Photo): the miniature of a row of the jobs list. */
+  display_url: string | null; thumb_url: string | null
 }
 export type JobDetail = Job & { items: JobItem[] }
 export type PhotoUpload = { reused: boolean; photo: Photo; job: JobDetail }
@@ -70,7 +84,7 @@ export type ReceiptImage = {
   bbox: Bbox | null; clipped: boolean; issues: RecognitionIssue[]; normalized_result: NormalizedResult | null
   /** Moment of the confirmation by a person; null for crops saved automatically. */
   confirmed_at: ISODateTime | null
-}
+} & MediaVariants
 export type ReceiptImageDetail = ReceiptImage & { quad: QuadPoint[] | null; rotation_degrees: number | null }
 /** Body of POST receipt-images/{id}/confirm/. Decimals are strings in the exact form of normalized_result. */
 export type ReviewReceiptInput = {
@@ -90,5 +104,5 @@ export type ReviewTaxInput = { tax_rate: NormalizedTaxRate; tax_code: string | n
 export type ReviewConfirmInput = { receipt: ReviewReceiptInput; lines: ReviewLineInput[]; discounts: ReviewDiscountInput[]; taxes: ReviewTaxInput[] }
 export type ReviewConfirmResult = { image: ReceiptImageDetail; job: JobDetail }
 export type PhotoParams = PageParams & { ordering?: 'created_at' | '-created_at' }
-export type JobParams = PhotoParams & { photo?: number; status?: JobStatus }
+export type JobParams = PhotoParams & { photo?: number; status?: JobStatus; needs_review?: 1 }
 export type ReceiptImageParams = PhotoParams & { photo?: number; job?: number; receipt?: number }

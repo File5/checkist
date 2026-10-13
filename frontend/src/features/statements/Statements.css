@@ -1,0 +1,98 @@
+/* Импорт выписок (`/statements/new`, `/statements/{id}`, `/statements/rules`) in the language of the artifact: cards of
+   `.ck-panel`, rows of `.ck-list` / `.ck-row`, the main action in `--ck-primary`. A questionable row is tinted in the
+   colours of a warning and says why in words; skipped rows and incomings fold away at the bottom. Colours are tokens
+   only (theme/tokens.css), sizes from the text scale. */
+.statements { max-width: 720px; }
+.statements h2 { font-size: var(--ck-text-lg); font-weight: 800; }
+.statement-note { color: var(--ck-text-muted); font-size: var(--ck-text-sm); }
+.statement-small { font-size: var(--ck-text-xs); }
+.statement-status { min-height: 1em; color: var(--ck-text-muted); font-size: var(--ck-text-sm); }
+.statement-status:empty { display: none; }
+.statement-status-error { color: var(--ck-error-text); font-weight: 600; }
+
+/* The upload card: a badge, the words, one big button of the brand; the file field itself is hidden but focusable. */
+.statement-upload { align-items: flex-start; }
+.statement-upload-badge { display: flex; align-items: center; justify-content: center; width: 56px; height: 56px; border-radius: var(--ck-radius); background: var(--ck-accent-bg); color: var(--ck-accent-text); }
+.statement-pick { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 56px; padding: 12px 20px; border-radius: var(--ck-radius-button); background: var(--ck-primary); color: var(--ck-on-primary); font-size: var(--ck-text-base); font-weight: 800; cursor: pointer; }
+.statement-pick:hover { background: var(--ck-primary-hover); }
+.statement-pick:focus-within { outline: 3px solid var(--ck-focus); outline-offset: 4px; }
+.statement-pick-busy { background: var(--ck-disabled-bg); color: var(--ck-disabled-text); cursor: default; }
+.statement-pick-busy:hover { background: var(--ck-disabled-bg); }
+.statement-file { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; pointer-events: none; }
+.statement-bank-badge { background: var(--ck-accent-bg); color: var(--ck-accent-text); font-size: var(--ck-text-base); }
+.statement-history-row > .ck-icon, .statement-rules-link > .ck-icon { flex: none; color: var(--ck-text-muted); }
+.statement-rules-link { display: inline-flex; align-items: center; gap: 6px; min-height: 48px; color: var(--ck-link); font-size: var(--ck-text-sm); font-weight: 700; text-decoration: none; }
+.statement-rules-link:hover { color: var(--ck-link-hover); text-decoration: underline; }
+
+/* The summary of a draft: the bank and the period, then the counts as quiet pills. */
+.statement-summary { gap: 10px; }
+.statement-summary-period { font-size: var(--ck-text-base); font-weight: 800; }
+.statement-counts { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.statement-counts > li { padding: 6px 12px; border-radius: var(--ck-radius-pill); background: var(--ck-neutral-bg); color: var(--ck-neutral-text); font-size: var(--ck-text-xs); white-space: nowrap; }
+.statement-counts strong { font-variant-numeric: tabular-nums; }
+.statement-counts > .statement-count-review { background: var(--ck-warning-bg); color: var(--ck-warning-text); }
+.statement-model, .statement-notice { padding: 10px 14px; border: 1px solid var(--ck-info-border); border-radius: var(--ck-radius-sm); background: var(--ck-info-bg); color: var(--ck-info-text); font-size: var(--ck-text-sm); }
+.statement-notice { border-color: var(--ck-success-border); background: var(--ck-success-bg); color: var(--ck-success-text); }
+
+/* A row: a 44 px check, the title and the line under it, the amount; a press opens its editor under it. */
+.statement-rows > li { display: grid; gap: 2px; padding: 6px 0; }
+.statement-row-line { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.statement-check-box { display: flex; flex: none; align-items: center; justify-content: center; width: 44px; height: 44px; margin-left: -10px; cursor: pointer; }
+span.statement-check-box { cursor: default; }
+.statement-check { width: 22px; height: 22px; min-height: 0; margin: 0; accent-color: var(--ck-primary); cursor: pointer; }
+.statement-row-open, .statement-rule-open { display: flex; flex: 1; align-items: center; gap: 12px; min-width: 0; min-height: 52px; margin: 0; padding: 4px 0; border: 0; border-radius: 0; background: transparent; color: var(--ck-text); font-weight: 400; text-align: left; }
+.statement-row-open:hover, .statement-row-open:active, .statement-rule-open:hover, .statement-rule-open:active { border: 0; background: transparent; color: var(--ck-text); }
+.statement-row-open:hover .ck-row-title, .statement-rule-open:hover .ck-row-title { text-decoration: underline; }
+.statement-income { color: var(--ck-success-text); }
+.statement-row-note { padding-left: 34px; color: var(--ck-text-muted); font-size: var(--ck-text-xs); }
+/* Questionable: tinted as a warning and a bar on the left; the words under the title tell why. */
+.statement-rows > .statement-row-review { margin-inline: -10px; padding-inline: 10px; border-radius: var(--ck-radius-sm); background: var(--ck-warning-bg); box-shadow: inset 3px 0 0 var(--ck-warning-border); }
+.statement-rows > .statement-row-review + li, .statement-rows > li + .statement-row-review { border-top-color: transparent; }
+.statement-row-review .statement-row-note { color: var(--ck-warning-text); font-weight: 600; }
+.statement-row-review .ck-row-meta { color: var(--ck-warning-text); }
+.statement-row-edit { display: grid; gap: 10px; padding: 4px 0 12px 34px; }
+.statement-details { color: var(--ck-text-muted); font-size: var(--ck-text-xs); overflow-wrap: anywhere; }
+.statement-details > span { font-weight: 700; }
+.statement-saved-link { color: var(--ck-link); font-size: var(--ck-text-sm); font-weight: 700; }
+.statement-goal-pick { display: grid; gap: 8px; }
+.statement-field { display: grid; gap: 6px; min-width: 0; color: var(--ck-text-muted); font-size: var(--ck-text-sm); font-weight: 600; }
+.statement-field input, .statement-field select { width: 100%; min-width: 0; min-height: 48px; padding: 8px 14px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-surface); color: var(--ck-text); font-size: var(--ck-text-base); font-weight: 400; }
+
+/* Folded groups at the bottom: «Сохранено», «Пропущено», «Поступления». */
+.statement-group { gap: 0; padding-block: 4px; }
+.statement-group > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 52px; font-size: var(--ck-text-base); font-weight: 800; list-style: none; cursor: pointer; }
+.statement-group > summary::-webkit-details-marker { display: none; }
+.statement-group[open] > summary { margin-bottom: 4px; }
+.statement-group > .statement-note { margin-bottom: 4px; }
+.statement-chevron { flex: none; width: 20px; height: 20px; fill: none; stroke: var(--ck-text-muted); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.statement-group[open] .statement-chevron { transform: rotate(90deg); }
+
+/* «Сохранить N трат · сумма»: a dock of the brand; on a phone tall enough it is pinned above the bottom bar. */
+.statement-actions { display: grid; gap: 8px; padding: 16px; border-radius: var(--ck-radius); background: var(--ck-surface); box-shadow: var(--ck-card-shadow); }
+.statement-save { width: 100%; min-height: 56px; font-size: var(--ck-text-base); font-weight: 800; }
+.statement-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.statement-confirm { display: grid; gap: 12px; }
+
+/* The rules: a form in a card, the list as rows; a learned rule carries a quiet pill. */
+.statement-add { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 8px 14px; }
+.statement-count { color: var(--ck-text-muted); font-size: var(--ck-text-sm); font-weight: 700; }
+.statement-search { margin-bottom: 4px; }
+.statement-rules > li { display: grid; }
+.statement-rule-form { display: grid; gap: 12px; padding-bottom: 12px; }
+.statement-actions-choice { min-width: 0; margin: 0; padding: 0; border: 0; }
+.statement-actions-choice > legend { margin-bottom: 6px; padding: 0; color: var(--ck-text-muted); font-size: var(--ck-text-sm); font-weight: 600; }
+.statement-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.statement-chips .ck-chip { font-size: var(--ck-text-sm); }
+.statement-rule-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.statement-learned { flex: none; padding: 4px 10px; border-radius: var(--ck-radius-pill); background: var(--ck-accent-bg); color: var(--ck-accent-text); font-size: var(--ck-text-xs); font-weight: 700; }
+
+@media (max-width: 540px) {
+  .statement-row-edit { padding-left: 0; }
+  .statement-row-note { padding-left: 34px; }
+  .statement-rule-buttons > button { flex: 1 1 auto; }
+}
+
+/* A phone that pins the dock (components/ActionBar.css): a floating card just above the bottom bar, not a strip. */
+@media (max-width: 540px) and (min-height: 480px) {
+  .statements .statement-actions { bottom: calc(var(--ck-bottom-occupied) + 8px); padding: 12px; border: 1px solid var(--ck-border); box-shadow: 0 4px 16px var(--ck-popover-shadow); }
+}

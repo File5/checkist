@@ -52,8 +52,8 @@ docker compose -p checkist_qa up -d --wait --wait-timeout 90 postgres redis
 ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py migrate --noinput
 docker compose -p checkist_qa up -d --build --wait --wait-timeout 120 worker
 ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py makemigrations --check --dry-run
-./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test catalog stores receipts health api recognition merges classification accounts --exclude-tag=integration --verbosity=2
-./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test catalog stores receipts health api recognition merges classification accounts --tag=integration --verbosity=2
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test catalog stores receipts health api recognition merges classification accounts budget --exclude-tag=integration --verbosity=2
+./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py test catalog stores receipts health api recognition merges classification accounts budget --tag=integration --verbosity=2
 ./backend/.venv/Scripts/python.exe -X utf8 backend/manage.py check_services
 ```
 
@@ -456,6 +456,19 @@ node frontend/scripts/check_stats_proxy.mjs preview http://127.0.0.1:15173
 С Ф2 (2026-10-08) скрипт дополнительно проверяет пары запросов раскрытия «Прочего»: для четырёх `group_by` и валют EUR и KZT — запрос без `limit` и тот же с `limit=500`. Итоги и первые `n` обычных элементов двух ответов совпадают; строки состава + остаток = `other.count` и, точной десятичной арифметикой, `Σ состав + остаток = other.amount`; клиентская `blockTail` режет тот же состав; на демо «Прочее» есть у обобщённых продуктов (EUR) и товаров (EUR и KZT), у категорий и магазинов — `other: null` в обоих ответах; `limit=501` — `400 invalid_parameter` с полем `limit`. Нужен сервер с допустимым `limit` 1–500 (Б1). Эти проверки **не запускались** — запуск за QA теми же двумя командами.
 
 `403` настоящим HTTP — отдельным сервером с тем же environment и `$env:ALLOW_LOCAL_RECOGNITION_API='0'` на свободном порту: `curl.exe -s -o NUL -w "%{http_code}" "http://127.0.0.1:18001/api/stats/spending/"` — `403`, а `…/api/products/1/prices/series/?date_from=2025-01-01` — `200`.
+
+### Фактические результаты: PDF и сжатые копии фото, 2026-10-12
+
+Ветка `feature/pdf-and-previews` от `main` `469a791`, macOS (arm64), агент-разработчик, не QA. Модель не вызывалась: `RECEIPT_OCR_PROVIDER=fake`, `RECEIPT_OCR_CODEX_EXECUTABLE=nonexistent-checkist-codex`.
+
+Проверено и прошло:
+
+- Backend — одноразовый `postgres:17` (`docker run --rm -d -p 127.0.0.1:25600:5432 …`), `.env` из `.env.example` с `POSTGRES_PORT=25600`, `DJANGO_DEBUG=1`, `CHECKIST_AUTH_MODE=local_single`, автозапуски 0; отдельный venv с `pypdfium2==5.13.0`: `python -X utf8 manage.py test catalog stores receipts health api recognition merges classification accounts config --noinput --parallel 1` — 2795 тестов, 3 пропущены; не прошли только 6 известных на macOS: `recognition.tests.test_supervisor` (4), `test_storage.test_db_failure_removes_only_own_file`, `health … test_real_cache_round_trip_and_probe_cleanup` (без Redis). Новые: `recognition.tests.test_pdf` (16), `recognition.tests.test_previews` (8), `accounts.tests.test_media` (+6), `api.tests.test_recognition_api` (+3); обновлены эталоны `backend/recognition/tests/fixtures/public/` и `test_owner_migration` (новые колонки и откат, который снимает `0005` раньше, чем отказывает `0004`).
+- `manage.py makemigrations --check --dry-run` — «No changes detected»; `manage.py check` — без замечаний.
+- Frontend: `npx vitest run` — 3839 тестов / 125 файлов; `npm run lint`, `npm run build` — exit 0.
+- Docker: `docker build --target app -t checkist-pdf-test .` — exit 0; в образе `python -c "import pypdfium2"` — 5.13.0 (aarch64), `python -I /app/backend/recognition/pdf_render.py` на трёхстраничном PDF — `{"pages": 3, …}`, изображение 556 × 2502; образ удалён.
+
+Не проверено и почему: proxy-скрипты (`check_recognition_proxy.mjs`, `check_accounts_proxy.mjs`, `features/*/check-http.mjs`) и реальная модель на PDF-счёте — нужна QA-среда; образ amd64 не собирался (колёса `pypdfium2` для manylinux x86_64 есть на PyPI); экраны в браузере и на телефоне — человеком по `frontend/src/features/recognition/ACCEPTANCE.md`, «PDF и сжатые копии».
 
 ### Фактические результаты: мобильная адаптация клиента, итог (И), 2026-10-09
 
@@ -3927,3 +3940,14 @@ $taskDuration = Measure-Command {
 Ctrl+C локальные QA-процессы, затем `docker compose -p checkist_qa down` (для QA2 — `docker compose -p checkist_qa2 down`). Это удаляет только выделенные QA-контейнеры; не используйте глобальные stop/prune. Не удаляйте тома автоматически. Закройте QA-терминалы, чтобы environment overrides не попали в последующий dev-запуск. Убедитесь, что фильтр своего QA project в `docker ps -a` возвращает пустой вывод.
 
 Отчёт всегда разделяет **«проверено и прошло / проверено и не прошло / не проверено и почему»**, включает команды, exit codes, ограничения и воспроизведение. Принятие результата не разрешает самостоятельно merge, публикацию или release.
+
+## Фактические результаты: работа без сети, 2026-10-12
+
+Ветка `feature/offline` (от `main` bc9ee60), выполнял разработчик (агент), macOS, Node из `frontend/`:
+
+- `npm ci` — exit 0.
+- `npx vitest run` — exit 0, 127 файлов / 3873 теста (новые: `src/offline/sw.test.ts` — `public/sw.js` в Node с подменными `self`, `caches`, `fetch`; `src/offline/pending.test.ts`; `src/offline/offline-markup.test.tsx`).
+- `npm run lint` — exit 0.
+- `npm run build` — exit 0; `dist/sw.js` есть, `dist/assets/index-*.js` содержит `register(`/sw.js`, …)`; `sw.js`, загруженный в Node, находит в настоящем `dist/index.html` JS и CSS, а в них — шрифт и четыре WebP.
+
+Не проверено: браузер, iPhone/Android, авиарежим, настоящий кэш service worker, выкладка новой версии, Caddy (файлы не менялись: `/sw.js` отдаёт общий `handle` с `Cache-Control: no-cache`), backend-тесты и proxy-скрипты (сервер не менялся). Ручная приёмка — `frontend/OFFLINE_ACCEPTANCE.md`.

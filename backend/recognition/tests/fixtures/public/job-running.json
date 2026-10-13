@@ -2,6 +2,7 @@
   "id": 31,
   "photo_id": 11,
   "retry_of": null,
+  "owner": "local",
   "status": "running",
   "stage": "prepare",
   "version": 2,
@@ -33,5 +34,7 @@
     "can_retry": false
   },
   "items_count": 0,
+  "display_url": "/media/originals/test/preview-1600-v1.webp",
+  "thumb_url": "/media/originals/test/thumb-400-v1.webp",
   "items": []
 }

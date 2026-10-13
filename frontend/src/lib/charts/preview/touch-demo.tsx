@@ -2,7 +2,8 @@
    Nothing here is used by the application; shops, products and sums are invented, the links lead to anchors. */
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import { formatAmount, formatPercent, formatPrice } from '../../format.ts'
+import { formatPercent, formatPrice } from '../../format.ts'
+import { formatMoney } from '../../money.ts'
 import { LineChart, PieChart } from '../index.ts'
 import type { LineChartSeries, PieChartItem } from '../index.ts'
 
@@ -29,7 +30,7 @@ const weeks: LineChartSeries[] = [{
   points: Array.from({ length: 52 }, (_, index) => {
     const x = new Date(Date.UTC(2025, 9, 6 + index * 7)).toISOString().slice(0, 10)
     const value = 38 + ((index * 37) % 17) * 0.9 + index * 0.12
-    return { x, value, valueText: formatAmount(value.toFixed(2), 'EUR') }
+    return { x, value, valueText: formatMoney(value.toFixed(2), 'EUR') }
   }),
 }]
 
@@ -40,10 +41,10 @@ const spending: [string, string, string][] = [
 const total = spending.reduce((sum, row) => sum + Number(row[2]), 0)
 const categories: PieChartItem[] = [
   ...spending.map(([key, label, amount]): PieChartItem => ({
-    key, label, value: Number(amount), valueText: formatAmount(amount, 'EUR'),
+    key, label, value: Number(amount), valueText: formatMoney(amount, 'EUR'),
     shareText: formatPercent(((Number(amount) / total) * 100).toFixed(2)), href: `#${key}`,
   })),
-  { key: 'deposit', label: 'Залог и возврат тары', value: -12.25, valueText: formatAmount('-12.25', 'EUR'), shareText: '—', tone: 'muted' },
+  { key: 'deposit', label: 'Залог и возврат тары', value: -12.25, valueText: formatMoney('-12.25', 'EUR'), shareText: '—', tone: 'muted' },
 ]
 
 /* Only for looking at the page with a mouse: the real rules sit under `@media (pointer: coarse)` in Charts.css
@@ -103,7 +104,7 @@ export default function TouchDemo() {
         <div className="spending-currency">
           <Example title="Круговая: траты по категориям"
             note="Пальцем: касание сектора или строки таблицы закрепляет подсветку и показывает сумму в центре, повторное касание либо касание вне диаграммы снимает; сектор по касанию не уводит со страницы — переход по ссылке в таблице. Мышью сектор по-прежнему ссылка.">
-            <PieChart title="Траты по категориям, EUR" items={categories} centerLabel="Сумма строк" centerValue={formatAmount(total.toFixed(2), 'EUR')}
+            <PieChart title="Траты по категориям, EUR" items={categories} centerLabel="Сумма строк" centerValue={formatMoney(total.toFixed(2), 'EUR')}
               headers={{ name: 'Категория', value: 'Сумма', share: 'Доля' }} />
           </Example>
         </div>

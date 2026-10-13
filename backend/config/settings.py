@@ -111,9 +111,18 @@ INSTALLED_APPS = [
     "classification.apps.ClassificationConfig",
     "api.apps.ApiConfig",
     "accounts.apps.AccountsConfig",
+    "budget.apps.BudgetConfig",
+    "recurring.apps.RecurringConfig",
+    "statements.apps.StatementsConfig",
+    "rates.apps.RatesConfig",
+    "insights.apps.InsightsConfig",
+    "incomes.apps.IncomesConfig",
+    "goals.apps.GoalsConfig",
+    "push.apps.PushConfig",
 ]
 MIDDLEWARE = [
     "config.robots.NoIndexMiddleware",
+    "health.metrics.MetricsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "config.requests.ApiCommonMiddleware",
@@ -140,14 +149,27 @@ LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
     "filters": {"safe_api_target": {"()": "config.requests.SafeApiTargetFilter"}},
-    "formatters": {"django.server": {
-        "()": "django.utils.log.ServerFormatter", "format": "[{server_time}] {message}", "style": "{",
-    }},
-    "handlers": {"django.server": {
-        "class": "logging.StreamHandler", "level": "INFO", "formatter": "django.server",
-        "filters": ["safe_api_target"],
-    }},
-    "loggers": {"django.server": {"handlers": ["django.server"], "level": "INFO", "propagate": False}},
+    "formatters": {
+        "django.server": {
+            "()": "django.utils.log.ServerFormatter", "format": "[{server_time}] {message}", "style": "{",
+        },
+        "plain": {"format": "{levelname} {name}: {message}", "style": "{"},
+    },
+    "handlers": {
+        "django.server": {
+            "class": "logging.StreamHandler", "level": "INFO", "formatter": "django.server",
+            "filters": ["safe_api_target"],
+        },
+        "stderr": {"class": "logging.StreamHandler", "formatter": "plain"},
+    },
+    # The container log (docs/observability.md): warnings and errors of the code with their level, and of
+    # django.request only a 5xx with its traceback — without DEBUG Django prints none of them by itself.
+    # A 4xx is not logged: request paths carry receipt and product ids.
+    "root": {"handlers": ["stderr"], "level": "WARNING"},
+    "loggers": {
+        "django.server": {"handlers": ["django.server"], "level": "INFO", "propagate": False},
+        "django.request": {"handlers": ["stderr"], "level": "ERROR", "propagate": False},
+    },
 }
 
 DATABASES = {"default": {
@@ -261,6 +283,8 @@ PRODUCT_CLASSIFICATION_AUTO_SUGGEST = classification_suggest_flag in {"1", "true
 PRODUCT_CLASSIFICATION_TIMEOUT_SECONDS = env_integer("PRODUCT_CLASSIFICATION_TIMEOUT_SECONDS", 180, 1, 2400)
 PRODUCT_CLASSIFICATION_BATCH_SIZE = env_integer("PRODUCT_CLASSIFICATION_BATCH_SIZE", 25, 1, 50)
 PRODUCT_CLASSIFICATION_RUN_LIMIT = env_integer("PRODUCT_CLASSIFICATION_RUN_LIMIT", 200, 1, 1000)
+# «Трата словами»: deadline of one text-only model request (receipts.manual_parse).
+MANUAL_PARSE_TIMEOUT_SECONDS = env_integer("MANUAL_PARSE_TIMEOUT_SECONDS", 90, 1, 600)
 MEDIA_ROOT = env_directory("MEDIA_ROOT", BASE_DIR.parent / "media")
 # Fixed v1 prefix shared with the client URL guards and Vite dev/preview proxy.
 MEDIA_URL = os.environ.get("MEDIA_URL", "/media/")
@@ -338,9 +362,31 @@ SESSION_COOKIE_SECURE = CSRF_COOKIE_SECURE = env_flag("DJANGO_SECURE_COOKIES", "
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_SAMESITE = "Lax"
+# A family app on the home screen: sign in once. The session lives this long since the LAST request
+# (every request re-saves it), so only half a year without opening the app signs a person out.
+# local_single never reads the session, so only `accounts` pays the write per request.
+SESSION_COOKIE_AGE = env_integer("DJANGO_SESSION_DAYS", 180, 1, 400) * 86400
+SESSION_SAVE_EVERY_REQUEST = CHECKIST_AUTH_MODE == "accounts"
 # Start small and raise after acceptance: a browser remembers the value for the whole period.
 SECURE_HSTS_SECONDS = env_integer("DJANGO_HSTS_SECONDS", 0 if DEBUG else 3600, 0, 63072000)
 # The domain may have foreign subdomains.
 SECURE_HSTS_INCLUDE_SUBDOMAINS = False
 SECURE_HSTS_PRELOAD = False
 STATIC_ROOT = env_directory("DJANGO_STATIC_ROOT", BASE_DIR.parent / "staticfiles")
+
+# Official exchange rates of the National Bank of Kazakhstan (rates): the source URL with {date} = DD.MM.YYYY,
+# the deadlines of `manage.py rates fetch` and of the lazy fetch of fresh days during a request, and whether
+# that lazy fetch runs at all (0 — only the command loads rates; never in a test database).
+RATES_NBRK_URL = env_text("RATES_NBRK_URL", "https://nationalbank.kz/rss/get_rates.cfm?fdate={date}")
+RATES_FETCH_TIMEOUT_SECONDS = env_integer("RATES_FETCH_TIMEOUT_SECONDS", 20, 1, 120)
+RATES_LAZY_TIMEOUT_SECONDS = env_integer("RATES_LAZY_TIMEOUT_SECONDS", 3, 1, 30)
+RATES_AUTO_FETCH = env_flag("RATES_AUTO_FETCH", "1")
+
+# Web push (push): a VAPID key pair from `manage.py push keys` and a contact (mailto: or https:). Without all three
+# push is off: the client says «не настроено на сервере» and `manage.py push tick` sends nothing.
+WEBPUSH_VAPID_PUBLIC_KEY = os.environ.get("WEBPUSH_VAPID_PUBLIC_KEY", "").strip()
+WEBPUSH_VAPID_PRIVATE_KEY = os.environ.get("WEBPUSH_VAPID_PRIVATE_KEY", "").strip()
+WEBPUSH_VAPID_SUBJECT = os.environ.get("WEBPUSH_VAPID_SUBJECT", "").strip()
+
+# Bearer token of GET /metrics (health.metrics) for Prometheus of the server; empty — the path is a 404.
+METRICS_TOKEN = os.environ.get("METRICS_TOKEN", "").strip()

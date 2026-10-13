@@ -34,7 +34,7 @@ def _series(found):
 
 
 class ReceiptSeriesView(LocalAPIView):
-    """Походы по времени по валютам; число запросов не зависит от объёма данных."""
+    """Походы по времени по валютам и в основной валюте семьи (``base``); число запросов не зависит от объёма данных."""
 
     def get(self, request):
         params = Params(request.query_params)
@@ -42,11 +42,18 @@ class ReceiptSeriesView(LocalAPIView):
         scope = stats_common.read_scope(params)
         interval = params.interval()
         params.check()
+        rows = basket.series_rows(stats_common.receipts(request, scope, period))
+        converter = stats_common.converter(request, rows.needs())
         try:
-            found = basket.series(stats_common.receipts(request, scope, period), interval)
+            found = basket.series(rows, interval)
+            in_base = stats_common.base_block(basket.series(rows, interval, converter), converter.base)
         except basket.TooManyBuckets:
             raise RangeTooLarge() from None
-        return Response({"interval": interval, **period.as_json(), "currencies": [_series(item) for item in found]})
+        return Response({
+            "interval": interval, **period.as_json(),
+            "currencies": stats_common.primary_first(request, [_series(item) for item in found]),
+            **stats_common.base_fields(converter, in_base and _series(in_base), basket.unconverted(rows.sales, converter)),
+        })
 
 
 def _side(side, period):
@@ -116,7 +123,10 @@ def _comparison(block, base, current, names):
 
 
 class ReceiptCompareView(LocalAPIView):
-    """Разложение изменения среднего чека между двумя периодами по валютам."""
+    """Разложение изменения среднего чека между двумя периодами по валютам и в основной валюте семьи.
+
+    ``base`` здесь — базовый период, поэтому блок основной валюты — ``in_base``.
+    """
 
     def get(self, request):
         params = Params(request.query_params)
@@ -129,10 +139,17 @@ class ReceiptCompareView(LocalAPIView):
         limit = params.integer("limit", default=20, maximum=MAX_LIMIT, message=f"Допустимо от 1 до {MAX_LIMIT}.")
         params.check()
 
-        data = basket.collect(stats_common.receipts(request, scope), base, current, stats_common.owner_product_id())
+        rows = basket.compare_rows(stats_common.receipts(request, scope), base, current, stats_common.owner_product_id())
+        data = basket.collect(rows, base)
+        converter = stats_common.converter(request, rows.needs())
+        block = stats_common.base_block(basket.compare(basket.collect(rows, base, converter), limit=limit), converter.base)
+        fields = stats_common.base_fields(converter, block and _comparison(block, base, current, rows.names),
+                                          basket.unconverted(basket.compare_sales(rows), converter))
         return Response({
             "base": base.as_json(), "current": current.as_json(),
             "currencies": [
-                _comparison(block, base, current, data.names) for block in basket.compare(data, limit=limit)
+                _comparison(block, base, current, data.names)
+                for block in stats_common.primary_first(request, basket.compare(data, limit=limit))
             ],
+            "base_currency": fields["base_currency"], "in_base": fields["base"], "excluded": fields["excluded"],
         })

@@ -81,13 +81,18 @@ describe('list behind «Ещё» and a press inside of .main-more (the reducer o
 
 describe('wiring of the press in MainMenu (the text of the file: there is no DOM in the tests)', () => {
   const source = readFileSync(new URL('./MainMenu.tsx', import.meta.url), 'utf8')
-  const wrapper = source.match(/<div className="main-more"[^>]*>/)?.[0] ?? ''
+  const wrappers = source.match(/<div className="main-group"[^>]*>/g) ?? []
 
   it('hears the press on the wrapper of the button and the list, before the blur', () => {
-    expect(wrapper).toContain('onPointerDown={onPress}')
-    expect(wrapper).toContain('onMouseDown={onPress}')
-    expect(wrapper).toContain('onPointerCancel={onRelease}')
-    expect(wrapper).toContain('onBlur={onBlur}')
+    // «Данные ▾» and «Настройки ▾» of the header keep the hook («Ещё» of a phone is a link to its screen since
+    // 2026-10-13); «＋» opens a modal sheet (components/Sheet) that closes by Esc, backdrop and button only.
+    expect(wrappers).toHaveLength(1)
+    for (const wrapper of wrappers) expect(wrapper).toContain('{...wrapperProps}')
+    expect(source).toContain('<div className="main-add">')
+    expect(source).toContain('onPointerDown: onPress,')
+    expect(source).toContain('onMouseDown: onPress,')
+    expect(source).toContain("onPointerCancel: () => dispatch('release'),")
+    expect(source).toContain('onBlur: (event: FocusEvent<HTMLDivElement>) => {')
     expect(source).toContain("const onPress = () => dispatch('press')")
   })
 

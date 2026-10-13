@@ -8,6 +8,7 @@
       "id": 31,
       "photo_id": 11,
       "retry_of": null,
+      "owner": "local",
       "status": "partial_succeeded",
       "stage": "finished",
       "version": 1,
@@ -38,7 +39,9 @@
         "can_cancel": false,
         "can_retry": true
       },
-      "items_count": 2
+      "items_count": 2,
+      "display_url": "/media/originals/test/preview-1600-v1.webp",
+      "thumb_url": "/media/originals/test/thumb-400-v1.webp"
     }
   ]
 }

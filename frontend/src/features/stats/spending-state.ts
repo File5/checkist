@@ -175,6 +175,13 @@ export function needsAddressReset(failure: SpendingFailure): boolean {
 export function hasScopeFilters(query: SpendingQuery): boolean {
   return Boolean(query.date_from || query.date_to || query.country || query.currency || query.store?.length)
 }
+/**
+ * How many filters of the form narrow the answer, for the number beside the filters of a phone: the country, the
+ * currency and the stores. The period is not one: it has its own button, «Период: …».
+ */
+export function filterCount(query: SpendingQuery): number {
+  return (query.country ? 1 : 0) + (query.currency ? 1 : 0) + (query.store?.length ? 1 : 0)
+}
 export function hasFilters(query: SpendingQuery): boolean {
   return hasScopeFilters(query) || Boolean(query.category || query.generic)
 }
@@ -220,6 +227,10 @@ export function otherHref(query: SpendingQuery, open: boolean): string {
 
 export const groupingLabels: Record<SpendingGroupBy, string> = {
   category: 'Категории', generic: 'Обобщённые продукты', product: 'Товары', store: 'Магазины',
+}
+/** The words of the switch of the breakdown: four segments fit a card of a 360 px phone. */
+export const groupingShortLabels: Record<SpendingGroupBy, string> = {
+  category: 'Категории', generic: 'Продукты', product: 'Товары', store: 'Места',
 }
 export const groupingCaptions: Record<SpendingGroupBy, string> = {
   category: 'по категориям', generic: 'по обобщённым продуктам', product: 'по товарам', store: 'по магазинам',

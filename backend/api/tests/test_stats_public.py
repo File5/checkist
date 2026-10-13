@@ -7,6 +7,7 @@
 его товары — 1, 2, 3, магазины — 1, 2, 3.
 """
 import json
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
@@ -16,9 +17,11 @@ from django.test import SimpleTestCase, TestCase, override_settings, tag
 from rest_framework.test import APIClient
 
 from api.tests.test_stats_spending import absorb
+from budget.models import BudgetLimit
 from catalog.models import Category, GenericProduct, Product
 from merges import services
 from receipts import basket, demo
+from receipts.ownership import local_user
 from stores.models import Store
 
 D = Decimal
@@ -27,6 +30,7 @@ SPENDING = "/api/stats/spending/"
 SERIES = "/api/stats/receipts/series/"
 COMPARE = "/api/stats/receipts/compare/"
 PRICES = "/api/products/{}/prices/series/"
+TRENDS = "/api/stats/trends/"
 # Главный вопрос демо: 2020 год против января — сентября 2026.
 PERIODS = "base_from=2020-01-01&base_to=2020-12-31&current_from=2026-01-01&current_to=2026-09-30"
 FOOD, DAIRY, MILK_GENERIC = 1, 2, 1
@@ -34,6 +38,9 @@ MILK, OTHER_MILK, KZ_MILK, APPLES, COOKIES = 1, 2, 3, 6, 11
 NORD, SUED, KZ = 1, 2, 3
 # Счётчик интервалов уменьшен: на демо 1000 интервалов не набрать.
 SMALL_RANGE = "error-range-too-large.json"
+# Текущий месяц сервера в ответе диапазона — подменённый «сегодня» (TRENDS_TODAY).
+TRENDS_RANGE = "trends-range.json"
+TRENDS_TODAY = date(2026, 9, 30)
 FORBIDDEN = "error-permission-denied.json"
 
 # Имя эталона: (запрос, HTTP-статус).
@@ -79,6 +86,16 @@ EXAMPLES = {
         f"{PRICES.format(MILK)}?similar=none&interval=week&date_from=2026-09-01", 200,
     ),
     "price-series-empty.json": (f"{PRICES.format(MILK)}?date_to=2018-12-31", 200),
+    # «Динамика»: окно из 12 месяцев до сентября 2026; месяцы без трат — нули, без индекса — null.
+    "trends-monthly.json": (f"{TRENDS}monthly/?month=2026-09&months=12", 200),
+    "trends-category.json": (f"{TRENDS}category/?category={FOOD}&month=2026-09&months=12", 200),
+    "trends-category-suggested.json": (f"{TRENDS}category/?month=2026-09&months=6", 200),
+    "trends-prices.json": (f"{TRENDS}prices/?month=2026-09&months=12", 200),
+    # Лимиты демо (DEMO_LIMITS) и их исполнение по месяцам.
+    "trends-limits.json": (f"{TRENDS}limits/?month=2026-09&months=6", 200),
+    # Свой период: from … to включительно, через Новый год; диапазон чеков для готовых периодов.
+    "trends-monthly-period.json": (f"{TRENDS}monthly/?from=2025-11&to=2026-03", 200),
+    TRENDS_RANGE: (f"{TRENDS}range/", 200),
     # Ошибки.
     "error-invalid-parameter.json": (
         f"{SPENDING}?date_from=2026-13-01&country=de1&currency=E&store=99&group_by=brand&category=x&limit=0", 400,
@@ -88,15 +105,24 @@ EXAMPLES = {
         f"{COMPARE}?base_from=2020-01-01&base_to=2026-01-01&current_from=2026-01-01&current_to=2026-09-30", 400,
     ),
     SMALL_RANGE: (f"{SERIES}?interval=week", 400),
+    "error-trends-period.json": (f"{TRENDS}monthly/?from=2026-09&to=2026-06", 400),
     FORBIDDEN: (SPENDING, 403),
     "error-not-found.json": (PRICES.format(999999), 404),
 }
+# Лимиты «Продуктов питания» для эталона исполнения лимитов: один выполнен, другой превышен.
+DEMO_LIMITS = (("EUR", "80.00"), ("KZT", "5500.00"))
 # Закрытые поля демо: юридическое название, налоговый номер, номер чека.
 PRIVATE = ("вымышлен", "DEMOSTATS", demo.RECEIPT_PREFIX)
 
 
 def expected(name):
     return json.loads((FIXTURES / name).read_text(encoding="utf-8"))
+
+
+def seed_limits():
+    restart_ids(BudgetLimit)
+    for currency, amount in DEMO_LIMITS:
+        BudgetLimit.objects.create(user=local_user(), category_id=FOOD, currency_id=currency, amount=D(amount))
 
 
 def restart_ids(*models):
@@ -208,6 +234,24 @@ class PublicExampleFilesTests(SimpleTestCase):
         for name in ("spending-empty.json", "series-empty.json", "compare-empty.json"):
             self.assertEqual(expected(name)["currencies"], [], name)
         self.assertEqual(expected("price-series-empty.json")["series"], [])
+        monthly = expected("trends-monthly.json")
+        self.assertEqual([block["currency"] for block in monthly["currencies"]], ["EUR", "KZT"])
+        self.assertTrue(all(len(block["months"]) == monthly["months"] for block in monthly["currencies"]))
+        trend_prices = expected("trends-prices.json")["currencies"]
+        self.assertTrue(trend_prices[0]["risers"] and trend_prices[0]["fallers"])
+        self.assertEqual(trend_prices[0]["points"][0]["index"], "100.00")
+        self.assertTrue(all(block["summary"]["change_percent"] and block["rows"] for block in monthly["currencies"]))
+        self.assertIn(True, [part["direct"] for part in expected("trends-category.json")["currencies"][0]["parts"]])
+        percents = [D(entry["percent"]) for limit in expected("trends-limits.json")["limits"] for entry in limit["months"]]
+        self.assertTrue(min(percents) < 100 < max(percents))
+        self.assertEqual((expected("trends-category-suggested.json")["suggested"], expected("trends-category.json")["suggested"]),
+                         (True, False))
+        period = expected("trends-monthly-period.json")
+        self.assertEqual((period["months"], period["month_from"], period["month_to"]), (5, "2025-11", "2026-03"))
+        self.assertTrue(all(len(block["months"]) == 5 for block in period["currencies"]))
+        span = expected(TRENDS_RANGE)
+        self.assertEqual((span["current_month"], span["max_months"]), ("2026-09", 60))
+        self.assertLess(span["first_month"], span["last_month"])
         codes = {name: expected(name)["error"]["code"] for name in EXAMPLES if name.startswith("error-")}
         self.assertEqual(
             set(codes.values()), {"invalid_parameter", "range_too_large", "permission_denied", "not_found"},
@@ -223,6 +267,7 @@ class PublicExamplesTests(TestCase):
     def setUpTestData(cls):
         restart_ids(Category, GenericProduct, Product, Store)
         demo.seed_demo()
+        seed_limits()
 
     def setUp(self):
         self.client = APIClient()
@@ -231,6 +276,9 @@ class PublicExamplesTests(TestCase):
         path, status = EXAMPLES[name]
         if name == FORBIDDEN:
             with self.settings(ALLOW_LOCAL_RECOGNITION_API=False):
+                response = self.client.get(path)
+        elif name == TRENDS_RANGE:
+            with patch("api.views.stats_trends.timezone.localdate", return_value=TRENDS_TODAY):
                 response = self.client.get(path)
         elif name == SMALL_RANGE:
             with patch.object(basket, "MAX_BUCKETS", 5):

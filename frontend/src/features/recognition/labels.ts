@@ -1,5 +1,6 @@
 import type { ExecutorState, Job, JobStage, JobStatus } from '../../api/recognition'
 import type { LocalApiFailure } from '../../api/types'
+import { aiRefusalText } from '../../lib/ai'
 import { glue } from '../../lib/text'
 import { getSession, permissionDeniedText } from '../../session'
 
@@ -38,10 +39,13 @@ export function isExecutorAbsent(data: { executor: { state: ExecutorState } }) {
 const accountsSession = () => { const session = getSession(); return session.kind === 'user' && session.mode === 'accounts' }
 export function errorText(error: LocalApiFailure, mutation = false): string {
   switch (error.reason) {
-    case 'unsupported_format': case 'unsupported_media_type': return 'Формат не поддерживается. HEIC и другие форматы сохраните в JPEG или PNG и выберите файл заново.'
+    case 'unsupported_format': case 'unsupported_media_type': return 'Формат не поддерживается. Выберите фото в JPEG, PNG, WebP или HEIC либо PDF.'
     case 'upload_too_large': return 'Файл слишком большой. Уменьшите его размер до лимита сервера.'
     case 'image_too_large': return 'Разрешение фото превышает лимит сервера. Уменьшите изображение.'
     case 'invalid_image': return 'Изображение повреждено, пусто или содержит несколько кадров. Сохраните одно фото в JPEG или PNG.'
+    case 'invalid_pdf': return 'PDF не удалось прочитать: файл повреждён или пуст. Сохраните документ заново и загрузите ещё раз.'
+    case 'pdf_encrypted': return 'PDF защищён паролем. Сохраните его без пароля и загрузите снова.'
+    case 'pdf_too_many_pages': return 'В PDF больше 3 страниц. Загрузите счёт или чек не длиннее 3 страниц.'
     case 'csrf_failed': return 'Токен безопасности устарел. Обновите токен и повторите действие.'
     case 'permission_denied': return accountsSession() ? permissionDeniedText(getSession())
       : 'Локальный сервис недоступен с этого адреса или выключен. Проверьте запуск QA API и разрешение локального доступа.'
@@ -50,6 +54,7 @@ export function errorText(error: LocalApiFailure, mutation = false): string {
     case 'job_active': return 'Для этого фото уже идёт обработка. Откройте список заданий этого фото.'
     case 'job_terminal': return 'Задание уже завершилось. Отменить его нельзя.'
     case 'retry_not_allowed': return 'Повтор сейчас недоступен.'
+    case 'ai_disabled': case 'ai_quota': return aiRefusalText(error) ?? ''
     case 'network': case 'timeout': return mutation
       ? 'Ответ сервера не получен. Действие могло выполниться: проверьте задание или список обработки перед повтором.'
       : 'Нет ответа сервера. Проверьте соединение и повторите запрос.'
@@ -62,7 +67,7 @@ export function errorText(error: LocalApiFailure, mutation = false): string {
 }
 /** Texts of the upload screen: picking, reduction, sending and its stop. */
 export const uploadLabels = {
-  pick: 'Выбрать файл', camera: 'Снять чек', cancel: 'Отменить отправку',
+  pick: 'Выбрать файл', camera: 'Снять чек', gallery: 'Из галереи', cancel: 'Отменить отправку',
   submit: 'Загрузить фото', retry: 'Повторить загрузку', sending: 'Отправляем фото…', reducing: 'Уменьшаем фото…',
   progress: 'Отправка фото',
   stageReducing: 'Уменьшаем фото перед отправкой. Это может занять несколько секунд.',

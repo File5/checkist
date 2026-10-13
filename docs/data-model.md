@@ -122,7 +122,8 @@
 | Поле | Тип | Примечание |
 | --- | --- | --- |
 | `owner` | FK `settings.AUTH_USER_MODEL`, `PROTECT`, `related_name="receipts"` | Обязательное, значения по умолчанию нет; см. [владельца](#владелец-и-пользователи) |
-| `store` | FK `stores.Store`, `PROTECT` | |
+| `store` | FK `stores.Store`, null, `PROTECT` | `NULL` — «Без места»: только у `source=manual` (админка требует магазин у чека с фото) |
+| `source` | `CharField(8)`: `photo` / `manual`, default `photo` | `manual` — [трата без чека](#трата-без-чека); прежние и распознанные чеки — `photo` |
 | `currency` | FK `stores.Currency`, `PROTECT` | |
 | `operation` | `CharField(8)`: `sale` / `refund` | «ПРОДАЖА», «ПРИХОД» → `sale` |
 | `purchased_at` | `DateTimeField` | Момент покупки, хранится в UTC |
@@ -137,9 +138,10 @@
 | `prices_include_tax` | `BooleanField`, default `True` | |
 | `raw_text` | `TextField`, blank | Исходный текст чека |
 | `extra` | JSON | Поле «прочее», см. [JSON-поля](#json-поля) |
+| `note` | `TextField`, blank, default `''` | Комментарий человека к трате без чека |
 | `created_at`, `updated_at` | `DateTimeField` | `auto_now_add` / `auto_now` |
 
-- Три unique-ограничения в пределах владельца — см. [дедупликацию](#дедупликация).
+- Три unique-ограничения в пределах владельца и только у `source='photo'` — см. [дедупликацию](#дедупликация).
 - Индексы `(store, purchased_at)` — `receipts_rcpt_store_at_idx` (история цен) и `(owner, purchased_on)` — `receipts_rcpt_owner_on_idx` (список чеков и статистика пользователя).
 - Если время на чеке двойное (в шапке и в фискальном блоке), в `purchased_at` берётся время фискального блока. Это правило ввода, код его не применяет.
 - `purchased_on`, `fiscal_key` и `discount_total` модель сама не вычисляет: их задаёт вызывающий код.
@@ -166,6 +168,7 @@
 | `tax_amount` | `Decimal(14,2)`, null | Налог по строке, если напечатан |
 | `is_excise`, `is_marked` | `BooleanField`, default `False` | Подакцизный товар; маркировка |
 | `product` | FK `catalog.Product`, null, `SET_NULL` | Пусто, пока товар не сопоставлен |
+| `category` | FK `catalog.Category`, null, `PROTECT`, `related_name="receipt_lines"` | Категория строки без товара (трата без чека либо строка-услуга обслуживания и чаевых — ниже); у строки с товаром категория — товара. `PROTECT`: используемую категорию очистка `classification` оставляет (`_delete` ловит `ProtectedError`) |
 | `extra` | JSON | Прочие коды и пометки строки |
 
 - Unique `(receipt, position)` — `receipts_receiptline_receipt_position_uniq`.
@@ -202,14 +205,14 @@
 
 | Модель | Сохраняемые данные и связи |
 | --- | --- |
-| `SourcePhoto` | `owner` FK на пользователя, `PROTECT`, `related_name="source_photos"`, обязательное; `storage_uuid` unique; `original_file`, nullable `upright_file`; lowercase SHA-256 исходных байтов, unique `(owner, sha256)` — `rec_photo_owner_sha256_uniq`; индексы `rec_photo_created_idx` `(created_at, id)` и `rec_photo_owner_created_idx` `(owner, created_at, id)`; sniffed content_type/bytes; raw и upright width/height, EXIF orientation 1–8, preparation_version, created_at |
+| `SourcePhoto` | `owner` FK на пользователя, `PROTECT`, `related_name="source_photos"`, обязательное; `storage_uuid` unique; `original_file`, nullable `upright_file`; у загрузки PDF — `document_file` (`originals/{uuid}/source.pdf`), `document_bytes`, `document_pages` 1–3 (иначе все три пустые; `original_file` — изображение, отрисованное из PDF, SHA-256 — байтов PDF); lowercase SHA-256 исходных байтов, unique `(owner, sha256)` — `rec_photo_owner_sha256_uniq`; индексы `rec_photo_created_idx` `(created_at, id)` и `rec_photo_owner_created_idx` `(owner, created_at, id)`; sniffed content_type/bytes; raw и upright width/height, EXIF orientation 1–8, preparation_version, created_at |
 | `ProcessingJob` | photo PROTECT, retry_of SET_NULL; status/stage; detected/current_position и completed/imported/reused/review/failed/cancelled counters; version/run_token/claim_count; available/started/finished/deadline/heartbeat/lease/cancel timestamps; safe error_code |
 | `ReceiptImage` | photo PROTECT, job CASCADE; position 1–10; file/hash/width/height; normalized bbox/quad/rotation/crop_transform/clipped; status/import_effect; Receipt SET_NULL; nullable normalized_result, issues list, outcome_snapshot, created_at |
 | `RecognitionAttempt` | job CASCADE, nullable image CASCADE; phase detect/recognize, ordinal, run_token; provider/model/provider/CLI/prompt/schema versions; input_sha256; status, private raw_payload/invalid_output_text/error_code; started/finished |
 
 Ограничения БД:
 
-- Photo: bytes 1..20971520, оба размера положительны и площадь ≤40000000 (умножение bigint), JPEG/PNG/WebP; ориентация 1..8. Storage UUID unique; SHA-256 unique в пределах владельца: один и тот же файл у двух пользователей — два фото с разными каталогами в MEDIA.
+- Photo: bytes 1..20971520, оба размера положительны и площадь ≤40000000 (умножение bigint), JPEG/PNG/WebP; ориентация 1..8. `rec_photo_document_check` (миграция `recognition.0005_sourcephoto_document`, три nullable колонки, данные не меняются): либо нет документа (`document_file` NULL или пустая строка, размер и страницы NULL), либо все три заданы — bytes 1..20971520, страниц 1..3; каждая ветка проверяет NULL явно, иначе сравнение с NULL пропустило бы строку. Откат — `migrate recognition 0004_sourcephoto_owner_required`: колонки снимаются, файлы PDF остаются на диске, фото сохраняют своё изображение. Storage UUID unique; SHA-256 unique в пределах владельца: один и тот же файл у двух пользователей — два фото с разными каталогами в MEDIA.
 - Job: не более одного active job/photo (`queued`, `running`, `cancel_requested`); допустимые status/stage; version ≥1; detected_count ≤10; current_position в диапазоне обнаруженного количества; каждый progress counter ≤detected_count (при NULL только 0). Сумма counters отдельно БД не проверяется, её ведёт queue service.
 - Terminal Job требует finished_at и stage=finished; active — без finished_at. Только executing состояния имеют run_token/heartbeat/lease/started/deadline; queued/terminal не имеют token/heartbeat/lease. Cancel timestamp требуется только cancel_requested/cancelled.
 - Image: unique `(job,position)`, position 1..10, положительные размеры ≤40 MP, допустимые status/import_effect, rotation −180..180. Принадлежность photo к job и геометрия проверяются `clean()`/storage, не FK-ограничением БД.
@@ -255,7 +258,7 @@ Image statuses: pending/running → imported/reused/updated/needs_review/failed/
 
 Очередь/импорт: `queue.fenced_job` проверяет token/version/неистёкший lease/status под row lock. OCR проходит вне транзакции. Отдельная неблокирующая transaction advisory-блокировка сериализует OCR imports; один durable commit сохраняет domain graph и image outcome, последний crop — также terminal job. Блокирующая доменная ошибка откатывает новые магазины/товары/чек, сохраняя observation/issues вне savepoint. Неблокирующие issues не увеличивают Job.review_count и не превращают succeeded в partial_succeeded. Сам clipped не запрещает импорт читаемого результата; неправильная/перекрывающаяся геометрия по-прежнему не запускает смешанный OCR. Cancel, принятый до import, запрещает его; уже закоммиченные чеки отмена не удаляет. Старые ORM/admin/SQL writers не участвуют в OCR mutex, stale admin form не защищена от OCR-дополнений (упрощение v1). Старые terminal outcomes неизменны для воркера и очереди: для прежнего needs_review/partial_succeeded используется штатный retry либо [подтверждение человеком](#подтверждение-вырезки-человеком). Откат И4 — revert кода/тестов/docs, без миграций; уже импортированные данные и исходные DTO остаются, автоматического удаления нет.
 
-MEDIA: original сохраняется без изменений; upright preview/crops — PNG без EXIF; пути UUID, staging вне MEDIA и atomic rename. Deletion ORM не удаляет файлы. Удаление Receipt оставляет images с receipt=NULL и историческим ID в outcome_snapshot (`receipt_deleted=true` в API); удаление Job каскадирует images/attempts, но сохраняет Receipt и файлы. Photo защищён, пока есть jobs/images. Ни cleanup-команды, ни retention-политики нет; crash между записью файла и DB commit может оставить orphan.
+MEDIA: original сохраняется без изменений (у PDF — отрисованное изображение, а сам PDF рядом, `source.pdf`); upright preview/crops — PNG без EXIF; пути UUID, staging вне MEDIA и atomic rename. Сжатые копии для показа — `preview-1600-v1.webp` и `thumb-400-v1.webp` рядом с `source.*`, у `crop.png` — `-v2`, бумага выпрямлена по `quad` ([api-contract.md](api-contract.md#выпрямленные-копии-вырезок-2026-10-13-ветка-featurereceipt-scan)): таблиц и колонок у них нет, имя выводится из пути исходника, файл пишется при первом запросе либо `manage.py media_previews backfill` ([api-contract.md](api-contract.md#media)); распознавание их не читает. Deletion ORM не удаляет файлы. Удаление Receipt оставляет images с receipt=NULL и историческим ID в outcome_snapshot (`receipt_deleted=true` в API); удаление Job каскадирует images/attempts, но сохраняет Receipt и файлы. Photo защищён, пока есть jobs/images. Ни cleanup-команды, ни retention-политики нет; crash между записью файла и DB commit может оставить orphan.
 
 ### Подтверждение вырезки человеком
 
@@ -496,9 +499,29 @@ MEDIA: original сохраняется без изменений; upright previe
 
 В JSON и текстовых полях могут оказаться персональные данные (ФИО кассира, ФИО и ИНН предпринимателя). В репозитории — в коде, тестах и документации — используются только вымышленные.
 
+## Обслуживание и чаевые (2026-10-12)
+
+Строка вида `service`, чьё название похоже на плату за обслуживание или чаевые, остаётся без товара каталога и получает `ReceiptLine.category` = «Кафе и рестораны» › «Обслуживание и чаевые»; статистика (`receipts/spending.py`) кладёт строку-услугу с категорией в эту категорию, а не в особый элемент `service`, поэтому такие траты видны отдельно от еды и попадают в лимит «Кафе и рестораны». Другие услуги («Доставка», «Пакет») не меняются.
+
+- **Правило** — один модуль `receipts/service_charges.py`: `MARKERS` — части слов без учёта регистра («обслуж», «сервис», «чаев», «service», «servis», «tips», «gratuity», «trinkgeld», «bedienung», «қызмет көрсет», «қызмет ақы»), `is_service_charge(name)`, `applies(kind, name)`. Клиент повторяет список для подсказки в форме исправления (`frontend/src/features/recognition/service-charge.ts`) — менять вместе.
+- **Категория** — миграция `catalog.0003_service_charge_category`: `get_or_create` по имени корня «Кафе и рестораны» и имени потомка «Обслуживание и чаевые» под ним. На сервере обе уже есть (id 9 и 27) — миграция их находит и ничего не создаёт; повтор тоже. Откат — пустой (`noop`): на категорию ссылаются строки и лимиты. Импорт ищет её по имени и родителю (`category_id()`, один запрос на импорт чека со строкой обслуживания); нет её (удалена, переименована) — строка остаётся без категории, как раньше.
+- **Где применяется.** Только при создании нового чека в импорте распознавания (`recognition/importer.py`, `_create_graph`) — значит, и при подтверждении вырезки человеком (`POST /api/recognition/receipt-images/{id}/confirm/`, тот же импорт). Найденный существующий чек (повтор фото, дубль) не перезаписывается. Трата без чека (`kind=product`) правила не касается.
+- **Уже сохранённые строки** меняет только команда `manage.py service_charges backfill [--dry-run]`: строкам `kind=service` без товара и **без категории**, чьё название подходит, ставит категорию обслуживания; строку с уже выбранной категорией не трогает. Печатает JSON `{"category_id", "matched", "updated", "kept", "dry_run"}` (при `--dry-run` `updated` — сколько было бы изменено, ничего не пишется). Нет категории — `category_id: null`, ничего не меняется, exit 1 с подсказкой `migrate catalog`. На сервере: `./deploy/docker/ck manage service_charges backfill --dry-run`, затем без `--dry-run`. Повторный запуск ничего не меняет.
+
+## Трата без чека
+
+Трата без чека (наличные, перевод, счёт) — `Receipt(source='manual')` без новой таблицы: списки, страница чека и статистика читают её той же выборкой. Пишет только `receipts/manual.py` (API — [api-contract](api-contract.md#реализовано-трата-без-чека)).
+
+- Без позиций — одна строка «<название категории>» на всю сумму с `category`; с позициями — строки с названиями человека. Строка: `kind=product`, `unit=pcs`, `unit_price = amount / quantity`, `product=NULL`, `category` — своя, иначе общая. Товаром каталога строки не сопоставляются: `find_alias` ищет по продавцу, которого у траты может не быть, а новый товар попал бы в «Не разобрано» и спрятал бы категорию человека.
+- `store` — найденный по вывеске или названию без учёта регистра магазин либо новый `Merchant` + `Store` (страна по валюте, адрес пустой); без места — `NULL`. `operation` — `sale`; `purchased_at` — момент сохранения, если дата сегодняшняя, иначе полдень даты в поясе места (без места — сервера).
+- Дедупликации нет (условие `source='photo'`); наблюдением цены трата не бывает (`receipts.prices.observation_q` требует `source='photo'`). (До 2026-10-13; теперь — раздел «Названная покупка — товар каталога» в конце.) Статистика берёт категорию товара, а у строки без товара — `ReceiptLine.category` (`receipts/spending.py`, особые элементы `no_product` и `no_store`).
+- В админке `source` показан отключённым полем: чек, заведённый там, — `photo`, с прежними правилами дубликатов; у такого чека магазин обязателен.
+
+**Откат** `receipts.0006_manual_expense` — `manage.py migrate receipts 0005_receipt_owner_required`: при хотя бы одной трате `source=manual` первым шагом отказывает (`RuntimeError`, схема не меняется) — сначала удалите траты (`DELETE /api/receipts/{id}/` или админка). Без ручных трат откат снимает `source`, `note`, `category`, возвращает `store NOT NULL` и прежние условия ограничений; данные чеков с фото не теряются.
+
 ## Дедупликация
 
-Три уровня, каждый — частичное unique-ограничение на `receipts_receipt` **в пределах владельца**. Один и тот же кассовый чек у двух пользователей — две личные покупки: ограничения их не сталкивают, `find_duplicates(receipt_data, *, owner)` ищет только среди чеков этого владельца, импорт и подтверждение вырезки берут владельца из фото (`recognition/importer.py`, `recognition/review.py`).
+Три уровня, каждый — частичное unique-ограничение на `receipts_receipt` **в пределах владельца** и только у чеков с фото (`source='photo'` в условии каждого; у трат без чека правил нет — две одинаковые траты за день остаются двумя тратами, `find_duplicates` их не ищет). Один и тот же кассовый чек у двух пользователей — две личные покупки: ограничения их не сталкивают, `find_duplicates(receipt_data, *, owner)` ищет только среди чеков этого владельца, импорт и подтверждение вырезки берут владельца из фото (`recognition/importer.py`, `recognition/review.py`).
 
 | Уровень | Ограничение | Условие |
 | --- | --- | --- |
@@ -573,7 +596,7 @@ MEDIA: original сохраняется без изменений; upright previe
 - Период отбирается по `Receipt.purchased_on` — локальной дате магазина, обе границы включительно. Индекса по `purchased_on` нет (у чека есть `(store, purchased_at)`, у строки — `(product, receipt)`): на демо-базе из 466 чеков и 5604 строк самый медленный запрос статистики занял 132 мс ([замер](verification.md#статистика-серверная-часть-с5)). Если на настоящих данных запрос окажется дольше 500 мс, отдельной задачей добавляется `receipts.0002` с индексом `receipts_receipt(purchased_on)`; миграция обратима (`migrate receipts 0001`) и данных не меняет.
 - Траты — `Σ (amount − discount_amount)` строк всех чеков, включая возвраты со знаком. Скидка на весь чек и налог сверх цен по строкам не распределяются и видны разницей `Σ Receipt.total − Σ строк`.
 - Категория строки — `Product → GenericProduct → Category`. Импорт кладёт новые товары в служебные категорию и обобщённый продукт «Не разобрано»; пока человек в админке не сменит `Product.generic`, разбивка по категориям показывает их одним сектором, а похожих товаров для графика цен нет.
-- Поход — чек `operation='sale'`; позиции — строки `kind='product'` с `quantity > 0`. Медиана — `percentile_cont(0.5)` Postgres по сумме в центах.
+- Поход — чек `operation='sale'`; позиции — строки `kind='product'` с `quantity > 0`. Медиана — как `percentile_cont(0.5)`: середина двух средних (с 2026-10-13 считается в Python по итогам чеков, чтобы те же данные дали и блок в основной валюте).
 - Строка, которая ещё указывает на поглощённый слиянием товар, относится к оставляемому товару его ожидающей группы.
 - Валюты не складываются: каждый расчёт делит данные по `Receipt.currency`.
 
@@ -713,6 +736,49 @@ Inline внутри чека, все без пустых заготовок (`ex
 
 **Откат F6** — revert коммита задачи F6 (`git log --oneline --grep='F6'`), только кода/регрессий и согласованной документации. Модели, settings, миграции, данные и журнал действий не меняются; новые миграции не нужны. Откат возвращает риск HTTP 500 при DELETE+UPDATE, перестановке позиций/ставок и занятии unique-ключа после clean. Сохраняются ограничения и риски предыдущего состояния F4; ранее потерянные данные revert не восстанавливает.
 
+## Бюджет: лимиты по категориям
+
+`budget.BudgetLimit` — месячный лимит трат в одной категории (любого уровня, с 2026-10-12; трата подкатегории входит и в лимит каждого предка) и одной валюте (API — [api-contract](api-contract.md#реализовано-лимиты-бюджета-и-дашборд-месяца)).
+
+| Поле | Тип | Смысл |
+| --- | --- | --- |
+| `household` | FK `accounts.Household`, NULL, CASCADE | владелец-семья |
+| `user` | FK пользователь, NULL, CASCADE | владелец-пользователь без семьи |
+| `category` | FK `catalog.Category`, CASCADE | категория любого уровня; уникальность — владелец + категория + валюта |
+| `currency` | FK `stores.Currency`, PROTECT | валюта лимита |
+| `amount` | Decimal(14, 2) | сумма в месяц |
+| `created_at`, `updated_at` | DateTime | |
+
+- Ограничения БД: `budget_limit_one_owner` — задан ровно один из `household` / `user`; `budget_limit_amount_positive` — `amount > 0`; частичные уникальные `budget_limit_household_category_currency_uniq` (`household` не NULL) и `budget_limit_user_category_currency_uniq` (`user` не NULL).
+- «Верхний уровень» БД не проверяет: его проверяют API и `clean()` формы админки. Категорию, перенесённую под другую уже после создания лимита, дашборд показывает отдельной строкой со своим лимитом.
+- Владелец нового лимита — семья пользователя, без семьи — сам пользователь (`budget/access.py::limit_owner`); видимость — `limits_q`. Удаление семьи или пользователя удаляет лимит; категорию и валюту с лимитом удалить нельзя (`PROTECT`) — уборка созданных категорий в `classification` такую категорию оставляет (`kept`).
+- Админка: `BudgetLimit` — обычная правка (список, фильтр по валюте, поиск по категории, семье и логину); сохранение и удаление идут через `budget/history.py` и пишут журнал. F4/F6 не затронуты.
+
+### Журнал лимитов (`budget.BudgetLimitChange`, 2026-10-12)
+
+Как менялись лимиты со временем. Запись — создание, смена суммы либо удаление лимита одной пары «категория и валюта» у владельца.
+
+| Поле | Тип | Смысл |
+| --- | --- | --- |
+| `household` / `user` | FK, NULL, CASCADE | владелец — как у `BudgetLimit`, ровно один (`budget_limit_change_one_owner`) |
+| `category` | FK `catalog.Category`, CASCADE | категория (журнал удалённой категории уходит вместе с ней) |
+| `currency` | FK `stores.Currency`, PROTECT | валюта |
+| `old_amount` | Decimal(14, 2), NULL | сумма до изменения; NULL — лимит создан |
+| `new_amount` | Decimal(14, 2), NULL | сумма после; NULL — лимит удалён (`budget_limit_change_not_empty`: оба пустыми не бывают) |
+| `changed_by` | FK пользователь, NULL, SET_NULL | кто изменил; NULL — неизвестно (посев миграцией) |
+| `changed_at` | DateTime | момент изменения |
+| `effective_month` | Date, 1-е число (`budget_limit_change_month_start`) | месяц изменения по местной дате сервера |
+
+- Индекс `budget_change_key_month` (`category`, `currency`, `effective_month`).
+- Пишет только `budget/history.py` (`save_limit`, `delete_limit`) в одной транзакции с лимитом — и API, и админка (`save_model`, `delete_model`, массовое удаление). Та же сумма записи не даёт; перенос лимита на другую категорию, валюту или владельца — две записи (удаление и создание). Прямые ORM-записи `BudgetLimit` журнал не пишут.
+- Сумма лимита пары в месяце — `new_amount` последней записи с `effective_month` не позже месяца (в месяце — по `changed_at`, `pk`); NULL — лимита не было либо он удалён. Лимит **без единой записи** (заведён мимо сервиса) действует во всех месяцах текущей суммой, как до журнала. Видимость — `limits_q`, как у лимитов.
+- Используют: `/api/stats/trends/limits/` (лимит каждого месяца), `/api/dashboard/?month=` прошлого месяца (лимиты того месяца), `/api/budget/limits/history/`.
+- Админка: журнал только для чтения (добавление и правка запрещены; удаление не запрещено, чтобы удалялись семья, пользователь и категория).
+
+**Миграции** `budget.0002_budgetlimitchange` (таблица) и `budget.0003_seed_limit_changes` (данные: одна запись «создан» на каждый лимит — текущая сумма, месяц `created_at` по местному времени, `changed_by` NULL; прежние суммы не хранились). Откат — `manage.py migrate budget 0001_initial`: `0003` удаляет все записи журнала, `0002` — таблицу; лимиты не меняются.
+
+**Откат** `budget.0001_initial` — `manage.py migrate budget zero`: удаляет таблицу лимитов (лимиты теряются, чеки не меняются). Откат `accounts.0002_household_membership` теперь откатывает и `budget`.
+
 ## Миграции и откат
 
 | Порядок | Миграция | Содержимое |
@@ -727,8 +793,9 @@ Inline внутри чека, все без пустых заготовок (`ex
 | 8 | `receipts.0004_assign_local_owner` | `RunPython`: создаёт пользователя `local` (существующего не меняет) и отдаёт ему чеки без владельца; обратный ход — noop. Зависит от `auth.0012` |
 | 9 | `receipts.0005_receipt_owner_required` | `owner` NOT NULL; три ограничения с владельцем добавляются **до** удаления трёх прежних |
 | 10 | `catalog.0002_alter_product_options` | Только состояние: право `moderate_catalog` у `Product` |
+| 11 | `receipts.0006_manual_expense` | [Трата без чека](#трата-без-чека): `Receipt.source` (default `photo`), `Receipt.note`, `Receipt.store` nullable, `ReceiptLine.category`; три ограничения дедупликации пересозданы с `source='photo'` в условии. Откат при ручных тратах отказывает |
 
-Таблица перечисляет миграции трёх предметных приложений. Остальные собственные: `recognition.0001_initial`, `0002_sourcephoto_owner`, `0003_assign_local_owner`, `0004_sourcephoto_owner_required` (то же для фото: колонка и индекс, передача `local`, NOT NULL с `rec_photo_owner_sha256_uniq` до снятия `unique` с `sha256`); `merges.0001_initial`, `0002_actor_fields`; `classification.0001_initial`, `0002_actor_fields`; `accounts.0001_initial`. **Всего собственных миграций 19** (`catalog` 2, `stores` 3, `receipts` 5, `recognition` 4, `merges` 2, `classification` 2, `accounts` 1); вместе с 18 стандартными, о которых говорит прежний замер, должно получиться 37 — число посчитано по файлам, `migrate` на пустой базе после этих миграций не запускался.
+Таблица перечисляет миграции трёх предметных приложений. Остальные собственные: `recognition.0001_initial`, `0002_sourcephoto_owner`, `0003_assign_local_owner`, `0004_sourcephoto_owner_required` (то же для фото: колонка и индекс, передача `local`, NOT NULL с `rec_photo_owner_sha256_uniq` до снятия `unique` с `sha256`); `merges.0001_initial`, `0002_actor_fields`; `classification.0001_initial`, `0002_actor_fields`; `accounts.0001_initial`. **Всего собственных миграций 20** (`catalog` 2, `stores` 3, `receipts` 6, `recognition` 4, `merges` 2, `classification` 2, `accounts` 1); вместе с 18 стандартными, о которых говорит прежний замер, — 38; `receipts.0006` добавлена после прогона QA разделения пользователей (37). Позже добавлены `accounts.0002_household_membership`, `receipts.0007_manual_parse_request` и `budget.0001_initial` ([лимиты](#бюджет-лимиты-по-категориям); зависит от `accounts.0002`, `catalog.0002`, `stores.0003`).
 
 Миграции владельца снимают `statement_timeout` на время своей транзакции (`SET LOCAL statement_timeout = 0`): `UPDATE` всех чеков и построение unique-индексов в 2000 мс могут не уложиться. Время на копии dev-базы не замерялось.
 
@@ -790,3 +857,244 @@ docker compose -p checkist_dev cp postgres:/tmp/checkist.dump ./checkist.dump
 - Поведение на больших объёмах не измерялось: статистика замерена только на демо-базе (466 чеков, 5604 строки).
 
 Команды проверки трёх приложений — в [verification.md](verification.md#модель-данных-catalog-stores-receipts).
+
+## Профиль, главный в семье, скрытые платежи, приглашения (2026-10-12)
+
+- `accounts.Profile` — OneToOne с пользователем, `default_currency` → `stores.Currency` (NULL, `SET_NULL`), `updated_at`; строка создаётся первым `PATCH /api/me/settings/`. Место для следующих настроек.
+- `accounts.Membership.role` — `head` | `member` (по умолчанию `member`; прежние члены семей — `member`). Частичное уникальное ограничение `accounts_membership_one_head` (`household` при `role='head'`): главный в семье не больше одного. Главного назначает администратор (инлайн членов в форме семьи) либо клиент «Семья» (создатель семьи, передача роли). Пользователь без семьи — сам себе главный (`accounts.access.is_head`).
+- `accounts.Invite` — `household`, `token_hash` (SHA-256, уникален), `created_by`, `created_at`, `expires_at` (+7 дней), `used_at`, `used_by`; сам токен не хранится.
+- `receipts.Receipt.hidden` (bool, по умолчанию `false`), `hidden_by` (FK пользователь, NULL, `SET_NULL`), `hidden_at`. Скрытый платёж не виден членам семьи и не входит ни в какие суммы; правило — `accounts.access.visible_receipts_q`.
+- Миграции: `accounts.0003_profile_head_invite` (Profile, Invite, `role`, ограничение), `receipts.0008_receipt_hidden` — схема без данных. Откат: `migrate receipts 0007_manual_parse_request`, `migrate accounts 0002_household_membership` (роли, настройки и приглашения теряются; скрытые платежи снова видны всем).
+
+## Регулярные платежи (2026-10-13, ветка `feature/recurring`)
+
+Приложение `recurring` (миграция `recurring.0001_initial`; откат — `migrate recurring zero`, удаляет платежи, ответы и
+скрытые предложения, траты и чеки не трогает).
+
+- `RecurringPayment` — владелец как у лимита: `household` либо `user` (ровно один, `recurring_payment_one_owner`);
+  `name` (100), `store` → `stores.Store` (NULL, `SET_NULL`, без обратной связи), `category` → `catalog.Category`
+  (`PROTECT`), `currency` (`PROTECT`), `amount` > 0 (ожидаемая сумма, Decimal 14,2), `due_day` 1–31, `active`,
+  `created_by` (`SET_NULL`), `created_at`, `updated_at`.
+- `RecurringDecision` — ответ на «платёж за месяц не найден»: `payment` (`CASCADE`), `month` (первое число,
+  `recurring_decision_month_start`), `decision` `added` | `skipped` | `elsewhere`, `receipt` → `receipts.Receipt` без
+  ограничения БД и без обратной связи (`db_constraint=False`, `DO_NOTHING`: удаление чека его не трогает и запросов не
+  добавляет; удалённая трата снова открывает вопрос), `decided_by`, `decided_at`; уникален на платёж и месяц.
+- `DismissedSuggestion` — скрытое предложение: владелец как у платежа, ключ `store` + `category` + `currency` (`CASCADE`),
+  уникален на владельца и ключ.
+
+Оплата месяца не хранится — сверка при чтении (`recurring.matching`, правило — [api-contract.md](api-contract.md#регулярные-платежи-2026-10-13-ветка-featurerecurring));
+сигналов и правок в `receipts` нет. Одно чтение месяца — около восьми запросов независимо от числа платежей и трат
+(траты 13 месяцев и их категории читаются целиком, сверка — в памяти).
+## Склейка магазинов (2026-10-13, ветка `feature/smart-expense`)
+
+- `stores.Store.merged_into` — FK на главный магазин (NULL, `PROTECT`, `related_name="aliases"`). Склеенный магазин —
+  вариант написания: чеков у него нет, его вывеска и название ведут к главному. Указывает всегда прямо на главный:
+  склейка главного переносит и его варианты. В админке поле только для чтения.
+- `stores.StoreMerge` — журнал: `store` (главный), `merged`, `receipt_ids` и `alias_ids` (JSON: какие чеки и варианты
+  перенесены), `created_by` (`SET_NULL`), `created_at`, `reverted_at`.
+- `stores.StoreMergeSuggestion` — `store_ids` (JSON, отсортированные id), `source` `similar` | `model`, `status`
+  `pending` | `dismissed`, `created_at`: группы модели и отказы человека («Не то»). Пары похожих названий не хранятся.
+- Правила — только `stores/merging.py` (`merge`, `revert`, `dismiss`, `suggestions`, `name_key`); группы модели —
+  `stores/grouping.py`, команда `manage.py store_merges suggest [--dry-run] [--limit N] | list | revert ID`.
+  Магазин по названию — по-прежнему только `receipts.manual.find_or_create_store` (теперь находит главный по
+  варианту); импорт фото (`recognition.importer`) тоже переходит от склеенного магазина к главному, `resolution.py`
+  не менялся. Склейка — одна транзакция с блокировкой строк магазинов; одинаковые чеки с фото одного владельца
+  (ограничения дедупликации) отменяют её целиком (`MergeConflict`).
+- Миграция `stores.0005_store_merge` — только схема. Откат — `migrate stores 0004_more_currencies`: варианты и журнал
+  стираются, перенесённые чеки остаются у главного; чтобы вернуть их, до отката — `store_merges revert` по журналу.
+- История трат для «Новой траты» (`receipts/history.py`) моделей не добавляет: подсказки, частые и похожие траты
+  считаются при чтении из видимых чеков.
+## Несколько семей и ИИ у семьи (2026-10-13, ветка `feature/families`)
+
+- `accounts.Household.ai_enabled` (bool) — фото и тексты семьи можно отправлять внешней модели; меняет главный (`PATCH /api/family/ai/`) либо администратор. У семей, заведённых до миграции, — `true` (прежнее поведение прода), у новых — `false` (по умолчанию модели).
+- `accounts.Household.ai_daily_limit` (целое ≥ 0 либо NULL, по умолчанию 50) — запросов семьи к модели за сутки; NULL — без предела (запросы считаются, отказа по квоте нет). У семей, заведённых до миграции, — NULL, у новых — 50. Меняет только администратор в `/admin/` (список семей показывает оба поля).
+- `accounts.AiUsage` — `household` (FK, `CASCADE`), `day` (дата, `timezone.localdate()` сервера — UTC), `count` (≥ 0); уникально `(household, day)` (`accounts_aiusage_household_day_uniq`). Пишет только `accounts.ai.use_ai` одним `UPDATE … SET count = count + 1 WHERE count < limit`: одновременные запросы предел не обходят; новые сутки — новая строка. Старые строки не удаляются (одна строка на семью в день).
+- `accounts.Invite.kind` — `join` (в семью `household`, как раньше) | `new_family` (новая семья, `household` — NULL); `household` стал NULL-допустимым. Проверка `accounts_invite_kind_household`: `join` — всегда с семьёй, `new_family` — всегда без неё. Принятое приглашение новой семьи хранит `used_by` — созданного главного.
+- Миграция `accounts.0004_families_ai_invites`: `ai_enabled` добавляется со значением `true` для существующих строк и затем получает значение по умолчанию `false`; `ai_daily_limit` — NULL для существующих строк, затем значение по умолчанию 50; остальное — схема без данных. Откат — `migrate accounts 0003_profile_head_invite`: приглашения новых семей удаляются (в схеме 0003 у приглашения семья обязательна), включатель, квота и счёт запросов теряются.
+## Импорт выписок (2026-10-13, ветка `feature/statement-import`)
+
+Приложение `statements`, миграция `statements.0001_initial` (только схема, без данных). Откат — `migrate statements zero` (черновики, правила и вопросы модели удаляются; траты, сохранённые из выписок, остаются обычными ручными тратами).
+
+- `StatementImport` — загруженная выписка-черновик: `owner` (кто загрузил; на него создаются траты; CASCADE), `bank` (`kaspi_gold` | `forte`), `sha256` файла (уникально с `owner`: повтор того же PDF — тот же черновик), `date_from`/`date_to`, `created_at`, `saved_at`. **PDF не хранится.**
+- `StatementRow` — строка выписки: `position` (уникальна в выписке), `date`, `amount` со знаком банка, `currency` (код), `operation`, `details`, `merchant` (получатель / отправитель — ключ правил и вопроса модели), `mcc`, `refund` (возвраты того же дня, вычтенные из покупки), `kind` (`spend`/`transfer`/`cash`/`own_move`/`income`/`refund`), `state` (`spend`/`review`/`duplicate`/`skipped`), `reason`, предложение `category` (SET_NULL) и `store_name`, `source` (`rule`/`builtin`/`mcc`/`model`), `ai` (`waiting`/`done`/`unknown`/`failed`/`off`), `duplicate_of` и `receipt` (FK `receipts.Receipt`, SET_NULL). Поступления (`income`) хранятся только здесь и тратами не становятся.
+- `StatementRule` — «получатель → категория (+ место) | пропускать | свои счета и семья»: владелец ровно один, как у `BudgetLimit` (`household` либо `user`, ограничение `statements_rule_one_owner`), `pattern` и нормализованный `key` (строчные, «ё» → «е», знаки препинания — пробелы; уникален у владельца), `action`, `category` (PROTECT — категорию правила уборка каталога не удалит; обязательна ровно у `category`, ограничение `statements_rule_category_action`), `store_name`, `origin` (`manual`/`learned`), `created_by`. Правило подходит, когда слова `key` стоят подряд в получателе; из подходящих — самое длинное. Личных правил (людей) в коде и миграциях нет — их заводит человек; встроенные образцы сетей, MCC и видов операций — `statements/defaults.py` (категории по именам; нет такой категории — образец молчит).
+- `StatementAsk` — вопрос модели о незнакомых получателях черновика (`merchants` — до 40), очередь как у `ManualParseRequest`: `queued → running → succeeded | failed` (`expired` через 30 мин в очереди, `worker_lost`, коды провайдера, `invalid_output`), `run_token`, lease. Исполняет `recognition_worker` отдельным шагом после «Траты словами» и до заданий фото (`statements/ask.py`).
+## Курсы Нацбанка РК (`rates`, 2026-10-13, ветка `feature/currency-rates`)
+
+- `rates.Rate` — `currency` (код ISO 4217 строкой, без связи со справочником валют: хранятся все опубликованные
+  коды), `day`, `value` (тенге за `quant` единиц, `Decimal(18, 6)`), `quant` (у UZS, KRW — 100, у IRR — 10 000),
+  `fetched_at`. Уникально `(currency, day)`; `value > 0`, `quant > 0`. Миграция `rates.0001_initial`, откат —
+  `migrate rates zero` (курсы теряются, итоги в основной валюте становятся «без курса»). В админке — только чтение.
+- Источник — `https://nationalbank.kz/rss/get_rates.cfm?fdate=ДД.ММ.ГГГГ` (`RATES_NBRK_URL`), разбор — `rates/nbrk.py`
+  (`xml.etree`, XML с DTD не принимается, ответ не больше 1 МБ). Нацбанк публикует курс на **каждый календарный день**,
+  включая выходные и праздники; на завтра и позже — пустой ответ «информации нет».
+- Курс на дату — последний не позже даты, не старше `rates.convert.STALE_DAYS` (7): дыра в загруженных курсах не
+  подменяется молча старым курсом, такая трата «без курса».
+- Загрузка: `manage.py rates fetch` — недостающие дни за последние 7 дней (ежедневное обновление строкой cron);
+  `--from ГГГГ-ММ-ДД [--to …]` — диапазон; `--receipts` — от первого чека до сегодня (задним числом для старых
+  трат); `--force` — и уже загруженные; `--pause` — секунды между запросами (0.2). `manage.py rates status` — первый
+  и последний день, число дней и дни чеков не в KZT без курса. Celery beat в проекте нет. Кроме того, расчёт сам
+  догружает недостающие дни не старше недели (`rates.services.lazy_fetch`): не чаще раза в 10 минут на все процессы
+  (ключ кэша `rates:lazy-fetch`), срок `RATES_LAZY_TIMEOUT_SECONDS` (3), до первой ошибки; выключается
+  `RATES_AUTO_FETCH=0`, в тестовой базе (`test_…`) не работает никогда.
+- Основная валюта семьи — не поле: `rates.convert.base_currency(user)` читает `Profile.default_currency` главного
+  одним запросом. Для волны 2: `rates.convert.to_base(amount, currency_code, day, user) -> Decimal | None` (два
+  запроса), для многих сумм — `rates.convert.converter(base, {(валюта, день)})` (курсы одним запросом, дальше
+  `convert(amount, currency, day)` без БД).
+- `budget`: миграций нет; лимиты прежних валют не переносились.
+
+## ИИ о тратах (2026-10-13, ветка `feature/ai-insights`)
+
+- `insights.InsightRequest` — запрос к модели: `owner` (CASCADE; видит только он), `kind` `review`|`ask`, `month`
+  (1-е число разбираемого месяца либо месяца вопроса), `question` (≤ 300), `context` (JSON — сводка, которую получила
+  модель), `status` `queued|running|succeeded|failed`, `answer` (JSON), `error_code`, `run_token`,
+  `lease_expires_at`, `created_at`, `started_at`, `finished_at`. Миграция `insights.0001_initial`, откат —
+  `migrate insights zero`. Траты и каталог строка не меняет.
+- Сводка — `insights/context.py` `build(user, month)`: окно 12 месяцев по месяц включительно, всё в основной валюте
+  (`rates.convert`), траты только через `visible_receipts_q` пользователя (скрытый платёж не попадает ни к кому):
+  `months`, `totals`, `categories` (корни и прямые подкатегории с суммой на каждый месяц — `receipts.trends`),
+  `focus` (цифры месяца, лимиты — `budget.dashboard`, места месяца), `places_year`, `recurring`
+  (`recurring.services.month_view`), `incomes` (пока `[]` — место для доходов), `without_rate`. Запросов — 17,
+  от объёма данных не зависит; около 6 КБ на демо-семье.
+- Очередь и шаг воркера — `insights/queue.py` (`request_review`, `request_ask`, `claim`, `execute`,
+  `recover_expired`), промпты `insights/prompts/{review,ask}.txt`, схемы `insights/schemas/{review,ask}.schema.json`;
+  fake — `INSIGHTS_FAKE_SCENARIO` (`simple|invalid_output|provider_error|timeout`), срок — `INSIGHTS_TIMEOUT_SECONDS`
+  (120, читается через `getattr`, в settings не вынесен).
+## Доходы (`incomes`, 2026-10-13, ветка `feature/incomes`)
+
+- `incomes.IncomeCategory` — `name` (до 60), `household` / `user` — оба пусты у встроенных, иначе один из них (владелец
+  как у лимита, `budget.access.limit_owner`). Встроенные «Зарплата · Подработка · Подарки · Кэшбэк и проценты · Продажа
+  вещей · Прочее» заводит миграция `incomes.0001_initial` (`get_or_create`). В дерево категорий трат не входит.
+- `incomes.Income` — `owner` (кто внёс, `PROTECT`), `received_on`, `amount` (`Decimal(14, 2)`, `> 0`), `currency`
+  (`PROTECT`), `category` (`IncomeCategory`, `PROTECT`), `note`, `created_at`/`updated_at`; индекс `(owner, received_on)`.
+  Видимость — `incomes.access.visible_q` (автор и главный в семье); общий доход семьи считается по `owner_q`.
+- `recurring.0002_income_kind`: у `RecurringPayment` — `kind` (`spend` | `income`, по умолчанию `spend`),
+  `income_category` (FK на `IncomeCategory`, `PROTECT`), `category` стал необязательным; ограничение
+  `recurring_payment_kind_category` — у платежа категория траты, у дохода категория дохода и нет магазина. Прежние
+  платежи — `spend`, данные не менялись.
+- Откат: удалить шаблоны дохода (`RecurringPayment.objects.filter(kind="income").delete()` — с ними откат упадёт на
+  `NOT NULL category`), `migrate recurring 0001_initial`, потом `migrate incomes zero` (доходы и свои категории теряются).
+## Цели накоплений (`goals`, 2026-10-13, ветка `feature/goals`)
+
+- `goals.Goal` — владелец ровно один (`goals_goal_one_owner`): общая цель — `household` (видят и правят все члены
+  семьи), личная — `user` (видят владелец и главный его семьи); `name`, `amount > 0`, `currency` (PROTECT), `deadline`
+  (необязателен), `created_by`. Правило видимости — только `goals.access.goals_q` (поверх `accounts.access`).
+- `goals.Contribution` — взнос: `goal` (CASCADE), `amount > 0`, `currency` (у взноса своя валюта; в валюту цели — по
+  курсу дня взноса, `rates.convert`), `date`, `user` (кто отложил, SET_NULL), `note`, `created_by`; индекс
+  `(goal, date)`. «Накоплено», темп и прогноз не хранятся — `goals/services.py` при чтении.
+- Миграция `goals.0001_initial`, откат — `migrate goals zero` (сам откатывает и `statements.0002_goal_rules`; цели и
+  взносы теряются, траты не трогаются; проверено на пустой базе).
+- `statements.0002_goal_rules`: `StatementRule.action` += `goal` и `StatementRule.goal` (CASCADE: удаление цели удаляет
+  её правила; ограничение `statements_rule_goal_action` — цель ровно у `goal`, категория у `goal` пуста);
+  `StatementRow.state` += `goal`, `StatementRow.goal` (SET_NULL) и `StatementRow.contribution` (SET_NULL, как
+  `receipt`: удалённый взнос снова открывает строку). Откат — `migrate statements 0001_initial`; на базе с данными
+  до него удалить правила `action=goal` и вернуть строки `state=goal` в `skipped`: старые ограничения их не пропустят.
+- Демо-выписка (`statements.demo.demo_kaspi_lines`, `seed_statement_demo`) получила перевод «На Kaspi Депозит» на
+  100 000 ₸ — 20 строк вместо 19.
+## Бюджет месяца и история лимитов прошлых месяцев (2026-10-13, ветка `feature/spends-home`)
+
+- `budget.MonthlyBudget` (миграция `budget.0004_monthly_budget`, откат — `migrate budget 0003_seed_limit_changes`):
+  владелец как у `BudgetLimit` (семья либо пользователь — ровно один), `currency` (основная валюта на момент записи),
+  `amount` (NULL — бюджет снят), `effective_month` (1-е число), `changed_by`, `changed_at`; уникальность — владелец +
+  месяц. Таблица сама себе журнал: сумма в месяце — последняя строка не позже месяца (`budget.history.budget_at`), две
+  правки в одном месяце — одна строка. Пишет только `budget.history.set_budget` (API `/api/budget/month/`); в админке
+  модели нет. Записей «до первого бюджета» нет: прошлые месяцы без бюджета так и остаются без него.
+- «Можно тратить в день» — `budget/allowance.py`, `daily(user, month, *, income=None)`; новых таблиц нет (правило —
+  `docs/api-contract.md`).
+- История лимитов прошлых месяцев: журнал `BudgetLimitChange` начался 2026-10-12, и прошлые месяцы показывали «Лимиты не
+  заданы». `manage.py limit_history backfill --since ГГГГ-ММ [--dry-run]` даёт месяцам с `--since` нынешние лимиты:
+  паре текущего лимита, чей журнал начинается позже `--since`, добавляется запись «создан» с текущей суммой в месяце
+  `--since` (автор пуст, время — полночь 1-го числа). Пара без журнала и пара с журналом не позже `--since` не трогаются,
+  удалённые лимиты не восстанавливаются; повтор ничего не меняет. Пишет только `BudgetLimitChange`; `--since` — месяц до
+  текущего. Вывод — JSON (`added`, `entries`). Откат — удалить добавленные записи (`changed_by` NULL, `effective_month`
+  = `--since`).
+
+## Способ оплаты траты (2026-10-13, ветка `feature/payment-method`)
+
+- `Receipt.payment_method` — `CharField(16)`, выбор `""` (не указан, по умолчанию) / `kaspi_gold` / `forte` / `cash` /
+  `card` (`Receipt.PaymentMethod`); без ограничения БД и индекса. Миграция `receipts.0009_receipt_payment_method`
+  (только `AddField`), откат — `migrate receipts 0008_receipt_hidden` (значения пропадут). Это не реквизиты карты:
+  страж `receipts.tests.test_samples` по-прежнему не пускает в модели другие поля «оплаты».
+- Пишут: форма траты и `PATCH` ручной траты, разбор словами (черновик), импорт выписки (`statements.drafts.save` —
+  код банка совпадает с кодом способа), «Оплатил» регулярного платежа (`recurring.services.pay`), команда
+  `payment_methods backfill` для старых трат из выписок.
+- «Оплатил» хранится как прежний ответ `RecurringDecision` (`added` + `receipt`), новых таблиц у `recurring` нет;
+  `recurring.matching.Spend` получил поле `method`.
+## «Видит траты семьи с» (`accounts`, 2026-10-13, ветка `feature/member-visible-from`)
+
+- `accounts.Membership.visible_from` — `DateField`, `NULL` — без ограничения; иначе первое число месяца, с которого
+  член семьи видит чужие траты, фото и доходы семьи (`accounts.access.owner_q(..., since=…)`, правило —
+  `docs/multi-user.md`). У главного не действует; передача роли (`accounts.family.transfer_head`) его обнуляет. Пишет
+  только `accounts.family.set_visible_from` (API) и админка (`Households` → члены, колонка «Visible from»).
+- Миграция `accounts.0005_membership_visible_from` — одно `AddField` со значением `NULL`: доступ после неё прежний.
+  Откат — `migrate accounts 0004_families_ai_invites` (столбец удаляется, ограничения пропадают).
+## Названная покупка — товар каталога (`receipts`, 2026-10-13, ветка `feature/manual-products`)
+
+- Схема прежняя, миграций нет. `ReceiptLine.product` у траты вручную теперь заполнен у названной покупки: строки «Что
+  купили» (`item_name`) и каждой позиции; строка «<категория>» (трата без названия — выписки, регулярные платежи,
+  «Продукты 12 000») остаётся `product=NULL`. Пишет только `receipts.manual` (`find_or_create_products`, правило — как
+  у импорта среди общих товаров и товаров своих областей: написание продавца места → `name_key` названия → новый
+  `Product` в «Не разобрано» в области владельца траты; поглощённый слиянием — оставляемый). Написаний трата вручную
+  не создаёт.
+- `catalog.Product.scope` (миграция `catalog.0004_product_scope`): пусто — общий товар; `user:<id>` — личный товар из
+  траты вручную (`receipts.prices.product_scope`: всегда владелец траты, не семья). Видимость личного товара — сам
+  человек либо член его семьи и видимая запросу строка траты (`receipts.prices.seen_product_q`, fail-closed). Поле входит в уникальность
+  `catalog_product_brand_name_package_uniq` (первым). Откат — `migrate catalog 0003_service_charge_category`
+  (снимает и `0005_category_icon`; отказывает, пока есть товары, различающиеся только `scope`).
+- Личное название: `receipts.prices.observation_q(prefix, request)` пускает строку траты вручную только видимую запросу
+  и только товара видимой области; импорт чеков с фото к чужому личному товару не привязывает; `merges` и
+  `classification` берут только `scope=""`.
+- `ReceiptLine.category` важнее категории товара (`receipts.spending.line_category`, `category_spends.line_category`,
+  `trends`, `budget.dashboard`, список «Трат», выгрузка): у строки чека с фото категории нет (кроме обслуживания без
+  товара), поэтому прежние суммы не меняются.
+- `receipts.prices.observation_q` принимает строки трат вручную с товаром; `price_history` аннотирует `country_code`
+  (`NULL` у траты без места), `is_manual(line)` — признак ответа API.
+- Старые траты не меняются; откат кода — после отката `catalog.0004`: строки с товаром у трат вручную безвредны для
+  прежнего кода, прежний `observation_q` их не видит.
+
+## Значок категории (2026-10-13, ветка `feature/category-icons`)
+
+- `Category.icon` — `CharField(16)`, выбор `catalog.CategoryIcon` (18 ключей, см. api-contract.md «Значки категорий»),
+  пусто (по умолчанию) — значок ближайшего предка; без ограничения БД и индекса. Наследование считает
+  `api.common.CategoryTree.icon` по загруженному дереву (свой значок — `own_icon`).
+- Миграция `catalog.0005_category_icon` (после `catalog.0004_product_scope`; в ветке значков была `0004`, при слиянии волны 4 переименована): `AddField` и данные — пустым категориям верхнего уровня значок по словам
+  названия без учёта регистра, первое совпавшее правило (`RULES` в миграции: «еда»/«продукт» → `cart`,
+  «транспорт»/«такси» → `bus`, «авто»/«бензин» → `car`, «кафе»/«ресторан» → `dining`, «питом»/«животн» → `paw`,
+  «жиль»/«дом»/«коммунал»/«аренд» → `home`, «связ»/«подписк»/«интернет» → `phone`, «здоров»/«аптек»/«медиц» → `heart`,
+  «дет» → `baby`, «одежд»/«обув» → `shirt`, «развлеч»/«досуг»/«кино» → `ticket`, «подар» → `gift`,
+  «онлайн»/«маркетплейс»/«доставк» → `box`, «банк»/«комисс» → `bank`, «красот»/«уход»/«космет» → `beauty`,
+  «путешеств»/«отпуск» → `plane`, «образован»/«учеб»/«книг» → `book`); «Прочее» и прочие остаются пустыми (ярлык).
+  Подкатегории не трогаются. Откат — `migrate catalog 0004_product_scope` (данные — `noop`, поле удаляет
+  откат `AddField`). Новые категории значок сами не получают — его ставит модератор.
+- Меняют: модератор каталога на экране категории в каталоге (`POST /api/categories/{id}/icon/`) и администратор в
+  `/admin/` (форма категории, поле «Icon»).
+
+## Цель-депозит (`goals`, 2026-10-13, ветка `feature/goal-deposit`)
+
+- `Goal.kind` — `saving` (по умолчанию, все прежние цели) | `deposit`; `Goal.rate` — `Decimal(5, 2)` NULL, % годовых,
+  ограничение `goals_goal_rate_range` (NULL либо 0–100); `Goal.capitalization` — `monthly` (по умолчанию) | `none`. У копилки
+  ставка хранится, но не считается.
+- `Contribution.kind` — `deposit` (по умолчанию: прежние взносы и взносы из выписки по правилу «→ цель») | `interest` —
+  «проценты»: разница «Сверить с банком», в валюте цели, может быть отрицательной или нулём; ограничение
+  `goals_contribution_amount_positive` теперь `amount > 0 OR kind = 'interest'`. Запись `interest` — не взнос: в темп
+  «откладываете» и в счёт взносов не входит; «накоплено» депозита и его прогнозы её учитывают. Поиск дубля взноса выписки
+  (`statements.drafts.mark_goal_duplicates`) не менялся.
+- Сумма на депозите не хранится — её считает `goals/forecast.py` при чтении (`goals.services.progress` / `estimate`).
+- Миграция `goals.0002_goal_deposit` (`AddField` ×4 со значениями по умолчанию, замена ограничения, новое ограничение
+  ставки, `RunPython` только на откат). Откат — `migrate goals 0001_initial`; при записях «проценты» он отказывает с их числом:
+  сначала удалить их (`DELETE /api/goals/{id}/contributions/{item}/`, админка либо
+  `Contribution.objects.filter(kind='interest').delete()` в `manage.py shell`). Вид и ставка целей при откате теряются.
+
+## Единая форма траты (`receipts`, 2026-10-13, ветка `feature/unified-spend-form`)
+
+Миграций нет: строки, скидки и налоги — прежние `ReceiptLine`, `ReceiptDiscount`, `ReceiptTax`. Один сервис
+`receipts/manual.py` создаёт ручную трату и правит любую (`source` — только пометка; правило v1 «сохранённый чек не
+правится» снято). Правка строк: строка с `id` меняется на месте (позиции переставляются через временный сдвиг
+`POSITION_SHIFT`, журнал слияний `merges.ProductMergeLine` и товар остаются, пока `name_key` названия тот же), новая —
+создаётся, не названная — удаляется (её залог остаётся строкой без родителя). Скидка строки — строки `ReceiptDiscount`
+её позиции; новая скидка — одна строка «Скидка». Поменялись деньги строк — `tax_amount` строки по её ставке,
+`ReceiptTax` (одна ставка — весь итог; несколько — по ставкам строк, иначе по прежним долям), `discount_total` и
+`total` = Σ(`amount` − `discount_amount`) − скидки на весь чек (+ налог при ценах без налога). Чек с фото: место
+обязательно, время на часах сохраняется, `fiscal_key`/номер/смена/касса не меняются; нарушение трёх ограничений
+дедупликации — отказ `receipt: duplicate`. Трата из выписки определяется строкой `statements.StatementRow.receipt`:
+способ — банк, комментарий кончается « · Выписка …».

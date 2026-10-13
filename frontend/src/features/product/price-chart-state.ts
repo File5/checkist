@@ -6,6 +6,7 @@ import { formatAxisTick } from '../../lib/charts/scale'
 import { formatPrice, formatPurchasedOn, formatUnit } from '../../lib/format'
 import type { ProductQuery } from '../../navigation/routes'
 import { counted } from '../merges/labels'
+import { MANUAL_MARK, NO_PLACE } from './state'
 
 /** Chart modes of the card address; an absent value is the default. */
 export const chartPrice = (query: ProductQuery): PriceSeriesKind => query.price ?? 'paid'
@@ -62,13 +63,16 @@ function chartPoints(line: PriceSeriesLine): LineChartPoint[] {
   })
 }
 
-/** Own: shop and city. Similar: product name and country. */
+/** Own: shop and city. Similar: product name and country. Without a place — «Без места»; prices typed in manual spends —
+ * «· вручную». */
 export function seriesLabel(line: PriceSeriesLine): string {
-  return line.role === 'own'
-    ? [named(line.store.name), line.store.city.trim()].filter(Boolean).join(' · ')
-    : `${named(line.product.name)} · ${line.country}`
+  const where = line.role === 'own'
+    ? (line.store ? [named(line.store.name), line.store.city.trim()].filter(Boolean).join(' · ') : NO_PLACE)
+    : `${named(line.product.name)} · ${line.country ?? NO_PLACE}`
+  return line.manual ? `${where} · ${MANUAL_MARK}` : where
 }
-export const seriesKey = (line: PriceSeriesLine) => line.role === 'own' ? `own:${line.store.id}` : `similar:${line.product.id}:${line.country}`
+export const seriesKey = (line: PriceSeriesLine) => `${line.role === 'own' ? `own:${line.store?.id ?? 'none'}`
+  : `similar:${line.product.id}:${line.country ?? 'none'}`}${line.manual ? ':manual' : ''}`
 
 export interface ChartPanel {
   /** `EUR:pcs` — one axis never mixes currencies or units. */
@@ -99,7 +103,7 @@ export function chartPanels(data: PriceSeries): ChartPanel[] {
     const series = lines.map((line, index): LineChartSeries => ({
       key: seriesKey(line),
       // Two points of one chain in one city stay apart by the same ID the history table shows.
-      label: line.role === 'own' && repeated(labels[index]) ? `${labels[index]} · ID ${line.store.id}` : labels[index],
+      label: line.role === 'own' && line.store && repeated(labels[index]) ? `${labels[index]} · ID ${line.store.id}` : labels[index],
       note: line.role === 'own' ? 'этот товар' : 'похожий товар',
       points: chartPoints(line),
     })).filter((item) => item.points.length > 0)

@@ -1,0 +1,18 @@
+/* «Ещё» as a screen (2026-10-13): the person on top, «Деньги» in tiles 2 × 2, then panels of rows. Bricks of tokens.css
+   (.ck-panel, .ck-list, .ck-row); colours only by tokens. */
+.more-profile { flex-direction: row; align-items: center; gap: 14px; color: inherit; text-decoration: none; }
+.more-avatar { display: flex; flex: none; align-items: center; justify-content: center; width: 52px; height: 52px; border-radius: 50%; background: var(--ck-accent-bg); color: var(--ck-accent-text); font-size: var(--ck-text-lg); font-weight: 800; }
+.more-profile-name { overflow: hidden; font-size: var(--ck-text-lg); font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.more-chevron { flex: none; color: var(--ck-text-muted); }
+.more-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 0; padding: 0; list-style: none; }
+.more-tile { display: flex; flex-direction: column; justify-content: center; gap: 10px; min-height: 92px; padding: 16px; border-radius: var(--ck-radius); background: var(--ck-surface); box-shadow: var(--ck-card-shadow); color: inherit; font-size: var(--ck-text-sm); font-weight: 700; text-decoration: none; }
+.more-tile .ck-icon { color: var(--ck-link); }
+.more-section { gap: 4px; padding-block: 12px; }
+.more-title { margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-2xs); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.more-row { min-height: 56px; padding-block: 8px; }
+.more-badge { background: var(--ck-surface-raised); color: var(--ck-text-muted); }
+.more-toggles { display: flex; flex-direction: column; border-top: 1px solid var(--ck-divider); }
+@media (hover: hover) {
+  .more-tile:hover, .more-profile:hover { background: var(--ck-surface-raised); }
+  .more-row:hover .ck-row-title { text-decoration: underline; }
+}

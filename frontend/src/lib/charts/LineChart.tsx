@@ -278,12 +278,15 @@ export default function LineChart({
           chart already names them, so the panel is no group of its own. A pressed button takes no focus from the
           plot, so a selection the keyboard made is not dropped under the finger; the click still comes. */}
       <div className="ck-line-steps" onBlur={onBlur} onMouseDown={(event) => event.preventDefault()}>
-        <button type="button" disabled={!steps.previous} onClick={() => onStep('previous')}>Предыдущий интервал</button>
-        <button type="button" disabled={!steps.next} onClick={() => onStep('next')}>Следующий интервал</button>
-        <button type="button" disabled={!steps.clear} onClick={() => onStep('clear')}>Снять выделение</button>
+        {/* Short words fit three buttons in one row of a phone; the name begins with them and says the whole step. */}
+        <button type="button" disabled={!steps.previous} onClick={() => onStep('previous')} aria-label="Раньше: предыдущий интервал">
+          <span aria-hidden="true">‹ </span>Раньше</button>
+        <button type="button" disabled={!steps.next} onClick={() => onStep('next')} aria-label="Позже: следующий интервал">
+          Позже<span aria-hidden="true"> ›</span></button>
+        <button type="button" disabled={!steps.clear} onClick={() => onStep('clear')} aria-label="Снять выделение">Снять</button>
       </div>
       {valueAxisLabel && <p className="ck-chart-note">Вертикальная ось: {valueAxisLabel}.</p>}
-      <p className="ck-chart-note" id={hintId}>
+      <p className="ck-chart-note ck-line-keys" id={hintId}>
         Клавиши на графике: ← и → — соседний интервал, Home и End — первый и последний, Esc — снять выделение.
       </p>
       <p className="ck-line-live" aria-live="polite" aria-atomic="true">{readout || 'Интервал не выбран.'}</p>

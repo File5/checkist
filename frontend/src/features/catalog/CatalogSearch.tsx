@@ -5,6 +5,7 @@ import { numbered } from '../../lib/text'
 import { buildRoute, navigate } from '../../navigation'
 import type { CatalogRoute } from '../../navigation'
 import { fieldError, resetFilters, searchError, withGeneric, withSearch } from './catalog-state'
+import ResponsiveFilters from '../../components/ResponsiveFilters'
 
 type Props = { route: CatalogRoute; generics?: CategoryGeneric[]; error?: ApiFailure }
 
@@ -53,7 +54,8 @@ export default function CatalogSearch({ route, generics, error }: Props) {
       <p id={helpId} className="ck-catalog-note">От 2 до 100 символов. Поиск по названию, бренду, модели или GTIN.</p>
       {qError && <p id={qErrorId} className="ck-catalog-field-error" role={draft.submitted || fieldError(error, 'q') ? 'alert' : undefined}>{qError}</p>}
     </div>
-    {generics !== undefined && <div className="ck-catalog-search-field">
+    {/* A phone keeps the search pinned and short: the choice of the generic product opens from «Фильтры (N)». */}
+    {generics !== undefined && <ResponsiveFilters count={route.query.generic === undefined ? 0 : 1} title="Обобщённый продукт"><div className="ck-catalog-search-field">
       <label htmlFor={`${id}-generic`}>Обобщённый продукт</label>
       <select id={`${id}-generic`} name="generic" value={route.query.generic ?? ''}
         onChange={(event) => navigate({ ...route, query: withGeneric(route.query, event.target.value ? Number(event.target.value) : undefined) })}
@@ -64,7 +66,7 @@ export default function CatalogSearch({ route, generics, error }: Props) {
       </select>
       <p className="ck-catalog-note">Варианты из этой категории. Без фильтра — товары всей ветви.</p>
       {genericError && <p id={genericErrorId} className="ck-catalog-field-error" role="alert">{genericError}</p>}
-    </div>}
+    </div></ResponsiveFilters>}
     {route.kind === 'catalog' && route.query.generic !== undefined && <p className="ck-catalog-note">Выбран обобщённый {numbered('продукт', route.query.generic.toLocaleString('ru-RU'))}.</p>}
     {filtered && <button className="ck-catalog-reset" type="button" onClick={reset}>Сбросить фильтры</button>}
   </form>

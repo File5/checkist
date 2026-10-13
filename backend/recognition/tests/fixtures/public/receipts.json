@@ -6,6 +6,9 @@
   "results": [
     {
       "id": 71,
+      "owner": "local",
+      "owner_name": "local",
+      "source": "photo",
       "store": {
         "id": 51,
         "name": "Тестовый магазин",
@@ -26,13 +29,33 @@
       "lines_count": 1,
       "unmatched_products_count": 0,
       "receipt_images_count": 1,
+      "note": "",
+      "payment_method": "",
+      "hidden": false,
+      "hidden_at": null,
       "preview_image_url": "/media/crops/test/crop.png",
+      "preview_thumb_url": "/media/crops/test/thumb-400-v2.webp",
       "created_at": "2026-10-04T12:35:00Z",
       "updated_at": "2026-10-04T12:35:00Z",
       "lines_url": "/api/receipts/71/lines/",
       "discounts_url": "/api/receipts/71/discounts/",
       "taxes_url": "/api/receipts/71/taxes/",
-      "images_url": "/api/recognition/receipt-images/?receipt=71"
+      "images_url": "/api/recognition/receipt-images/?receipt=71",
+      "first_line": "MILCH 1 L",
+      "category": {
+        "id": 81,
+        "name": "Тест",
+        "icon": null
+      },
+      "categories": [
+        {
+          "id": 81,
+          "name": "Тест",
+          "icon": null
+        }
+      ],
+      "base_currency": "KZT",
+      "base_total": null
     }
   ]
 }

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getReceiptCompare, getReceiptSeries, getSpending, listParam, omitEmpty, statsFailureKind } from './stats'
-import { statsErrorFixtures, statsFixture } from './stats-test-support'
+import { statsAnswer, statsErrorFixtures, statsFixture } from './stats-test-support'
 import type { ReceiptCompareParams } from './stats'
 import type { ApiFailure, LocalApiFailure, LocalApiResult, RequestOptions } from './types'
 
@@ -24,7 +24,7 @@ const readers: [string, Call, string, string][] = [
 describe.each(readers)('GET %s', (path, call, fixture, foreign) => {
   it('validates the backend fixture using same-origin credentials, the trailing slash and an explicit prefix', async () => {
     fetchMock.mockResolvedValue(response(fixture))
-    expect(await call({ baseUrl: '/other/' })).toEqual({ kind: 'ok', data: statsFixture(fixture) })
+    expect(await call({ baseUrl: '/other/' })).toEqual({ kind: 'ok', data: statsAnswer(fixture) })
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(fetchMock).toHaveBeenCalledWith(`/other/${path}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store', signal: expect.any(AbortSignal) })
   })
@@ -112,7 +112,8 @@ describe('query', () => {
   beforeEach(() => { fetchMock.mockImplementation(async () => response('spending-empty.json')) })
   it('sends nothing for absent and empty parameters', async () => {
     await getSpending()
-    await getSpending({ date_from: '', date_to: '', country: '', currency: '', store: [], group_by: undefined, category: undefined, generic: undefined, limit: undefined })
+    // The same address again: `fresh` sends it instead of answering from the memory of answers.
+    await getSpending({ date_from: '', date_to: '', country: '', currency: '', store: [], group_by: undefined, category: undefined, generic: undefined, limit: undefined }, { fresh: true })
     await getReceiptSeries({ date_from: '', country: '', store: [], interval: undefined })
     expect(urls()).toEqual(['/api/stats/spending/', '/api/stats/spending/', '/api/stats/receipts/series/'])
   })
@@ -133,7 +134,7 @@ describe('query', () => {
     fetchMock.mockImplementation(async () => response('spending-category-generic.json'))
     const result = await getSpending({ category: 1, group_by: 'generic', currency: 'EUR' })
     expect(urls()).toEqual(['/api/stats/spending/?currency=EUR&group_by=generic&category=1'])
-    expect(result).toEqual({ kind: 'ok', data: statsFixture('spending-category-generic.json') })
+    expect(result).toEqual({ kind: 'ok', data: statsAnswer('spending-category-generic.json') })
     expect(result).toMatchObject({ data: { group_by: 'generic', parent: { id: 1, name: 'Продукты питания' } } })
   })
   it('sends a single store without a comma and keeps a one-sided period', async () => {

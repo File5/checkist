@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { getGenericProduct } from '../../api/catalog'
 import { getCountries } from '../../api/countries'
 import { getSpending } from '../../api/stats'
@@ -34,11 +34,13 @@ export interface SpendingViewProps {
   /** The answer with the long list for the shown one: the composition of «Прочее». */
   tail?: SpendingRequestState
   retryTail?: () => void
+  /** For the tests: the phone view without a browser. */
+  narrow?: boolean
 }
 
-export function SpendingView({ query, state, retry, last, reference, genericName, today, tail, retryTail }: SpendingViewProps) {
+export function SpendingView({ query, state, retry, last, reference, genericName, today, tail, retryTail, narrow }: SpendingViewProps) {
   return <div className="spending-page">
-    <SpendingFilters query={query} failure={state.kind === 'error' ? state : undefined} reference={reference} today={today} />
+    <SpendingFilters query={query} failure={state.kind === 'error' ? state : undefined} reference={reference} today={today} narrow={narrow} />
     <SpendingResults query={query} state={state} retry={retry} last={last} genericName={genericName} tail={tail} retryTail={retryTail} />
   </div>
 }
@@ -55,7 +57,14 @@ export default function SpendingPage({ query }: SpendingPageProps) {
   // Showing or hiding the composition of «Прочее» is the same request: the block is not loaded again and keeps the focus.
   const requestSearch = requestKey(applied)
   const requested = useMemo(() => parseSpendingQuery(requestSearch).query, [requestSearch])
-  const load = useCallback((signal: AbortSignal) => getSpending(spendingParams(requested), { signal }), [requested])
+  // «Обновить» (the two answers of «Прочее» differ) and «Повторить» ask the server for both, past the memory of answers
+  // (api/answer-cache.ts): a kept answer may be the older of the two.
+  const fresh = useRef({ short: false, tail: false })
+  const load = useCallback((signal: AbortSignal) => {
+    const past = fresh.current.short
+    fresh.current.short = false
+    return getSpending(spendingParams(requested), { signal, fresh: past })
+  }, [requested])
   const request = useReceiptRequest(load)
   const [last, setLast] = useState<Shown>()
   if (request.state.kind === 'ok' && (last?.data !== request.state.data || last.query !== applied)) setLast({ query: applied, data: request.state.data })
@@ -65,8 +74,12 @@ export default function SpendingPage({ query }: SpendingPageProps) {
   const data = request.state.kind === 'ok' ? request.state.data : undefined
   const [lastTail, setLastTail] = useState<ShownTail>()
   const tailAsked = needsTail(applied, data, lastTail?.base)
-  const loadTail = useCallback((signal: AbortSignal) => tailAsked ? getSpending(spendingTailParams(requested), { signal }) : notAsked(),
-    [requested, tailAsked])
+  const loadTail = useCallback((signal: AbortSignal) => {
+    if (!tailAsked) return notAsked()
+    const past = fresh.current.tail
+    fresh.current.tail = false
+    return getSpending(spendingTailParams(requested), { signal, fresh: past })
+  }, [requested, tailAsked])
   const tailRequest = useReceiptRequest(loadTail)
   if (data && tailAsked && tailRequest.state.kind === 'ok' && lastTail?.data !== tailRequest.state.data) setLastTail({ base: data, data: tailRequest.state.data })
   // While new filters load, the previous answer stays on screen with the composition it had.
@@ -82,7 +95,10 @@ export default function SpendingPage({ query }: SpendingPageProps) {
   const genericName = genericRequest.state.kind === 'ok' && genericRequest.state.data.id === generic ? genericRequest.state.data.name : undefined
   const [today] = useState(() => localToday())
 
-  return <SpendingView query={applied} state={request.state} retry={request.retry} last={last} genericName={genericName} today={today}
+  const retry = request.retry
+  const again = useCallback(() => { fresh.current = { short: true, tail: true }; retry() }, [retry])
+
+  return <SpendingView query={applied} state={request.state} retry={again} last={last} genericName={genericName} today={today}
     tail={tail} retryTail={tailRequest.retry}
     reference={{ countries: countries.state, stores: stores.state, retry: () => { countries.retry(); stores.retry() } }} />
 }

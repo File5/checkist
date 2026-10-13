@@ -9,7 +9,7 @@ from django.test import TestCase, override_settings, tag
 from rest_framework.test import APIClient
 
 from api.tests.factories import make_product, make_receipt
-from api.tests.test_stats_spending import _Lines, absorb
+from api.tests.test_stats_spending import _Lines, absorb, strip_base
 from catalog.models import Brand, Category, GenericProduct
 from merges import services
 from receipts import basket
@@ -169,7 +169,7 @@ class ReceiptSeriesAPITests(_StatsTestCase):
         response = self.client.get(SERIES)
         self.assertEqual(response.status_code, 200, response.content)
         self.assertEqual(response["Cache-Control"], "no-store")
-        self.assertEqual(response.json(), {
+        self.assertEqual(strip_base(response.json()), {
             "interval": "month", "date_from": None, "date_to": None,
             "currencies": [
                 {"currency": "EUR", "refunds_excluded": 2, "buckets": [
@@ -316,7 +316,8 @@ class ReceiptSeriesAPITests(_StatsTestCase):
     def test_query_count_is_constant(self):
         data = self.data
         filters = f"country=DE&currency=EUR&store={data.lidl.pk}&date_from=2020-01-01&date_to=2026-12-31"
-        cases = (("", 3), ("interval=week", 3), ("interval=year", 3), (filters, 6), ("country=RU", 4))
+        # Несколько валют: +1 запрос основной валюты профиля; ряд в основной валюте семьи — +2: её запрос и курсы.
+        cases = (("", 6), ("interval=week", 6), ("interval=year", 6), (filters, 8), ("country=RU", 5))
 
         def measure():
             for query, expected in cases:
@@ -363,7 +364,7 @@ class ReceiptSeriesAPITests(_StatsTestCase):
         self.check_hidden_fields()
 
     def test_database_failure_is_a_safe_503(self):
-        with patch("api.views.stats_receipts.basket.series", side_effect=OperationalError("PRIVATE DSN")):
+        with patch("api.views.stats_receipts.basket.series_rows", side_effect=OperationalError("PRIVATE DSN")):
             response = self.client.get(SERIES)
         self.assertEqual(response.status_code, 503, response.content)
         self.assertEqual(response.json()["error"]["code"], "database_unavailable")
@@ -416,6 +417,8 @@ class ReceiptCompareAPITests(_StatsTestCase):
         self.assertEqual(response.status_code, 200, response.content)
         self.assertEqual(response["Cache-Control"], "no-store")
         body = response.json()
+        for key in ("base_currency", "in_base", "excluded"):  # ``base`` здесь — базовый период
+            body.pop(key)
         self.assertEqual(body, {
             "base": {"date_from": "2020-01-01", "date_to": "2020-12-31"},
             "current": {"date_from": "2026-01-01", "date_to": "2026-12-31"},
@@ -657,8 +660,8 @@ class ReceiptCompareAPITests(_StatsTestCase):
         absorb(data.milk, make_product(data.milk.generic, "Демо-молоко дубль"))
         filters = f"{PERIODS}&country=DE&currency=EUR&store={data.lidl.pk}&limit=5"
         nothing = "base_from=2018-01-01&base_to=2018-12-31&current_from=2019-01-01&current_to=2019-12-31"
-        # Без совпавших товаров запроса названий нет.
-        cases = ((PERIODS, 3), (filters, 6), (f"{PERIODS}&limit=100", 3), (nothing, 2))
+        # Без совпавших товаров запроса названий нет; блок в основной валюте семьи — её запрос и курсы (без чеков — без курсов).
+        cases = ((PERIODS, 6), (filters, 8), (f"{PERIODS}&limit=100", 6), (nothing, 3))
 
         def measure():
             for query, expected in cases:
@@ -738,7 +741,7 @@ class ReceiptCompareAPITests(_StatsTestCase):
         self.check_hidden_fields(PERIODS)
 
     def test_database_failure_is_a_safe_503(self):
-        with patch("api.views.stats_receipts.basket.collect", side_effect=OperationalError("PRIVATE DSN")):
+        with patch("api.views.stats_receipts.basket.compare_rows", side_effect=OperationalError("PRIVATE DSN")):
             response = self.client.get(f"{COMPARE}?{PERIODS}")
         self.assertEqual(response.status_code, 503, response.content)
         self.assertEqual(response.json()["error"]["code"], "database_unavailable")

@@ -1,9 +1,10 @@
 import { renderToStaticMarkup } from 'react-dom/server'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Classification, ClassificationState } from '../../api/product-classifications'
 import type { Me } from '../../api/session'
 import type { GenericProduct, LocalApiFailure, Page } from '../../api/types'
 import App from '../../App'
+import { preloadScreens } from '../../screens'
 import type { ClassificationQuery, NavigationSnapshot } from '../../navigation'
 import { applyMe } from '../../session'
 import { resetSession } from '../../session/store'
@@ -29,7 +30,7 @@ vi.mock('../../navigation', async (importOriginal) => ({
 }))
 // «Я» as the server answers: without accounts everyone moderates, with them — only the holder of the right.
 const me = (mode: Me['mode'], moderate_catalog: boolean): Me =>
-  ({ mode, user: { id: 3, username: 'anna', is_staff: false }, permissions: { moderate_catalog }, csrf_token: 'token' })
+  ({ mode, user: { id: 3, username: 'anna', is_staff: false }, household: null, permissions: { moderate_catalog }, csrf_token: 'token' })
 const local = me('local_single', true)
 const moderator = me('accounts', true)
 const reader = me('accounts', false)
@@ -51,6 +52,9 @@ const view = ({ query = { page: 1 }, state = success(stateOf('status.json')), li
   renderToStaticMarkup(<ClassificationView query={query} state={state} list={list} action={action} open={open}
     onRun={noop} onRetryAction={noop} onRetryState={noop} onRetryList={noop} onAction={noop} onOpen={noop} onClose={noop} />)
 
+// The screens come in parts (src/screens.ts): loaded first, the shell renders their real markup at once.
+beforeAll(preloadScreens)
+
 describe('shell of the catalog section (SSR in Node, not browser behavior)', () => {
   const shell = (href: string, route: NavigationSnapshot['route']) => {
     mocked.navigation = { href, route }
@@ -60,7 +64,8 @@ describe('shell of the catalog section (SSR in Node, not browser behavior)', () 
     const html = shell('/catalog/classification', { kind: 'classification', query: { page: 1 } })
     expect(html).toMatch(/<h1 id="page-heading" tabindex="-1">Категории товаров<\/h1>/)
     expect(html.match(/<h1\b/g)).toHaveLength(1)
-    expect(html).toContain('<a aria-current="page" href="/catalog">Каталог</a>')
+    // The item of the main menu may carry its icon before the word (the bottom bar of a phone).
+    expect(html).toMatch(/<a aria-current="page" href="\/catalog">(?:<svg[^>]*>[\s\S]*?<\/svg>)?Каталог<\/a>/)
     expect(html).toMatch(/aria-label="Раздел каталога"><a href="\/catalog">Товары<\/a><a href="\/catalog\/merges">Дубли<\/a><a aria-current="page" href="\/catalog\/classification">Категории<\/a><\/nav>/)
     expect(html).toContain('Предположение категорий')
   })

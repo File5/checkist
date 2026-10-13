@@ -103,7 +103,9 @@ Probes запускаются параллельно, поэтому их обы
 | 13 GET каталога и цен, `prices/series/` | Нужен вход | Открыты анонимно, как раньше |
 | Чеки, распознавание, статистика, слияния, предположения | Нужен вход; `DEBUG`, `ALLOW_LOCAL_RECOGNITION_API` и адрес запроса не читаются | `DEBUG` + `ALLOW_LOCAL_RECOGNITION_API=1` + loopback `REMOTE_ADDR`, иначе `403 permission_denied` — как раньше |
 | Право модератора каталога | `catalog.moderate_catalog` у пользователя либо его группы; у суперпользователя есть всегда | Есть всегда |
-| `/media/…` | Только владельцу фото, [ниже](#media) | Любой файл под `MEDIA_ROOT` при `DEBUG` |
+| `/media/…` | Только владельцу фото и членам его семьи, [ниже](#media) | Любой файл под `MEDIA_ROOT` при `DEBUG` |
+
+**Семья** (`accounts.Household`, `accounts.Membership`; у пользователя не больше одной, заводит администратор в `/admin/`). В `accounts` «свои» строки — строки пользователя и всех членов его семьи: чеки, фото, задания, вырезки, статистика, `own` в точках цен, `stores.receipts_count`, `products.last_observed_at`, покупки группы слияния у не модератора; чтение и запись (подтверждение вырезки, cancel / retry) — одинаково, правило одно — `accounts.access.owner_q`. Без семьи — только свои строки, как раньше; `local_single` не меняется. `owner` по-прежнему значит «кто добавил»: новый чек и фото пишутся на того, кто загрузил фото; дедупликация чеков и `sha256` фото — в пределах владельца. Кто добавил — поле `owner` (логин) у Receipt и Job; у Receipt рядом `owner_name` — имя для показа («Имя» из админки, без него — логин).
 
 Анонимны в обоих режимах: `GET /api/health/`, `GET /api/auth/csrf/` и запасной `404 not_found` неизвестного пути под `/api/`. Выключенный пользователь (`is_active=False`) считается не вошедшим: его открытые сессии отвечают `401`.
 
@@ -123,12 +125,13 @@ Probes запускаются параллельно, поэтому их обы
 
 ```json
 {"mode": "accounts",
- "user": {"id": 1, "username": "synthetic-reader", "is_staff": false},
+ "user": {"id": 1, "username": "synthetic-reader", "display_name": "synthetic-reader", "is_staff": false},
+ "household": null,
  "permissions": {"moderate_catalog": false},
  "csrf_token": "…"}
 ```
 
-`mode` — `accounts` либо `local_single`; `permissions.moderate_catalog` — можно ли менять общий каталог (в `local_single` всегда `true`); `csrf_token` — токен текущей сессии. Вход меняет ключ сессии и токен CSRF: дальше клиент берёт токен из ответа входа.
+`mode` — `accounts` либо `local_single`; `user.display_name` — имя для показа: поле «Имя» (`first_name`) пользователя в админке (`/admin/auth/user/{id}/change/`) без пробелов по краям, пустое — логин; `household` — семья пользователя `{"id", "name", "members": [логины по алфавиту], "people": [{"username", "display_name"}]}` либо `null` (без семьи и всегда в `local_single`); `people` — те же люди в том же порядке с именем для показа, `members` сохранён для прежних клиентов и фильтров (ключ — логин; имя только показывается, `accounts/people.py`); `permissions.moderate_catalog` — можно ли менять общий каталог (в `local_single` всегда `true`); `csrf_token` — токен текущей сессии. Вход меняет ключ сессии и токен CSRF: дальше клиент берёт токен из ответа входа.
 
 Правила трёх POST:
 
@@ -189,7 +192,9 @@ Probes запускаются параллельно, поэтому их обы
 - `accounts`: файл отдаётся, только если путь имеет вид `originals|prepared|crops/{storage_uuid}/…` и фото с этим `storage_uuid` принадлежит пользователю сессии. `DEBUG` не читается.
 - `local_single`: любой файл под `MEDIA_ROOT`, пока `DEBUG` включён, — как раньше.
 - Любой отказ — одинаковый пустой ответ `404` с `Content-Type: text/plain` и `Cache-Control: private, no-store`, не JSON: чужой файл, запрос без входа, отсутствующий файл, каталог `demo/`, путь с `..`, обратной косой чертой либо двоеточием. Ответы неотличимы, поэтому путь нельзя проверить на существование.
-- Успешный ответ тоже несёт `Cache-Control: private, no-store`.
+- Успешный ответ тоже несёт `Cache-Control: private, no-store` — кроме сжатых копий (ниже).
+- Сжатые копии (`recognition.previews`): в каталоге `originals/{uuid}/` и в каталоге вырезки `crops/{uuid}/…/` имена `preview-1600-v1.webp` (WebP, длинная сторона не больше 1600 px, качество 80) и `thumb-400-v1.webp` (400 px). Файл пишется при первом разрешённом запросе — после той же проверки владельца — из `source.jpg|png|webp` либо `crop.png` того же каталога (с поворотом по EXIF, без метаданных, без увеличения); атомарно: во временном каталоге вне MEDIA и переименованием на место. Нет исходника или он не читается — тот же пустой `404`, ничего не пишется. Исходники не меняются, каталоги всегда новые, а смена размера или качества — новое имя `-vN`, поэтому ответ копии несёт `Cache-Control: private, max-age=31536000, immutable`. В `prepared/` копий нет. Конвейер распознавания копии не читает. Заранее их пишет `manage.py media_previews backfill` ([development.md](development.md)).
+- `?download=1` к любому разрешённому файлу — тот же файл с `Content-Disposition: attachment; filename="checkist-<первые 8 знаков uuid>.<расширение>"` и `Cache-Control: private, no-store`; отказ — тот же пустой `404`. Остальные параметры запроса не читаются.
 
 Vite dev и preview проксируют `/media` на тот же Django; на сервере обратный прокси каталог MEDIA сам не раздаёт ([deployment.md](deployment.md)).
 
@@ -591,7 +596,7 @@ D1 меняет прежние 500/HTML-отказы клиентского вв
 
 Потребитель — клиент загрузки фото, опроса заданий и просмотра чеков. HTTP-слой использует модели и сервисы `recognition`; провайдер из HTTP не вызывается. Pipeline/импорт выполняет host recognition_worker, сквозной путь с FakeProvider проверен в С6 ([результаты](verification.md#фактические-результаты-с6)). Существующие 13 GET каталога/цен и health сохраняют свои формы; доступ к 13 GET зависит от [режима](#режимы).
 
-В v1 `MEDIA_URL` фиксирован строго `/media/` (также default при отсутствии переменной). Иной префикс, пустое значение, отсутствие завершающего `/` или абсолютный URL вызывают `ImproperlyConfigured` при загрузке настроек, до старта API/worker. Непустые `photo.original_url`, `photo.preview_url`, `receipt-image.image_url` и `receipt.preview_image_url` начинаются с `/media/`; nullable поля сохраняют `null`. Клиентские проверки URL и Vite dev/preview proxy рассчитаны только на этот префикс; его изменение требует согласованной правки клиента и proxy. Формы JSON и правила доступа не меняются.
+В v1 `MEDIA_URL` фиксирован строго `/media/` (также default при отсутствии переменной). Иной префикс, пустое значение, отсутствие завершающего `/` или абсолютный URL вызывают `ImproperlyConfigured` при загрузке настроек, до старта API/worker. Непустые `photo.original_url`, `photo.preview_url`, `receipt-image.image_url`, `receipt.preview_image_url`, а также `display_url`, `thumb_url`, `download_url` (последний оканчивается ровно `?download=1`) и `receipt.preview_thumb_url` начинаются с `/media/`; nullable поля сохраняют `null`. Клиентские проверки URL и Vite dev/preview proxy рассчитаны только на этот префикс; его изменение требует согласованной правки клиента и proxy. Формы JSON и правила доступа не меняются.
 
 ### Доступ, CSRF, тело и пагинация
 
@@ -615,14 +620,14 @@ Query разбирается существующим `Params`: неизвест
 | POST `/recognition/photos/` | multipart `file`, без Idempotency-Key | 202 `{reused:false,photo,job}`; точный повтор — 200 `{reused:true,photo,job}`; `Location` на job |
 | GET `/recognition/photos/` | page/page_size, ordering ±created_at, default -created_at | Page Photo |
 | GET `/recognition/photos/{id}/` | нет | Photo |
-| GET `/recognition/jobs/` | photo ID, status, page/page_size, ordering ±created_at | Page Job без `items` |
+| GET `/recognition/jobs/` | photo ID, status, `needs_review=1` (есть вырезка `needs_review` и задание не повторялось — ждёт человека; `0` — без фильтра), page/page_size, ordering ±created_at | Page Job без `items` |
 | GET `/recognition/jobs/{id}/` | нет | Job с `items`, до 10 вырезок |
 | POST `/recognition/jobs/{id}/cancel/` | JSON `{}` | 202 Job cancel_requested; 200 Job cancelled; 409 job_terminal |
 | POST `/recognition/jobs/{id}/retry/` | JSON `{}`, без Idempotency-Key | 202 новый Job; 409 job_active / retry_not_allowed |
 | GET `/recognition/receipt-images/` | photo/job/receipt ID (AND), page/page_size, ordering ±created_at | Page ReceiptImage без quad/rotation_degrees |
 | GET `/recognition/receipt-images/{id}/` | нет | ReceiptImage detail |
 | POST `/recognition/receipt-images/{id}/confirm/` | JSON `{receipt,lines,discounts,taxes}` до 1 MiB, без Idempotency-Key | 200 `{image,job}`; 409 job_active / review_unavailable / review_resolved / review_busy / review_invalid |
-| GET `/receipts/` | store/product ID, country/currency, operation, date_from/date_to, q, page/page_size, ordering ±purchased_at | Page Receipt, default -purchased_at |
+| GET `/receipts/` | store/product ID, country/currency, operation, date_from/date_to, q, owner (логин), page/page_size, ordering ±purchased_at | Page Receipt + `first_line`, `category` ([список «Траты»](#список-траты-фильтр-owner-и-поля-строки)), default -purchased_at |
 | GET `/receipts/{id}/` | нет | Receipt header, дочерние массивы отдельными страницами |
 | GET `/receipts/{id}/lines/` | page/page_size, kind, matching=matched/unmatched | Page Line, position/id |
 | GET `/receipts/{id}/discounts/` | page/page_size | Page Discount, position/id |
@@ -634,14 +639,16 @@ Query разбирается существующим `Params`: неизвест
 
 ### Photo, приём файла и повтор
 
-SHA-256 считается по фактическим байтам; имя файла, MIME и UploadedFile.size не определяют формат/размер. Поддерживаются одиночные JPEG/PNG/WebP, до **20 MiB включительно** и **40 000 000 пикселей включительно**. Битые/пустые/анимированные/multipage изображения не принимаются. Multipart целиком ограничен 21 MiB: заявленный больший Content-Length отклоняется сразу, чтение дополнительно ограничено фактическими байтами. Превышение файлового лимита проверяется сервисом хранения по прочитанным байтам.
+SHA-256 считается по фактическим байтам; имя файла, MIME и UploadedFile.size не определяют формат/размер. Поддерживаются одиночные JPEG/PNG/WebP, HEIF/HEIC и PDF, до **20 MiB включительно** и **40 000 000 пикселей включительно**. Битые/пустые/анимированные/multipage изображения не принимаются; исключение — MPO (JPEG с дополнительными кадрами, так снимает iPhone): он принимается как `image/jpeg`, `.jpg`, байты не меняются, дальше используется только первый кадр. HEIF/HEIC (`image/heic`, `image/heif` в `limits.formats`) не хранится: сервер сразу перекодирует основное изображение в upright RGB JPEG (качество 92, без EXIF/GPS) и дальше обрабатывает его так, будто загружен этот JPEG, — лимиты повторно по JPEG, SHA-256 и повтор по байтам JPEG, Photo `content_type` — `image/jpeg`, файл `.jpg`; лимит 20 MiB проверяется и по исходным байтам HEIC. Multipart целиком ограничен 21 MiB: заявленный больший Content-Length отклоняется сразу, чтение дополнительно ограничено фактическими байтами. Превышение файлового лимита проверяется сервисом хранения по прочитанным байтам.
+
+**PDF** (`application/pdf` в `limits.formats`, `limits.max_pdf_pages` = 3; узнаётся по `%PDF-` в первом КиБ, не по имени и MIME) — счёт или электронный чек. Сервер отрисовывает его страницы (pypdfium2, отдельный процесс `python -I recognition/pdf_render.py` со сроком 30 с: PDFium не прерывается и не потокобезопасен) в **одно** RGB-изображение: страницы друг под другом, без зазоров, по левому краю, 200 DPI; масштаб уменьшается, пока всё изображение не уложится в 40 000 000 пикселей. Изображение — PNG, а если PNG больше 20 MiB (скан внутри PDF) — JPEG качества 90. Дальше это изображение — `original_file` Photo (`content_type` `image/png` либо `image/jpeg`, `bytes`/размеры — его) и проходит распознавание без изменений: модель видит картинку. Сам PDF хранится рядом, `originals/{uuid}/source.pdf`, только для скачивания. Больше 3 страниц — `400 pdf_too_many_pages`, а не обрезка; PDF с паролем открытия — `400 pdf_encrypted`; битый, пустой, зависший — `400 invalid_pdf`; лимит 20 MiB проверяется по байтам PDF. **SHA-256 и повтор — по байтам PDF**: тот же файл ещё раз (под любым именем) находит прежний Photo до отрисовки; одно и то же изображение, загруженное как PNG, — отдельное фото.
 
 Точные байты возвращают прежний Photo и **последний** Job, включая terminal; новая обработка запускается явным retry. Пропавшее/нечитаемое original_file существующего Photo — `503 storage_unavailable`. При Photo без Job создаётся queued Job. Повтор файла после отмены не запускает его заново. Идемпотентность retry по ключу отсутствует: повтор запроса при active Job даёт 409. Header Idempotency-Key игнорируется.
 
-Photo имеет поля `id,created_at,content_type,bytes,raw_width,raw_height,width,height,original_url,preview_url,latest_job_id,receipt_images_count`. `preview_url` — очищенная upright-копия, до подготовки null. `original_url` — исходные байты. `receipt_images_count` включает вырезки всех попыток/заданий этого фото. Имя пользователя, SHA-256, EXIF и внутренние пути не сериализуются.
+Photo имеет поля `id,created_at,content_type,bytes,raw_width,raw_height,width,height,original_url,preview_url,latest_job_id,receipt_images_count,display_url,thumb_url,download_url,document`. `preview_url` — очищенная upright-копия PNG для конвейера, до подготовки null (имя прежнее; сжатая копия для показа — `display_url`). `original_url` — исходные байты (у PDF — изображение, отрисованное из него). Добавлено к прежнему контракту, прежние поля не менялись: `display_url` — сжатая WebP-копия (1600 px), `thumb_url` — миниатюра (400 px), обе [пишутся при первом запросе](#media) и могут быть отданы раньше, чем появится файл; `download_url` — `original_url` либо PDF (`…/source.pdf`) с `?download=1`, отдаётся вложением; `document` — `null` у загруженного изображения, у PDF — `{"content_type":"application/pdf","bytes":…,"pages":1–3}`. `receipt_images_count` включает вырезки всех попыток/заданий этого фото. Имя пользователя, SHA-256, EXIF и внутренние пути не сериализуются.
 
 ```json
-{"id":11,"created_at":"2026-10-04T12:35:00Z","content_type":"image/png","bytes":80,"raw_width":10,"raw_height":20,"width":10,"height":20,"original_url":"/media/originals/test/source.png","preview_url":null,"latest_job_id":31,"receipt_images_count":2}
+{"id":11,"created_at":"2026-10-04T12:35:00Z","content_type":"image/png","bytes":80,"raw_width":10,"raw_height":20,"width":10,"height":20,"original_url":"/media/originals/test/source.png","preview_url":null,"latest_job_id":31,"receipt_images_count":2,"display_url":"/media/originals/test/preview-1600-v1.webp","thumb_url":"/media/originals/test/thumb-400-v1.webp","download_url":"/media/originals/test/source.png?download=1","document":null}
 ```
 
 Полные transport-примеры: [новая загрузка](../backend/recognition/tests/fixtures/public/upload-new.json), [повтор](../backend/recognition/tests/fixtures/public/upload-reused.json), [Photo](../backend/recognition/tests/fixtures/public/photo.json), [страница Photo](../backend/recognition/tests/fixtures/public/photos.json), [CSRF/лимиты](../backend/recognition/tests/fixtures/public/csrf.json). `bytes` в эталоне определяется синтетической PNG-картинкой теста (не приведённым сокращённым примером).
@@ -651,10 +658,10 @@ Photo имеет поля `id,created_at,content_type,bytes,raw_width,raw_height
 ### Job: progress, действия и наблюдение воркера
 
 ```json
-{"id":31,"photo_id":11,"retry_of":null,"status":"partial_succeeded","stage":"finished","version":1,"created_at":"2026-10-04T12:35:00Z","started_at":null,"finished_at":"2026-10-04T12:35:00Z","cancel_requested_at":null,"heartbeat_at":null,"stalled":false,"executor":{"available":false,"state":"absent","last_seen_at":null},"progress":{"detected":2,"current_position":null,"completed":2,"imported":1,"reused":0,"review":1,"failed":0,"cancelled":0},"review_required":true,"error":null,"actions":{"can_cancel":false,"can_retry":true},"items_count":2,"items":[{"image_id":41,"position":1,"status":"imported","receipt_id":71},{"image_id":42,"position":2,"status":"needs_review","receipt_id":null}]}
+{"id":31,"photo_id":11,"retry_of":null,"owner":"local","status":"partial_succeeded","stage":"finished","version":1,"created_at":"2026-10-04T12:35:00Z","started_at":null,"finished_at":"2026-10-04T12:35:00Z","cancel_requested_at":null,"heartbeat_at":null,"stalled":false,"executor":{"available":false,"state":"absent","last_seen_at":null},"progress":{"detected":2,"current_position":null,"completed":2,"imported":1,"reused":0,"review":1,"failed":0,"cancelled":0},"review_required":true,"error":null,"actions":{"can_cancel":false,"can_retry":true},"items_count":2,"display_url":"/media/originals/test/preview-1600-v1.webp","thumb_url":"/media/originals/test/thumb-400-v1.webp","items":[{"image_id":41,"position":1,"status":"imported","receipt_id":71},{"image_id":42,"position":2,"status":"needs_review","receipt_id":null}]}
 ```
 
-`detected` до детекции null. Счётчики — сохранённые исходы; imported/reused считаются после commit. `version` изменяет сервис очереди; heartbeat может обновиться с той же version. `items_count` есть и в списке, `items` — только в detail. Items содержат ровно image_id,position,status,receipt_id; поля черновиков отсутствуют. `review_required` — наличие вырезки needs_review, issues у неуспешной вырезки либо геометрическая ошибка задания (`geometry_requires_review`, `clipped`, `overlap`); отдельного процесса разрешения review нет. Начиная с И4, issues у imported/reused/updated являются замечаниями, не увеличивают progress.review и не мешают Job.succeeded. Terminal progress не пересчитывается API, старые outcomes меняются только новым retry-job — с одним исключением: [подтверждение вырезки человеком](#подтверждение-вырезки-needs_review-человеком) пересчитывает счётчики завершённого задания, увеличивает `version` и переводит `partial_succeeded` в `succeeded`, когда успешны все вырезки.
+`detected` до детекции null. Счётчики — сохранённые исходы; imported/reused считаются после commit. `version` изменяет сервис очереди; heartbeat может обновиться с той же version. `items_count` есть и в списке, `items` — только в detail. `display_url` и `thumb_url` (добавлены 2026-10-12, в конец, тем же запросом — путь фото берётся тем же JOIN, что и `owner`) — сжатые копии исходного фото задания, те же адреса, что `display_url`/`thumb_url` у [Photo](#media): миниатюра строки списка заданий; `null`, если у фото нет файла. Items содержат ровно image_id,position,status,receipt_id; поля черновиков отсутствуют. `review_required` — наличие вырезки needs_review, issues у неуспешной вырезки либо геометрическая ошибка задания (`geometry_requires_review`, `clipped`, `overlap`); отдельного процесса разрешения review нет. Начиная с И4, issues у imported/reused/updated являются замечаниями, не увеличивают progress.review и не мешают Job.succeeded. Terminal progress не пересчитывается API, старые outcomes меняются только новым retry-job — с одним исключением: [подтверждение вырезки человеком](#подтверждение-вырезки-needs_review-человеком) пересчитывает счётчики завершённого задания, увеличивает `version` и переводит `partial_succeeded` в `succeeded`, когда успешны все вырезки.
 
 Объект `executor` один на ответ и приходит в `GET /recognition/csrf/`, `POST /recognition/photos/` (`job.executor`), `GET /recognition/jobs/` (`results[].executor`, общий на страницу), `GET /recognition/jobs/{id}/`, `POST …/cancel/` и `POST …/retry/`:
 
@@ -682,7 +689,7 @@ Retry разрешён failed/partial_succeeded/cancelled, создаёт нов
 
 ### ReceiptImage и безопасный результат needs_review
 
-Общие поля списка/detail: `id,photo_id,job_id,position,created_at,status,receipt_id,receipt_deleted,image_url,width,height,bbox,clipped,issues,normalized_result,confirmed_at`. Detail дополнительно содержит `quad,rotation_degrees`. `confirmed_at` — момент [подтверждения человеком](#подтверждение-вырезки-needs_review-человеком), UTC с `Z` (как `created_at`), иначе `null`; поле аддитивное, берётся из уже загруженной вырезки. Bbox/quad на upright-фото; геометрия проверяется перед сериализацией, повреждённая геометрия — null. Transform остаётся внутренним, как в примере §5.2 К2. `receipt_deleted=true` при SET_NULL и историческом receipt ID в snapshot; сам исторический ID наружу не возвращается.
+Общие поля списка/detail: `id,photo_id,job_id,position,created_at,status,receipt_id,receipt_deleted,image_url,width,height,bbox,clipped,issues,normalized_result,confirmed_at,display_url,thumb_url,download_url`. `display_url`/`thumb_url` — сжатые копии вырезки (как у Photo), `download_url` — оригинал её фото (PDF у PDF-загрузки) с `?download=1`; поля добавлены в конец, число запросов списка и detail прежнее (фото берётся тем же запросом). Detail дополнительно содержит `quad,rotation_degrees`. `confirmed_at` — момент [подтверждения человеком](#подтверждение-вырезки-needs_review-человеком), UTC с `Z` (как `created_at`), иначе `null`; поле аддитивное, берётся из уже загруженной вырезки. Bbox/quad на upright-фото; геометрия проверяется перед сериализацией, повреждённая геометрия — null. Transform остаётся внутренним, как в примере §5.2 К2. `receipt_deleted=true` при SET_NULL и историческом receipt ID в snapshot; сам исторический ID наружу не возвращается.
 
 Р3 уточняет семантику прежних полей, без несовместимых изменений формы: bbox/quad —
 нормализованные координаты 0..1 полного фото после EXIF-transpose, x вправо, y вниз.
@@ -917,13 +924,29 @@ List и detail `/api/recognition/receipt-images/` отдают у **каждог
 
 ### Receipt, Line, Discount, Tax
 
-Receipt содержит ровно `id,store,currency,operation,purchased_on,purchased_at,total,discount_total,prices_include_tax,origin,review_required,lines_count,unmatched_products_count,receipt_images_count,preview_image_url,created_at,updated_at,lines_url,discounts_url,taxes_url,images_url`. Store — прежний `api.common.store_object`, без вложенного Merchant. `origin="recognized"` при наличии связанной вырезки, иначе `"legacy/manual"`: это вычисляемый индикатор связи, без новой provenance-модели. Preview — последняя связанная вырезка по created_at/id, при отсутствии null. `review_required` — несопоставленный товар, связанная вырезка needs_review или issues у неуспешной вырезки; замечания успешных вырезок сами по себе review не требуют. Несопоставленный товар может требовать проверки Receipt, хотя импорт и Job уже succeeded. Canonical Receipt не содержит непринятый результат: его смотрят через ReceiptImage.
+Receipt содержит ровно `id,owner,owner_name,source,store,currency,operation,purchased_on,purchased_at,total,discount_total,prices_include_tax,origin,review_required,lines_count,unmatched_products_count,receipt_images_count,note,preview_image_url,preview_thumb_url,created_at,updated_at,lines_url,discounts_url,taxes_url,images_url`. `preview_thumb_url` — миниатюра (WebP, 400 px) той же вырезки, что `preview_image_url`, либо null вместе с ним. `owner` — логин того, кто добавил чек (владельца фото), ключ фильтра `?owner=`; `owner_name` (рядом с `owner`, добавлено 2026-10-12) — его имя для показа по тому же правилу, что `display_name` в [«Я»](#вход-выход-смена-пароля-кто-я). Store — прежний `api.common.store_object`, без вложенного Merchant; `null` — «Без места», бывает только у `source=manual` ([трата без чека](#реализовано-трата-без-чека)). `source` — `photo` (чек с фото и всё прежнее) либо `manual`; `note` — комментарий человека, у чеков с фото пустая строка. `origin="recognized"` при наличии связанной вырезки, иначе `"legacy/manual"`: это вычисляемый индикатор связи, без новой provenance-модели. Preview — последняя связанная вырезка по created_at/id, при отсутствии null. `review_required` — несопоставленный товар, связанная вырезка needs_review или issues у неуспешной вырезки; замечания успешных вырезок сами по себе review не требуют. Несопоставленный товар может требовать проверки Receipt, хотя импорт и Job уже succeeded. Canonical Receipt не содержит непринятый результат: его смотрят через ReceiptImage.
+
+#### Список «Траты»: фильтр owner и поля строки
+
+`GET /api/receipts/?owner=<логин>` — только чеки, добавленные этим членом семьи. Фильтр применяется поверх правила доступа (`owner_q`): видны чеки свои и семьи, поэтому логин вне семьи, неизвестный логин и логин из чужой семьи дают пустую страницу `200` (`count: 0`), не ошибку; без семьи находится только свой логин, в `local_single` — `local`. Пустое значение (`?owner=`) — без фильтра, повтор — последнее значение, управляющие символы — `400 invalid_parameter` с `fields.owner`. Сочетается с остальными фильтрами через AND.
+
+Объект **списка** (только `GET /api/receipts/`, не деталь и не ответы трат) несёт сверх полей Receipt два поля для строки экрана «Траты»:
+
+- `first_line` — `name` первой строки чека по `position, id`; `null`, если строк нет. Клиент берёт его заголовком траты без места.
+- `category` — `{"id","name"}` категории **верхнего уровня**, если все строки чека, у которых категория известна, сводятся к одному корню; иначе `null` (строк с категорией нет либо корней несколько). Категория строки — категория обобщённого продукта товара, если товар есть, иначе `ReceiptLine.category` (как в статистике); строки без неё не учитываются. «Не разобрано» отдаётся как есть.
+- `categories` (добавлено 2026-10-12) — все различные категории строк чека, как точно их называют строки (не корни): `[{"id","name"}]` по имени, затем id; `[]`, если строк с категорией нет. Тем же правилом и тем же подзапросом, что `category`. Клиент показывает их в строке «Трат» — список сам отвечает «на что».
+
+Стоимость: все величины — подзапросы того же запроса страницы; дерево категорий читается одним запросом и только когда на странице есть строка с категорией (список — `count` + страница + дерево). Моделей, миграций и индексов нет.
+
+```json
+{"id":71,"owner":"local","source":"photo","…":"…","first_line":"MILCH 1 L","category":{"id":81,"name":"Тест"}}
+```
 
 ```json
 {"id":101,"position":1,"kind":"product","parent_id":null,"name":"MILCH 1 L","name_i18n":{},"store_item_code":"M1","barcode":"","quantity":"2.000","unit":"pcs","unit_price":"1.2900","amount":"2.58","discount_amount":"0.20","paid_amount":"2.38","product":{"id":61,"name":"Молоко 1 л"},"matching_status":"matched","tax_rate":{"id":3,"country":"DE","kind":"vat","rate":"7.00"},"tax_code":"A","tax_amount":null,"is_excise":false,"is_marked":false}
 ```
 
-Line.product=null → matching_status=unmatched; ambiguous здесь отсутствует (отдельных draft assignment нет). `name` — напечатанное raw_name, не весь raw_text; `parent_id` — ID строки, legacy position=0 допустима при чтении. name_i18n содержит только строковые значения с ключами языков. paid_amount = amount - discount_amount, без распределения скидки чека и без float, независимо от Decimal-контекста вызывающего кода. В ответах деньги имеют 2 знака, unit_price 4, quantity 3, tax rate 2; неизвестное значение — null. Валюты не смешиваются.
+Line несёт ещё `category` (`{"id","name"}` либо `null`, после `product`) — категорию строки без товара, её задаёт только трата без чека. Строка без товара, но с категорией в `unmatched_products_count` и `review_required` не входит. Line.product=null → matching_status=unmatched; ambiguous здесь отсутствует (отдельных draft assignment нет). `name` — напечатанное raw_name, не весь raw_text; `parent_id` — ID строки, legacy position=0 допустима при чтении. name_i18n содержит только строковые значения с ключами языков. paid_amount = amount - discount_amount, без распределения скидки чека и без float, независимо от Decimal-контекста вызывающего кода. В ответах деньги имеют 2 знака, unit_price 4, quantity 3, tax rate 2; неизвестное значение — null. Валюты не смешиваются.
 
 ```json
 {"id":201,"position":1,"line_id":101,"name":"Rabatt MILCH","amount":"0.20"}
@@ -943,9 +966,12 @@ Line.product=null → matching_status=unmatched; ambiguous здесь отсут
 | --- | --- | --- |
 | 400 | invalid_request | структура/кодировка, неизвестные поля тела, malformed multipart/JSON, повторные JSON keys, slash/общий request guard |
 | 400 | invalid_parameter | query или отсутствующий/повторный/строковый file, с fields |
-| 400 | unsupported_format | фактический формат вне JPEG/PNG/WebP, включая HEIC |
-| 400 | invalid_image | битое, пустое, анимированное/multipage изображение |
-| 400 | image_too_large | более 40 MP |
+| 400 | unsupported_format | фактический формат вне JPEG (включая MPO)/PNG/WebP/HEIF (HEIC)/PDF |
+| 400 | invalid_image | битое (включая HEIC), пустое, анимированное/multipage изображение (кроме MPO) |
+| 400 | image_too_large | более 40 MP; у PDF — изображение страниц не уложилось в 20 MiB даже в JPEG |
+| 400 | invalid_pdf | PDF битый, пустой (0 страниц), не отрисовался за 30 с или процесс отрисовки упал |
+| 400 | pdf_encrypted | PDF открывается только с паролем (пароль владельца без пароля открытия не мешает) |
+| 400 | pdf_too_many_pages | в PDF больше 3 страниц |
 | 401 | not_authenticated | режим `accounts`, нет входа |
 | 403 | permission_denied / csrf_failed | `local_single`: локальный режим/peer; оба режима: CSRF/Origin |
 | 404 | not_found / page_out_of_range | маршрут/объект/родитель либо страница |
@@ -953,6 +979,8 @@ Line.product=null → matching_status=unmatched; ambiguous здесь отсут
 | 406 | not_acceptable | неподходящий Accept |
 | 409 | job_active / job_terminal / retry_not_allowed | конфликт состояния |
 | 409 | review_unavailable / review_resolved / review_busy / review_invalid | [подтверждение вырезки](#подтверждение-вырезки-needs_review-человеком); у `review_invalid` рядом с `error` есть `issues` |
+| 409 | receipt_read_only | `PATCH /api/receipts/{id}/` чека с фото ([трата без чека](#реализовано-трата-без-чека)) |
+| 409 | job_active / photo_shared | `DELETE /api/receipts/{id}/`: задание фото ещё в очереди или идёт; при `with_photo=1` из фото есть и другой чек ([удаление чека](#удаление-чека)) |
 | 413 | upload_too_large | файл >20 MiB или multipart >21 MiB |
 | 415 | unsupported_media_type | неверный Content-Type тела |
 | 503 | storage_unavailable / database_unavailable | известный отказ хранения; OperationalError/InterfaceError БД только в новых views |
@@ -1475,7 +1503,8 @@ Line.product=null → matching_status=unmatched; ambiguous здесь отсут
 
 - В траты входят **все чеки**, включая возвраты со своим знаком. Значение элемента — `Σ (amount − discount_amount)` его строк. Скидка на весь чек по строкам не распределяется.
 - `group_by=category` без `category` — корневые категории вместе с потомками; с `category=N` — прямые подкатегории `N` плюс элемент самой `N` с `"direct": true` для товаров, лежащих прямо в ней; `parent` — `{"id", "name", "path"}` категории фильтра, иначе `null`.
-- Особые элементы идут после обычных и в «прочее» не сворачиваются: `unmatched` (строки `kind=product` без товара), `service`, `deposit` (залог и возврат тары чистой суммой); у них `id` и `name` — `null`. При `group_by=store` особых элементов нет, значение магазина — `Σ Receipt.total`, у элемента дополнительно `city` и `country`.
+- Особые элементы идут после обычных и в «прочее» не сворачиваются: `unmatched` (строки `kind=product` без товара и без категории строки), `service` (строки-услуги без категории строки; услуга с категорией — обслуживание и чаевые, `receipts/service_charges.py`, — лежит в своей категории, как трата без чека), `deposit` (залог и возврат тары чистой суммой), `no_product` (строки без товара с категорией строки — траты без чека и обслуживание: только при `group_by=generic` и `product`); у них `id` и `name` — `null`. При `group_by=store` из особых бывает только `no_store` — чеки без магазина («Без места»); значение магазина — `Σ Receipt.total`, у элемента магазина дополнительно `city` и `country`.
+- Категория строки — категория её товара, а у строки без товара — `ReceiptLine.category` (трата без чека): при `group_by=category` такая строка лежит в своей категории, фильтр `category` её учитывает (при разбивке по продуктам и товарам — в `no_product`), фильтр `generic` — нет. Эталоны `fixtures/stats/` не менялись: у чеков с фото категории строки нет.
 - `unassigned: true` — у категории и обобщённого продукта «Не разобрано» (туда импорт кладёт новые товары; настоящую категорию назначает человек в админке).
 - `totals.receipts_total` — `Σ Receipt.total`; `lines_paid` — сумма всех элементов и «прочего»; `difference = receipts_total − lines_paid` (скидки на весь чек, налог сверх цен, округление). С фильтром `category` или `generic` считаются только строки сопоставленных товаров: особых элементов нет, `receipts_total` и `difference` — `null`, `receipts_count` — число чеков с такими строками, значение магазина — сумма этих строк.
 - `share_percent` — доля от суммы **положительных** элементов блока (показанных и «прочего»); у элемента с суммой ≤ 0 — `null`.
@@ -1603,6 +1632,1034 @@ Line.product=null → matching_status=unmatched; ambiguous здесь отсут
 
 Индекса по `purchased_on` нет. Замер на демо-базе (466 чеков, 5604 строки) — [verification.md](verification.md#статистика-серверная-часть-с5): самый медленный запрос — 132 мс при критерии 500 мс, поэтому индекс не добавлялся. На базе существенно больше демо время не измерялось. Откат — revert кода; данных и схемы эндпоинты не меняют.
 
+### «Динамика»: `GET /api/stats/trends/monthly|category|prices|limits|range/`
+
+Четыре эндпоинта экрана `/stats/trends` (2026-10-12). Моделей и миграций нет; расчёт — `backend/receipts/trends.py` (арифметика без БД), views — `backend/api/views/stats_trends.py`. Доступ, ошибки, `Cache-Control: no-store`, слитые товары — как у прочих `/api/stats/*`: чеки пользователя и его семьи (`owner_q`), в `local_single` — флаг и loopback. Валюты не складываются: блок на валюту чека. Деньги — 2 знака, цена за единицу — 4, проценты и индекс — 2.
+
+Общие параметры всех четырёх (окно — либо свой период `from` / `to`, либо прежние `months` / `month`; смешивать нельзя):
+
+| Параметр | Значение |
+| --- | --- |
+| `from` | первый месяц периода `ГГГГ-ММ` включительно (год 1901–9999); без него — 12 месяцев до `to` (2026-10-12, свой период) |
+| `to` | последний месяц периода `ГГГГ-ММ` включительно; без него — текущий месяц сервера. Период — не больше 60 месяцев |
+| `months` | длина окна в календарных месяцах, 1–60 (было 1–36), по умолчанию 12 (`400`: «Допустимо от 1 до 60.») |
+| `month` | последний месяц окна `ГГГГ-ММ`, по умолчанию текущий месяц сервера (`timezone.localdate()`); `400`: «Месяц в формате ГГГГ-ММ.» |
+
+Ошибки периода — `400 invalid_parameter`: неверный месяц — у своего поля «Месяц в формате ГГГГ-ММ.»; `from` позже `to` — у `to` (у `from`, если `to` не передан) «Начало периода позже конца.»; длиннее 60 месяцев — у `from` «Период — не больше 60 месяцев.»; `from`/`to` вместе с `months`/`month` — у `from` «Укажите либо from и to, либо months и month.» Пустое значение (`from=`) — как отсутствующее. `from=2026-06&to=2026-09` даёт тот же ответ, что `month=2026-09&months=4`.
+
+Ответ начинается с окна: `months`, `month_from`, `month_to`. **Месяц без трат в рядах есть с нулём** (у индекса — `null`): ряды не пропускают месяцы, длина каждого ряда равна `months`. Месяц чека — по `purchased_on`.
+
+Число SQL-запросов не зависит от объёма данных и длины окна (`TrendsAPITests.test_query_count_does_not_grow_with_data`, окна 24 и 60 месяцев): monthly и category — 4 (категории, строки, итоги чеков, товары), prices — 2 (покупки, имена), limits — 6 (категории, лимиты, строки, итоги, товары, пользователь `local` в `local_single`), range — 1; без лимитов чеки не читаются.
+
+#### `range/` — диапазон чеков
+
+Без параметров. `{"first_month": "2019-01" | null, "last_month": "2026-09" | null, "current_month": "2026-10", "max_months": 60}`: первый и последний месяц чеков пользователя и семьи (`null` без чеков), текущий месяц сервера и наибольшее окно. Клиент строит из них готовые периоды («Всё время» — с `first_month`, не больше 60 месяцев назад). Один запрос. Эталон — `trends-range.json` (сегодня подменено на 2026-09-30).
+
+#### `monthly/` — траты по месяцам
+
+Блок валюты (есть, если в окне есть её чеки): `total` и `average` (за окно / `months`), `categories` — легенда: корневые категории с тратами `{"id", "name", "unassigned", "total"}` по убыванию суммы, затем `name`, `id`; `months` — на каждый месяц `{"month", "total", "categories": [{"id", "amount"}], "uncategorized"}`.
+
+- `total` месяца — `Σ Receipt.total` с возвратами (как «потрачено» дашборда и `receipts_total` трат); категория — `Σ (amount − discount_amount)` строк с потомками, категория строки — как в `/api/stats/spending/` (товара либо своя у ручной траты).
+- `uncategorized = total − Σ categories`: услуги, залоги, строки без категории и скидки на весь чек; может быть отрицательным.
+- `summary` — последний месяц окна: `{"month", "spent", "previous_month", "previous", "change_percent", "average_change_percent"}`; изменение к предыдущему месяцу и к `average`; `null`, если база ≤ 0 или окна в один месяц.
+- `rows` — «месяц к месяцу»: каждая корневая категория из легенды, за ней её прямые подкатегории с тратами (по убыванию суммы за окно): `{"id", "name", "parent_id", "depth", "direct": false, "total", "amounts": [на каждый месяц], "change_percent", "average", "change_percents"}` (`average` — `total` / число месяцев окна, 2 знака; `change_percents` — каждый месяц к предыдущему, у первого и после нулевого месяца — `null`; добавлены 2026-10-12 по жалобе «Месяц к месяцу» показывает только 2 месяца); `change_percent` — последний месяц к предыдущему, `null` при нуле в предыдущем.
+
+#### `category/` — одна категория во времени
+
+`category` — id любой категории (`400` при неверном формате, `404 not_found` — нет такой). Без параметра сервер **предлагает** корень, в котором тратили в наибольшем числе месяцев окна (затем по имени, id), и отвечает `"suggested": true`; трат нет вообще — `"category": null`, `"currencies": []`.
+
+Ответ: `category` (`{"id", "name", "path"}`), `suggested`, `options` — категории с тратами в окне и все их предки в порядке дерева `{"id", "name", "path": [имена], "depth"}` (для выбора, включая подкатегории вида «Жильё › Коммунальные услуги»), `currencies` — блоки `{"currency", "total", "average", "months": [{"month", "amount", "lines_count"}], "parts"}`.
+
+- Траты — строки категории с потомками (ручные траты в том числе); особые строки (услуги, залоги, без категории) не входят.
+- `parts` — разбивка по прямым подкатегориям с тратами (по убыванию суммы за окно) и последним элементом `"direct": true` — строки, лежащие прямо в выбранной категории; строки той же формы, что `rows`. Без подкатегорий с тратами — `[]`. `Σ parts.amounts[i] = months[i].amount`.
+
+#### `prices/` — индекс цен семьи
+
+Только чеки продажи, строки товаров с положительными количеством и суммой (ручные траты без товара не входят). Блок валюты — при покупках товаров в окне.
+
+- `points` — на каждый месяц `{"month", "index", "base_month", "link_percent", "matched_products"}`. **Цепной индекс Фишера:** первый месяц окна с покупками — `100.00`; каждый следующий месяц с покупками сравнивается с опорным (последний месяц с индексом) по совпавшим товарам и единицам (`receipts.basket.match` и `price_index`, как в `compare/`): `index = index опорного × Фишер`, `link_percent = (Фишер − 1) × 100`. Месяц без покупок или без общих с опорным товаров — `index: null`, опорный не меняется.
+- `first_month`; `index_month` и `change_percent` — последний месяц с индексом (если он не первый) и `index − 100`, иначе оба `null`.
+- `risers` / `fallers` — до 5 товаров `{"product": {"id", "name"}, "unit", "old": {"month", "price"}, "new": {"month", "price"}, "change_percent"}`: цена за единицу (оплаченная сумма / количество) первого и последнего месяца покупки в окне; по модулю изменения, затем по имени, id, единице; товар без изменения — ни в одном списке.
+- `products_total` — товаров (с единицей), купленных хотя бы в двух месяцах окна; `risen_total`, `fallen_total` — сколько из них подорожало и подешевело.
+
+#### `limits/` — лимиты по месяцам
+
+`limits` — видимые лимиты (свои и семьи, как `/api/budget/limits/`), по валюте и порядку дерева категорий: `{"id", "category": {"id", "name", "path"} | null, "currency", "amount", "months": [{"month", "spent", "percent", "limit", "change"}]}`. `spent` — траты категории лимита **с потомками** в валюте лимита (лимит подкатегории — только её ветка). С 2026-10-12 сумма лимита — **своя у каждого месяца** по журналу (`budget.BudgetLimitChange`, [data-model](data-model.md#журнал-лимитов-budgetbudgetlimitchange-2026-10-12)): `limit` — сумма лимита того месяца (`null` — лимита в месяце не было; тогда и `percent` `null`), `percent = spent / limit × 100`, `change` — `{"old", "new"}` (сумма к началу месяца и в нём; `null` у одной из них — создан либо удалён), если в этом месяце лимит меняли, иначе `null`. Строки — пары «категория и валюта» с лимитом сейчас либо хотя бы в одном месяце окна; удалённый с тех пор лимит — `"id": null, "amount": null`. `amount` — нынешняя сумма. Лимит без записей журнала — нынешняя сумма во всех месяцах. Лимитов нет — `"limits": []`; запросов к БД на один больше (журнал).
+
+Эталоны (из `seed_stats_demo`, окно до сентября 2026, лимиты «Продуктов питания» EUR 80 и KZT 5500 добавляет сам тест): `trends-monthly.json`, `trends-category.json` (с `parts`), `trends-category-suggested.json`, `trends-prices.json`, `trends-limits.json`, свой период `trends-monthly-period.json` (`from=2025-11&to=2026-03`), `trends-range.json`, `error-trends-period.json` в `backend/api/tests/fixtures/stats/`; в `trends-monthly.json` и `trends-category.json` строки получили `average` и `change_percents`, остальное в них прежнее. Тесты — `backend/api/tests/test_stats_trends.py` (две валюты, пустые месяцы, семья и посторонний, цепочка индекса, лимиты, коммуналка полгода по подкатегориям, число запросов).
+
+## Реализовано: трата без чека
+
+Трата без чека (наличные, перевод, счёт) — обычный `Receipt` с `source=manual`: списки, страница чека и статистика читают её той же выборкой. Модель и миграция — [data-model](data-model.md#трата-без-чека); сервис — `backend/receipts/manual.py`, представления — `backend/api/views/receipts.py`.
+
+Доступ — как у `POST` распознавания: `local_single` — `DEBUG` + `ALLOW_LOCAL_RECOGNITION_API=1` + loopback и CSRF, `accounts` — вход и CSRF; владелец новой траты — пользователь запроса, видимость — `owner_q` (чужая трата — `404` тем же телом, что несуществующая). Ответы — `Cache-Control: no-store`, тело запроса — объект JSON до 64 КБ (`Content-Type: application/json`, иначе `415`; пустое или не объект — `400 invalid_request`).
+
+| Метод и путь | Ответ |
+| --- | --- |
+| `GET /api/receipts/manual/` | `200 {"currency", "frequent_categories"}`: валюта последнего чека пользователя (по `purchased_at`, `-id`), без чеков — `KZT`; до 8 id категорий его ручных трат по числу строк |
+| `POST /api/receipts/manual/` | `201` — Receipt в форме `GET /api/receipts/{id}/` |
+| `PATCH /api/receipts/{id}/` | `200` — Receipt; только `source=manual`, иначе `409 receipt_read_only` |
+| `DELETE /api/receipts/{id}/` | `204` без тела; любой видимый чек — трата и чек с фото ([удаление чека](#удаление-чека)); строки удаляются вместе с ним |
+
+### Удаление чека
+
+`DELETE /api/receipts/{id}/[?with_photo=1]` (2026-10-12) удаляет любой чек, видимый по `owner_q`: свой либо члена семьи; чужой — `404 not_found` тем же телом, что несуществующий, повтор — тоже `404`. Доступ и CSRF — как у `PATCH`. Сервис — `backend/receipts/deletion.py`.
+
+- Удаляются чек, его строки, скидки и налоги. Вырезки (`ReceiptImage`) чека с фото **остаются** и теряют связь (`receipt_id: null`, `receipt_deleted: true` у вырезки): страница задания по-прежнему показывает вырезку.
+- `with_photo=1` (значения `1` / `0`, иначе `400 invalid_parameter` с `fields.with_photo`) удаляет и исходное фото со всеми его заданиями, вырезками и попытками, а после фиксации транзакции (`transaction.on_commit`) — его папки MEDIA `originals/<storage_uuid>/`, `prepared/<storage_uuid>/`, `crops/<storage_uuid>/`. Ошибка удаления файла пишется в журнал (`receipts.deletion`) и не меняет ответ: строки уже удалены, оставшаяся папка — сирота. У траты без чека флаг ничего не меняет.
+- Отказы, ничего не удаляя: `409 job_active` — задание фото этого чека ещё в очереди или идёт (`queued` / `running` / `cancel_requested`), с флагом и без; `409 photo_shared` — при `with_photo=1` из того же фото есть другой чек (удалить этот чек без фото можно).
+- Магазины, товары, написания и категории, созданные при импорте этого чека, остаются: каталог общий. Записи журнала слияний о строках чека удаляются вместе со строками (`CASCADE`), как и у траты.
+- Скрытия чека (флажок «не учитывать в бюджете») нет: только удаление.
+
+Тело (`POST`; у `PATCH` — любые из этих ключей, остальные не меняются):
+
+```json
+{"total": "450", "currency": "KZT", "category": 12, "purchased_on": "2026-10-12", "store_name": "Кофейня", "note": "с другом",
+ "lines": [{"name": "Капучино", "amount": "300", "quantity": "1", "category": 12}]}
+```
+
+- `total` — сумма > 0, строка или число, не больше 12 целых и 2 дробных знаков (запятая допустима). `currency` — существующий код из трёх букв, по умолчанию — как в `GET …/manual/`. `purchased_on` — `ГГГГ-ММ-ДД`, по умолчанию — сегодня в поясе сервера (`TIME_ZONE`). `store_name` — до 100 символов: магазин с такой вывеской или названием без учёта регистра либо новый продавец с магазином (страна по валюте: KZT → KZ, RUB → RU, EUR → DE, иначе KZ); пусто или `null` — «Без места». `note` — до 1000 символов.
+- Без `lines` (или с пустым списком) обязательны `total` и `category`: одна строка «<название категории>» на всю сумму с этой категорией. С `lines` (до 100): у позиции обязательны `name` (до 200 символов) и `amount`, `quantity` > 0 до 3 знаков (по умолчанию 1), `category` — своя, иначе общая `category`, иначе нет (строка тогда — `unmatched`, как несопоставленная строка чека). Итог — сумма позиций; переданный `total` обязан с ней совпасть.
+- *Прежнее правило, см. «Названная покупка — товар каталога» в конце:* строки ручной траты товаром каталога не сопоставляются: сопоставление импорта идёт по написаниям продавца (`ProductAlias` по `merchant`), а у траты продавца может не быть; новый товар попал бы в «Не разобрано» и спрятал бы выбранную категорию. Строка — `kind=product`, `unit=pcs`, `unit_price = amount / quantity`, `product=null`, `category` — как выше. Операция — всегда `sale`; `purchased_at` — момент сохранения, если дата сегодняшняя в поясе места (без места — сервера), иначе полдень этой даты.
+- `PATCH`: `lines` заменяет все строки (пустой список — снова одна сумма в `category`; без `category` берётся категория единственной прежней строки). Без `lines` у траты из одной строки `total` и `category` меняют эту строку (название «<категория>» следует за категорией); у траты с позициями `total` должен совпасть с их суммой, `category` — `400` (`У траты с позициями категорию задают позициям.`). Смена `purchased_on` пересчитывает `purchased_at`.
+- Ошибки проверки — `400 invalid_parameter` с `fields`: имена — `total`, `currency`, `category`, `purchased_on`, `store_name`, `note`, `lines`, `lines.N.name|amount|quantity|category` (N — индекс в теле) и неизвестные ключи (`Неизвестное поле.`). Сообщения фиксированные, значения запроса в ответ не попадают. При отказе ничего не сохраняется.
+- Три правила дедупликации чека к ручным тратам не применяются (условие `source='photo'` у ограничений, `find_duplicates` их не ищет): две одинаковые траты за день — две траты. Ручная трата не наблюдение цены (`observation_q` — только `source=photo`): история цен, сводки, сравнение и ряды цен её не видят. (До 2026-10-13; теперь — раздел «Названная покупка — товар каталога» в конце.)
+- Списки: `/api/receipts/?q=` ищет также по `note`; фильтры `store` и `country` трату «Без места» не находят. Статистика — как у чека: категория строки, `no_product`, `no_store` ([траты](#get-apistatsspending)); `/api/stats/receipts/*` считают трату походом.
+
+### Трата словами: разбор текста в черновик формы
+
+Человек пишет «такси до аэропорта 4500» или «молоко 450, хлеб 230 в магните» — сервер возвращает черновик формы траты; сам разбор ничего не сохраняет. Codex CLI со входом есть только рядом с `recognition_worker` (в Docker — контейнер `recognition`, у `web` его нет), поэтому разбор — очередь: `POST` пишет строку `ManualParseRequest` (миграция `receipts.0007_manual_parse_request`), воркер выполняет один текстовый вызов, клиент опрашивает `GET`. Код — `backend/receipts/manual_parse.py`, промпт — `receipts/prompts/manual_parse.txt`, схема ответа — `receipts/schemas/manual_parse.schema.json`. Доступ, CSRF, `no-store` и видимость (`owner_q`: чужая строка — `404`, семья видит строки друг друга) — как у трат выше.
+
+| Метод и путь | Ответ |
+| --- | --- |
+| `POST /api/receipts/manual/parse/` | тело `{"text": "…", "today": "ГГГГ-ММ-ДД"?}` → `202` — объект ниже в `queued` |
+| `GET /api/receipts/manual/parse/{id}/` | `200` — объект ниже |
+
+```json
+{"id": 7, "status": "succeeded", "created_at": "…Z", "finished_at": "…Z", "error": null,
+ "draft": {"total": "4500", "currency": "KZT", "category": 12, "purchased_on": "2026-10-12", "store_name": null,
+           "note": "до аэропорта", "lines": []},
+ "executor": {"available": true, "state": "idle", "last_seen_at": null}}
+```
+
+- `text` — 1–500 символов после обрезки пробелов; `today` — дата устройства для «вчера», «в субботу» (не дальше суток от даты сервера), без него — дата сервера (`TIME_ZONE`). Иначе `400 invalid_parameter` с `fields` `text` / `today`, неизвестный ключ — `Неизвестное поле.`.
+- Лимит (защита подписки Codex): не больше 3 незавершённых (`queued` / `running`) и 30 запросов за час на пользователя, иначе `429 parse_limit` — ничего не создаётся.
+- `status`: `queued` → `running` → `succeeded` | `failed`. `draft` — только у `succeeded`: ровно тело `POST /api/receipts/manual/` (`total` строкой или `null`, `currency` — названная в тексте либо валюта по умолчанию, `category` — id из каталога или `null`, `purchased_on` — названная дата либо `today`, `store_name` или `null`, `note` — строка, `lines` — `[{"name", "amount", "quantity" | null, "category" | null}]`; с позициями `total` — их сумма). Без суммы или категории черновик неполон — их дополняет человек.
+- `error` — только у `failed`: `{"code", "message"}` с фиксированным текстом. Коды: `invalid_output` (ответ не прошёл схему или правила `manual.parse`), `timeout` (`MANUAL_PARSE_TIMEOUT_SECONDS`, по умолчанию 90), `expired` (ждал воркера дольше 5 минут — модель не спрашивалась), `worker_lost` (воркер остановился или lease истекла; повтора нет — человек отправляет текст снова), `internal_error`, коды провайдера (`auth_required`, `network_unavailable`, `rate_limited`, `provider_unavailable`, `configuration_error`, `invalid_input`). Сырой ответ модели не хранится и в API не попадает.
+- `executor` — как у распознавания: `state: "absent"` у `queued` значит, что воркера нет и ответа не будет.
+- Модели передаются: `today`, `default_currency`, коды валют, категории каталога (`id`, `name`, `parent_id`, без «Не разобрано», до 500) и текст. Fake (`RECEIPT_OCR_PROVIDER=fake`) отвечает без модели: сумма — последнее число текста, категория — первая по id, дата — `today`; сценарий — `MANUAL_PARSE_FAKE_SCENARIO` (`simple`, `invalid_output`, `provider_error`, `timeout`).
+- Воркер: в каждом проходе сначала запрос разбора (один на проход), затем задание распознавания, затем пакет предположений категорий. Задание, которое уже идёт, не прерывается: разбор ждёт его конца (клиент перестаёт ждать через 150 с). Пока идёт разбор, `executor.state` — `idle`, не `busy`.
+- Откат: `manage.py migrate receipts 0006_manual_expense` (удаляет таблицу запросов; чеки не трогает).
+
+### Траты категории за месяц: `GET /api/stats/category-spends/?category=ID&month=ГГГГ-ММ`
+
+Ответ на «на что ушли деньги категории»: из каких чеков и трат (выписки, вручную, по чеку) сложилась сумма категории с потомками за месяц. Доступ и чеки — как у прочих `/api/stats/*` (`owner_q`: свои и семьи). Без моделей и миграций; расчёт — `receipts.category_spends`, четыре запроса независимо от объёма (категории, строки, категории товаров, чеки).
+
+```json
+{"month": "2026-10", "previous_month": "2026-09",
+ "category": {"id": 5, "name": "Развлечения", "path": [{"id": 5, "name": "Развлечения"}]},
+ "children": [{"id": 51, "name": "Игры"}],
+ "currencies": [{
+   "currency": "KZT", "total": "24500.00", "receipts_count": 3,
+   "parts": [{"id": 51, "name": "Игры", "direct": false, "children_count": 0, "amount": "16000.00", "lines_count": 2},
+             {"id": 5, "name": "Развлечения", "direct": true, "children_count": 0, "amount": "8500.00", "lines_count": 1}],
+   "items": [{"receipt_id": 812, "source": "manual", "purchased_on": "2026-10-09", "store": {"id": 44, "name": "Steam"},
+              "note": "Покупка · Выписка Kaspi Gold", "owner": "andrey", "owner_name": "Андрей",
+              "receipt_total": "8000.00", "category_amount": "8000.00",
+              "lines": [{"id": 9001, "name": "Steam", "amount": "8000.00", "category_id": 51, "category_name": "Игры"}]}]}]}
+```
+
+- `category` — обязательна (нет — `400 invalid_parameter`, `Обязательный параметр.`; неизвестная — `404 not_found`); `month` — `ГГГГ-ММ`, по умолчанию текущий месяц сервера (как у дашборда). Месяц — по `purchased_on`, обе границы включительно.
+- Категория строки — как в `/api/stats/spending/` и на дашборде: категория товара (строка поглощённого слиянием товара — категория оставляемого), у строки без товара — своя `ReceiptLine.category` (ручная трата, импорт выписки, обслуживание и чаевые). В категорию входят строки её и всех потомков. Залоги, услуги без категории и строки без товара и категории не входят. Значение строки — `amount − discount_amount`.
+- Валюты не складываются: блок на каждую валюту, по коду. `total` — сумма строк категории; `receipts_count` — чеки и траты с такими строками.
+- `parts` — прямые подкатегории с суммой своих строк и строк потомков (`children_count` — сколько у неё своих подкатегорий: есть куда углубляться) и сама категория (`direct: true`, её собственные строки) последней; остальные — по сумме по убыванию, затем имени. `children` в корне ответа — все прямые подкатегории каталога, с тратами или без.
+- `items` — от новых к старым (момент покупки, затем id). `receipt_total` — итог чека целиком, `category_amount` — часть этой категории (у чека с позициями в нескольких категориях меньше итога); `lines` — только строки этой категории и её потомков, в порядке печати. `store` — `{"id", "name"}` либо `null` (трата без места), `note` — комментарий (у импорта выписки он оканчивается «· Выписка …»).
+
+## Реализовано: лимиты бюджета и дашборд месяца
+
+Шаг 4 [семейного бюджета](plans/2026-10-12-family-budget-design.md): месячные лимиты по категориям (с 2026-10-12 — любого уровня, например «Аренда» и «Коммунальные услуги» внутри «Жилья») и сводка месяца для главного экрана. Модель — [data-model](data-model.md#бюджет-лимиты-по-категориям) (`budget.BudgetLimit`), расчёт — `backend/budget/dashboard.py`, правило доступа к лимитам — `backend/budget/access.py`, представления — `backend/api/views/budget.py`.
+
+Доступ, CSRF и `Cache-Control: no-store` — как у трат без чека: `local_single` — `DEBUG` + `ALLOW_LOCAL_RECOGNITION_API=1` + loopback (запись — с CSRF), `accounts` — вход (без него `401 not_authenticated`) и CSRF для записи. Тело записи — объект JSON до 4 КБ, `Content-Type: application/json` (иначе `415`; пустое или не объект — `400 invalid_request`).
+
+### Лимиты: `/api/budget/limits/`
+
+У пользователя с семьёй лимиты общие на семью: их видят и правят все её члены, новый лимит пишется на семью. Без семьи (и в `local_single`) — свои. Личные лимиты, заведённые до вступления в семью, после вступления не видны (остаются в БД и админке). Чужой лимит — `404 not_found` тем же телом, что несуществующий.
+
+| Метод и путь | Ответ |
+| --- | --- |
+| `GET /api/budget/limits/` | `200` — страница `{count, page, page_size, pages, results}` (по умолчанию 50), порядок — имя категории, валюта, `id` |
+| `POST /api/budget/limits/` | тело `{"category_id", "currency", "amount"}` → `201` — лимит |
+| `GET /api/budget/limits/{id}/` | `200` — лимит |
+| `PATCH /api/budget/limits/{id}/` | любые из `category_id`, `currency`, `amount` → `200` — лимит |
+| `DELETE /api/budget/limits/{id}/` | `204` без тела |
+
+```json
+{"id": 7, "category_id": 3, "category_name": "Продукты", "currency": "KZT", "amount": "120000.00"}
+```
+
+- `category_id` — целое, id существующей категории **любого уровня**; трата подкатегории входит и в её лимит, и в лимит каждого предка; `currency` — существующий код из трёх букв (регистр не важен); `amount` — сумма в месяц > 0, строка или число JSON, не больше 12 целых и 2 дробных знаков (запятая допустима), как `total` траты.
+- Пара «категория и валюта» уникальна у владельца (семьи либо пользователя): повтор, в том числе `PATCH` на занятую пару, — `400 invalid_parameter`, `fields.category_id`: `Лимит для этой категории и валюты уже есть.`
+- Прочие ошибки — `400 invalid_parameter` с `fields`: `category_id` (`Категория не найдена.`), `currency` (`Валюта не найдена.`), `amount` (`Сумма больше нуля, не больше двух знаков после запятой.`), отсутствующее поле `POST` — `Обязательное поле.`, неизвестный ключ — `Неизвестное поле.`, пустой `PATCH` — `fields.body`: `Укажите хотя бы одно поле.` При отказе ничего не сохраняется.
+
+### История лимитов: `GET /api/budget/limits/history/`
+
+Как менялись лимиты (2026-10-12). Доступ и видимость — как у `/api/budget/limits/` (журнал семьи, без семьи — свой, `limits_q`); запись — `405`. Параметры: `from`, `to` — `ГГГГ-ММ`, как у «Динамики» (без `to` — текущий месяц сервера; без `from` — с месяца первого изменения, но не меньше 12 месяцев и не больше 60), `category` — id категории (точно, без потомков), `currency` — код из трёх букв (регистр не важен). Ошибки — `400 invalid_parameter` с `fields` (`from`, `to`, `category`, `currency`). Число запросов от объёма журнала не зависит.
+
+```json
+{"months": 4, "month_from": "2026-07", "month_to": "2026-10",
+ "changes": [{"id": 12, "changed_at": "2026-09-20T12:00:00Z", "effective_month": "2026-09", "kind": "changed",
+   "category": {"id": 5, "name": "Молочное", "path": [{"id": 1, "name": "Продукты"}, {"id": 5, "name": "Молочное"}]},
+   "currency": "KZT", "old_amount": "120000.00", "new_amount": "150000.00", "change_percent": "25.00",
+   "changed_by": {"username": "andrey", "display_name": "Андрей"}}],
+ "series": [{"category": {"id": 5, "name": "Молочное", "path": [...]}, "currency": "KZT", "limit_id": 7, "amount": "150000.00",
+   "months": [{"month": "2026-07", "amount": "120000.00"}, {"month": "2026-08", "amount": "120000.00"},
+              {"month": "2026-09", "amount": "150000.00"}, {"month": "2026-10", "amount": "150000.00"}]}]}
+```
+
+- `changes` — записи журнала с `effective_month` в окне, новые сверху (`changed_at`, `id`). `kind` — `created` (`old_amount` `null`), `changed`, `deleted` (`new_amount` `null`); `change_percent` — `(new − old) / old × 100`, 2 знака, только у `changed`; `changed_by` — `{"username", "display_name"}` либо `null` (неизвестно: посев миграцией, пользователь удалён).
+- `series` — на пару «категория и валюта» с лимитом сейчас либо хотя бы в одном месяце окна: сумма лимита в каждом месяце (`null` — не было), `limit_id` и `amount` — нынешний лимит (`null` — удалён). Порядок — валюта, порядок дерева категорий.
+
+### `GET /api/dashboard/?month=ГГГГ-ММ`
+
+Месяц семьи (видимость чеков — `owner_q`: свои и членов семьи). Лимиты прошлого месяца (раньше текущего месяца сервера) — суммы того месяца по журналу (`budget/history.py`: созданный позже лимит не показан, удалённый с тех пор — показан с `limit_id: null`); текущий и будущие — нынешние лимиты. `month` — по умолчанию текущий в поясе сервера (`TIME_ZONE`); иначе `ГГГГ-ММ` с годом 1901–9999, ошибка — `400 invalid_parameter`, `fields.month`: `Месяц в формате ГГГГ-ММ.` Запись — `405`.
+
+```json
+{"month": "2026-10", "previous_month": "2026-09", "days_left": 19, "members": ["andrey", "liza"],
+ "people": [{"username": "andrey", "display_name": "Андрей"}, {"username": "liza", "display_name": "Лиза"}],
+ "currencies": [{"currency": "KZT", "spent": "287450.00", "previous_spent": "326100.00", "limit_total": "400000.00", "limited_spent": "342300.00",
+   "categories": [
+     {"category_id": 3, "name": "Продукты", "spent": "92300.00", "limit": "120000.00", "limit_id": 7, "children": []},
+     {"category_id": 10, "name": "Жильё", "spent": "250000.00", "limit": null, "limit_id": null, "children": [
+       {"category_id": 17, "name": "Аренда", "spent": "200000.00", "limit": "200000.00", "limit_id": 31, "children": []},
+       {"category_id": 21, "name": "Коммунальные услуги", "spent": "50000.00", "limit": "40000.00", "limit_id": 32, "children": []}]}]}],
+ "recent": [{"id": 12, "source": "photo", "title": "Magnum", "category_name": "Продукты", "owner": "liza", "owner_name": "Лиза",
+   "purchased_on": "2026-10-12", "total": "18940.00", "currency": "KZT", "lines_count": 23}]}
+```
+
+`limited_spent` (2026-10-12) — сколько потрачено в категориях, входящих в `limit_total` (каждая с потомками, вложенный лимит не считается дважды), null без лимитов. С 2026-10-13 полосы по `limit_total` на «Главной» нет — полоса верхней карточки показывает только бюджет месяца (`budget`); поле остаётся для «Других валют» и сводки ИИ.
+
+- Месяц — по локальной дате чека `purchased_on`, прошлый месяц — так же. `days_left` — дней до конца месяца, включая сегодня, если месяц текущий; иначе `0`. `members` — логины членов семьи по алфавиту, без семьи — `[свой]` (`local_single` — `["local"]`); `people` — те же люди в том же порядке `{"username", "display_name"}` (имя — как в [«Я»](#вход-выход-смена-пароля-кто-я)).
+- `currencies` — по коду валюты; валюты не складываются. Блок есть, если в валюте есть чеки этого или прошлого месяца либо лимит. `spent` / `previous_spent` — `Σ Receipt.total` месяца (заплачено, со скидкой на весь чек; возврат — со своим знаком), как `totals.receipts_total` в [`/api/stats/spending/`](#get-apistatsspending); нет чеков — `"0.00"`. `limit_total` — сумма лимитов валюты, у которых нет лимита у предка в той же валюте (лимит подкатегории — часть лимита родителя, а не добавка к нему; лимиты подкатегорий без лимита у предка — складываются), либо `null`.
+- `categories` — категории верхнего уровня: категория строки — категория товара, у строки без товара — `ReceiptLine.category` (ручная трата); потомки сворачиваются в корень, «Не разобрано» — как есть. `spent` — `Σ (amount − discount_amount)` строк. Строки без категории, услуги и залоги в категории не попадают (они только в `spent` блока), поэтому сумма категорий может быть меньше `spent`. Категория с лимитом есть и без трат (`"0.00"`). `limit` / `limit_id` — лимит этой категории и валюты либо `null`. Порядок — `spent` по убыванию, затем имя и id. Корень без трат и без своего лимита появляется с `"0.00"`, если лимит есть у его подкатегории.
+- `children` (у каждой строки, добавлено 2026-10-12; с того же дня — и без лимита) — подкатегории с тратами месяца в этой валюте, с лимитом в этой валюте либо с таким лимитом у потомка (клиент открывает по строке траты категории — `GET /api/stats/category-spends/`), рекурсивно, той же формы `{"category_id", "name", "spent", "limit", "limit_id", "children"}` и в том же порядке; у строки без таких подкатегорий — `[]`. `spent` подкатегории — её строки и строки всех потомков, тем же расчётом, что у корня (`receipts.spending` с фильтром категории). Промежуточный предок без своего лимита — с `limit: null`.
+- `recent` — последние 10 чеков и трат по `purchased_at` (затем `-id`) за всё время, не только за месяц. `title` — вывеска магазина; без магазина — комментарий траты, иначе `category_name`, иначе `Без места`. `category_name` — корень с наибольшей суммой строк чека либо `null`. `owner` — логин того, кто добавил, `owner_name` — его имя для показа; `lines_count` — все строки чека.
+- Число запросов не зависит от объёма данных. Слитые товары относятся к оставляемому, как в статистике.
+
+## Реализовано: выгрузка в JSON (2026-10-12)
+
+### `GET /api/export/`
+
+Все данные семьи одним документом JSON (`Content-Type: application/json`, с отступом в 2 пробела, `Cache-Control: no-store`). С `?download=1` — вложение `Content-Disposition: attachment; filename="checkist-export-<from>-<to>.json"` (без `from` — `all`, без `to` — дата выгрузки в поясе сервера). Доступ и CSRF — как у `/api/receipts/` (`LocalOrSignedIn`; без входа в `accounts` — `401 not_authenticated`); запись — `405`. Видимость — `owner_q`: чеки пользователя и его семьи; посторонний не видит ничего из чужой семьи, а лимиты — по `budget.access.limits_q`. Код — `backend/api/export.py`, вью — `backend/api/views/export.py`, тесты — `backend/api/tests/test_export.py`, пример документа — `backend/api/tests/fixtures/export/example.json` (форму сверяет `ExportFixtureTests`).
+
+**Фильтры** (все необязательны и складываются по И; списки — повтором параметра `?x=1&x=2` либо через запятую, не больше 50 значений, повторы убираются):
+
+| Параметр | Значение |
+| --- | --- |
+| `from`, `to` | локальная дата чека `purchased_on`, обе включительно; `from > to` — ошибка `from` |
+| `category` | id категорий; с потомками. Чек попадает, если хоть одна его строка в такой категории (категория строки — категория обобщённого продукта товара, поглощённый слиянием товар заменён оставляемым; у строки без товара — `ReceiptLine.category`). Неизвестный id — ошибка |
+| `source` | `photo` (чек с фото), `manual` (ручная трата, не выписка), `statement` (выписка — см. ниже) |
+| `owner` | логины людей семьи (`people`); чужой либо неизвестный логин — ошибка `Такого человека нет в семье.` |
+| `store` | id магазинов; неизвестный — ошибка |
+| `currency` | код валюты чека, регистр не важен |
+| `q` | 2–100 символов: вывеска или название магазина, комментарий, название строки на чеке или товара (как у списка «Траты») |
+| `min_total`, `max_total` | границы `Receipt.total` включительно: число, до двух знаков после точки или запятой, может быть отрицательным; `min_total > max_total` — ошибка `min_total` |
+| `include` | разделы через запятую: `receipts`, `lines`, `categories`, `stores`, `limits`, `summary`, `media`; по умолчанию все, кроме `media`. `lines` и `media` стоят внутри чеков — без `receipts` ошибка |
+| `download` | `1` — вложение, `0` — без заголовка |
+
+Неверные значения — один `400 invalid_parameter` со всеми полями в `fields`. **Выписки — эвристика:** отдельного признака у траты нет; выписка — ручная трата (`source = manual`), у которой последняя часть комментария после «·» начинается словом «Выписка» (`·\s*Выписка[^·]*$`, PostgreSQL regex, регистр важен): «Кофе · Выписка Kaspi 10.2026» — выписка, «Выписка · обед» и «Такси · Выписка Halyk · 12:30» — нет. Так подписывает траты импорт выписок; если подпись изменится, меняется `STATEMENT_NOTE_REGEX` в `api/export.py`.
+
+Чеков по фильтрам (с разделом `receipts`) больше 20 000 — `400 export_too_large`: `{"error": {"code": "export_too_large", "message": "Больше 20000 чеков: сузьте период или добавьте фильтры."}, "max_receipts": 20000}`. Раздел `summary` без `receipts` не ограничен — им клиент считает предпросмотр.
+
+**Документ** (полный пример — эталон выше):
+
+```json
+{"format": "checkist-export", "version": 1, "exported_at": "2026-10-12T09:15:00Z",
+ "filters": {"from": "2026-10-01", "to": "2026-10-31", "category": [], "source": [], "owner": [], "store": [],
+   "currency": null, "q": null, "min_total": null, "max_total": null,
+   "include": ["receipts", "lines", "categories", "stores", "limits", "summary"]},
+ "people": [{"username": "andrey", "display_name": "Андрей"}, {"username": "liza", "display_name": "Лиза"}],
+ "categories": [{"id": 3, "name": "Молочное", "parent_id": 1, "path": "Продукты / Молочное"}],
+ "stores": [{"id": 12, "name": "Magnum", "address": "г. Алматы, пр. Абая, 10", "city": "Алматы", "country": "KZ"}],
+ "receipts": [{"id": 501, "source": "photo", "operation": "sale", "purchased_on": "2026-10-03", "purchased_at": "2026-10-03T12:41:00Z",
+   "store_id": 12, "store_name": "Magnum", "currency": "KZT", "total": "1290.00", "discount_total": "0.00", "note": "",
+   "owner": "andrey", "owner_name": "Андрей", "created_at": "2026-10-03T13:02:11Z", "categories": ["Продукты / Молочное"],
+   "lines": [{"position": 1, "kind": "product", "name": "МОЛОКО 3,2% 1Л", "quantity": "2.000", "unit": "pcs", "unit_price": "645.0000",
+     "amount": "1290.00", "discount_amount": "0.00", "paid_amount": "1290.00", "category_id": 3, "category_path": "Продукты / Молочное",
+     "product_id": 44, "product_name": "Молоко 3,2% 1 л"}],
+   "media": {"display_url": "https://…/media/crops/…/preview-1600-v2.webp", "download_url": "https://…/media/originals/…/source.jpg?download=1"}}],
+ "limits": [{"category_id": 1, "category_path": "Продукты", "currency": "KZT", "amount": "150000.00"}],
+ "summary": {"receipts_count": 1, "lines_count": 1, "max_receipts": 20000, "currencies": [{"currency": "KZT", "receipts_count": 1,
+   "lines_count": 1, "total": "1290.00", "category_total": null,
+   "by_category": [{"category_id": 1, "name": "Продукты", "amount": "1290.00", "lines_count": 1}],
+   "by_month": [{"month": "2026-10", "receipts_count": 1, "total": "1290.00"}]}]}}
+```
+
+- `format` + `version` — версия формы документа; несовместимое изменение поднимет `version`. `filters` — нормализованные фильтры (`category`, `store` — как присланы, без потомков; деньги — двумя знаками). `people` — всегда, как в «Я».
+- Деньги — строки, точно как хранятся (2 знака), цена за единицу — 4, количество — 3; ничего не округляется сверх хранимого, валюты нигде не складываются.
+- `categories` — всё дерево каталога в порядке обхода (братья по имени), `path` — имена от корня через « / ». `stores` — только магазины выгруженных чеков, по id. `receipts` — по `purchased_at`, затем id. `source` — `photo` | `manual` | `statement` (эвристика выше). `store_id` / `store_name` — `null` у траты «Без места». `categories` чека — пути категорий его строк без повторов по алфавиту. `lines` — по позиции; `paid_amount = amount − discount_amount`; `product_id` / `product_name` — оставляемый товар после слияния либо `null`. `media` (только с `include=media`) — последняя вырезка чека: `display_url` — уменьшенная копия, `download_url` — то, что человек загрузил (PDF либо исходное фото), абсолютные адреса; у чека без фото — `null`.
+- `limits` — лимиты семьи (без семьи — свои); с `currency` — только этой валюты, с `category` — только лимиты выбранных категорий и их потомков.
+- `summary` — по валютам: `receipts_count`, `lines_count`, `total = Σ Receipt.total`; `by_category` — корни категорий строк, значение строки `amount − discount_amount` (расчёт `receipts.spending.collect`, как у статистики), строки без категории — `{"category_id": null, "name": "Без категории"}` последними; `category_total` — сумма строк выбранных категорий (с потомками), только с фильтром `category`, иначе `null`; `by_month` — месяцы `purchased_on` с числом чеков и суммой `total`. С фильтром `category` чеки выгружаются целиком (все строки), а `total` — их полные итоги.
+- Число запросов к БД не зависит от числа чеков, строк и фото (страж — `ExportQueryCountTests`).
+
 ## Планируется
 
 Вход через внешних провайдеров, регистрация и сброс пароля по почте, API ручного редактирования/сопоставления, клиент статистики (серверная часть — [выше](#реализовано-статистика-трат-походы-и-ряды-цен-серверная-часть)) и дашборд на главной, хранение курсов и production hosting не реализованы. Сквозное выполнение HTTP/worker/import с fake проверено С6; исторический реальный smoke С6 сохранил needs_review без автоимпорта. В И4 реальный Codex на single/double создал 2 Receipt, 6 строк и 5 товаров без дублей ([результаты](verification.md#фактические-результаты-и4)). Реальные фото и новый UI требуют [ручной приёмки](verification.md#ручная-приёмка-ocr-человеком); формы HTTP-слоя С5 не изменены.
+
+## Настройки профиля, скрытые платежи и «Семья» (2026-10-12)
+
+**«Я»** (`GET /api/me/`, ответы входа и смены пароля) дополнен: `is_head` — главный в семье (пользователь без семьи и `local_single` — всегда `true`), `settings: {"default_currency": код | null}`, `household.head` — логин главного либо `null`, пока его не назначили. Клиент принимает ответ старого сервера без этих полей.
+
+**Настройки** — `GET /api/me/settings/` (как `/api/me/`: `SignedIn`) → `{"default_currency": код | null, "currencies": [{"code", "name"}]}` (все валюты сервера по коду). `PATCH /api/me/settings/` (запись: вход, CSRF; в `local_single` — правило локального API) с телом `{"default_currency": код | null}`; код без учёта регистра; неизвестное поле либо валюта — `400 invalid_parameter` с `fields`; ответ — как у `GET`. Основная валюта используется: `GET /api/receipts/manual/` → `currency` (профиль → валюта последнего видимого чека → `KZT`; ту же цепочку берёт разбор «Трата словами», а экран лимитов — значение формы), а также порядок блоков `currencies` дашборда (`/api/dashboard/`) и статистики (`spending`, `category-spends`, `receipts/series`, `receipts/compare`, `trends/monthly|category|prices`): при нескольких валютах блок основной идёт первым, остальные — в прежнем порядке (+1 запрос к профилю только при нескольких блоках).
+
+**Скрытые платежи.** `POST /api/receipts/{id}/hide/` и `/unhide/` (тело не читается, CSRF) — только главный в семье: чек ищется среди видимых запросу; чужой либо скрытый от члена семьи — `404`, видимый не главному — `403 head_only`. Повтор безопасен; ответ — карточка чека. Карточка и строка списка несут `hidden` и `hidden_at`. Правило видимости одно — `accounts.access.visible_receipts_q`: скрытый платёж не виден членам семьи нигде (список, карточка и её `lines/discounts/taxes` — `404`, дашборд, вся статистика, выгрузка, значения формы ручной траты, счётчик чеков магазина, строки группы дублей, наблюдения цен — `receipts.prices.observation_q` и проекция `own`) и не входит ни в какие суммы и лимиты ни у кого, включая главного. Главный видит его в `GET /api/receipts/?hidden=1` (у остальных параметр ничего не меняет; значение не `0`/`1` — `400`) и в карточке.
+
+**«Семья»** — только `accounts` (в `local_single` маршрутов нет, `404`); без входа — `401`; запись — CSRF. Действия главного: не главный — `403 head_only`, пользователь без семьи — `404`.
+
+| Метод и адрес | Кто | Тело → ответ |
+| --- | --- | --- |
+| `GET /api/family/` | вошедший | `{"household": null \| {"id", "name", "members": [{"username", "display_name", "role": "head"\|"member", "is_me"}]}, "is_head", "invites": [{"id", "created_at", "expires_at"}]}` (приглашения — только главному, без токенов) |
+| `POST /api/family/` | без семьи | `{"name"}` → `201`, создатель — главный; уже в семье — `409 already_in_family` |
+| `PATCH /api/family/` | главный | `{"name"}` → объект семьи |
+| `POST /api/family/members/` | главный | `{"username", "first_name"?, "password"?}` → `201 {"member", "password"}`; пустой пароль создаёт сервер; пароль проверяют валидаторы Django, хранится только хеш и возвращается один раз |
+| `DELETE /api/family/members/{username}/` | главный | `204`; себя — `409 head_must_transfer`; чеки человека остаются за ним |
+| `POST /api/family/head/` | главный | `{"username"}` члена той же семьи → объект семьи |
+| `POST /api/family/leave/` | член семьи | объект семьи; главный — `409 head_must_transfer` |
+| `POST /api/family/invites/` | главный | `201 {"id", "created_at", "expires_at", "token", "path": "/family/join?token=…"}`; одноразовое, 7 дней, в базе — SHA-256 токена |
+| `DELETE /api/family/invites/{id}/` | главный | `204` (отозвать непринятое) |
+| `POST /api/family/join/` | вошедший без семьи | `{"token"}` → объект семьи; неверное, просроченное, принятое — `400 invite_invalid`, уже в семье — `409 already_in_family`; неудачи считает `accounts.throttle` (ключи `i:`/`ia:`), сверх 5 на пользователя и адрес за окно входа — `429 login_throttled` с `retry_after` |
+
+Открытой регистрации нет: приглашение принимает существующая учётная запись; новую создаёт главный (`members/`) либо администратор.
+
+## Регулярные платежи (2026-10-13, ветка `feature/recurring`)
+
+Аренда, коммунальные, ОСИ, интернет, подписки — платёж раз в месяц. Доступ — как у лимитов и записи трат
+(`LocalAPIView`: `accounts` — вход, `local_single` — DEBUG + флаг + loopback; запись — с CSRF). Платежи общие на семью
+(`budget.access.limits_q` / `limit_owner`), без семьи — свои; чужой платёж — `404`. **Оплачен ли платёж, не хранится:**
+это сверка с видимыми тратами семьи (`accounts.access.visible_receipts_q`, без скрытых платежей) при каждом чтении,
+правило — `recurring.matching`. Сервер **ничего не добавляет сам**: трату создаёт только ответ «добавить по средней».
+
+**Правило сверки.** Окно месяца: от 10 дней до срока этого месяца до 10 дней до срока следующего (срок — `due_day`, 31 в
+коротком месяце — его последний день; окна месяцев подряд и не пересекаются; срок 5-го: за октябрь — 25 сентября … 24
+октября, оплата 25-го и позже — следующий месяц). Трата той же валюты с суммой больше нуля подходит, если сошлись два из
+трёх: тот же магазин; категория траты (общий предок категорий её строк; «Не разобрано» не считается) — категория платежа
+или её потомок; сумма в пределах ±25 % от ожидаемой. Одна трата — один платёж за один месяц: пары перебираются от лучших
+(больше признаков, ближе сумма, ближе дата к сроку). Трата ответа «добавить по средней» закреплена за своим месяцем.
+
+| Метод и адрес | Тело → ответ |
+| --- | --- |
+| `GET /api/recurring/?month=ГГГГ-ММ` | месяц (по умолчанию текущий): `{"month", "previous_month", "today", "payments", "questions", "suggestions", "totals"}` |
+| `POST /api/recurring/` | `{"name", "store_name"?, "category_id", "currency", "amount", "due_day", "active"?}` → `201` платёж |
+| `GET /api/recurring/{id}/` | платёж |
+| `PATCH /api/recurring/{id}/` | любые поля тела → платёж; пустое — `400` у `body` |
+| `DELETE /api/recurring/{id}/` | `204`; ответы по месяцам удаляются, траты остаются |
+| `POST /api/recurring/{id}/decision/` | `{"month": "ГГГГ-ММ", "decision": "added"\|"skipped"\|"elsewhere"}` → `201 {"payment_id", "month", "decision", "receipt_id"}` |
+| `POST /api/recurring/suggestions/accept/` | `{"store_id", "category_id", "currency"}` → `201` платёж из предложения; предложения сейчас нет — `404 not_found` |
+| `POST /api/recurring/suggestions/dismiss/` | тот же ключ → `200` с ключом; больше не предлагается, повтор — тот же ответ |
+
+Платёж: `{"id", "name", "store": {"id", "name"} | null, "category": {"id", "name"}, "currency", "amount", "due_day",
+"active", "created_by": {"username", "display_name"} | null}`. `store_name` — место по названию
+(`receipts.manual.find_or_create_store`), пусто или `null` — без места. Проверки: название 1–100 символов, место ≤ 100,
+категория и валюта существуют, сумма > 0 с двумя знаками (запятая допустима), `due_day` — целое 1–31, `active` — bool;
+ошибки — `400 invalid_parameter` с `fields`.
+
+Строка `payments` — платёж и `{"state", "due_date", "paid": {"receipt_id", "purchased_on", "total"} | null, "added",
+"average", "last_amount", "previous_amount", "history": [{"month", "state"}] × 6}`. `state`: `paid` (найдена трата либо
+ответ «по средней»; `added` — трата из ответа), `skipped` («не было»), `elsewhere` («оплачено иначе»), `due` (не оплачен,
+срок не прошёл), `overdue` (срок прошёл), `before` (месяц раньше начала платежа — месяца создания и первой найденной
+оплаты), `inactive` (выключен: не сверяется, ни о чём не спрашивает). `average` — средняя найденных оплат за 12 месяцев
+по этот; `last_amount` — последняя найденная оплата, `previous_amount` — прошлая, только если отличается («было 200 $,
+стало 225 $»). `history` — полгода по этот месяц, старые сначала.
+
+`questions` — только когда `month` текущий: включённые платежи в состоянии `overdue` прошлого месяца, `{"payment_id",
+"name", "month", "due_date", "currency", "amount", "from_history"}`; `amount` — средняя найденных оплат за 12 месяцев
+(`from_history: true`), иначе ожидаемая сумма. Ответ `added` создаёт ручную трату (`receipts.manual.create`) владельцем —
+пользователем запроса — в срок того месяца на `amount` с местом и категорией платежа и комментарием «<имя> за <месяц
+год>: средняя оплата (платёж не найден)». Месяц ответа — до текущего, не раньше чем за 12 месяцев (иначе `400` у
+`month`); оплаченный месяц — `409 already_paid`, отвеченный — `409 already_decided`; трата и ответ — одна транзакция.
+Удалённая трата ответа «по средней» снова открывает вопрос.
+
+`suggestions` — по тратам последних 12 месяцев: тот же магазин, категория и валюта, в каждом месяце трата ближе к
+медиане группы, подряд идущие месяцы со схожей суммой (±20 % к прошлой) — цепочка; последняя цепочка от 3 месяцев,
+закончившаяся в последние полгода, — предложение `{"store_id", "store_name", "category_id", "category_name", "currency",
+"amount" (последняя), "due_day" (медиана чисел), "months", "last_date", "name"}`. Группа с несколькими тратами в те же
+месяцы (продукты, такси) — не платёж. Не предлагаются: скрытые, уже оплачивающие платёж, магазин + категория + валюта
+существующего платежа. Имя — вывеска; одна вывеска у нескольких — категория.
+
+`totals` — по валютам: `{"currency", "payments" (без before/inactive), "done", "left"}` (`left` — Σ ожидаемых сумм
+`due`/`overdue`, `null` — нечего платить). Валюты не складываются; деньги — строки.
+
+Сервисный вызов без HTTP — `recurring.services.unpaid(user, month)` → `[{"id", "name", "amount" (Decimal, ожидаемая),
+"currency", "due_date", "overdue"}]` неоплаченных включённых платежей месяца (видимость — как у запросов пользователя).
+## Умная «Новая трата» и склейка магазинов (2026-10-13, ветка `feature/smart-expense`)
+
+**Подсказки из истории, без модели** — `GET /api/receipts/manual/suggest/?q=<текст>` (доступ как у трат без чека:
+`LocalOrSignedIn`; чтение — `visible_receipts_q`, скрытые платежи не приходят никому). Ответ `{"results": [подсказка]}`:
+
+```json
+{"receipt_id": 213, "store_name": "CLAUDE.AI SUBSCRIPTION", "category": {"id": 15, "name": "Связь и подписки"},
+ "currency": "USD", "total": "225.00", "note": "Claude Max", "purchased_on": "2026-09-12", "lines": [], "uses": 4}
+```
+
+- Слова `q` — не короче двух букв и без цифр (суммы и даты не ищутся), не больше четырёх; каждое слово должно быть в
+  вывеске или названии магазина, в его вариантах написания, в комментарии либо в названиях позиций (без учёта регистра;
+  кириллица ищется и латиницей: «магн» находит «MAGNUM»). Ищутся только траты без чека (`source=manual`), до 5,
+  частые сначала, затем новые. Без слов (`q` пусто, одна буква, только числа) — до 4 **частых** повторяющихся трат
+  (не меньше двух среди последних 300).
+- Одинаковые повторы — место, валюта и категория (у траты с позициями — названия позиций) — приходят одной подсказкой:
+  последней тратой, `uses` — сколько их. `category` — категория траты без позиций, иначе `null`, а позиции в
+  `lines: [{"name", "amount", "category"}]`. Подсказка — материал формы «как в прошлый раз» с сегодняшней датой;
+  сервер ничего не сохраняет. Неверный `q` (управляющие символы) — `400 invalid_parameter`. Запросов — постоянное
+  число (три).
+
+**Разбор словами с историей.** Вход модели (`receipts.manual_parse.build_input`) дополнен ключами `history` — до 10
+прошлых трат семьи, похожих на текст (сходство слов `difflib` с кириллицей латиницей по месту с вариантами, комментарию,
+позициям и категории; без похожих — пусто), и `stores` — места семьи, частые сначала, не больше 100,
+`[{"name", "aliases"}]`. Промпт просит взять имя существующего магазина ровно как в `stores`, категорию и валюту —
+у той же прошлой траты, а без суммы в тексте — сумму последней такой траты. Схема ответа и черновик (`draft` = тело
+`POST /api/receipts/manual/`) не менялись. Fake повторяет первую трату `history`.
+
+**«Повторить»** — клиентский адрес `/receipts/new?repeat={id}`: форма открывается копией траты без чека с сегодняшней
+датой; новых маршрутов API нет.
+
+**Магазины** — `/api/store-merges/` (магазины общие для всех семей):
+
+| Метод и адрес | Доступ | Тело → ответ |
+| --- | --- | --- |
+| `GET /api/store-merges/` | `LocalOrSignedIn` | состояние экрана (ниже) |
+| `POST /api/store-merges/merge/` | модератор каталога, CSRF | `{"store": id главного, "merged": [id, …]}` → состояние |
+| `POST /api/store-merges/dismiss/` | модератор каталога, CSRF | `{"stores": [id, id, …]}` → состояние |
+
+Состояние: `{"can_merge": bool, "suggestions": [{"source": "similar" | "model", "stores": [id, …]}], "stores":
+[{"id", "name", "receipts_count", "aliases": [название, …]}]}`. `stores` — действующие (не склеенные) магазины, у
+которых есть видимые человеку траты, по названию; `receipts_count` — эти траты; `aliases` — названия склеенных в него
+магазинов. `suggestions` — только модератору (иначе `[]`), магазин с большим числом трат первым: группы модели
+(команда `store_merges suggest`) и пары похожих названий (без регистра, пунктуации, «ТОО/ИП/LLP…» и хвостов
+«SUBSCR…»: равны, одно — начало другого по словам, либо опечатка); группы и пары, названные «Не то», не приходят.
+
+Склейка переносит чеки магазинов `merged` на `store`, их названия становятся вариантами написания (магазин по названию
+— `receipts.manual.find_or_create_store` — и импорт фото находят главный), каждая склейка пишется в журнал; отменяет
+её только команда `manage.py store_merges revert <id>`. Отказы: `400 invalid_parameter` с полями `store` / `merged` /
+`stores` (не номер, нет такого, уже склеен, сам с собой, пусто, меньше двух, лишнее поле), `403 permission_denied`
+(не модератор), `409 store_merge_conflict` (у одного человека в главном магазине оказались бы два одинаковых чека с
+фото; ничего не изменено). `GET /api/stores/` склеенные магазины больше не показывает. Запросов на `GET` — постоянное
+число.
+## Несколько семей по приглашению и ИИ у семьи (2026-10-13, ветка `feature/families`)
+
+Решения человека: новые семьи приходят только по приглашению администратора сервера (`is_staff`); у каждой семьи свой включатель ИИ и дневная квота запросов к модели. Дерево категорий общее, как раньше.
+
+**`GET /api/family/`** дополнен (клиент принимает и прежний ответ без этих полей):
+
+- `ai` — `null` без семьи, иначе `{"enabled", "daily_limit", "used_today", "resets_at"}`: включён ли ИИ семьи, предел запросов за сутки (`null` — без предела: семьи, заведённые до `accounts.0004`), израсходовано сегодня, начало следующих суток (UTC ISO 8601). Видят все члены семьи;
+- `can_invite_families` — пользователь запроса — администратор сервера (`is_staff` активной учётной записи);
+- `family_invites` — действующие приглашения новых семей `[{"id", "created_at", "expires_at"}]` (без токенов; не администратору — `[]`).
+
+| Метод и адрес | Кто | Тело → ответ |
+| --- | --- | --- |
+| `PATCH /api/family/ai/` | главный | `{"enabled": true \| false}` → объект семьи; не главный — `403 head_only`, без семьи — `404`, не булево либо лишнее поле — `400 invalid_parameter` |
+| `POST /api/family/new-invites/` | администратор сервера | `201 {"id", "created_at", "expires_at", "token", "path": "/family/new?token=…"}`; одноразовое, 7 дней, в базе — SHA-256 токена; не администратор — `403 staff_only` |
+| `DELETE /api/family/new-invites/{id}/` | администратор сервера | `204` (отозвать непринятое); не администратор — `403 staff_only`; принятое, просроченное, чужого вида — `404` |
+| `POST /api/auth/new-family/check/` | кто угодно (как вход: без входа, с CSRF из `/api/auth/csrf/`) | `{"token"}` → `200 {"expires_at"}`; неверное, просроченное, принятое, приглашение в существующую семью — `400 invite_invalid` |
+| `POST /api/auth/new-family/` | гость (как вход) | `{"token", "name", "username", "first_name"?, "password"}` → `201` и «Я» (как ответ входа, новый `csrf_token`): учётная запись, семья `name` с ним главным, ИИ семьи выключен, сессия уже вошедшая. Токен проверяется первым (`400 invite_invalid`); поля — разом `400 invalid_parameter` с `fields` (`name`, `username` — правила и занятость логина без учёта регистра, `first_name` ≤ 150, `password` — валидаторы Django; у пароля рядом с `error` — `password_issues`, как у смены пароля); при отказе приглашение остаётся действующим. Вошедший — `409 already_signed_in`. |
+
+Оба маршрута `/api/auth/new-family/…` в `local_single` — `404`. Неверные токены считает `accounts.throttle` по адресу (ключи `n:` / `na:`, пределы входа): сверх 5 за окно — `429 login_throttled` с `retry_after`, токен тогда не проверяется. Токен приглашения в существующую семью не создаёт новую, токен новой семьи не впускает в существующую (`POST /api/family/join/` — `400 invite_invalid`). Открытой регистрации по-прежнему нет: учётная запись появляется только по действующему одноразовому токену администратора либо от главного семьи.
+
+**ИИ у семьи** — правило одно, `accounts/ai.py`. Запрос, который отправляет данные семьи внешней модели, вызывает `use_ai(user)` до постановки в очередь:
+
+- `POST /api/receipts/manual/parse/` (проверка — первой строкой `receipts.manual_parse.request()`, в транзакции: отказ `429 parse_limit` счёт откатывает);
+- `POST /api/recognition/photos/` (до приёма файла; каждая загрузка — один запрос, повтор того же фото тоже);
+- `POST /api/recognition/jobs/{id}/retry/` (повтор снова отправляет фото модели; отказы `409` счёт откатывают).
+
+Отказы: ИИ семьи выключен — `403 ai_disabled`; израсходован `daily_limit` за сутки — `429 ai_quota`, рядом с `error` — `resets_at` (UTC ISO 8601), заголовок `Retry-After` (секунды). `daily_limit = null` (семьи, заведённые до миграции) — запросы считаются, отказа по квоте нет. Сутки — `timezone.localdate()` сервера (`TIME_ZONE = UTC`): счёт с нуля в полночь UTC (05:00 в Алматы). В `accounts` пользователь без семьи пользуется ИИ, только если он администратор сервера (`is_staff` активной учётной записи, без счёта); остальным без семьи — `403 ai_disabled`: иначе главный семьи с выключенным ИИ завёл бы человека и убрал его из семьи (или передал роль и вышел сам) и получил ИИ мимо включателя и квоты. `local_single` — без проверки и без счёта (прежнее поведение). Ничего не ставится в очередь и не сохраняется, если запрос отказан. Подтверждение вырезки, предположения категорий (общий каталог, модератор) и воркер правило не читают.
+## Импорт выписок Kaspi Gold и ForteBank (2026-10-13, ветка `feature/statement-import`)
+
+Доступ — как у трат без чека (`LocalOrSignedIn`: в `accounts` вход, запись — CSRF; в `local_single` — правило локального API). **Черновик выписки личный**: виден, сохраняется и удаляется только тем, кто его загрузил (чужой, в том числе члена семьи, — `404`), траты создаются на него. **Правила** — общие на семью, как лимиты (`budget.access.limits_q` / `limit_owner`: с семьёй — правила семьи, без семьи — свои).
+
+| Метод и адрес | Тело → ответ |
+| --- | --- |
+| `GET /api/statements/` | свои выписки, новые сверху, страница (`page`, `page_size`): `{"id", "bank": "kaspi_gold"\|"forte", "bank_name", "date_from", "date_to", "created_at", "saved_at", "rows_count", "saved_count"}` |
+| `POST /api/statements/` | multipart, одно поле `file` (PDF до 20 MiB) → `201 {"reused": false, "statement": <сводка>}`; тот же файл (SHA-256) у того же человека — `200 {"reused": true, …}` с прежним черновиком, ничего не задваивается |
+| `GET /api/statements/{id}/` | сводка + `ai: {"waiting", "active", "executor"}` + `rows` (все строки, без пагинации, по позиции в выписке) |
+| `POST /api/statements/{id}/save/` | `{"rows": [{"id", "category", "store_name"?}]}` → `{"created", "learned", "statement": <черновик>}` |
+| `DELETE /api/statements/{id}/` | `204`; сохранённые из черновика траты остаются |
+| `GET /api/statements/rules/` | `{"results": [{"id", "pattern", "action": "category"\|"skip"\|"own", "category": {"id","name","path"}\|null, "store_name"\|null, "origin": "manual"\|"learned", "updated_at"}]}` по получателю |
+| `POST /api/statements/rules/` | `{"pattern", "action"?, "category"?, "store_name"?}` → `201` правило; тот же получатель (нормализованный) — `400` с `fields.pattern` |
+| `PATCH` / `DELETE /api/statements/rules/{id}/` | правило / `204`; чужое — `404` |
+
+Строка черновика: `{"id", "date", "amount"` (со знаком банка: отрицательная — деньги ушли), `"currency", "operation", "details", "merchant"` (получатель или отправитель), `"mcc"`, `"refund"` (возвраты того же дня, уже вычтенные), `"spend"` (что пойдёт в трату; у поступления `0.00`), `"kind"`, `"state"`, `"reason"`, `"category"`, `"store_name"`, `"source"` (`rule`/`builtin`/`mcc`/`model`/`null`), `"ai"` (`waiting`/`done`/`unknown`/`failed`/`off`/`null`), `"duplicate_of": {"id", "purchased_on", "total", "currency", "store_name"}|null`, `"receipt_id"}`.
+
+- `kind`: `spend` (покупка, платёж, комиссия), `transfer` (перевод человеку), `cash`, `own_move` (между своими счетами или в семье — по образцам «депозит», «между своими счетами», карта другого своего банка и по правилу `own`), `income` (поступление: пополнение, перевод вам, кэшбэк, возврат без покупки того же дня), `refund` (возврат того же дня, вычтенный из покупки). Поступления хранятся строками черновика и **тратами не становятся никогда** (`400` у `rows.N.id` с причиной «Поступление не сохраняется тратой»).
+- `state`: `spend` (узнана: правило, встроенный образец сети или MCC — клиент отмечает), `review` (спорная: получатель незнаком; модель предлагает категорию, строка остаётся спорной), `duplicate` (`reason` `duplicate` — у владельца уже есть трата той же суммы ±1 день; `bill` — перевод за жильё сходится с внесённой квитанцией: та же корневая категория «Жильё», ±10 дней, сумма с точностью до округления вверх), `skipped` (`reason` `transfer`, `cash`, `own_move`, `income`, `refund`, `refunded` — покупку вернули полностью, `rule` — правило «пропускать»).
+- Сохранение: строки одной транзакцией через `receipts.manual.create(владелец, …)` с `store_name`; комментарий траты — `«<детали без места>; с учётом возврата N · Выписка Kaspi Gold»` либо `«· Выписка ForteBank»` (его узнают выгрузка — `STATEMENT_NOTE_REGEX` — и «Траты»). Уже сохранённая строка пропускается (повтор безопасен). Отказы — `400 invalid_parameter` с `fields` `rows`, `rows.N.id` (`unknown`, `income`, `refunded`, повтор), `rows.N.category`, `rows.N.store_name`. Выбор категории или места, отличный от предложения строки, **учит правило** получателя у владельца правил (`learned`; ручное правило того же получателя переписывается).
+- Модель: незнакомые получатели уходят вопросом в очередь `recognition_worker` (по 40 на вопрос); `ai.waiting` — строки, ждущие ответа, `ai.active` — вопрос в очереди или исполняется; клиент опрашивает, пока `active && waiting > 0` и исполнитель не `absent`. Сохранять можно, не дожидаясь. Право на модель — заглушка `statements.ask._ai_allowed(user)` (без права строки — `ai: "off"`).
+- Отказы загрузки (`StatementApiError`, свои коды): `400 unsupported_format` (не PDF), `invalid_pdf`, `pdf_encrypted`, `pdf_too_many_pages` (больше 200 страниц), `statement_too_large` (больше 3000 строк либо 4 млн знаков), `statement_unsupported_bank` (шапка называет другой банк или никакого), `statement_empty` (операций нет), `413 upload_too_large`.
+- PDF не хранится: байты уходят процессу `statements/pdf_text.py` (pypdfium2, stdin, 60 с, потолок памяти и CPU как у `recognition.pdf`), остаются только SHA-256 и строки. Разбор текста идёт в веб-процессе и ограничен: строка длиннее 500 знаков пропускается непрочитанной, текст больше 4 млн знаков или больше 3000 операций — `statement_too_large`; шаблоны сумм не перекрываются с пробелами перед валютой (без квадратичного перебора на строке из цифр и пробелов, страж — `HostileTextTests`). Контракт выгрузки, «Трат» и ручных трат не менялся.
+## Основная валюта семьи и курсы Нацбанка (2026-10-13, ветка `feature/currency-rates`)
+
+Итоги Главной, лимитов и статистики считаются в **основной валюте семьи** — `Profile.default_currency` главного
+(без семьи и в семье без главного — своя, не выбрана — `KZT`; `rates.convert.base_currency`). Трата в другой валюте
+переводится по официальному курсу Нацбанка РК **на дату покупки** (`purchased_on`; курс — последний опубликованный не
+позже этой даты, но не старше 7 дней), X → KZT — умножением на курс, X → Y — через тенге; 2 знака, половина вверх.
+Трата, курса которой нет, в итог не входит и называется отдельно (`excluded`). Прежние поля не менялись: блоки по
+валютам (`currencies`) приходят как раньше, рядом — тот же расчёт в основной валюте. Число запросов постоянно:
++1 (основная валюта) и +1 (все нужные курсы одним запросом, только если есть другая валюта).
+
+Общие поля ответа в основной валюте:
+
+| поле | значение |
+|---|---|
+| `base_currency` | код основной валюты семьи |
+| `base` | блок той же формы, что элемент `currencies`, где сложены все валюты по курсу дня; `null` — нечего показать |
+| `excluded` | `[{"currency", "receipts_count", "total"}]` — траты без курса по валютам (сумма — в своей валюте), по коду |
+
+| эндпоинт | что добавлено |
+|---|---|
+| `GET /api/dashboard/` | `base_currency`, `base` (блок месяца: `spent`, `previous_spent`, `limit_total`, `limited_spent`, `categories` — лимиты другой валюты пересчитаны по курсу конца месяца, у текущего — сегодняшнему; лимит без курса остаётся в своей валюте и в `base` не входит), `excluded` (траты месяца); у `recent[]` — `base_total` (null — курса нет) |
+| `GET /api/stats/spending/` | `base_currency`, `base` (та же форма с `totals`, `items`, `other`), `excluded` |
+| `GET /api/stats/category-spends/` | `base_currency`, `base`, `excluded`; у `items[]` — `currency` (валюта чека) и `original_amount` (сумма строк категории в ней); в `base` суммы и `receipt_total` — пересчёт |
+| `GET /api/stats/trends/monthly/`, `…/category/` | `base_currency`, `base`, `excluded` |
+| `GET /api/stats/trends/limits/` | `base_currency`, `base_limits` (те же строки: лимит другой валюты — суммой месяца по курсу конца месяца, `amount` — по сегодняшнему; без курса — в своей валюте), `excluded` |
+| `GET /api/stats/receipts/series/` | `base_currency`, `base` (ряд; возвраты — всех валют одним числом), `excluded` (чеки продажи) |
+| `GET /api/stats/receipts/compare/` | `base_currency`, **`in_base`** (`base` здесь — базовый период), `excluded` |
+| `GET /api/stats/trends/prices/` | без изменений: индекс цен — по валютам |
+| `GET /api/receipts/`, `GET /api/receipts/{id}/` | `base_currency`, `base_total` (итог по курсу дня покупки; null — курса нет; у чека в основной валюте — `total`) |
+| `GET /api/budget/limits/` | у лимита — `base_currency`, `base_amount` (по сегодняшнему курсу); у страницы — `base_currency` (и при пустом списке) |
+| `GET/PATCH /api/me/settings/` | `base_currency` — основная валюта семьи |
+
+Медиана рядов и сравнения теперь считается в Python по итогам чеков (как `percentile_cont(0.5)`: середина двух
+средних) — одно чтение БД на оба расчёта.
+
+**Лимиты только в основной валюте.** `POST /api/budget/limits/` и `PATCH /api/budget/limits/{id}/` с валютой не основной
+— `400 invalid_parameter`, `{"currency": ["Лимиты задаются в основной валюте семьи — KZT."]}`. Прежний лимит другой
+валюты читается и удаляется как раньше; правка суммы без смены валюты — тот же отказ, `PATCH {"amount", "currency": <основная>}`
+переводит его в основную валюту (журнал пишет удаление старой пары и создание новой). Смена основной валюты главным
+меняет её для всей семьи сразу; прежние лимиты прежней основной валюты становятся «другой валютой».
+
+## ИИ о тратах: разбор месяца и вопросы (2026-10-13, ветка `feature/ai-insights`)
+
+Доступ — как у «Траты словами» (`accounts` — вход, `local_single` — DEBUG + флаг + loopback; запись — с CSRF). Строки
+видит только их владелец, не семья: чужая — `404 not_found`. Модель спрашивает `recognition_worker` (очередь
+`insights.InsightRequest`); до постановки в очередь — `accounts.ai.use_ai`: `403 ai_disabled` / `429 ai_quota`
+(`resets_at`, `Retry-After`) как есть, строка не создаётся.
+
+| Запрос | Ответ |
+|---|---|
+| `GET /api/insights/review/?month=ГГГГ-ММ` | `{month, figures, review, pending}`; без `month` — прошлый месяц; будущий месяц — `400` (`month`) |
+| `POST /api/insights/review/` `{"month"?}` | `202` строка разбора; незавершённый разбор того же месяца — он же, без нового запроса к ИИ |
+| `GET /api/insights/ask/` | `{results}` — последние 20 вопросов человека, новые сверху |
+| `POST /api/insights/ask/` `{"question"}` | `202` строка вопроса (1–300 знаков; больше 2 незавершённых или 30 за час — `429 parse_limit`) |
+| `GET /api/insights/{id}/` | строка (своя) |
+
+- `review` — последний готовый разбор месяца, без него — последний любой (идёт или не удался); `pending` — идущий
+  новее готового («Обновить»). `figures` — цифры сервера: сводка, которую получила модель (у разбора — его снимок,
+  пока разбора нет — та же сводка сейчас): `month, currency` (основная валюта семьи), `spent, previous, average`
+  (прошлые месяцы окна с первого месяца с тратами; `null` — их нет), `change_previous, change_average`,
+  `categories[]` (корневые, те же поля + `id, name`), `limit_total, limited_spent`,
+  `limits[] {category, limit, spent, over}`, `places[] {name, spent, count}`, `without_rate[] {currency, receipts, total}`.
+- Строка: `{id, kind: "review"|"ask", month, question, status: queued|running|succeeded|failed, answer, unverified,
+  error: {code, message}|null, created_at, finished_at, executor}`, у разбора ещё `figures`. `answer` — только у
+  `succeeded`: разбор `{summary, changes|null, limits|null, advice[0–3]}`, вопрос `{answer}` — обычный текст.
+  `unverified` — числа от 100 из текста, которых нет среди цифр сводки и вопроса (как написаны).
+- Коды сбоя: `invalid_output` (ответ не прошёл схему), `timeout`, `expired` (ждал воркера > 10 мин), `worker_lost`,
+  `auth_required`, `internal_error` и прочие коды провайдера; `message` — фиксированный текст.
+## Доходы (2026-10-13, ветка `feature/incomes`)
+
+Доходы человек вносит только сам; поступления из выписок доходами не становятся. Доступ — как у трат без чека
+(`accounts` — вход, `local_single` — DEBUG + флаг + loopback), запись — с CSRF. **Видимость** — одно правило
+`incomes.access.visible_q`: запись видят тот, кто внёс, и главный в семье; другой член семьи получает на неё `404`, но
+видит общий доход семьи за месяц (`family_total`, `income` строки Главной). Пользователь без семьи видит свои.
+
+| Метод и путь | Что |
+| --- | --- |
+| `GET /api/incomes/?month=ГГГГ-ММ` | `{month, base_currency, family_total, results}`: видимые записи месяца (новые сверху) и доход всей семьи в основной валюте (`null` — доходов нет) |
+| `POST /api/incomes/` | `{amount, category, currency?, received_on?, note?}` → `201` запись; валюта по умолчанию — как у трат (профиль → последний чек → KZT), дата — сегодня |
+| `GET/PATCH/DELETE /api/incomes/{id}/` | одна запись; невидимая — `404` |
+| `GET /api/incomes/categories/` | `{results: [{id, name, built_in}]}`: встроенные «Зарплата · Подработка · Подарки · Кэшбэк и проценты · Продажа вещей · Прочее», потом свои |
+| `POST /api/incomes/categories/` | `{name}` (1–60) → `201`; своя категория семьи (владелец как у лимита), то же имя без учёта регистра — уже имеющаяся |
+| `GET /api/incomes/summary/?month=` | строка Главной: `{month, base_currency, income, spent, saved, saved_percent, excluded}`; `income`/`saved`/`saved_percent` — `null`, пока дохода за месяц нет |
+| `GET /api/stats/trends/incomes/?months=…` (или `from`/`to`, как у `trends/monthly/`) | `{months, month_from, month_to, base_currency, excluded, items: [{month, income, spent, saved, saved_percent}]}` |
+
+Запись: `{id, received_on, amount, currency, category: {id, name}, note, owner, owner_name, base_amount}`
+(`base_amount` — в основной валюте по курсу дня, `null` — курса нет). Ошибки тела — `400 invalid_parameter` с полями
+и текстами ручной траты (`amount`, `currency`, `category`, `received_on`, `note`, неизвестное поле). Итоги — в основной
+валюте (`rates.convert`) по курсу дня: доход — всех членов семьи, «потрачено» — `Σ Receipt.total` видимых чеков (как
+«Потрачено» Главной), «отложено» — разница, `saved_percent` — её доля от дохода. Суммы без курса в итоги не входят и
+перечислены в `excluded` (`[{currency, total}]`). Для «можно тратить в день» — `incomes.services.month_income(user,
+month) -> Decimal | None` (основная валюта; `None` — доходов за месяц нет).
+
+**Разбор словами.** Схема ответа модели получила обязательное `kind` (`spend` | `income`), вход — `income_categories`.
+«Зарплата 650 000» — черновик тех же полей с `"kind": "income"`, `category` — id категории дохода, без места и позиций;
+у траты ключа `kind` в черновике нет (черновик траты по-прежнему — тело `POST /api/receipts/manual/`).
+
+**Регулярный доход** (`/api/recurring/`): у платежа поле `kind` (`spend` | `income`); тело нового может нести
+`"kind": "income"` — тогда `category_id` — категория дохода, места нет; у сохранённого вид не меняется (`400` у `kind`).
+Шаблон дохода видят автор и главный (остальным — `404`). Получен ли — сверка с доходами всей семьи тем же окном месяца:
+нужна та же категория дохода, сумма ±25 % — лишний признак (сумму при внесении можно поправить). У дохода
+`paid.receipt_id` — `null`, `purchased_on` — день получения; в `totals` («осталось оплатить») и вопросах о прошлом месяце
+доходов нет, ответ (`decision/`) на шаблон дохода — `404`; `recurring.services.unpaid` отдаёт только платежи.
+
+**Выгрузка** (`GET /api/export/`): раздел `incomes` (в наборе по умолчанию; `include=…,incomes`) —
+`[{id, received_on, currency, amount, category, note, owner, owner_name}]`, видимость та же (`visible_q`); из фильтров
+к доходам относятся только `from`/`to`, `currency` и `owner`.
+## Цели накоплений (2026-10-13, ветка `feature/goals`)
+
+Доступ — как у лимитов и регулярных платежей (`accounts` — вход, `local_single` — DEBUG + флаг + loopback; запись — с
+CSRF). Видимость — только `goals.access.goals_q`: общая цель семьи — все её члены, личная — владелец и главный семьи
+(`Membership.role == head`), пользователь без семьи — только свои. Чужая цель (и личная цель другого члена семьи для
+не-главного) — `404`. Кто видит цель, тот правит её и взносы.
+
+| Запрос | Ответ |
+|---|---|
+| `GET /api/goals/` | `{today, base_currency, household, results}` — сначала общие, затем личные (по порядку заведения) |
+| `POST /api/goals/` `{name, amount, currency?, deadline?, shared?}` | `201` цель с историей; без `currency` — основная валюта семьи (`rates.convert`); `shared: true` без семьи — `400` у `shared` |
+| `GET /api/goals/{id}/` | цель + `contributions` (новые сверху) + `people` (члены семьи для «кто отложил») |
+| `PATCH /api/goals/{id}/` | любые поля; `shared` переводит цель: общая → личная того, кто переключил, личная → общая его семьи |
+| `DELETE /api/goals/{id}/` | `204`, взносы удаляются вместе с целью (и личные правила выписок «→ цель» на неё) |
+| `POST /api/goals/{id}/contributions/` `{amount, date?, user?, currency?, note?}` | `201` — цель целиком; без `date` — сегодня, без `user` — тот, кто вносит; `user` — логин члена семьи, иначе `400` |
+| `PATCH` / `DELETE /api/goals/{id}/contributions/{cid}/` | `200` — цель целиком |
+
+Цель: `id, name, amount, currency, deadline, shared, owner` (личной — `{username, display_name}`, общей — `null`),
+`created_by, saved, percent` (целые проценты, может быть больше 100), `remaining, reached, excluded`
+(`[{currency, amount}]` — взносы без курса на свой день, в `saved` не входят), `contributions_count, pace`
+(`{per_month, months_left}` либо `null`), `need_per_month` (`null` без срока, после срока и у достигнутой), `overdue`.
+Взнос: `id, amount, currency, date, user, note` (у взноса из выписки — «Выписка Kaspi Gold» / «Выписка ForteBank»).
+
+Расчёт — `goals/services.py`: `saved` — сумма взносов в валюте цели по курсу дня взноса (`rates.convert.converter`);
+темп — взносы за последние 91 день (до сегодня включительно) / 3, у цели, чей первый взнос моложе 91 дня, — / число
+месяцев с первого взноса (по 30,44 дня, вверх, не меньше 1); взносов в окне нет — `pace: null`; `months_left` =
+⌈остаток / темп⌉. `need_per_month` = остаток / месяцы до срока (по 30,44 дня, вверх, не меньше 1).
+
+**Выписки: правило «→ цель».** `StatementRule.action` получил `goal` (поле `goal`, видимая запросу цель; без неё —
+`400` у `goal`, у других действий цель — `400 goal_action`). Такое правило личное: владелец — пользователь даже в
+семье, видно (`GET /api/statements/rules/`) и применяется только к его выпискам, пока цель ему видна; смена действия
+на `goal` и обратно переводит правило к нужному владельцу. Строка черновика: `state` получил `goal`, у строки —
+`goal: {id, name} | null` и `contribution_id`. Правило «→ цель» делает взносом только перевод (`Перевод`/`Списание`;
+`kind` `transfer`/`own_move`), покупку у того же получателя решают как без правила. Взнос, который у цели уже есть
+(та же сумма и валюта ±1 день), — `state: duplicate`, `reason: goal_duplicate` (строка помнит `goal`).
+
+- `POST /api/statements/{id}/save/` принимает в `rows` кроме `{id, category, store_name?}` и `{id, goal}` — взнос в
+  видимую цель (иначе `400` у `rows.N.goal`; вместе с `category`/`store_name` — `400 unknown_field`). Ответ получил
+  `contributed`. Взнос — на того, кто загрузил выписку, дата и сумма строки; строка помнит взнос: повтор нажатия и
+  повторная загрузка того же файла взноса не задваивают; трата из такой строки не создаётся.
+- `POST /api/statements/{id}/goal/` `{row, goal}` — «Это взнос в цель» из строки черновика: личное правило «получатель
+  строки → цель» (новое либо переписанное) и его применение к несохранённым переводам этого черновика. Ответ —
+  `{applied, statement}`. Строка не перевод или уже сохранена — `400 not_transfer` у `row`; цель не видна — `400` у `goal`.
+## Уведомления: web push (2026-10-13, ветка `feature/push`)
+
+Своё у каждого: устройства и включатели — только пользователя запроса. Доступ — как у трат (`LocalAPIView`: `accounts` —
+вход, `local_single` — DEBUG + флаг + loopback; запись — с CSRF). Без ключей VAPID на сервере (`WEBPUSH_VAPID_PUBLIC_KEY`,
+`WEBPUSH_VAPID_PRIVATE_KEY`, `WEBPUSH_VAPID_SUBJECT`) push выключен: `GET` отвечает `configured: false`, подписка и
+проверочное — `409 push_not_configured` («Уведомления не настроены на сервере.»).
+
+| Метод и адрес | Тело → ответ |
+| --- | --- |
+| `GET /api/push/` | состояние: `{"configured", "public_key" (null без ключей), "devices" (число подписанных устройств человека), "base_currency", "settings"}` |
+| `PATCH /api/push/` | любые поля `settings` → состояние; неизвестное поле, не bool, порог ≤ 0 или больше двух знаков — `400 invalid_parameter` с `fields`; пустое — `400` у `body` |
+| `POST /api/push/subscribe/` | `PushSubscription.toJSON()` браузера: `{"endpoint", "keys": {"p256dh", "auth"}, "expirationTime"?}` → состояние; подписка запоминает сессию входа запроса; то же устройство у другого человека переходит к пользователю запроса **только с теми же ключами** (их знает лишь браузер устройства), иначе `400` у `keys` «Ключи не совпадают с подпиской этого устройства.» и подписка не меняется |
+| `POST /api/push/unsubscribe/` | `{"endpoint"}` → состояние; чужое и неизвестное устройство не трогается |
+| `POST /api/push/test/` | без тела → состояние и `"sent"` — сколько устройств приняли проверочное («Проверка уведомлений», сразу, без тишины и журнала) |
+
+`settings`: `{"recurring", "limits", "weekly", "monthly", "large"}` — bool (по умолчанию все `true`, кроме `large`),
+`"large_threshold"` — строка с двумя знаками, по умолчанию `"100000.00"`, в основной валюте семьи. `endpoint` — только
+`https://` без порта на хосте push-сервиса браузера или его поддомене: `fcm.googleapis.com`, `android.googleapis.com`,
+`push.services.mozilla.com`, `push.apple.com`, `notify.windows.com` (сервер шлёт POST только туда); ключи — base64url,
+`p256dh` ≤ 200, `auth` ≤ 100 знаков; иначе `400` у `endpoint` / `keys`.
+
+**Отправка** — `push.services.notify(user, kind, title, body, url, key)`: выключенный повод, человек без устройств, push
+без ключей — ничего; `(user, kind, key)` — один раз (`PushNotification`, уникальность в БД); в тишину 22:00–9:00 по
+Алматы (`LOCAL_TZ`; `TIME_ZONE` сервера — UTC) уведомление записывается с `send_after` = 9:00 и уходит со следующим
+тиком. Уведомление на устройство — JSON `{"title", "body", "url"}` (шифрование и подпись VAPID — `pywebpush`, TTL сутки);
+ответ 404/410 push-сервиса удаляет подписку, остальные отказы — в журнал, без повтора.
+
+**Решение «показать» — в момент отправки.** Отложенное тишиной уведомление перед отправкой строится заново
+(`push.reasons.refresh`): повод ищется на момент, когда он был найден (`created_at`), но по нынешним данным и
+видимости получателя — вышел из семьи, трата скрыта или удалена, платёж оплачен, повод выключен — ключа нет, уведомление
+не уходит (и не повторяется); иначе уходит новый текст. **Устройство получает, только пока его вход жив**
+(`push.services.signed_in`, как `AuthenticationMiddleware`): сессия подписки существует, это вход того же человека с
+тем же паролем; иначе подписка удаляется при первой отправке. Выход (`/api/auth/logout/`, админка — сигнал
+`user_logged_out`) сразу снимает подписки этого устройства; смена пароля оставляет подписку этого устройства (новый ключ
+сессии) и снимает подписки остальных сессий. После выхода и нового входа устройство снова получает, когда человек откроет
+«Аккаунт»: клиент отправляет подписку браузера заново. Человек, убранный из семьи, получает поводы только по своим данным.
+
+**Поводы** — `manage.py push tick` (cron раз в 5 минут, см. «Уведомления: web push» в
+[deployment-docker](deployment-docker.md)), только у людей с устройствами; данные читаются из чужих приложений, сигналов
+в них нет (`push/reasons.py`):
+
+| `kind` | когда | `key` | текст (пример) | `url` |
+| --- | --- | --- | --- | --- |
+| `recurring` | неоплаченный включённый платёж за 1–2 дня до срока; просроченный (`recurring.services.unpaid`) | `soon:{id}:{срок}`, `overdue:{id}:{срок}` | «Скоро платёж: Аренда» · «200 000 ₸ — послезавтра, 15 октября.» | `/recurring` |
+| `limits` | 80 % и 100 % лимита категории (любого уровня) и всех лимитов месяца, если лимитов больше одного; расчёт Главной `budget.dashboard` в основной валюте | `ГГГГ-ММ:{category_id или total}:{80 или 100}` | «Еда: 82 % лимита» · «Потрачено 41 000 ₸ из 50 000 ₸. Осталось 9 000 ₸.»; «Лимиты месяца: потрачено 85 %» | `/` |
+| `weekly` | воскресенье с 20:00 (позже 22:00 — в понедельник в 9:00): траты пн–вс против прошлой недели, в основной валюте; без трат за обе недели — ничего | `week:{понедельник}` | «Траты за неделю» · «Потрачено 33 000 ₸ — на 10 % больше, чем на прошлой неделе (30 000 ₸).» | `/stats?date_from=…&date_to=…` |
+| `monthly` | 1-го числа (ночью — в 9:00) | `review:ГГГГ-ММ` прошлого месяца | «Разбор октября» · «Октябрь закончился: на что ушли деньги и что изменилось.» | `/review?month=ГГГГ-ММ` |
+| `large` | трата другого члена семьи, добавленная за сутки и купленная вчера или сегодня, не меньше порога человека (по курсу дня покупки); по умолчанию выключено | `receipt:{id}` | «Крупная трата: Лиза» · «150 000 ₸ — Технодом.» | `/receipts/{id}` |
+
+Суммы — целые, вверх, со знаком валюты (`push.services.money`, как `formatMoney` клиента). Траты — `visible_receipts_q`
+(скрытые платежи не видны никому), разные валюты — `rates.convert`. Модели: `PushSubscription`, `PushSettings`,
+`PushNotification` (миграция `push.0001_initial`; откат — `migrate push zero`, данные других приложений не трогаются).
+## Траты и Главная: поиск, бюджет месяца, «можно тратить в день» (2026-10-13, ветка `feature/spends-home`)
+
+**Поиск трат по сумме.** `GET /api/receipts/?q=` (2–100 символов, как раньше) ищет по магазину и вывеске, комментарию,
+названиям строк и товарам — и теперь по итогу чека: текст из цифр (пробелы и неразрывные пробелы внутри не мешают,
+запятая или точка — копейки) находит итог. Целое `N` — итоги от `N − 1` (не включая) до `N` включительно: экран
+показывает суммы округлёнными вверх, и «4500» находит и 4 499,50; с копейками («4499,50») — ровно этот итог. Видимость —
+прежняя (`visible_receipts_q`).
+
+**`GET|POST|DELETE /api/budget/month/`** — общий бюджет месяца над лимитами: одна сумма на владельца (семья, без семьи —
+сам пользователь; как у лимитов), в основной валюте семьи. Доступ — как у `/api/budget/limits/`; запись — с CSRF.
+
+- `GET` → `200 {"amount": "900000.00" | null, "currency": "KZT" | null, "base_currency": "KZT"}` — бюджет текущего месяца
+  (`amount` null — не задан).
+- `POST {"amount": "900000"}` → `200` (то же тело): бюджет с текущего месяца, валюта — основная валюта семьи. Сумма —
+  как у лимита (строка или число, > 0, два знака). Отказы `400 invalid_parameter`: `amount` — «Обязательное поле.» /
+  «Сумма больше нуля, не больше двух знаков после запятой.», лишнее поле — «Неизвестное поле.».
+- `DELETE` → `204`: бюджет снят с текущего месяца; без бюджета — ничего не пишет.
+- Прошлые месяцы сохраняют свой бюджет: строка таблицы — сумма с месяца изменения (`docs/data-model.md`).
+
+**`GET /api/dashboard/`** — два новых поля рядом с прежними (прежние не менялись):
+
+| поле | что |
+|---|---|
+| `budget` | `{"amount", "currency", "spent"}` — бюджет месяца в основной валюте (другая валюта — по курсу дня лимитов) и потраченное в ней (`base.spent`, без трат без курса); `null` — бюджета в этом месяце нет |
+| `allowance` | «можно тратить в день», только текущий месяц, иначе `null`: `{"currency", "basis": "budget"\|"income", "amount", "spent", "unpaid", "unpaid_count", "days_left", "per_day", "overspent"}` |
+
+`allowance` — `budget.allowance.daily(user, month, *, income=None)`: (`amount` − `spent` − `unpaid`) / `days_left`
+(оставшиеся дни, включая сегодня), вниз до копейки. `amount` — бюджет месяца, без него — `income` (доход месяца,
+`incomes.services.month_income`; нет дохода — `allowance` = `null`). Лимиты категорий основой не бывают (2026-10-13:
+лимит одной квартиры давал «остаток аренды на дни месяца»). `spent` — все видимые траты месяца в основной
+валюте по курсу дня покупки; `unpaid` — неоплаченные регулярные платежи месяца (`recurring.services.unpaid`) по
+сегодняшнему курсу, `unpaid_count` — сколько их вошло; сумма без курса не учитывается. Ушли в минус — `per_day` null,
+`overspent` — на сколько.
+
+## Способ оплаты и «Оплатил» (2026-10-13, ветка `feature/payment-method`)
+
+**Способ оплаты траты** — `payment_method` у каждого чека (`Receipt`, список, страница, `PATCH`): `""` — не указан,
+`kaspi_gold` — Kaspi Gold, `forte` — ForteBank, `cash` — наличные, `card` — другая карта. Поле есть у любой траты;
+у дохода способа нет.
+
+- `POST /api/receipts/manual/` и `PATCH /api/receipts/{id}/` (только ручная трата) принимают `payment_method`; `null` и
+  `""` — «не указан», другое значение — `400 invalid_parameter` с `fields.payment_method`. Без ключа `PATCH` способ не
+  меняет. Чек с фото по-прежнему не правится (`409 receipt_read_only`), но поле в ответе есть.
+- Разбор словами: черновик траты (`draft`) получил `payment_method` («наличными» — `cash`, «с каспи» — `kaspi_gold`,
+  «картой форте» — `forte`, «картой» — `card`, не сказано — `""`); черновик дохода его не несёт. Ответ модели — схема
+  `receipts/schemas/manual_parse.schema.json` с ключом `payment_method` (`kaspi_gold|forte|cash|card|null`), промпт —
+  `receipts/prompts/manual_parse.txt`; fake понимает те же слова (`METHOD_WORDS`).
+- Импорт выписки ставит способ сам: Kaspi Gold — `kaspi_gold`, ForteBank — `forte`.
+- Выгрузка (`GET /api/export/`) — `payment_method` у каждого чека.
+- Старые траты из выписок — `manage.py payment_methods backfill [--dry-run]`: ручные траты, чей комментарий кончается
+  «· Выписка Kaspi Gold» / «· Выписка ForteBank», получают `kaspi_gold` / `forte`, только где поле пустое; повтор ничего
+  не меняет. Вывод — JSON `{"kaspi_gold": N, "forte": M, "dry_run": …}`.
+
+**«Оплатил»** — `POST /api/recurring/{id}/pay/` (доступ и CSRF — как у `decision/`):
+
+| поле | |
+|---|---|
+| `month` | `ГГГГ-ММ`, не позже текущего и не раньше чем за год (иначе `400` с `fields.month`) |
+| `amount` | сумма > 0, два знака (строка или число JSON); любая — даже дальше ±25 % от ожидаемой |
+| `payment_method` | необязательно, как у траты; по умолчанию `""` |
+| `purchased_on` | необязательно, `ГГГГ-ММ-ДД` не позже завтрашнего дня сервера; по умолчанию сегодня |
+
+Создаёт ручную трату пользователя запроса (`receipts.manual.create`): место и категория платежа, валюта платежа,
+комментарий «<название> за <месяц год>» — и ответ `added` с этой тратой (`RecurringDecision`), как «Добавить по
+средней»: месяц оплачен, даже если сумма далека от ожидаемой или у платежа нет места. Ответ `201` — как у `decision/`:
+`{"payment_id", "month", "decision": "added", "receipt_id"}`. Отказы: месяц уже оплачен — `409 already_paid`, ответ о нём
+есть («не было», «оплачено иначе») — `409 already_decided`; регулярный доход, чужой или несуществующий платёж — `404`.
+Сервис — `recurring.services.pay(request, payment_id, month, amount, method, day, today=None)`. Флаг `added` месяца
+по-прежнему значит «добавлен по средней» (комментарий траты ответа кончается «: средняя оплата (платёж не найден)»):
+у месяца, закрытого «Оплатил», он `false`, и экран пишет «оплачен 13 октября».
+
+**История у месяца платежа** — новое поле `year` у каждой строки `payments` в `GET /api/recurring/` (прежние поля не
+менялись; у выключенного — `null`):
+
+```json
+{"months": [{"month": "2026-10", "state": "paid",
+             "paid": {"receipt_id": 208, "purchased_on": "2026-10-05", "total": "220000.00", "payment_method": "kaspi_gold"}},
+            {"month": "2026-09", "state": "skipped", "paid": null}],
+ "total": "1320000.00",
+ "methods": [{"payment_method": "kaspi_gold", "total": "880000.00"}, {"payment_method": "", "total": "440000.00"}]}
+```
+
+`months` — 12 месяцев по месяц запроса, новые сначала, состояние — как у `state` (`before` — платёж ещё не начался);
+`paid` — найденная сверкой трата (либо трата ответа «по средней» / «Оплатил») со способом оплаты; у регулярного дохода
+`receipt_id` null и способ `""`. `total` — сумма найденных оплат за эти 12 месяцев в валюте платежа (`null` — оплат нет),
+`methods` — она же по способам, больше сначала. Сверка берёт траты только валюты платежа, поэтому валюты не
+складываются; трата ответа в другой валюте (валюту платежа сменили позже) в итог не входит. Новых запросов к БД нет:
+способ читается тем же запросом трат (`recurring.services.load_spends`).
+## «Статистика → Доходы» (2026-10-13, ветка `feature/stats-compact`)
+
+**`GET /api/stats/incomes/?months=…`** (или `from`/`to`, `ГГГГ-ММ`, как у `trends/monthly/`; смешивать нельзя, ошибки —
+те же `400 invalid_parameter`) — вкладка «Доходы» статистики. Доступ — как у `/api/incomes/` и «Динамики» (`accounts` —
+вход, `local_single` — DEBUG + флаг + loopback); только чтение, миграций нет.
+
+```json
+{"months": 12, "month_from": "2025-11", "month_to": "2026-10", "base_currency": "KZT",
+ "income": "1000000.00", "spent": "200000.00", "saved": "800000.00", "saved_percent": "80.00",
+ "categories_scope": "family",
+ "categories": [{"id": 1, "name": "Зарплата", "total": "950000.00"}, {"id": 2, "name": "Подработка", "total": "50000.00"}],
+ "excluded": [{"currency": "USD", "total": "170.00"}]}
+```
+
+- `income` — доход **всей семьи** за окно (`incomes.services.totals`, `owner_q`: общий доход видят все члены семьи); `null`
+  — дохода за окно нет (тогда `saved` и `saved_percent` тоже `null`). `spent` — `Σ Receipt.total` видимых чеков окна
+  (`visible_receipts_q`, как «Потрачено» Главной), `saved` = `income − spent`, `saved_percent` — доля от дохода.
+- `categories` — доход по категориям доходов от большей суммы, только по записям, **видимым запросу**
+  (`incomes.access.visible_q`). `categories_scope`: `family` — это все записи семьи (главный в семье, человек без семьи,
+  `local_single`; правило — `incomes.access.sees_family`), `own` — только свои записи (член семьи): общий доход он видит
+  в `income`, чужие записи по категориям — нет.
+- Деньги — в основной валюте семьи по курсу дня поступления / покупки (`rates.convert`); суммы без курса не входят ни в
+  итог, ни в категории и названы в `excluded` (доходы и траты вместе, по валютам).
+- Число запросов от объёма данных не зависит. Тесты — `incomes.tests.test_api` (`test_stats_tab_*`), обход
+  `api.tests.test_projection` знает маршрут `stats-incomes`.
+## Выпрямленные копии вырезок (2026-10-13, ветка `feature/receipt-scan`)
+
+Заменяет имена копий вырезок в разделе [MEDIA](#media). Сжатые копии вырезки (`crops/{uuid}/…/`) теперь
+`preview-1600-v2.webp` и `thumb-400-v2.webp` и показывают бумагу чека, как сканер документов: `crop.png` по `quad`
+(углы TL, TR, BR, BL относительно текста) перспективно выпрямляется в прямоугольник текстом вверх
+(`recognition.images.scan_quad`, Pillow `PERSPECTIVE`), с запасом 1,5 % наружу с каждой стороны, чтобы неточный угол не
+срезал край текста; размер — по большей из каждой пары противоположных сторон. Копия остаётся прежней обрезкой по
+`bbox` (как v1), когда:
+
+- `quad` нет либо геометрия не проходит общую проверку (`validate_geometry`: строго выпуклый, по часовой стрелке, внутри
+  `bbox`), нет `crop_transform`;
+- четырёхугольник занимает меньше 75 % ширины или высоты `bbox` (не доля площади: длинный чек под 25° занимает лишь
+  около 38 % площади своего `bbox`), сторона короче 16 px;
+- противоположные стороны различаются больше чем вдвое (крутая перспектива — вероятнее неверные углы), стороны
+  соотносятся больше чем 1 : 20;
+- верхняя сторона расходится с `rotation_degrees` больше чем на 45° — порядок углов не по тексту, копия вышла бы боком;
+- фото — PDF (одна вырезка на всё отрисованное изображение, `pipeline.whole_document`).
+
+Новые имена — потому что v1 закэширован у браузеров как `immutable`. В каталоге вырезки v1 больше не копия: обычный
+путь, файла нет — тот же пустой `404`; уже написанные `*-v1.webp` там остаются и не нужны. Копии фото
+(`originals/{uuid}/`) — прежние v1. Поля API прежние, меняются только адреса копий вырезок: `display_url` /
+`thumb_url` вырезки (ReceiptImage), `preview_thumb_url` чека, `media.display_url` выгрузки. `image_url` вырезки —
+прежний `crop.png` без выпрямления, её `width` / `height` — его размер (у выпрямленной копии пропорции другие).
+«Скачать оригинал» (`download_url`) — исходный файл фото, как прежде. Проверка владельца, `Cache-Control: private,
+max-age=31536000, immutable` и отказы — как у v1; копия пишется при первом разрешённом запросе либо
+`manage.py media_previews backfill`. Распознавание, промпты и форма исправления читают `crop.png`, он не меняется;
+миграций нет.
+## «Видит траты семьи с» (2026-10-13, ветка `feature/member-visible-from`)
+
+`PATCH /api/family/members/{username}/` `{"visible_from": "ГГГГ-ММ" | null}` — главный задаёт члену семьи месяц, с
+которого тот видит чужие траты семьи; `null` — без ограничения. Только `accounts`, вход и CSRF, как у остальных точек
+«Семьи». Ответ — объект семьи (`GET /api/family/`). Отказы: не главный — `403 head_only`; без семьи либо чужой /
+неизвестный `username` — `404`; поле не передано, лишнее поле, не `ГГГГ-ММ` (`2026-4`, `2026-13`, `2026-04-01`,
+число) либо `username` — сам главный — `400 invalid_parameter` с `fields.visible_from`.
+
+`GET /api/family/` (и ответы, что его возвращают): у каждого `household.members[]` — `visible_from` (`"ГГГГ-ММ"` либо
+`null`; у главного всегда `null`), **только когда запрос — главный**. Члену семьи поле не отдаётся вовсе — ни здесь, ни
+в «Я» (`/api/me/`); `POST members/` отдаёт новому члену `visible_from: null`.
+
+Действие на остальные точки — без новых полей и кодов: у члена семьи с месяцем чужие чеки раньше месяца (по
+`purchased_on`) исчезают из `/api/receipts/` (карточка, строки, скидки, налоги — `404`), `/api/dashboard/`,
+`/api/stats/…` (траты, разбор категории, средний чек, «Динамика» — пустые месяцы стали меньше либо нулями),
+`/api/export/`, `/api/receipts/manual/` и `…/suggest/`, `/api/products/{id}/prices/` (`own: false`), счётчиков
+`receipts_count` магазинов, сверки `/api/recurring/`, сводки `/api/insights/…`; чужие фото, задания и вырезки,
+загруженные раньше месяца, — из `/api/recognition/…` (`404`) и `/media/` (пустой `404`). Там же у всех членов семьи
+(и у автора) пропадает фото, чья вырезка ведёт к невидимому им чеку — купленному раньше месяца либо скрытому
+главным (`Receipt.hidden`), вместе с заданиями, вырезками и файлами; главному видно всё. `family_total` в
+`/api/incomes/` и доход «Динамики» за такие месяцы — только свои доходы.
+## Названная покупка — товар каталога (2026-10-13, ветка `feature/manual-products`)
+
+Трата вручную, у которой человек назвал покупку, связывается с товаром каталога; её цена — наблюдение цены с признаком
+«вручную». Трата без названия (выписки, «Продукты 12 000», регулярное «Оплатил» / «по средней») — как прежде, без товара.
+
+**Тело `POST /api/receipts/manual/` и `PATCH /api/receipts/{id}/`** — новое необязательное поле `item_name` («Что купили»,
+строка до 200 символов, пробелы по краям срезаются; `null` и пустая строка — «нет названия»):
+
+- без `lines`: `item_name` называет единственную строку траты (`raw_name`, количество 1, цена = сумма), и она связывается с
+  товаром; без `item_name` — прежняя строка «<название категории>» без товара;
+- с `lines`: каждая позиция — тоже товар; `item_name` с непустыми `lines` — `400` с `fields.item_name` «У траты с позициями
+  покупки называют позициями.» (причина `item_itemized`); строка не той длины / не строка — «Слишком длинное значение.» /
+  «Неверный тип значения.»;
+- `PATCH` без `lines`: у траты из одной строки `item_name` переименовывает её и заново связывает с товаром, пустое —
+  возвращает строку «<категория>» без товара; `total` / `category` без `item_name` названную строку не переименовывают.
+  `PATCH` с `lines: []` — одна сумма, названная `item_name` (форма шлёт его всегда). Удаление траты товар не удаляет;
+  прежний товар после переименования остаётся в каталоге.
+- Категория строки — из тела (`category` траты либо позиции): она важнее категории товара во всех суммах (статистика,
+  «Траты», дашборд, лимиты, выгрузка), поэтому траты по категориям от товара не зависят.
+
+**Поиск товара** — правило импорта чеков (`recognition.resolution.resolve_product`) для строки без кода, штрихкода, бренда
+и фасовки, сервис `receipts.manual.find_or_create_products`: написание продавца места (`ProductAlias` из чеков с фото,
+только у траты с местом) → товар с тем же нормализованным названием (`receipts.dedup.name_key`: регистр, NFC, пробелы) →
+новый личный товар владельца траты в обобщённом продукте и категории «Не разобрано» (без бренда и фасовки,
+`Product.scope = "user:<id владельца>"` — всегда человек, не семья). Ищутся только общие товары (`scope=""`) и свои
+личные, свой личный тёзка важнее общего (см. «Личное название» ниже): товар другого человека, в том числе члена
+семьи, не находится — у человека свой. Трата вручную написаний (`ProductAlias`) не создаёт. Два разных видимых
+товара с одним названием — неоднозначно: строка остаётся без товара, как у импорта.
+Склеенный дубль ведёт к оставляемому: поглощённый ожидающим слиянием товар и название товара, поглощённого
+подтверждённым слиянием (`merges.ProductMergeMember`), отвечают оставляемым. Запись берёт мьютекс импорта
+(`IMPORT_LOCK`) на время транзакции: слияние в этот момент отвечает `merge_busy`, импорт откладывает вырезку. Новый товар —
+обычный товар «Не разобрано»: предположения категорий (`classification`) берут его кнопкой / командой; автопоиск дублей и
+автопредположения после импорта ручная трата не запускает.
+
+**Цены.** `receipts.prices.observation_q` — строка товара с количеством > 0 из чека продажи, не скрытого, и чек либо с
+фото, либо трата вручную со строкой, связанной с товаром. Значит, история цен, сводки, ряды, сравнение, счётчики
+«последняя покупка» видят названные покупки. Изменения формы ответов (прежние поля не менялись):
+
+- `GET /api/products/{id}/prices/` — у каждой точки `manual` (bool); у траты без места `store: null`. Ручные точки — только
+  видимых запросу трат (см. «Личное название»); у точек чеков с фото проекция прежняя.
+- `GET /api/products/`, `/api/products/{id}/` — у `prices[].last` поле `manual`; группа трат без места —
+  `country: null`, `last.store_id: null`. `stores` карточки трату без места не включает; `countries` обобщённого продукта —
+  только страны магазинов.
+- `GET /api/products/{id}/prices/summary/?group_by=store` — группа трат без места `store: null`; `group_by=country` —
+  `country: null`.
+- `GET /api/products/{id}/prices/series/` — у каждого ряда `manual` (bool): цены трат вручную — отдельные ряды (свои и
+  похожих товаров); свой ряд трат без места — `store: null`, `country: null`.
+- `GET /api/products/{id}/alternatives/`, `/api/generic-products/{id}/comparison/` — у `offers[].last` поле `manual`,
+  предложение трат без места — `country: null`, `last.store: null`; такие пары «страна, валюта» идут первыми в `groups`.
+- `GET /api/product-merges/{id}/lines/` — строка траты без места `store: null`.
+- Деньги разных валют не складываются: группы и ряды — по валюте, как прежде.
+
+**Разбор словами.** Ответ модели и черновик несут `item_name` («подписка claude max 225$» → «Подписка Claude Max»;
+`null` у дохода, с позициями и когда текст называет только вид траты, место или поездку). Во входе модели у похожих
+прошлых трат (`history`) — `item_name`: название товара каталога, с которым связана строка (иначе её название), чтобы
+модель брала существующее. Fake-исполнитель: слова текста без чисел, валюты и способа оплаты, с заглавной буквы; с
+похожей прошлой тратой — её `item_name`. Промпт и схема — `receipts/prompts/manual_parse.txt`,
+`receipts/schemas/manual_parse.schema.json` (контейнер `recognition` нужно пересобрать). Подсказки
+`GET /api/receipts/manual/suggest/` — у каждой поле `item_name` («Что купили» траты без позиций, название товара
+каталога; `null` без названия); повтор одинаковых трат различает и `item_name`.
+
+**Личное название (2026-10-13, проверка безопасности).** «Что купили» — свободный текст человека («Подарок маме»,
+«Психотерапевт»), а каталог и цены общие для всех семей. Правило одно — `receipts.prices`:
+
+- `observation_q(prefix, request)`: строка траты вручную — наблюдение цены только для того, кому видна сама трата
+  (`accounts.access.visible_receipts_q`, с `visible_from` и скрытыми платежами). Чужих ручных точек нет нигде: ни как
+  точек с `null`-полями, ни в `prices[].last`, рядах, сводке, сравнении, счётчиках стран и «последней покупке».
+  Строки чеков с фото — по прежним правилам проекции. Без запроса (внутренние расчёты) ручных наблюдений нет.
+- Видимость товара — `receipts.prices.seen_product_q` (fail-closed): общий (`""`) виден всем, личный (`user:<id>`) —
+  самому человеку и членам его семьи и только пока у него есть строка траты, видимой запросу (главному — и скрытой);
+  член семьи видит товар главного только через видимую ему трату: скрытый главным платёж, траты раньше `visible_from` и удалённая трата название не открывают; строки
+  других семей и чеков с фото — тоже. Каждый товар, созданный сохранением траты вручную, — личный в области владельца
+  траты; прежние товары — общие. Чужой личный товар не виден нигде (`api.projection.seen_products` /
+  `seen_products_q`, один подзапрос): списки, поиск, карточка и её цены (`404`), счётчики категорий, обобщённых
+  продуктов и брендов, сравнение, «похожие» в рядах, наблюдения цены, группы дублей (`/api/product-merges/…` — `404` у
+  группы с ним) и записи предположений (`/api/product-classifications/…` — `404`). `local_single` — все товары.
+- Импорт чеков с фото (`recognition.importer._resolve_product`) привязывает строку только к общему товару — личный
+  (и своей семьи) не получает строк с фото и написаний магазинов: если `resolve_product` выбрал личный (или ответил
+  неоднозначно из-за личного тёзки), его запись откатывается, товар ищется по названию среди общих
+  (`_shared_product`), иначе создаётся общий. Трата вручную предпочитает свой личный товар-тёзку общему.
+  `resolution.py` не менялся.
+- Поиск дублей (`merges`) и предположения категорий (`classification`: импорт, кнопка, `suggest`) берут только общие
+  товары (`scope=""`); ожидающие записи не трогаются.
+- Человек ушёл из семьи — его личные товары остаются его (`user:<id>`), бывшая семья их больше не видит, как и его
+  траты. Отдельной логики нет.
+- Миграция `catalog.0004_product_scope`: `Product.scope` входит в уникальность «бренд, название, фасовка», чтобы тёзки
+  разных семей уживались. Откат — `manage.py migrate catalog 0003_service_charge_category` (снимает и `0005_category_icon`); он отказывает, пока есть два
+  товара, различающиеся только `scope`, — сначала склеить или переименовать.
+
+Старые траты не меняются (backfill нет) — человек называет нужные сам правкой траты.
+
+## Значки категорий (2026-10-13, ветка `feature/category-icons`)
+
+У категории есть значок строк трат — ключ из набора `catalog.CategoryIcon`: `cart`, `dining`, `bus`, `car`, `home`,
+`phone`, `heart`, `shirt`, `ticket`, `gift`, `baby`, `box`, `bank`, `beauty`, `plane`, `book`, `paw`, `tag`. Свой значок
+может быть не задан — тогда действует значок ближайшего предка (`api.common.CategoryTree.icon`: одно вычисление по уже
+загруженному дереву, запросов не прибавляется). `null` — значка нет ни у кого в ветви; клиент рисует ярлык (`tag`), как и
+для незнакомого ключа. Новые поля только добавлены, необязательны для клиента и уже с наследованием:
+
+- `GET /api/receipts/` — `category.icon` (значок общей категории верхнего уровня) и `icon` у каждого элемента
+  `categories`; карточка чека не менялась.
+- `GET /api/dashboard/` — у элемента `recent` `category_icon` (у строк чека одна категория — её значок, иначе главной
+  категории, по которой назван `category_name`) и `note` (комментарий: по нему клиент узнаёт трату из выписки, как в
+  «Тратах»).
+- `GET /api/stats/category-spends/` — `category.icon`.
+
+`GET /api/categories/{id}/icon/` → `{"id", "icon", "own_icon"}`: значок с наследованием и свой (`null` — как у
+родителя). Доступ как у трат (`LocalOrSignedIn`); нет категории — `404`. `POST` туда же с телом `{"icon": ключ}`
+(`null` либо `""` — как у родителя) меняет свой значок и отвечает тем же объектом. Категории общие для всех семей,
+поэтому `POST` — только модератор каталога (`catalog.moderate_catalog`, иначе `403 permission_denied`; без входа —
+`401`, без CSRF — `403 csrf_failed`). Отказы `400 invalid_parameter`: `icon` — «Неизвестный значок.» либо
+«Обязательное поле.», лишний ключ — «Неизвестное поле.». Ответы каталога (`/api/categories/`, `/api/categories/{id}/`
+и прочие 13 GET) не менялись. Код — `api/views/category_icons.py`.
+
+## Цель-депозит (2026-10-13, ветка `feature/goal-deposit`)
+
+`/api/goals/` — прежний контракт, к нему добавлено:
+
+- **Цель** (список и одна цель): `kind` — `saving` («Копилка», прежние цели) | `deposit`; `rate` — % годовых строкой
+  (`"14.50"`) либо `null`; `capitalization` — `monthly` (по умолчанию) | `none`; `deposit` — `null` у копилки, у депозита
+  `{deposits, interest, in_a_year, at_deadline: {total, interest} | null, by_interest}`: взносов всего, ≈ заработано процентами
+  (`saved − deposits`), без взносов через год (`null` — взносов ещё нет), к сроку при нынешнем темпе и проценты в этой сумме
+  (`null` — срока впереди нет либо темпа нет), `true` — цель к сроку достигается процентами (`need_per_month = "0.00"`).
+  У депозита `saved`, `percent`, `remaining`, `reached` — сумма на депозите сегодня с процентами; `need_per_month` —
+  аннуитет с процентами, `pace.months_left` — с процентами; `pace.per_month` и `contributions_count` — только взносы. У
+  копилки ставка не читается (0) — числа прежние.
+- **POST / PATCH цели** принимают `kind`, `rate` (0–100, два знака, запятая допустима, `null`/`""` — снять),
+  `capitalization`. Депозит без ставки — `400` у `rate` («У депозита укажите ставку»), неизвестный вид / капитализация — у
+  `kind` / `capitalization`. Переключение в копилку ставку не стирает.
+- **Одна цель** — ещё `series`: `null` у копилки, у депозита — месяцы с первого взноса
+  `[{month: "ГГГГ-ММ", total, deposits, forecast}]` (конец месяца, текущий — сегодня), затем `forecast: true` — прогноз при
+  нынешнем темпе (без темпа — без взносов) до срока либо на 12 месяцев, не больше 60; без взносов — `[]`.
+- **Взнос** — ещё `kind`: `deposit` (все прежние и из выписки) | `interest` — «проценты»: разница сверки, может быть
+  отрицательной. `PATCH` записи `interest` — `400` у `kind` («Сверку можно только удалить»), `DELETE` — как у взноса.
+- **`POST /api/goals/{id}/reconcile/`** `{"balance", "date"?}` — «Сверить с банком»: остаток депозита на дату (по умолчанию
+  сегодня). Сервер считает «на депозите» на эту дату (после событий дня, `goals.services.estimate`) и пишет разницу записью
+  `interest` в валюте цели от имени запроса; ответ `201` — цель целиком. Отказы `400`: `kind` — цель не депозит; `balance` —
+  нет либо не больше нуля; `date` — не ГГГГ-ММ-ДД, позже сегодня, либо взносов по эту дату нет. Доступ и видимость — как у
+  взносов (`goals_q`, чужая — `404`), запись — с CSRF. Маршрут `goal-reconcile` в обходе проекции — «только POST».
+- **Окно дат** (`400` у поля): дата взноса и срок цели — с 2000-01-01 и не дальше 50 лет от сегодня, дата сверки — с
+  2000-01-01 и не позже сегодня. Начисление считается отрезками между событиями и 1-ми числами (шагов — записей плюс
+  месяцев с первого взноса, не дней), прогноз — не дальше 600 месяцев, ряд графика — не больше 60 месяцев вперёд.
+
+Расчёт — одна чистая `goals/forecast.py`: начисление каждый прошедший день на остаток (`ставка / 100 / 365`), при
+ежемесячной капитализации начисленное прибавляется к остатку 1-го числа, без неё копится отдельно и процентов не приносит;
+счёт с первого взноса в валюте цели (взнос в другой валюте — по курсу своего дня), за сегодняшний день не начисляется;
+запись «проценты» прибавляется к остатку, поэтому после сверки расчёт идёт от сверенной суммы. Прогноз — по месяцам: проценты
+месяца `ставка / 100 / 12`, взнос в конце месяца; «вносите по N» — `(цель − FV(n, 0)) / FV(n, 1 с нуля)`, при ставке 0 — прежнее
+«осталось / месяцев»; «до цели ~K месяцев» — первый месяц, когда сумма дойдёт до цели (не дальше 600).
+
+## Единая форма траты (2026-10-13, ветка `feature/unified-spend-form`)
+
+Ручная трата, чек с фото и трата из выписки создаются и правятся одним путём: `POST /api/receipts/manual/` (новая
+трата вручную) и `PATCH /api/receipts/{id}/` (любая видимая трата) → `receipts.manual.create` / `update`. Источник
+(`source` `photo` / `manual`, выписка) — только пометка. **Правило облегчённой v1 «сохранённый чек не правится через
+API» снято**: код `409 receipt_read_only` больше не отдаётся (клиент оставил его текст для старого сервера).
+
+Доступ — как у удаления: свой чек либо члена семьи (`visible_receipts_q`, «видит с»), скрытый платёж — только
+главному (остальным `404`). `DELETE` — прежний (`?with_photo=1`).
+
+**Строка как в чеке.** `lines[]` тела:
+
+| поле | смысл |
+|---|---|
+| `id` | сохранённая строка этой траты — правится на месте; без него — новая строка; сохранённая строка, которой нет в теле, удаляется. Чужой `id` — `lines.N.id: unknown` |
+| `name` | название (обязательно, до 200 знаков) |
+| `quantity` | количество, до трёх знаков; нет — 1 (у сохранённой — прежнее) |
+| `unit` | `pcs` / `g` / `kg` / `ml` / `l` / `m` (как `ReceiptLine.unit`); нет — `pcs` (у сохранённой — прежняя) |
+| `unit_price` | цена за единицу до скидки, до четырёх знаков; нет — `amount / quantity` (у сохранённой с той же суммой и количеством — прежняя); переданная обязана дать сумму: \|`quantity × unit_price − amount`\| ≤ 0,01 + \|`quantity`\| × 0,00005, иначе `price_mismatch` |
+| `amount` | сумма строки **до скидки** |
+| `discount_amount` | скидка строки, от 0 до суммы; нет — 0 (у сохранённой — прежняя) |
+| `category` | категория строки (важнее категории товара); null — категория траты `category` тела, у чека с фото — категория товара |
+
+Новая строка — с суммой и количеством больше нуля; сохранённая может сохранить ноль либо минус, с которыми прочитана
+(возврат тары: `quantity` и `amount` отрицательные, у `deposit_return` сумма не больше нуля). Итог траты — сумма строк за
+вычетом их скидок и скидок на весь чек (у чека с ценами без налога — плюс налог); переданный `total` обязан совпасть,
+иначе `total: mismatch`. До 300 строк (`lines: size`), тело до 256 КБ. Трата одной суммой (`lines: []`, `total`,
+`category`, `item_name`) — частный случай: одна строка; у чека с фото так снимаются и скидки на весь чек.
+
+**Детерминизм — одни правила для всех источников.**
+
+- Названная строка → товар каталога по правилу трат (`find_or_create_products`: свой личный тёзка, общий товар по
+  написанию места и названию, иначе новый личный товар владельца в «Не разобрано»); правка сохраняет товарную связь
+  строки, пока её название не менялось (`name_key`). Так же у чека с фото: переименованная или новая строка — текст
+  человека и следует правилу трат (общий товар либо личный).
+- Скидка строки — строки `ReceiptDiscount` этой позиции (сумма равна `discount_amount`): не менялась — прежние (с
+  напечатанными названиями) остаются, поменялась — одна строка «Скидка». `discount_total` — сумма всех скидок.
+- Поменялись деньги строк (состав, сумма, скидка) — пересчитываются налог строки по её ставке, итоги по ставкам
+  (`ReceiptTax`: одна ставка — вся сумма; несколько — по ставкам строк, иначе по прежним долям) и итог; только название,
+  категория, место, дата или способ — напечатанные итоги остаются.
+- Наблюдения цены считаются из строк при чтении — следуют за правкой сами.
+- Чек с фото: место обязательно (`store_name: required`), правка даты либо места сохраняет время на часах; фискальный
+  ключ, номер, смена и касса не меняются, поэтому повторное фото того же чека по-прежнему находит его. Правка, после
+  которой чек совпал бы с другим своим чеком с фото (три правила дедупликации), отказывает: `400 invalid_parameter`
+  с полем `receipt` («Такой чек у вас уже есть…»).
+- Трата из выписки (строка `statements.StatementRow.receipt`) остаётся «из выписки»: способ оплаты — банк (другой
+  непустой — `payment_method: statement`, пусто — банк), комментарий хранит человеческий текст и пометку
+  « · Выписка …» в конце (сервер дописывает её сам).
+
+Новые причины полей: `unit`, `price`, `price_mismatch`, `discount`, `duplicate` (поле `receipt`), `statement`.
+
+Карточка `GET /api/receipts/{id}/` и ответ `PATCH` несут `statement`: `{"bank": "kaspi_gold", "label": "Выписка Kaspi
+Gold"}` либо null (одним запросом; в списке поля нет).
+
+Черновик «Траты словами» (`GET /api/receipts/manual/parse/{id}/` → `draft.lines[]`) — того же вида, что строка формы:
+`name`, `quantity` (нет — «1»), `unit` (`pcs`), `unit_price` (сумма / количество), `amount`, `discount_amount` («0»),
+`category`. Распознанные строки фото уже в этом виде (`GET /api/receipts/{id}/lines/`).

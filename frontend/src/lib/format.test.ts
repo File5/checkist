@@ -1,27 +1,19 @@
 import { describe, expect, it } from 'vitest'
-import { formatAmount, formatIndex, formatObservedAt, formatPercent, formatPrice, formatPurchasedOn, formatQuantity, formatUnit } from './format'
+import { formatIndex, formatObservedAt, formatPercent, formatPrice, formatPurchasedOn, formatQuantity, formatUnit } from './format'
 
 describe('exact ru-RU Decimal formatting', () => {
   it.each([
-    ['1234567.80', '1\u00a0234\u00a0567,80\u00a0RUB'], ['-1234.50', '-1\u00a0234,50\u00a0EUR'],
-    ['0.00', '0,00\u00a0KZT'], ['-0.00', '0,00\u00a0RUB'], ['1', '1,00\u00a0RUB'],
-    ['9999999998990000000001000000.0000', '9\u00a0999\u00a0999\u00a0998\u00a0990\u00a0000\u00a0000\u00a0001\u00a0000\u00a0000,00\u00a0RUB'],
-  ])('formats amount %s without losing any digits', (value, expected) => {
-    const currency = expected.slice(-3)
-    expect(formatAmount(value, currency)).toBe(expected)
-  })
-  it.each([
-    ['130.5882', '130,59\u00a0RUB/л'], ['111.0000', '111,00\u00a0RUB/л'], ['2.5000', '2,50\u00a0RUB/л'],
-    ['0.3333', '0,33\u00a0RUB/л'], ['0.0050', '0,01\u00a0RUB/л'], ['0.0000', '0,00\u00a0RUB/л'],
-    ['-0.0000', '0,00\u00a0RUB/л'], ['0', '0,00\u00a0RUB/л'], ['9.99995', '10,00\u00a0RUB/л'],
-    ['189490.0000', '189\u00a0490,00\u00a0RUB/л'], ['-1.0500', '-1,05\u00a0RUB/л'], ['-130.5882', '-130,59\u00a0RUB/л'],
-    ['1000.0001', '1\u00a0000,00\u00a0RUB/л'], ['0.0149', '0,01\u00a0RUB/л'],
+    ['130.5882', '130,59\u00a0₽/л'], ['111.0000', '111,00\u00a0₽/л'], ['2.5000', '2,50\u00a0₽/л'],
+    ['0.3333', '0,33\u00a0₽/л'], ['0.0050', '0,01\u00a0₽/л'], ['0.0000', '0,00\u00a0₽/л'],
+    ['-0.0000', '0,00\u00a0₽/л'], ['0', '0,00\u00a0₽/л'], ['9.99995', '10,00\u00a0₽/л'],
+    ['189490.0000', '189\u00a0490,00\u00a0₽/л'], ['-1.0500', '-1,05\u00a0₽/л'], ['-130.5882', '-130,59\u00a0₽/л'],
+    ['1000.0001', '1\u00a0000,00\u00a0₽/л'], ['0.0149', '0,01\u00a0₽/л'],
   ])('formats price %s with exactly two places, explicit currency and actual unit', (value, expected) => {
     expect(formatPrice(value, 'RUB', 'l')).toBe(expected)
   })
   it.each([
-    ['0.0049', '0,0049\u00a0RUB/л'], ['-0.0049', '-0,0049\u00a0RUB/л'], ['0.0010', '0,001\u00a0RUB/л'],
-    ['0.00495', '0,005\u00a0RUB/л'], ['0.00004', '0,00\u00a0RUB/л'],
+    ['0.0049', '0,0049\u00a0₽/л'], ['-0.0049', '-0,0049\u00a0₽/л'], ['0.0010', '0,001\u00a0₽/л'],
+    ['0.00495', '0,005\u00a0₽/л'], ['0.00004', '0,00\u00a0₽/л'],
   ])('keeps up to four places for the non-zero price %s that two places would show as zero', (value, expected) => {
     expect(formatPrice(value, 'RUB', 'l')).toBe(expected)
   })
@@ -32,8 +24,8 @@ describe('exact ru-RU Decimal formatting', () => {
     expect(formatIndex(value)).toBe(expected)
   })
   it('does not invent a unit when none was supplied', () => {
-    expect(formatPrice('1.0000', 'EUR')).toBe('1,00\u00a0EUR')
-    expect(formatPrice('1.0000', 'EUR', null)).toBe('1,00\u00a0EUR')
+    expect(formatPrice('1.0000', 'EUR')).toBe('1,00\u00a0€')
+    expect(formatPrice('1.0000', 'EUR', null)).toBe('1,00\u00a0€')
     expect(formatQuantity('1.000')).toBe('1')
   })
   it.each([
@@ -43,9 +35,9 @@ describe('exact ru-RU Decimal formatting', () => {
     expect(formatQuantity(value, 'ml')).toBe(expected)
   })
   it('rounds excess display precision half-up using digits, including carry and negative sign', () => {
-    expect(formatAmount('999.995', 'RUB')).toBe('1\u00a0000,00\u00a0RUB')
-    expect(formatAmount('-999.995', 'RUB')).toBe('-1\u00a0000,00\u00a0RUB')
-    expect(formatPrice('9.99995', 'EUR')).toBe('10,00\u00a0EUR')
+    expect(formatPrice('999.995', 'RUB')).toBe('1\u00a0000,00\u00a0₽')
+    expect(formatPrice('-999.995', 'RUB')).toBe('-1\u00a0000,00\u00a0₽')
+    expect(formatPrice('9.99995', 'EUR')).toBe('10,00\u00a0€')
     expect(formatQuantity('-0.0005', 'kg')).toBe('-0,001\u00a0кг')
   })
   it('formats signed and nullable percent values', () => {
@@ -54,7 +46,6 @@ describe('exact ru-RU Decimal formatting', () => {
     expect(formatPercent(null)).toBe('—')
   })
   it.each([null, '', 'NaN', 'Infinity', '1e3', '1,00', '--1', '.5', ' 1.00 '])('keeps invalid/missing Decimal %# distinct from zero', (value) => {
-    expect(formatAmount(value, 'RUB')).toBe('—')
     expect(formatPrice(value, 'EUR', 'kg')).toBe('—')
     expect(formatQuantity(value, 'pcs')).toBe('—')
   })

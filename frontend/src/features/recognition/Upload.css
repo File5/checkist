@@ -1,25 +1,81 @@
-/* The upload screen: picking a photo, its reduction and the progress of sending. Shared blocks of recognition
-   (.ck-rec-*) stay in Recognition.css. */
+/* The upload screen in the cards of the artifact (docs/plans/2026-10-13-artifact-mobile-design.md): the card «Фото чека»
+   with the big «Снять чек», the outline «Из галереи» and «Выбрать файл», the preview and the progress; the card of the
+   conditions; the list of the related screens. Shared blocks of recognition (.ck-rec-*) stay in Recognition.css; the
+   two-class selectors here outweigh them. Colours only from tokens, text sizes only from the --ck-text-* scale. */
 
-/* The two file fields are pressed by their buttons: out of sight, out of the Tab order (tabindex in the markup). */
+.ck-upload { gap: 16px; max-width: 600px; }
+.ck-rec .ck-upload-card { gap: 16px; padding: 20px; border: 0; border-radius: var(--ck-radius); background: var(--ck-surface); box-shadow: var(--ck-card-shadow); }
+.ck-upload-head { display: grid; gap: 4px; min-width: 0; }
+.ck-upload-head h2 { margin: 0; font-size: var(--ck-text-lg); font-weight: 800; }
+.ck-upload-lead { margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-sm); }
+
+/* The three file fields are pressed by their buttons: out of sight, out of the Tab order (tabindex in the markup). */
 .ck-rec .ck-upload-input { position: absolute; width: 1px; height: 1px; padding: 0; border: 0; opacity: 0; overflow: hidden; clip-path: inset(50%); pointer-events: none; }
 
-/* «Снять чек» opens the camera only where there is one to hold: a mouse gets the same dialog as «Выбрать файл». */
-.ck-rec .ck-upload-camera { display: none; }
+/* The big buttons of picking: 64 px, the picture over the words' line; the main one filled, the others outlined. */
+.ck-upload-pick { flex-direction: column; align-items: stretch; gap: 10px; }
+.ck-rec .ck-upload-big { display: flex; flex: none; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 64px; padding: 0 20px; border: 1.5px solid var(--ck-primary); border-radius: var(--ck-radius-button); background: var(--ck-primary); color: var(--ck-on-primary); font-size: var(--ck-text-base); font-weight: 800; }
+.ck-rec .ck-upload-big:hover:not(:disabled) { border-color: var(--ck-primary-hover); background: var(--ck-primary-hover); }
+.ck-upload-icon { flex: none; }
+
+/* «Снять чек» and «Из галереи» only where there is a phone to hold: a mouse gets the same dialog from «Выбрать файл». */
+.ck-rec .ck-upload-camera, .ck-rec .ck-upload-gallery { display: none; }
 @media (pointer: coarse) {
-  .ck-rec .ck-upload-camera { display: block; }
+  .ck-rec .ck-upload-camera, .ck-rec .ck-upload-gallery { display: flex; }
 }
 
-/* An outline button: «Выбрать файл» and «Отменить отправку» stand next to a filled main action. */
-.ck-rec .ck-upload-secondary { background: var(--ck-surface); border-color: var(--ck-border-field); color: var(--ck-link); }
-.ck-rec .ck-upload-secondary:hover:not(:disabled) { background: var(--ck-surface-raised); }
-.ck-rec .ck-upload-secondary:disabled { background: var(--ck-disabled-bg); border-color: var(--ck-disabled-border); color: var(--ck-disabled-text); }
+/* An outline button: «Из галереи», «Выбрать файл», «Отменить отправку» and «Обновить условия загрузки». */
+.ck-rec .ck-upload-secondary { border: 1.5px solid var(--ck-link); background: var(--ck-surface); color: var(--ck-link); font-weight: 700; }
+.ck-rec .ck-upload-secondary:hover:not(:disabled) { border-color: var(--ck-link-hover); background: var(--ck-surface-raised); color: var(--ck-link-hover); }
+/* Beside the filled main action an outlined big button is a step lower: 52 px. */
+.ck-rec .ck-upload-big.ck-upload-secondary { min-height: 52px; }
+.ck-rec .ck-upload-secondary:disabled { border-color: var(--ck-disabled-border); background: var(--ck-disabled-bg); color: var(--ck-disabled-text); }
+
+/* The cloud warning: a quiet line under the buttons it describes. */
+.ck-upload-cloud { margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-xs); }
 
 /* The name of the file is free text and wraps anywhere; a size never splits. */
-.ck-upload-file { min-width: 0; overflow-wrap: anywhere; }
+.ck-upload-file { min-width: 0; margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-xs); overflow-wrap: anywhere; }
 .ck-upload-value { white-space: nowrap; font-variant-numeric: tabular-nums; }
-.ck-upload-reduced { padding: 14px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius-sm); background: var(--ck-neutral-bg); color: var(--ck-text); }
+.ck-rec .ck-upload-preview { border-radius: var(--ck-radius-button); }
+/* A chosen PDF: no picture, its pages and what the server will do. */
+.ck-upload-pdf { flex-direction: column; gap: 8px; padding: 24px; text-align: center; }
+.ck-upload-pdf p { margin: 0; }
+.ck-upload-reduced { margin: 0; padding: 14px; border-radius: var(--ck-radius-sm); background: var(--ck-neutral-bg); color: var(--ck-text); font-size: var(--ck-text-sm); }
 
+/* The stage of sending right above its bar: a bold line, then the track filled with the main colour. */
+.ck-upload-stage p { margin: 0; font-weight: 700; }
+.ck-upload-stage:empty { display: none; }
 .ck-upload-progress { display: grid; gap: 8px; min-width: 0; }
-.ck-upload-progress p { margin: 0; }
-.ck-upload-progress progress { display: block; width: 100%; height: 12px; accent-color: var(--ck-brand); }
+.ck-upload-progress p { margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-sm); }
+.ck-upload-progress progress { display: block; width: 100%; height: 10px; accent-color: var(--ck-primary); }
+
+/* Sending: one wide main action; «Отменить отправку» under it while the photo goes. */
+.ck-upload-send { flex-direction: column; align-items: stretch; gap: 10px; }
+.ck-rec .ck-upload-send button { flex: none; width: 100%; min-height: 56px; border-radius: var(--ck-radius-button); font-weight: 800; }
+.ck-rec .ck-upload-submit { border: 1px solid var(--ck-primary); background: var(--ck-primary); color: var(--ck-on-primary); font-size: var(--ck-text-lg); }
+.ck-rec .ck-upload-submit:hover:not(:disabled) { border-color: var(--ck-primary-hover); background: var(--ck-primary-hover); }
+
+/* «Условия загрузки» folded on a phone: the heading is the summary, the whole line is the target. */
+.ck-upload-conditions summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; list-style: none; cursor: pointer; }
+.ck-upload-conditions summary::-webkit-details-marker { display: none; }
+.ck-upload-conditions summary h2 { display: inline; margin: 0; }
+.ck-upload-conditions[open] .ck-upload-chevron { transform: rotate(90deg); }
+.ck-upload-conditions-body { display: grid; gap: 16px; padding-top: 12px; }
+.ck-upload-card #recognition-limits-title { font-size: var(--ck-text-lg); font-weight: 800; }
+.ck-upload-card p:not([class]) { margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-sm); }
+.ck-upload-card .ck-upload-secondary { min-height: 48px; border-radius: var(--ck-radius-button); }
+.ck-upload-chevron { flex: none; color: var(--ck-text-muted); }
+
+/* The related screens: a list card of two rows with a chevron, like the rows of the artifact. */
+.ck-upload-links { display: grid; padding: 4px 20px; border-radius: var(--ck-radius); background: var(--ck-surface); box-shadow: var(--ck-card-shadow); }
+.ck-upload-links a { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 56px; color: var(--ck-text); font-size: var(--ck-text-sm); font-weight: 700; text-decoration: none; }
+.ck-upload-links a + a { border-top: 1px solid var(--ck-divider); }
+.ck-upload-links a:hover { color: var(--ck-link); }
+
+/* A phone: the preview takes the width of the form at its own proportions. */
+@media (max-width: 540px) {
+  .ck-upload { max-width: none; }
+  .ck-rec-image.ck-upload-preview img { height: auto; max-height: 70vh; }
+  .ck-upload-progress progress { height: 12px; }
+}

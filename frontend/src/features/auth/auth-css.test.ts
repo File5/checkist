@@ -62,10 +62,12 @@ describe('auth stylesheet guards (text of the rules, not rendering)', () => {
     for (const item of rules(auth)) expect(item.body, item.selector).not.toMatch(/(^|[;\s])color: var\(--ck-brand/)
   })
 
-  it('paints the panel, the fields and the messages from the tokens', () => {
-    expect(rule('.ck-auth-panel')).toContain('background: var(--ck-surface); border: 1px solid var(--ck-border);')
+  it('paints the card, the fields and the messages from the tokens', () => {
+    // A card of the artifact: the surface with the shadow of the theme, no frame.
+    expect(rule('.ck-auth-panel')).toContain('border-radius: var(--ck-radius); background: var(--ck-surface); box-shadow: var(--ck-card-shadow);')
     expect(rule('.ck-auth-field input')).toContain('color: var(--ck-text); background: var(--ck-surface); border: 1px solid var(--ck-border-field);')
-    expect(rule('.ck-auth-notice')).toContain('color: var(--ck-warning-text); background: var(--ck-warning-bg); border: 1px solid var(--ck-warning-border);')
+    expect(rule('.ck-auth-field select')).toBe(rule('.ck-auth-field input'))
+    for (const part of ['border: 1px solid var(--ck-warning-border);', 'background: var(--ck-warning-bg);', 'color: var(--ck-warning-text);']) expect(rule('.ck-auth-notice')).toContain(part)
     expect(rule('.ck-auth-done')).toContain('color: var(--ck-success-text);')
     expect(rule('.ck-auth-rules', base)).toContain('color: var(--ck-text-muted);')
   })
@@ -75,10 +77,13 @@ describe('auth stylesheet guards (text of the rules, not rendering)', () => {
     expect(rule('.ck-auth-error', base)).toContain('border-left: 4px solid var(--ck-error-border); color: var(--ck-error-text);')
   })
 
-  it('keeps the surface, the frame and the text of the outline button while hovered and pressed', () => {
-    expect(rule('.ck-auth-secondary')).toBe('background: var(--ck-surface); border-color: var(--ck-border-field); color: var(--ck-link);')
+  it('keeps the surface, the frame and the text of the outline and the danger buttons while hovered and pressed', () => {
+    expect(rule('.ck-auth-secondary')).toBe('min-height: 48px; border: 1.5px solid var(--ck-link); background: var(--ck-surface); color: var(--ck-link); font-weight: 700;')
     expect(rule('.ck-auth-secondary:hover')).toBe('background: var(--ck-surface-raised); border-color: var(--ck-link-hover); color: var(--ck-link-hover);')
     expect(rule('.ck-auth-secondary:active')).toBe('background: var(--ck-accent-bg); border-color: var(--ck-link-hover); color: var(--ck-link-hover);')
+    // A danger is quiet: an outline in the error colours, never a fill.
+    expect(rule('.ck-auth-danger')).toBe('min-height: 48px; border: 1.5px solid var(--ck-error-border); background: var(--ck-surface); color: var(--ck-error-text); font-weight: 700;')
+    for (const state of [':hover', ':active']) expect(rule(`.ck-auth-danger${state}`)).toBe('background: var(--ck-error-bg); border-color: var(--ck-error-text); color: var(--ck-error-text);')
     const order = rules(auth).map((item) => item.selector)
     expect(order.indexOf('.ck-auth-secondary:hover')).toBeLessThan(order.indexOf('.ck-auth-secondary:active'))
   })
@@ -88,7 +93,9 @@ describe('auth stylesheet guards (text of the rules, not rendering)', () => {
     const selectors = ['.ck-auth button[aria-disabled="true"]', '.ck-auth button[aria-disabled="true"]:hover', '.ck-auth button[aria-disabled="true"]:active']
     for (const selector of selectors) {
       expect(rule(selector, base), selector).toBe(disabled)
-      for (const state of ['.ck-auth-secondary', '.ck-auth-secondary:hover', '.ck-auth-secondary:active']) expect(heavier(selector, state), `${selector} > ${state}`).toBe(true)
+      for (const kind of ['primary', 'secondary', 'danger']) for (const state of ['', ':hover', ':active']) {
+        expect(heavier(selector, `.ck-auth-${kind}${state}`), `${selector} > ${kind}${state}`).toBe(true)
+      }
     }
   })
 
@@ -99,22 +106,28 @@ describe('auth stylesheet guards (text of the rules, not rendering)', () => {
     // `button:disabled` never matches here: the forms lock a button by aria-disabled (auth-markup.test.tsx).
     const live = shell.filter((selector) => selector !== 'button:disabled')
     expect(live.map(weight)).toEqual([[0, 1], [0, 1], [0, 1]])
-    const mine = rules(base).filter((item) => /secondary|button/.test(item.selector) && paints(item.body)).map((item) => item.selector)
+    const mine = rules(base).filter((item) => /link|segment|primary|secondary|danger|button/.test(item.selector) && paints(item.body)).map((item) => item.selector)
     expect(mine).toEqual([
+      '.ck-auth-link', '.ck-auth-link:hover', '.ck-auth-link:active',
+      '.ck-auth-segments', '.ck-auth-segment', '.ck-auth-segment:hover', '.ck-auth-segment:active',
+      '.ck-auth-segment[aria-pressed="true"]', '.ck-auth-segment[aria-pressed="true"]:hover', '.ck-auth-segment[aria-pressed="true"]:active',
+      '.ck-auth-primary', '.ck-auth-primary:hover', '.ck-auth-primary:active',
       '.ck-auth-secondary', '.ck-auth-secondary:hover', '.ck-auth-secondary:active',
+      '.ck-auth-danger', '.ck-auth-danger:hover', '.ck-auth-danger:active',
       '.ck-auth button[aria-disabled="true"]', '.ck-auth button[aria-disabled="true"]:hover', '.ck-auth button[aria-disabled="true"]:active',
     ])
     for (const selector of mine) for (const other of live) expect(heavier(selector, other), `${selector} > ${other}`).toBe(true)
   })
 
-  it('leaves the fill of the main button to the shell: brand red, white text, no colour of its own', () => {
-    expect(rule('button', app)).toContain('background: var(--ck-brand); color: var(--ck-on-brand);')
-    for (const selector of ['button:where(:hover:not(:disabled))', 'button:where(:active:not(:disabled))']) expect(declares(rule(selector, app), 'color'), selector).toBe(false)
-    const submit = rule('.ck-login .ck-auth-actions button')
-    expect(paints(submit)).toBe(false)
-    expect(submit).toContain('width: 100%;')
-    expect(Number(submit.match(/min-height: (\d+)px/)?.[1])).toBeGreaterThanOrEqual(44)
-    expect(Number(rule('.ck-auth-field input', base).match(/min-height: (\d+)px/)?.[1])).toBeGreaterThanOrEqual(44)
+  it('fills the main action with the primary tokens: red under white in the light theme, gold under dark in the dark one', () => {
+    const primary = rule('.ck-auth-primary')
+    expect(primary).toContain('background: var(--ck-primary); color: var(--ck-on-primary);')
+    expect(primary).toContain('width: 100%;')
+    for (const state of [':hover', ':active']) expect(rule(`.ck-auth-primary${state}`)).toBe('background: var(--ck-primary-hover); color: var(--ck-on-primary);')
+    expect(Number(primary.match(/min-height: (\d+)px/)?.[1])).toBeGreaterThanOrEqual(56)
+    expect(Number(rule('.ck-auth-field input', base).match(/min-height: (\d+)px/)?.[1])).toBeGreaterThanOrEqual(48)
+    // Every size of the text comes from the scale of the theme.
+    for (const size of auth.match(/font-size: [^;]+/g) ?? []) expect(size).toMatch(/var\(--ck-text-/)
   })
 
   it('draws the focus ring from the theme token, heavier than the ring of the shell', () => {
@@ -134,9 +147,10 @@ describe('auth stylesheet guards (text of the rules, not rendering)', () => {
     expect(auth).not.toMatch(/url\(/)
   })
 
-  it('stacks the logo over the form in one column, the logo within a third of the screen height', () => {
+  it('stacks the logo over the card of the form in one column, the logo an icon of at most 152 px', () => {
     expect(rule('.ck-login-layout', base)).toContain('grid-template-columns: minmax(0, 1fr);')
-    expect(rule('.ck-login-board', base)).toMatch(/width: min\(100%, 33vh\); width: min\(100%, 33svh\); aspect-ratio: 1;/)
+    expect(rule('.ck-login-board', base)).toMatch(/width: min\(100%, 152px, 22vh\); width: min\(100%, 152px, 22svh\); aspect-ratio: 1;/)
+    expect(rule('.ck-login-panel', base)).toContain('background: var(--ck-surface); box-shadow: var(--ck-card-shadow);')
     // Nothing may push the page sideways on a phone.
     expect(rule('.ck-login-panel')).toContain('width: 100%; max-width: 420px; min-width: 0;')
     expect(rule('.ck-login', base)).toContain('overflow-wrap: anywhere;')
@@ -145,12 +159,12 @@ describe('auth stylesheet guards (text of the rules, not rendering)', () => {
 
   it('switches to two columns from 720 px: the logo on the left, the form on the right', () => {
     const wide = media('(min-width: 720px)')
-    expect(rule('.ck-login-layout', wide)).toMatch(/grid-template-columns: minmax\(0, 1\.2fr\) minmax\(280px, 1fr\);/)
-    expect([...auth.matchAll(/@media \(([^)]*)\)/g)].map((match) => match[1])).toEqual(['max-width: 540px', 'min-width: 720px', 'forced-colors: active'])
+    expect(rule('.ck-login-layout', wide)).toMatch(/grid-template-columns: minmax\(0, 1\.2fr\) minmax\(320px, 1fr\);/)
+    expect([...auth.matchAll(/@media \(([^)]*)\)/g)].map((match) => match[1])).toEqual(['min-width: 720px', 'forced-colors: active'])
   })
 
-  it('draws the form of the sign-in without the card of /account', () => {
-    expect(rule('.ck-login .ck-auth-panel')).toBe('gap: 16px; padding: 0; background: none; border: 0; border-radius: 0;')
+  it('draws the form of the sign-in inside its card, without a card of its own', () => {
+    expect(rule('.ck-login .ck-auth-panel')).toBe('gap: 16px; padding: 0; background: none; border-radius: 0; box-shadow: none;')
     // Heavier than the narrow-screen padding of the card, which stands later in the file.
     expect(heavier('.ck-login .ck-auth-panel', '.ck-auth-panel')).toBe(true)
   })

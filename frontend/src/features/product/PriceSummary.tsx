@@ -19,7 +19,7 @@ export default function PriceSummary({ state, retry, reset }: {
       {state.kind === 'ok' && state.data.group_by === 'store' && (state.data.groups.length === 0
         ? <RequestState kind="empty" message="Нет наблюдений для сводки по выбранным фильтрам" />
         : <ul className="product-summary-list">{state.data.groups.map((group) => (
-          <li className="product-summary-group" key={`${group.store.id}:${group.currency}:${group.unit}`}>
+          <li className="product-summary-group" key={`${group.store?.id ?? 'none'}:${group.currency}:${group.unit}`}>
             <h3>{storeLabel(group.store)}</h3>
             <p className="product-summary-unit">{group.currency} / {formatUnit(group.unit)}</p>
             <dl className="product-facts">

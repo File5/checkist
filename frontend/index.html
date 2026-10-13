@@ -5,17 +5,38 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#141110" />
     <script>
-      // Before the first paint: the dark theme is the default, a saved "light" switches it (see src/theme/theme.ts).
-      try {
-        if (localStorage.getItem('checkist.theme') === 'light') {
-          document.documentElement.setAttribute('data-theme', 'light')
-          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#f6efdc')
-        }
-      } catch (error) {}
+      // Before the first paint (see src/theme/theme.ts): a saved choice wins; without one the theme of the system.
+      // The dark theme is the default of the stylesheet; only the light one needs the attribute.
+      ;(function () {
+        var saved = null
+        try {
+          saved = localStorage.getItem('checkist.theme')
+        } catch (error) {}
+        try {
+          if (saved === 'light' || (saved !== 'dark' && window.matchMedia('(prefers-color-scheme: light)').matches)) {
+            document.documentElement.setAttribute('data-theme', 'light')
+            document.querySelector('meta[name="theme-color"]').setAttribute('content', '#f6efdc')
+          }
+        } catch (error) {}
+      })()
     </script>
-    <meta name="description" content="Чекист — учёт покупок по фото чеков: распознавание, каталог товаров, цены в магазинах и статистика трат." />
+    <meta name="description" content="Чекист — семейный бюджет по фото чеков и тратам словами: распознавание, лимиты по категориям, цены в магазинах и статистика трат." />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <!-- Installable app: «На экран Домой» on iPhone, «Установить приложение» on Android. The service worker
+         (public/sw.js, registered in src/offline/service-worker.ts) opens the app without network; navigations go to
+         the network first, so a deploy is shown on the next online open. -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Чекист" />
+    <!-- "default": the page starts below the status bar; the header has no top safe-area padding. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <!-- Manrope (OFL 1.1) from Google Fonts: no Content-Security-Policy forbids it (deploy/Caddyfile, deploy/docker/Caddyfile);
+         display=swap shows system-ui until the font arrives. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400..800&amp;display=swap" />
     <title>Чекист</title>
   </head>
   <body>

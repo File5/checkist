@@ -36,7 +36,9 @@ describe('touch stylesheet guards (text of the rules, not rendering)', () => {
     expect(value(body(base, '.ck-line-steps button'), 'min-height')).toBe('44px')
     // No rule makes a button smaller or hides the panel again on a narrow screen.
     const narrow = media(charts, 'max-width: 540px')
-    expect(narrow.filter((item) => item.selector.includes('ck-line-steps')).map((item) => item.selector)).toEqual(['.ck-line-steps', '.ck-line-steps button:last-child'])
+    // Three short words share one row of a phone.
+    expect(narrow.filter((item) => item.selector.includes('ck-line-steps')).map((item) => item.selector)).toEqual(['.ck-line-steps'])
+    expect(value(body(narrow, '.ck-line-steps'), 'grid-template-columns')).toBe('repeat(3, minmax(0, 1fr))')
     for (const item of rules(charts).filter((entry) => entry.selector.includes('ck-line-steps'))) {
       expect(item.body, item.selector).not.toMatch(/(^|[;\s])(height|max-height|font-size|white-space)\s*:/)
     }
@@ -50,11 +52,15 @@ describe('touch stylesheet guards (text of the rules, not rendering)', () => {
   })
   it('makes the links of the pie legend 44px under a finger, over a screen’s own link rule', () => {
     const coarse = media(charts, 'pointer: coarse')
-    const link = body(coarse, '.ck-chart .ck-pie-legend tbody a')
-    expect(value(link, 'min-height')).toBe('44px')
-    expect(value(link, 'display')).toBe('inline-flex')
+    // The name keeps its line beside the sum; the target grows around it: 11 px above and below a 22 px line.
+    expect(value(body(coarse, '.ck-chart .ck-pie-legend tbody a'), 'position')).toBe('relative')
+    const target = body(coarse, '.ck-chart .ck-pie-legend tbody a:not(.ck-pie-action)::before')
+    expect(value(target, 'position')).toBe('absolute')
+    expect(value(target, 'inset')).toBe('-11px -8px')
+    // The toggle link keeps its own 44 px box and its triangle.
+    expect(body(base, '.ck-chart .ck-pie-legend a.ck-pie-action')).toContain('min-height: 44px')
     // The screen rule it has to outweigh has two classes and an element; this one has an element more.
-    expect(body(rules(spending), '.spending-currency .ck-pie-legend a')).toContain('padding-block: 6px')
+    expect(body(rules(spending), '.spending-currency .ck-pie-legend a')).toContain('display: inline-block')
     // Only under a finger: the mouse keeps the compact legend.
     expect(body(base, '.ck-chart .ck-pie-legend tbody a')).toBe('')
   })

@@ -1,10 +1,13 @@
-import { amount, array, bool, choice, isId, isISODate, isISODateTime, nonNegativeInteger, nullable, object, price, quantity, text, unit } from './schema.ts'
+import { amount, array, bool, choice, currency, isId, isISODate, isISODateTime, nonNegativeInteger, nullable, object, price, quantity, text, unit } from './schema.ts'
+import { safeDownloadUrl } from '../lib/media.ts'
 import type { Check, Guard } from './schema.ts'
 import { lineKind, mediaPath, receiptOperation, taxKind } from './receipts-schema.ts'
+import type { ManualParse, ManualParseDraft, ManualParseLine } from './receipts-types.ts'
+import { isPaymentMethod } from '../lib/payment-methods.ts'
 import { executorStates, issueSeverities, jobStatuses } from './recognition-types.ts'
 import type {
   Bbox, Executor, IssueContext, Job, JobActions, JobDetail, JobItem, JobProgress, NormalizedDiscount, NormalizedLine,
-  NormalizedResult, NormalizedTax, NormalizedTaxRate, Photo, PhotoUpload, ProposedReceipt, QuadPoint,
+  NormalizedResult, NormalizedTax, NormalizedTaxRate, Photo, PhotoDocument, PhotoUpload, ProposedReceipt, QuadPoint,
   ReceiptImage, ReceiptImageDetail, RecognitionCsrf, RecognitionError, RecognitionIssue, RecognitionLimits, ReviewConfirmInput, ReviewConfirmResult,
   ReviewDiscountInput, ReviewLineInput, ReviewReceiptInput, ReviewTaxInput,
 } from './recognition-types.ts'
@@ -12,6 +15,7 @@ import type {
 export const jobStages = ['waiting', 'prepare', 'detect', 'crop', 'recognize', 'validate', 'import', 'finished'] as const
 export const imageStatuses = ['pending', 'running', 'imported', 'reused', 'updated', 'needs_review', 'failed', 'cancelled'] as const
 const format = choice('image/jpeg', 'image/png', 'image/webp')
+const uploadFormat = choice('image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'application/pdf')
 const count = (max: number): Check => (value) => nonNegativeInteger(value) && (value as number) <= max
 const position: Check = (value) => isId(value) && value <= 10
 const finiteRange = (min: number, max: number): Check => (value) => typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max
@@ -29,9 +33,13 @@ export const isExecutor: Guard<Executor> = (value): value is Executor => {
   return true
 }
 export const isRecognitionLimits = object<RecognitionLimits>({
-  formats: (value) => Array.isArray(value) && value.length > 0 && value.length <= 3 && value.every(format),
-  max_bytes: isId, max_pixels: isId, max_receipts: position,
+  formats: (value) => Array.isArray(value) && value.length > 0 && value.length <= 6 && value.every(uploadFormat),
+  max_bytes: isId, max_pixels: isId, max_receipts: position, max_pdf_pages: isId,
 })
+/** `?download=1` after a MEDIA path: the only form of `download_url`. */
+const downloadPath: Check = (value) => safeDownloadUrl(value) !== null
+const mediaVariants = { display_url: nullable(mediaPath), thumb_url: nullable(mediaPath), download_url: nullable(downloadPath) }
+const photoDocument = object<PhotoDocument>({ content_type: choice('application/pdf'), bytes: isId, pages: isId })
 export const isRecognitionCsrf = object<RecognitionCsrf>({
   // The fixture has a marker instead of Django's random token. Never render this value.
   csrf_token: (value) => typeof value === 'string' && /^[A-Za-z0-9_]{1,128}$/.test(value),
@@ -41,6 +49,7 @@ export const isPhoto = object<Photo>({
   id: isId, created_at: isISODateTime, content_type: format, bytes: isId,
   raw_width: isId, raw_height: isId, width: isId, height: isId,
   original_url: nullable(mediaPath), preview_url: nullable(mediaPath), latest_job_id: nullable(isId), receipt_images_count: nonNegativeInteger,
+  ...mediaVariants, document: nullable(photoDocument),
 })
 export const isJobProgress = object<JobProgress>({
   detected: nullable(count(10)), current_position: nullable(position), completed: count(10), imported: count(10),
@@ -66,10 +75,11 @@ export const isRecognitionIssue: Guard<RecognitionIssue> = (value): value is Rec
   && (!['reason', 'severity', 'context'].some((key) => Object.hasOwn(value, key)) || issueDetails(value))
 export const isJobItem = object<JobItem>({ image_id: isId, position, status: choice(...imageStatuses), receipt_id: nullable(isId) })
 export const isJob = object<Job>({
-  id: isId, photo_id: isId, retry_of: nullable(isId), status: choice(...jobStatuses), stage: choice(...jobStages), version: isId,
+  id: isId, photo_id: isId, retry_of: nullable(isId), owner: (value: unknown) => typeof value === 'string' && value.length > 0, status: choice(...jobStatuses), stage: choice(...jobStages), version: isId,
   created_at: isISODateTime, started_at: nullable(isISODateTime), finished_at: nullable(isISODateTime),
   cancel_requested_at: nullable(isISODateTime), heartbeat_at: nullable(isISODateTime), stalled: bool, executor: isExecutor,
   progress: isJobProgress, review_required: bool, error: nullable(isRecognitionError), actions: isJobActions, items_count: count(10),
+  display_url: nullable(mediaPath), thumb_url: nullable(mediaPath),
 })
 export const isJobDetail: Guard<JobDetail> = (value): value is JobDetail => isJob(value)
   && object<{ items: JobItem[] }>({ items: boundedArray(isJobItem, 10) })(value)
@@ -101,7 +111,7 @@ const imageShape = object<ReceiptImage>({
   id: isId, photo_id: isId, job_id: isId, position, created_at: isISODateTime, status: choice(...imageStatuses),
   receipt_id: nullable(isId), receipt_deleted: bool, image_url: nullable(mediaPath), width: isId, height: isId,
   bbox: nullable(isBbox), clipped: bool, issues: boundedArray(isRecognitionIssue, 1000), normalized_result: nullable(isNormalizedResult),
-  confirmed_at: nullable(isISODateTime),
+  confirmed_at: nullable(isISODateTime), ...mediaVariants,
 })
 export const isReceiptImage: Guard<ReceiptImage> = (value): value is ReceiptImage => imageShape(value)
   && (value.status === 'needs_review' || value.normalized_result === null)
@@ -139,3 +149,31 @@ const bodyShape = exact<ReviewConfirmInput>({
 })
 /** Formats and the closed key set only; uniqueness, references and import rules belong to the server. */
 export const isReviewConfirmInput: Guard<ReviewConfirmInput> = (value): value is ReviewConfirmInput => bodyShape(value) && value.lines.length > 0
+
+/** Amounts of a parse draft as the manual save takes them: «4500», «230.5», «680.50». */
+const draftMoney = (value: unknown) => typeof value === 'string' && /^[0-9]{1,12}(?:\.[0-9]{1,2})?$/.test(value)
+const draftQuantity = (value: unknown) => typeof value === 'string' && /^[0-9]{1,9}(?:\.[0-9]{1,3})?$/.test(value)
+const isParseLineShape = object<Omit<ManualParseLine, 'unit' | 'unit_price' | 'discount_amount'>>({
+  name: text, amount: draftMoney, quantity: nullable(draftQuantity), category: nullable(isId) })
+/** A line of the draft — the kind of a line of the form (2026-10-13); unit, price and discount are missing from an older server. */
+const draftPrice = (value: unknown) => typeof value === 'string' && /^[0-9]{1,10}(?:\.[0-9]{1,4})?$/.test(value)
+const isParseLine = (value: unknown): value is ManualParseLine => isParseLineShape(value)
+  && [['unit', unit], ['unit_price', draftPrice], ['discount_amount', draftMoney]].every(([key, check]) =>
+    !Object.hasOwn(value as object, key as string) || (check as (field: unknown) => boolean)((value as Record<string, unknown>)[key as string]))
+const parseDraftShape = object<Omit<ManualParseDraft, 'kind' | 'payment_method' | 'item_name'>>({
+  total: nullable(draftMoney), currency, category: nullable(isId), purchased_on: isISODate,
+  store_name: nullable(text), note: text, lines: array(isParseLine),
+})
+/** `kind` comes only with an income («зарплата 650 000»); a spend draft is the body of the manual save as it is. */
+const isParseDraft: Guard<ManualParseDraft> = (value): value is ManualParseDraft => parseDraftShape(value)
+  && (!Object.hasOwn(value, 'kind') || choice('spend', 'income')((value as Record<string, unknown>).kind))
+  && (!Object.hasOwn(value, 'payment_method') || isPaymentMethod((value as Record<string, unknown>).payment_method))
+  && nullable(text)((value as Record<string, unknown>).item_name ?? null)
+const isParseError = object<{ code: string; message: string }>({ code: text, message: text })
+const manualParseShape = object<ManualParse>({
+  id: isId, status: choice('queued', 'running', 'succeeded', 'failed'), draft: nullable(isParseDraft),
+  error: nullable(isParseError), created_at: isISODateTime, finished_at: nullable(isISODateTime), executor: isExecutor,
+})
+/** A draft comes only with `succeeded`, an error only with `failed`. */
+export const isManualParse: Guard<ManualParse> = (value): value is ManualParse => manualParseShape(value)
+  && (value.draft !== null) === (value.status === 'succeeded') && (value.error !== null) === (value.status === 'failed')

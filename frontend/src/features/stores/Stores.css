@@ -1,0 +1,41 @@
+/* «Магазины» (`/stores`) in the language of the artifact: the cards and rows are the bricks of tokens.css (.ck-panel,
+   .ck-list, .ck-row); this file holds what only this screen has. Colours are tokens only, sizes from the text scale. */
+.stores-page { display: flex; flex-direction: column; gap: 16px; min-width: 0; max-width: 720px; }
+.stores-intro, .stores-note { margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-sm); }
+.stores-notice { margin: 0; padding: 12px 16px; border-radius: var(--ck-radius-sm); background: var(--ck-success-bg); color: var(--ck-success-text); font-size: var(--ck-text-sm); font-weight: 600; }
+.stores-failure { margin: 0; padding: 12px 16px; border: 1px solid var(--ck-error-border); border-radius: var(--ck-radius-sm); background: var(--ck-error-bg); color: var(--ck-error-text); font-size: var(--ck-text-sm); }
+.stores-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.stores-total { color: var(--ck-text-muted); font-size: var(--ck-text-sm); font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* «Похоже на одного получателя»: the names on the gold tint of the card, the two actions under them. */
+.stores-suggestions { background: var(--ck-accent-bg); box-shadow: none; }
+.stores-suggestions .ck-panel-head > h2 { color: var(--ck-accent-text); }
+.stores-suggestion { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding-block: 12px; }
+.stores-suggestions .ck-list > li + li { border-top-color: var(--ck-border); }
+.stores-names { overflow-wrap: anywhere; font-size: var(--ck-text-sm); font-weight: 800; }
+.stores-suggestion-actions { display: flex; gap: 8px; }
+.stores-suggestion-actions > button { min-width: 140px; }
+
+.stores-search input { width: 100%; min-height: 48px; padding: 0 14px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-bg); color: var(--ck-text); font-size: var(--ck-text-base); }
+.stores-search input::placeholder { color: var(--ck-text-muted); }
+.stores-row { min-height: 56px; padding-block: 8px; }
+label.stores-row { cursor: pointer; }
+.stores-row input, .stores-choice input { flex: none; width: 22px; height: 22px; margin: 0; accent-color: var(--ck-brand); }
+.stores-row .ck-row-meta { white-space: normal; }
+
+.stores-actions { display: flex; min-width: 0; }
+.stores-actions > button { flex: 1; min-height: 56px; font-size: var(--ck-text-base); }
+
+/* The sheet: one store to keep, chosen among the merged ones; the main action under the note. */
+.stores-ask { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.stores-ask fieldset { display: flex; flex-direction: column; margin: 0; padding: 0; border: 0; }
+.stores-ask legend { margin-bottom: 8px; padding: 0; font-weight: 800; }
+.stores-choice { display: flex; align-items: center; gap: 12px; min-height: 56px; padding-block: 8px; border-top: 1px solid var(--ck-divider); cursor: pointer; }
+.stores-ask-actions { display: flex; flex-direction: column; gap: 8px; }
+.stores-ask-actions > button { width: 100%; min-height: 52px; }
+
+@media (max-width: 540px) {
+  .stores-page { max-width: none; }
+  .stores-suggestion-actions > button { flex: 1 1 0; min-width: 0; }
+  .stores-actions { margin-inline: calc(50% - 50vw); padding-inline: 16px; }
+}

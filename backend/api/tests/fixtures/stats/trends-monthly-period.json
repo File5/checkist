@@ -1,0 +1,743 @@
+{
+  "months": 5,
+  "month_from": "2025-11",
+  "month_to": "2026-03",
+  "currencies": [
+    {
+      "currency": "EUR",
+      "total": "885.67",
+      "average": "177.13",
+      "categories": [
+        {
+          "id": 6,
+          "name": "Не разобрано",
+          "unassigned": true,
+          "total": "376.33"
+        },
+        {
+          "id": 1,
+          "name": "Продукты питания",
+          "unassigned": false,
+          "total": "365.00"
+        },
+        {
+          "id": 5,
+          "name": "Бытовая химия",
+          "unassigned": false,
+          "total": "111.89"
+        }
+      ],
+      "months": [
+        {
+          "month": "2025-11",
+          "total": "185.64",
+          "categories": [
+            {
+              "id": 6,
+              "amount": "75.45"
+            },
+            {
+              "id": 1,
+              "amount": "74.91"
+            },
+            {
+              "id": 5,
+              "amount": "27.04"
+            }
+          ],
+          "uncategorized": "8.24"
+        },
+        {
+          "month": "2025-12",
+          "total": "161.05",
+          "categories": [
+            {
+              "id": 6,
+              "amount": "63.07"
+            },
+            {
+              "id": 1,
+              "amount": "69.94"
+            },
+            {
+              "id": 5,
+              "amount": "26.43"
+            }
+          ],
+          "uncategorized": "1.61"
+        },
+        {
+          "month": "2026-01",
+          "total": "180.49",
+          "categories": [
+            {
+              "id": 6,
+              "amount": "76.17"
+            },
+            {
+              "id": 1,
+              "amount": "75.18"
+            },
+            {
+              "id": 5,
+              "amount": "21.39"
+            }
+          ],
+          "uncategorized": "7.75"
+        },
+        {
+          "month": "2026-02",
+          "total": "179.17",
+          "categories": [
+            {
+              "id": 6,
+              "amount": "91.60"
+            },
+            {
+              "id": 1,
+              "amount": "67.26"
+            },
+            {
+              "id": 5,
+              "amount": "15.20"
+            }
+          ],
+          "uncategorized": "5.11"
+        },
+        {
+          "month": "2026-03",
+          "total": "179.32",
+          "categories": [
+            {
+              "id": 6,
+              "amount": "70.04"
+            },
+            {
+              "id": 1,
+              "amount": "77.71"
+            },
+            {
+              "id": 5,
+              "amount": "21.83"
+            }
+          ],
+          "uncategorized": "9.74"
+        }
+      ],
+      "summary": {
+        "month": "2026-03",
+        "spent": "179.32",
+        "previous_month": "2026-02",
+        "previous": "179.17",
+        "change_percent": "0.08",
+        "average_change_percent": "1.23"
+      },
+      "rows": [
+        {
+          "id": 6,
+          "name": "Не разобрано",
+          "parent_id": null,
+          "depth": 0,
+          "direct": false,
+          "total": "376.33",
+          "amounts": [
+            "75.45",
+            "63.07",
+            "76.17",
+            "91.60",
+            "70.04"
+          ],
+          "change_percent": "-23.54",
+          "average": "75.27",
+          "change_percents": [
+            null,
+            "-16.41",
+            "20.77",
+            "20.26",
+            "-23.54"
+          ]
+        },
+        {
+          "id": 1,
+          "name": "Продукты питания",
+          "parent_id": null,
+          "depth": 0,
+          "direct": false,
+          "total": "365.00",
+          "amounts": [
+            "74.91",
+            "69.94",
+            "75.18",
+            "67.26",
+            "77.71"
+          ],
+          "change_percent": "15.54",
+          "average": "73.00",
+          "change_percents": [
+            null,
+            "-6.63",
+            "7.49",
+            "-10.53",
+            "15.54"
+          ]
+        },
+        {
+          "id": 2,
+          "name": "Молочные продукты",
+          "parent_id": 1,
+          "depth": 1,
+          "direct": false,
+          "total": "155.12",
+          "amounts": [
+            "39.21",
+            "20.51",
+            "33.66",
+            "25.25",
+            "36.49"
+          ],
+          "change_percent": "44.51",
+          "average": "31.02",
+          "change_percents": [
+            null,
+            "-47.69",
+            "64.12",
+            "-24.99",
+            "44.51"
+          ]
+        },
+        {
+          "id": 4,
+          "name": "Овощи и фрукты",
+          "parent_id": 1,
+          "depth": 1,
+          "direct": false,
+          "total": "82.34",
+          "amounts": [
+            "14.82",
+            "13.05",
+            "15.43",
+            "20.66",
+            "18.38"
+          ],
+          "change_percent": "-11.04",
+          "average": "16.47",
+          "change_percents": [
+            null,
+            "-11.94",
+            "18.24",
+            "33.90",
+            "-11.04"
+          ]
+        },
+        {
+          "id": 3,
+          "name": "Хлеб",
+          "parent_id": 1,
+          "depth": 1,
+          "direct": false,
+          "total": "34.80",
+          "amounts": [
+            "3.40",
+            "6.49",
+            "7.00",
+            "12.61",
+            "5.30"
+          ],
+          "change_percent": "-57.97",
+          "average": "6.96",
+          "change_percents": [
+            null,
+            "90.88",
+            "7.86",
+            "80.14",
+            "-57.97"
+          ]
+        },
+        {
+          "id": 5,
+          "name": "Бытовая химия",
+          "parent_id": null,
+          "depth": 0,
+          "direct": false,
+          "total": "111.89",
+          "amounts": [
+            "27.04",
+            "26.43",
+            "21.39",
+            "15.20",
+            "21.83"
+          ],
+          "change_percent": "43.62",
+          "average": "22.38",
+          "change_percents": [
+            null,
+            "-2.26",
+            "-19.07",
+            "-28.94",
+            "43.62"
+          ]
+        }
+      ]
+    },
+    {
+      "currency": "KZT",
+      "total": "34402.38",
+      "average": "6880.48",
+      "categories": [
+        {
+          "id": 1,
+          "name": "Продукты питания",
+          "unassigned": false,
+          "total": "22734.38"
+        },
+        {
+          "id": 6,
+          "name": "Не разобрано",
+          "unassigned": true,
+          "total": "11160.00"
+        }
+      ],
+      "months": [
+        {
+          "month": "2025-11",
+          "total": "7371.00",
+          "categories": [
+            {
+              "id": 1,
+              "amount": "5873.00"
+            },
+            {
+              "id": 6,
+              "amount": "1498.00"
+            }
+          ],
+          "uncategorized": "0.00"
+        },
+        {
+          "month": "2025-12",
+          "total": "5240.08",
+          "categories": [
+            {
+              "id": 1,
+              "amount": "2549.08"
+            },
+            {
+              "id": 6,
+              "amount": "2691.00"
+            }
+          ],
+          "uncategorized": "0.00"
+        },
+        {
+          "month": "2026-01",
+          "total": "5647.80",
+          "categories": [
+            {
+              "id": 1,
+              "amount": "2451.80"
+            },
+            {
+              "id": 6,
+              "amount": "2538.00"
+            }
+          ],
+          "uncategorized": "658.00"
+        },
+        {
+          "month": "2026-02",
+          "total": "7611.00",
+          "categories": [
+            {
+              "id": 1,
+              "amount": "4902.00"
+            },
+            {
+              "id": 6,
+              "amount": "2859.00"
+            }
+          ],
+          "uncategorized": "-150.00"
+        },
+        {
+          "month": "2026-03",
+          "total": "8532.50",
+          "categories": [
+            {
+              "id": 1,
+              "amount": "6958.50"
+            },
+            {
+              "id": 6,
+              "amount": "1574.00"
+            }
+          ],
+          "uncategorized": "0.00"
+        }
+      ],
+      "summary": {
+        "month": "2026-03",
+        "spent": "8532.50",
+        "previous_month": "2026-02",
+        "previous": "7611.00",
+        "change_percent": "12.11",
+        "average_change_percent": "24.01"
+      },
+      "rows": [
+        {
+          "id": 1,
+          "name": "Продукты питания",
+          "parent_id": null,
+          "depth": 0,
+          "direct": false,
+          "total": "22734.38",
+          "amounts": [
+            "5873.00",
+            "2549.08",
+            "2451.80",
+            "4902.00",
+            "6958.50"
+          ],
+          "change_percent": "41.95",
+          "average": "4546.88",
+          "change_percents": [
+            null,
+            "-56.60",
+            "-3.82",
+            "99.93",
+            "41.95"
+          ]
+        },
+        {
+          "id": 2,
+          "name": "Молочные продукты",
+          "parent_id": 1,
+          "depth": 1,
+          "direct": false,
+          "total": "7038.00",
+          "amounts": [
+            "1861.00",
+            "1222.00",
+            "1338.00",
+            "669.00",
+            "1948.00"
+          ],
+          "change_percent": "191.18",
+          "average": "1407.60",
+          "change_percents": [
+            null,
+            "-34.34",
+            "9.49",
+            "-50.00",
+            "191.18"
+          ]
+        },
+        {
+          "id": 4,
+          "name": "Овощи и фрукты",
+          "parent_id": 1,
+          "depth": 1,
+          "direct": false,
+          "total": "2591.38",
+          "amounts": [
+            "0.00",
+            "905.08",
+            "877.80",
+            "0.00",
+            "808.50"
+          ],
+          "change_percent": null,
+          "average": "518.28",
+          "change_percents": [
+            null,
+            null,
+            "-3.01",
+            "-100.00",
+            null
+          ]
+        },
+        {
+          "id": 3,
+          "name": "Хлеб",
+          "parent_id": 1,
+          "depth": 1,
+          "direct": false,
+          "total": "708.00",
+          "amounts": [
+            "0.00",
+            "0.00",
+            "236.00",
+            "472.00",
+            "0.00"
+          ],
+          "change_percent": "-100.00",
+          "average": "141.60",
+          "change_percents": [
+            null,
+            null,
+            null,
+            "100.00",
+            "-100.00"
+          ]
+        },
+        {
+          "id": 6,
+          "name": "Не разобрано",
+          "parent_id": null,
+          "depth": 0,
+          "direct": false,
+          "total": "11160.00",
+          "amounts": [
+            "1498.00",
+            "2691.00",
+            "2538.00",
+            "2859.00",
+            "1574.00"
+          ],
+          "change_percent": "-44.95",
+          "average": "2232.00",
+          "change_percents": [
+            null,
+            "79.64",
+            "-5.69",
+            "12.65",
+            "-44.95"
+          ]
+        }
+      ]
+    }
+  ],
+  "base_currency": "KZT",
+  "base": {
+    "currency": "KZT",
+    "total": "34402.38",
+    "average": "6880.48",
+    "categories": [
+      {
+        "id": 1,
+        "name": "Продукты питания",
+        "unassigned": false,
+        "total": "22734.38"
+      },
+      {
+        "id": 6,
+        "name": "Не разобрано",
+        "unassigned": true,
+        "total": "11160.00"
+      }
+    ],
+    "months": [
+      {
+        "month": "2025-11",
+        "total": "7371.00",
+        "categories": [
+          {
+            "id": 1,
+            "amount": "5873.00"
+          },
+          {
+            "id": 6,
+            "amount": "1498.00"
+          }
+        ],
+        "uncategorized": "0.00"
+      },
+      {
+        "month": "2025-12",
+        "total": "5240.08",
+        "categories": [
+          {
+            "id": 1,
+            "amount": "2549.08"
+          },
+          {
+            "id": 6,
+            "amount": "2691.00"
+          }
+        ],
+        "uncategorized": "0.00"
+      },
+      {
+        "month": "2026-01",
+        "total": "5647.80",
+        "categories": [
+          {
+            "id": 1,
+            "amount": "2451.80"
+          },
+          {
+            "id": 6,
+            "amount": "2538.00"
+          }
+        ],
+        "uncategorized": "658.00"
+      },
+      {
+        "month": "2026-02",
+        "total": "7611.00",
+        "categories": [
+          {
+            "id": 1,
+            "amount": "4902.00"
+          },
+          {
+            "id": 6,
+            "amount": "2859.00"
+          }
+        ],
+        "uncategorized": "-150.00"
+      },
+      {
+        "month": "2026-03",
+        "total": "8532.50",
+        "categories": [
+          {
+            "id": 1,
+            "amount": "6958.50"
+          },
+          {
+            "id": 6,
+            "amount": "1574.00"
+          }
+        ],
+        "uncategorized": "0.00"
+      }
+    ],
+    "summary": {
+      "month": "2026-03",
+      "spent": "8532.50",
+      "previous_month": "2026-02",
+      "previous": "7611.00",
+      "change_percent": "12.11",
+      "average_change_percent": "24.01"
+    },
+    "rows": [
+      {
+        "id": 1,
+        "name": "Продукты питания",
+        "parent_id": null,
+        "depth": 0,
+        "direct": false,
+        "total": "22734.38",
+        "amounts": [
+          "5873.00",
+          "2549.08",
+          "2451.80",
+          "4902.00",
+          "6958.50"
+        ],
+        "change_percent": "41.95",
+        "average": "4546.88",
+        "change_percents": [
+          null,
+          "-56.60",
+          "-3.82",
+          "99.93",
+          "41.95"
+        ]
+      },
+      {
+        "id": 2,
+        "name": "Молочные продукты",
+        "parent_id": 1,
+        "depth": 1,
+        "direct": false,
+        "total": "7038.00",
+        "amounts": [
+          "1861.00",
+          "1222.00",
+          "1338.00",
+          "669.00",
+          "1948.00"
+        ],
+        "change_percent": "191.18",
+        "average": "1407.60",
+        "change_percents": [
+          null,
+          "-34.34",
+          "9.49",
+          "-50.00",
+          "191.18"
+        ]
+      },
+      {
+        "id": 4,
+        "name": "Овощи и фрукты",
+        "parent_id": 1,
+        "depth": 1,
+        "direct": false,
+        "total": "2591.38",
+        "amounts": [
+          "0.00",
+          "905.08",
+          "877.80",
+          "0.00",
+          "808.50"
+        ],
+        "change_percent": null,
+        "average": "518.28",
+        "change_percents": [
+          null,
+          null,
+          "-3.01",
+          "-100.00",
+          null
+        ]
+      },
+      {
+        "id": 3,
+        "name": "Хлеб",
+        "parent_id": 1,
+        "depth": 1,
+        "direct": false,
+        "total": "708.00",
+        "amounts": [
+          "0.00",
+          "0.00",
+          "236.00",
+          "472.00",
+          "0.00"
+        ],
+        "change_percent": "-100.00",
+        "average": "141.60",
+        "change_percents": [
+          null,
+          null,
+          null,
+          "100.00",
+          "-100.00"
+        ]
+      },
+      {
+        "id": 6,
+        "name": "Не разобрано",
+        "parent_id": null,
+        "depth": 0,
+        "direct": false,
+        "total": "11160.00",
+        "amounts": [
+          "1498.00",
+          "2691.00",
+          "2538.00",
+          "2859.00",
+          "1574.00"
+        ],
+        "change_percent": "-44.95",
+        "average": "2232.00",
+        "change_percents": [
+          null,
+          "79.64",
+          "-5.69",
+          "12.65",
+          "-44.95"
+        ]
+      }
+    ]
+  },
+  "excluded": [
+    {
+      "currency": "EUR",
+      "receipts_count": 21,
+      "total": "885.67"
+    }
+  ]
+}

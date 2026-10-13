@@ -29,7 +29,8 @@
       "comparable": true,
       "receipt_id": 21,
       "position": 2,
-      "own": true
+      "own": true,
+      "manual": false
     },
     {
       "observed_at": null,
@@ -51,7 +52,8 @@
       "comparable": true,
       "receipt_id": null,
       "position": null,
-      "own": false
+      "own": false,
+      "manual": false
     }
   ]
 }

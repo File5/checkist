@@ -162,6 +162,13 @@ def item(kind, pk, name, amount, share, lines, receipts, **fields):
     }
 
 
+def strip_base(body):
+    """Ответ без полей основной валюты семьи (их проверяют ``rates.tests``): прежняя часть сравнивается целиком."""
+    for key in ("base_currency", "base", "in_base", "excluded", "base_limits"):
+        body.pop(key, None)
+    return body
+
+
 def absorb(target, source):
     """Ожидающая группа слияния: ``source`` поглощён ``target``; строки не переносятся."""
     group = ProductMerge.objects.create(target_ref=target.pk, detector_version=1)
@@ -212,7 +219,7 @@ class SpendingAPITests(TestCase):
         response = self.client.get(URL)
         self.assertEqual(response.status_code, 200, response.content)
         self.assertEqual(response["Cache-Control"], "no-store")
-        self.assertEqual(response.json(), {
+        self.assertEqual(strip_base(response.json()), {
             "group_by": "category", "date_from": None, "date_to": None, "parent": None,
             "currencies": [
                 {
@@ -452,9 +459,11 @@ class SpendingAPITests(TestCase):
         absorb(data.milk, make_product(data.milk_generic, "Демо-молоко дубль"))
         filters = f"country=DE&currency=EUR&store={data.lidl.pk}&{MARCH}"
         cases = (
-            ("", 4), ("group_by=generic", 3), ("group_by=product", 3), ("group_by=store", 4),
-            (f"category={data.food.pk}", 4), (f"generic={data.milk_generic.pk}&group_by=product", 3),
-            (filters, 7), (f"group_by=store&category={data.food.pk}&{filters}", 8),
+            # Несколько валют: +1 запрос основной валюты профиля (порядок блоков); блок в основной валюте семьи —
+            # +2: её запрос и курсы (у демо есть EUR).
+            ("", 7), ("group_by=generic", 6), ("group_by=product", 6), ("group_by=store", 7),
+            (f"category={data.food.pk}", 6), (f"generic={data.milk_generic.pk}&group_by=product", 5),
+            (filters, 9), (f"group_by=store&category={data.food.pk}&{filters}", 10),
         )
 
         def measure():
@@ -476,7 +485,7 @@ class SpendingAPITests(TestCase):
             lines.add(None, "0.50", raw_name="UNBEKANNT")
         measure()
         self.assertEqual(len(self.eur("group_by=store&limit=50")["items"]), 26)
-        with self.assertNumQueries(1):  # категории нет — до чеков дело не доходит
+        with self.assertNumQueries(2):  # категории нет — до чеков дело не доходит; основная валюта семьи
             self.get("category=999999")
 
     # --- ошибки и доступ ---

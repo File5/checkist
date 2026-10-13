@@ -6,6 +6,7 @@ import type { SpendingQuery } from '../../navigation/routes'
 import { applyMe } from '../../session'
 import { resetSession } from '../../session/store'
 import {
+  filterCount,
   activePreset, applyFilters, breadcrumbs, failureView, filterDraft, filterMessages, formReducer, groupingHref, hasFilters,
   hasScopeFilters, initForm, itemHref, localToday, needsAddressReset, presetHref, presetPeriod, resetFiltersHref, resetHref,
   needsTail, otherHref, requestKey, sameDraft, serverFieldErrors, shownResult, spendingParams, spendingTailLimit, spendingTailParams, upHref,
@@ -273,7 +274,7 @@ describe('result block', () => {
     const denied: SpendingFailure = { kind: 'error', reason: 'permission_denied', status: 403 }
     const former = failureView(denied)
     const me = (mode: 'accounts' | 'local_single') =>
-      ({ mode, user: { id: 3, username: 'anna', is_staff: false }, permissions: { moderate_catalog: mode === 'local_single' }, csrf_token: 'token' })
+      ({ mode, user: { id: 3, username: 'anna', is_staff: false }, household: null, permissions: { moderate_catalog: mode === 'local_single' }, csrf_token: 'token' })
     try {
       applyMe(me('accounts'))
       expect(failureView(denied)).toEqual({ retry: false, message: 'Нет права модератора каталога.' })
@@ -295,5 +296,15 @@ describe('result block', () => {
     const texts = Object.values(statsErrorFixtures).map(({ reason, status }) => view(reason as SpendingFailure['reason'], status).message)
     // Nothing from the server's own messages.
     for (const text of texts) expect(text).not.toMatch(/Доступ запрещён|Некорректные параметры запроса|Ожидается/)
+  })
+})
+
+describe('the number beside the filters of a phone', () => {
+  it('counts the country, the currency and the stores; the period has its own button', () => {
+    expect(filterCount({})).toBe(0)
+    expect(filterCount({ date_from: '2026-10-02', date_to: '2026-10-31' })).toBe(0)
+    expect(filterCount({ country: 'KZ', currency: 'KZT', store: [1, 2] })).toBe(3)
+    // The drill-down and the breakdown are not filters of the form.
+    expect(filterCount({ category: 3, group_by: 'store', other: 'open' })).toBe(0)
   })
 })

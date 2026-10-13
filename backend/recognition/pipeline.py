@@ -32,6 +32,22 @@ def _issue(code):
     return {"code": code, "field": "/", "message": "Не удалось завершить обработку изображения."}
 
 
+def whole_document(prepared):
+    """whole_document(prepared) -> validated detection of one receipt covering the whole image.
+
+    A PDF upload is one bill or e-receipt: its rendered pages are one document, already upright,
+    with nothing else around it. The detect prompt looks for paper receipts on a photo, so the model
+    is not asked; the crop step then works as for any detection (1% padding, clamped to the image).
+    """
+    corners = [{"x": 0, "y": 0}, {"x": 1, "y": 0}, {"x": 1, "y": 1}, {"x": 0, "y": 1}]
+    return validate_detection({
+        "schema_version": "1", "image_width": prepared.width, "image_height": prepared.height, "receipt_count": 1,
+        "receipts": [{"id": 1, "bbox": {"x_min": 0, "y_min": 0, "x_max": 1, "y_max": 1}, "quad": corners,
+                      "rotation_degrees": 0, "confidence": None, "clipped": False}],
+        "warnings": [],
+    }, width=prepared.width, height=prepared.height)
+
+
 def _digest(path):
     with path.open("rb") as stream:
         return hashlib.file_digest(stream, "sha256").hexdigest()
@@ -249,7 +265,7 @@ class JobPipeline:
             path = storage.media_path(photo.upright_file.name)
             prepared = PreparedImage(path, _digest(path), photo.width, photo.height)
             self._stage(JobStage.DETECT)
-            detected = self._invoke(AttemptPhase.DETECT, prepared)
+            detected = whole_document(prepared) if photo.document_file else self._invoke(AttemptPhase.DETECT, prepared)
             self._stage(JobStage.CROP, count=detected.receipt_count)
             if not detected.receipts:
                 return self._outcome("no_receipts")

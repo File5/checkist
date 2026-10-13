@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '../App'
+import { preloadScreens } from '../screens'
 import { menuScrollLeft } from '../menu-view'
 import type { NavigationSnapshot, Route } from '../navigation'
 import type { Session } from '../session'
@@ -33,9 +34,9 @@ vi.mock('../features/stats', () => ({ SpendingPage: () => null, ReceiptsStatsPag
 const loading: Session = { kind: 'loading' }
 const failed: Session = { kind: 'error' }
 const guest: Session = { kind: 'guest', expired: false }
-const reader: Session = { kind: 'user', mode: 'accounts', user: { id: 1, username: 'synthetic-reader', is_staff: false }, permissions: { moderate_catalog: false } }
-const moderator: Session = { kind: 'user', mode: 'accounts', user: { id: 2, username: 'synthetic-moderator', is_staff: false }, permissions: { moderate_catalog: true } }
-const local: Session = { kind: 'user', mode: 'local_single', user: { id: 1, username: 'local', is_staff: false }, permissions: { moderate_catalog: true } }
+const reader: Session = { kind: 'user', mode: 'accounts', user: { id: 1, username: 'synthetic-reader', is_staff: false }, household: null, permissions: { moderate_catalog: false } }
+const moderator: Session = { kind: 'user', mode: 'accounts', user: { id: 2, username: 'synthetic-moderator', is_staff: false }, household: null, permissions: { moderate_catalog: true } }
+const local: Session = { kind: 'user', mode: 'local_single', user: { id: 1, username: 'local', is_staff: false }, household: null, permissions: { moderate_catalog: true } }
 const sessions = [loading, failed, guest, { kind: 'guest', expired: true } as Session, reader, moderator, local]
 
 const routes: [Route, string][] = [
@@ -76,6 +77,9 @@ function render(session: Session, route: Route, href: string) {
 const fetchMock = vi.fn<typeof fetch>()
 beforeEach(() => { fetchMock.mockReset(); vi.stubGlobal('fetch', fetchMock) })
 afterEach(() => { expect(fetchMock).not.toHaveBeenCalled(); vi.unstubAllGlobals() })
+
+// The screens come in parts (src/screens.ts): loaded first, the shell renders their real markup at once.
+beforeAll(preloadScreens)
 
 describe('current item of the header menu is brought into view again (SSR only, the scroll itself is checked by a person)', () => {
   it.each(narrow)('when «Я» is read on the same address: %s', (_item, route, href) => {

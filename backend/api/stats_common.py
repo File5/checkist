@@ -9,7 +9,7 @@ from datetime import date
 
 from django.db.models import BigIntegerField, Case, F, Q, When
 
-from accounts.access import owner_q
+from accounts.access import visible_receipts_q
 from merges.models import ProductMergeMember
 from receipts.decimal_math import price_context
 from receipts.models import Receipt
@@ -72,7 +72,57 @@ def receipts(request, scope, period=None):
 
     Закрытые поля не выбирайте — расчётам нужны только суммы и ключи.
     """
-    return Receipt.objects.filter(owner_q(request), receipt_q(scope, period))
+    return Receipt.objects.filter(visible_receipts_q(request), receipt_q(scope, period))
+
+
+def primary_first(request, blocks):
+    """Блоки валют с основной валютой пользователя (``accounts.Profile``) первой; прочие — в прежнем порядке.
+
+    Блок — словарь ответа либо объект расчёта с ``currency``. Без основной валюты порядок не меняется.
+    """
+    from accounts.profile import request_default_currency
+
+    blocks = list(blocks)
+    # Один запрос и только при нескольких валютах.
+    primary = request_default_currency(request) if len(blocks) > 1 else None
+    if not primary:
+        return blocks
+
+    def code(block):
+        return block["currency"] if isinstance(block, dict) else block.currency
+
+    return sorted(blocks, key=lambda block: code(block) != primary)
+
+
+# --- основная валюта семьи ---
+
+def converter(request, needs):
+    """``rates.convert.Converter`` основной валюты семьи пользователя запроса для пар ``(валюта, день)``.
+
+    Не больше трёх запросов: основная валюта, курсы и — после ленивой догрузки свежих дней — курсы ещё раз.
+    """
+    from rates import convert
+
+    return convert.converter(convert.request_base_currency(request), needs)
+
+
+def excluded(unconverted):
+    """Траты без курса по валютам (``spending.unconverted``): ``[{currency, receipts_count, total}]``."""
+    return [{"currency": currency, "receipts_count": count, "total": money(total)}
+            for currency, count, total in unconverted]
+
+
+def base_fields(converter, block, unconverted):
+    """Поля ответа в основной валюте: ``base_currency``, ``base`` (блок либо ``None``) и ``excluded``.
+
+    ``excluded`` — траты без курса: в ``base`` они не вошли.
+    """
+    return {"base_currency": converter.base, "base": block, "excluded": excluded(unconverted)}
+
+
+def base_block(blocks, base):
+    """Блок основной валюты из блоков расчёта либо ``None``."""
+    return next((block for block in blocks if block.currency == base), None)
 
 
 # --- слитые товары ---

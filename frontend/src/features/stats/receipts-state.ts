@@ -126,20 +126,23 @@ export const withoutScope = ({ base_from, base_to, current_from, current_to, int
 export function localToday(now = new Date()): string {
   return `${String(now.getFullYear()).padStart(4, '0')}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
 }
-export interface PeriodPreset { key: string; label: string; dates: Record<DateField, string> }
+/** `short` and `note` are the two lines of the row in the period sheet of a phone; `label` is the chip of a wide screen. */
+export interface PeriodPreset { key: string; label: string; short: string; note: string; dates: Record<DateField, string> }
 const fullYear = (year: number) => [`${year}-01-01`, `${year}-12-31`] as const
 /** Ready pairs of periods; «этот год» ends today, so its months are not over yet. */
 export function periodPresets(today: string): PeriodPreset[] {
   const year = Number(today.slice(0, 4))
   if (!/^\d{4}-\d{2}-\d{2}$/.test(today) || year < 2) return []
-  const pair = (key: string, label: string, base: number, current: readonly [string, string]): PeriodPreset => ({
-    key, label, dates: { base_from: fullYear(base)[0], base_to: fullYear(base)[1], current_from: current[0], current_to: current[1] },
+  const pair = (key: string, label: string, base: number, current: readonly [string, string], note: string): PeriodPreset => ({
+    key, label, short: `${base} против ${current[0].slice(0, 4)}`, note,
+    dates: { base_from: fullYear(base)[0], base_to: fullYear(base)[1], current_from: current[0], current_to: current[1] },
   })
   const thisYear = [`${year}-01-01`, today] as const
+  const untilToday = 'этот год — по сегодня'
   return [
-    ...(year - 1 > 2020 ? [pair('2020-now', `2020 против этого года (${year})`, 2020, thisYear)] : []),
-    pair('last-now', `Прошлый год против этого (${year - 1} и ${year})`, year - 1, thisYear),
-    pair('full-years', `${year - 2} против ${year - 1} (два полных года)`, year - 2, fullYear(year - 1)),
+    ...(year - 1 > 2020 ? [pair('2020-now', `2020 против этого года (${year})`, 2020, thisYear, untilToday)] : []),
+    pair('last-now', `Прошлый год против этого (${year - 1} и ${year})`, year - 1, thisYear, `прошлый год против этого, ${untilToday}`),
+    pair('full-years', `${year - 2} против ${year - 1} (два полных года)`, year - 2, fullYear(year - 1), 'два полных года'),
   ]
 }
 export const presetHref = (query: ReceiptsStatsQuery, preset: PeriodPreset) => receiptsStatsHref({ ...query, ...preset.dates })
@@ -163,7 +166,7 @@ const accountsSession = () => { const session = getSession(); return session.kin
 /** Local wording only: the server's message never reaches the screen. */
 export function failureMessage(failure: StatsFailure): string {
   switch (statsFailureKind(failure)) {
-    case 'invalid_parameter': return 'Сервер не принял параметры запроса. Исправьте отмеченные поля в форме выше или сбросьте фильтры.'
+    case 'invalid_parameter': return 'Сервер не принял параметры запроса. Исправьте отмеченные поля в фильтрах или сбросьте их.'
     case 'range_too_large': return 'Слишком много интервалов для одного графика: уменьшите период или укрупните интервал.'
     case 'permission_denied': return accountsSession() ? permissionDeniedText(getSession())
       : 'Статистика чеков доступна только в локальном режиме сервера, сейчас он выключен. Включите его в настройках сервера (DEBUG и ALLOW_LOCAL_RECOGNITION_API=1) и откройте приложение на этом же компьютере; без этого повтор не поможет.'

@@ -2,7 +2,7 @@
 .ck-theme-toggle {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   min-width: 44px; min-height: 44px; padding: 8px 14px;
-  border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm);
+  border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-button);
   background: var(--ck-surface); color: var(--ck-text);
   font: inherit; line-height: 1.2; text-align: left; cursor: pointer;
 }
@@ -12,12 +12,17 @@
 .ck-theme-icon { flex: 0 0 20px; fill: var(--ck-accent-text); }
 .ck-theme-label { min-width: 0; overflow-wrap: anywhere; }
 
-/* On the header bar, dark in both themes: header tokens instead of the page ones. */
+/* On the header bar: header tokens instead of the page ones (the same colours as a card in each theme). */
 .ck-theme-toggle.ck-theme-toggle-header { border-color: var(--ck-header-text-muted); background: var(--ck-header-bg); color: var(--ck-header-text); }
 .ck-theme-toggle.ck-theme-toggle-header:hover:not(:disabled) { background: var(--ck-header-hover-bg); border-color: var(--ck-header-text); }
 .ck-theme-toggle.ck-theme-toggle-header:active:not(:disabled) { background: var(--ck-header-hover-bg); border-color: var(--ck-header-accent); }
 .ck-theme-toggle.ck-theme-toggle-header:focus-visible { outline-color: var(--ck-header-focus); }
 .ck-theme-toggle-header .ck-theme-icon { fill: var(--ck-header-accent); }
+
+/* A row of the list behind «Ещё» of a phone: the width of the list, a picture and the words, no frame. */
+.ck-theme-toggle.ck-theme-toggle-menu { justify-content: flex-start; gap: 14px; width: 100%; min-height: 52px; padding: 4px 8px; border: 0; border-radius: var(--ck-radius-sm); background: none; color: var(--ck-text); font-weight: 600; }
+.ck-theme-toggle.ck-theme-toggle-menu:hover:not(:disabled) { background: var(--ck-surface-raised); }
+.ck-theme-toggle-menu .ck-theme-icon { flex-basis: 22px; width: 22px; height: 22px; fill: var(--ck-text-muted); }
 
 @media (forced-colors: active) {
   .ck-theme-toggle, .ck-theme-toggle.ck-theme-toggle-header { border-color: ButtonText; background: ButtonFace; color: ButtonText; }

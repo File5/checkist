@@ -1,7 +1,12 @@
 """Host worker; PostgreSQL owns both the queue and the singleton lock.
 
-Two kinds of work: a recognition job always comes first; when none waits, one
-batch of a product classification run is executed (classification/QUEUE.md).
+Five kinds of work, one unit a pass: a manual spend parse request («Трата
+словами», one short text-only call, someone waits on the form) comes first; then
+a question about unknown payees of a bank statement draft (statements.ask, one
+short text-only call, the draft shows its rows waiting); then a month review or
+a question about the spends (insights.queue, one text-only call, someone waits on
+the screen); then a recognition job; when none waits, one batch of a product
+classification run (classification/QUEUE.md).
 """
 import logging
 import os
@@ -21,6 +26,7 @@ from django.db import DatabaseError, InterfaceError, OperationalError, connectio
 from classification import queue as classification_queue
 from classification.classifier import FAKE_SCENARIOS, get_classifier
 from classification.worker import process_batch
+from insights import queue as insights_queue
 from recognition import queue
 from recognition.models import ProcessingJob
 from recognition.pipeline import process_job
@@ -30,6 +36,8 @@ from recognition.providers.codex_cli import child_environment
 from recognition.providers.factory import get_provider
 from recognition.providers.fake import SCENARIOS
 from recognition.statuses import EXECUTING_JOB_STATUSES
+from receipts import manual_parse
+from statements import ask as statement_ask
 
 logger = logging.getLogger(__name__)
 
@@ -187,6 +195,69 @@ def build_classifier(*, fake_scenario=None):
         raise CommandError("Product classification provider configuration is invalid.") from None
 
 
+def build_text_parser():
+    """The «Трата словами» parser of the same provider; a failure never selects the fake."""
+    try:
+        return manual_parse.get_parser()
+    except ProviderError:
+        raise CommandError("Manual spend parse provider configuration is invalid.") from None
+
+
+def build_statement_asker():
+    """The statement payee asker of the same provider; a failure never selects the fake."""
+    try:
+        return statement_ask.get_asker()
+    except ProviderError:
+        raise CommandError("Statement payee asker provider configuration is invalid.") from None
+
+
+def build_insight_writer():
+    """The month review / spends question writer of the same provider; a failure never selects the fake."""
+    try:
+        return insights_queue.get_writer()
+    except ProviderError:
+        raise CommandError("Insights writer provider configuration is invalid.") from None
+
+
+def write_insight(row, *, writer, slot):
+    """One review or question; an unexpected error fails it, never the worker."""
+    try:
+        return insights_queue.execute(row, writer=writer, is_stopped=SlotWatch(slot))
+    except (OperationalError, InterfaceError):
+        raise
+    except Exception as error:
+        logger.error("Insight request failed: %s", type(error).__name__)  # never its text
+        insights_queue.fail(row, "internal_error")
+        row.refresh_from_db()
+        return row
+
+
+def ask_statement(ask, *, asker, slot):
+    """One statement question; an unexpected error fails the question, never the worker."""
+    try:
+        return statement_ask.execute(ask, asker=asker, is_stopped=SlotWatch(slot))
+    except (OperationalError, InterfaceError):
+        raise
+    except Exception as error:
+        logger.error("Statement payee question failed: %s", type(error).__name__)  # never its text
+        statement_ask.fail(ask, "internal_error")
+        ask.refresh_from_db()
+        return ask
+
+
+def parse_text(row, *, parser, slot):
+    """One parse request; an unexpected error fails the request, never the worker."""
+    try:
+        return manual_parse.execute(row, parser=parser, is_stopped=SlotWatch(slot))
+    except (OperationalError, InterfaceError):
+        raise
+    except Exception as error:
+        logger.error("Manual spend parse failed: %s", type(error).__name__)  # never its text
+        manual_parse.fail(row, "internal_error")
+        row.refresh_from_db()
+        return row
+
+
 class SlotWatch:
     """is_stopped of a classification batch: the worker lost its singleton session.
 
@@ -240,7 +311,7 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument(
             "--once", action="store_true",
-            help="Recover leases and process at most one unit of work (a job, else one classification batch), then exit.",
+            help="Recover leases and process at most one unit of work (a parse request, else a statement question, else an insight, else a job, else one classification batch), then exit.",
         )
         parser.add_argument("--fake-scenario", choices=SCENARIOS, help="Server-only demo scenario; requires the fake provider.")
         parser.add_argument(
@@ -249,19 +320,40 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        active = active_run = None
+        active = active_run = active_parse = active_ask = active_insight = None
         try:
             with worker_slot() as slot:
                 provider = validate_startup(fake_scenario=options["fake_scenario"])
                 classifier = build_classifier(fake_scenario=options.get("classification_fake_scenario"))
+                text_parser = build_text_parser()
+                statement_asker = build_statement_asker()
+                insight_writer = build_insight_writer()
                 self.stdout.write("Recognition worker ready.")
                 try:
                     while True:
                         check_slot(slot)
                         queue.recover_expired_jobs()
                         classification_queue.recover_expired_runs()
-                        active = queue.claim_job()
-                        if active is not None:
+                        manual_parse.recover_expired()
+                        statement_ask.recover_expired()
+                        insights_queue.recover_expired()
+                        # A person waits on the form: a short parse goes before a long OCR job.
+                        active_parse = manual_parse.claim()
+                        if active_parse is not None:
+                            result = parse_text(active_parse, parser=text_parser, slot=slot)
+                            self.stdout.write(f"Manual parse {result.pk}: {result.status}")
+                            active_parse = None
+                        # A statement draft shows its rows waiting: a short question goes before a long OCR job too.
+                        elif (active_ask := statement_ask.claim()) is not None:
+                            result = ask_statement(active_ask, asker=statement_asker, slot=slot)
+                            self.stdout.write(f"Statement question {result.pk}: {result.status}")
+                            active_ask = None
+                        # Someone waits on the review or the answer: a short text call before a long OCR job.
+                        elif (active_insight := insights_queue.claim()) is not None:
+                            result = write_insight(active_insight, writer=insight_writer, slot=slot)
+                            self.stdout.write(f"Insight {result.pk}: {result.status}")
+                            active_insight = None
+                        elif (active := queue.claim_job()) is not None:
                             with LeaseHeartbeat(active, slot) as heartbeat:
                                 result = process_job(active, provider=provider, is_stopped=heartbeat.has_lost)
                             self.stdout.write(f"Job {result.pk}: {result.status}")
@@ -278,6 +370,12 @@ class Command(BaseCommand):
                         # Signals interrupt this idle wait too; no further claim.
                         Event().wait(1)
                 except KeyboardInterrupt:
+                    if active_parse is not None:
+                        manual_parse.fail(active_parse, "worker_lost")
+                    if active_ask is not None:
+                        statement_ask.fail(active_ask, "worker_lost")
+                    if active_insight is not None:
+                        insights_queue.fail(active_insight, "worker_lost")
                     if active is not None:
                         release_active(active)
                     if active_run is not None:

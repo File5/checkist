@@ -270,7 +270,8 @@ def _load_candidates():
         merchants[owner.get(alias_id, product_id)].add(merchant_id)
     candidates = [
         _candidate(product, merchants.get(product.pk, ()))
-        for product in Product.objects.select_related("generic").order_by("pk")
+        # Личный товар траты вручную (Product.scope) — название человека: в группы дублей он не попадает.
+        for product in Product.objects.select_related("generic").filter(scope="").order_by("pk")
     ]
     return candidates, dict(existing)
 
@@ -352,6 +353,8 @@ def _restore(group, members, target_id):
     for line in ReceiptLine.objects.filter(product_id=target_id).exclude(pk__in=journaled).select_related(
         "receipt__store",
     ).order_by("pk"):
+        if line.receipt.store is None:  # трата вручную без места: написаний нет, строка остаётся у оставляемого
+            continue
         entries = owners.get((line.receipt.store.merchant_id, name_key(line.raw_name)), ())
         products = {
             product_ref for code, product_ref in entries
