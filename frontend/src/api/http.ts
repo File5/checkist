@@ -48,12 +48,12 @@ export function readError(status: number, body: unknown, local: boolean): LocalA
   }
   const localCodes = {
     400: ['unsupported_format', 'invalid_image', 'image_too_large', 'invalid_pdf', 'pdf_encrypted', 'pdf_too_many_pages'],
-    403: ['csrf_failed', 'permission_denied'],
+    403: ['csrf_failed', 'permission_denied', 'ai_disabled'],
     405: ['method_not_allowed'], 406: ['not_acceptable'],
     409: ['job_active', 'job_terminal', 'retry_not_allowed', 'merge_conflict', 'merge_resolved', 'merge_changed', 'merge_busy',
       'review_unavailable', 'review_resolved', 'review_busy', 'review_invalid',
       'classification_resolved', 'classification_changed', 'classification_busy', 'receipt_read_only', 'photo_shared'],
-    413: ['upload_too_large'], 415: ['unsupported_media_type'], 429: ['parse_limit'],
+    413: ['upload_too_large'], 415: ['unsupported_media_type'], 429: ['parse_limit', 'ai_quota'],
     503: ['storage_unavailable', 'database_unavailable'],
   }
   if (local && typeof code === 'string' && localCodes[status as keyof typeof localCodes]?.includes(code)) {
@@ -62,6 +62,11 @@ export function readError(status: number, body: unknown, local: boolean): LocalA
       const issues = 'issues' in body ? body.issues : undefined
       if (!Array.isArray(issues) || issues.length > 1000 || !issues.every(isRecognitionIssue)) return invalid
       return { kind: 'error', reason: code, status, issues }
+    }
+    if (code === 'ai_quota') {
+      // When the quota starts again travels next to `error`; a refusal without a readable term still says «закончились».
+      const resetsAt = 'resets_at' in body ? body.resets_at : undefined
+      return { kind: 'error', reason: code, status, ...(typeof resetsAt === 'string' && !Number.isNaN(Date.parse(resetsAt)) ? { resetsAt } : {}) }
     }
     return { kind: 'error', reason: code as LocalApiFailure['reason'], status, ...(fields ? { fields } : {}) }
   }

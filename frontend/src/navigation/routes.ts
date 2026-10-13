@@ -169,6 +169,8 @@ export type NavigableRoute = CatalogRoute
   | { kind: 'export'; query: ExportQuery }
   /** «Семья» (only with accounts): members, invites, the head role; `token` — an invite opened from its link. */
   | { kind: 'family'; token?: string }
+  /** The invite of a new family (`/family/new?token=…`): a guest creates an account and a family; no `token` — a broken link. */
+  | { kind: 'family-new'; token?: string }
 
 export type Route = NavigableRoute
   | { kind: 'not-found'; path: string }
@@ -555,6 +557,7 @@ export function buildRoute(route: NavigableRoute): string {
     case 'account': return '/account'
     case 'export': return exportHref(route.query)
     case 'family': return route.token ? `/family/join?${new URLSearchParams({ token: route.token })}` : '/family'
+    case 'family-new': return route.token ? `/family/new?${new URLSearchParams({ token: route.token })}` : '/family/new'
   }
 }
 
@@ -597,6 +600,10 @@ export function parseRoute(input: string | URL): Route {
   if (normalizedPath === '/family/join') {
     const token = url.searchParams.get('token') ?? ''
     return /^[A-Za-z0-9_-]{8,200}$/.test(token) ? { kind: 'family', token } : { kind: 'family' }
+  }
+  if (normalizedPath === '/family/new') {
+    const token = url.searchParams.get('token') ?? ''
+    return /^[A-Za-z0-9_-]{8,200}$/.test(token) ? { kind: 'family-new', token } : { kind: 'family-new' }
   }
   // Like statistics, the export never answers with invalid-query: a wrong value is dropped.
   if (normalizedPath === '/export') return { kind: 'export', query: parseExportQuery(url.searchParams) }

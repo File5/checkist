@@ -19,7 +19,7 @@ import { ClassificationPage } from './features/classification'
 import { SpendingPage, ReceiptsStatsPage, TrendsPage } from './features/stats'
 import { LoginPage, AccountPage } from './features/auth'
 import { ExportPage } from './features/export'
-import { FamilyPage } from './features/family'
+import { FamilyPage, NewFamilyPage, NewFamilySignedIn } from './features/family'
 import { pageKey, shellView, watchSession } from './features/auth/auth-state'
 import type { ShellView } from './features/auth/auth-state'
 import { moderatorOnlyText } from './features/auth/labels'
@@ -59,6 +59,7 @@ function pageTitle(route: Route) {
     case 'account': return 'Аккаунт'
     case 'export': return 'Выгрузка'
     case 'family': return 'Семья'
+    case 'family-new': return 'Новая семья'
     case 'invalid-query': return 'Некорректная ссылка'
     case 'not-found': return 'Страница не найдена'
   }
@@ -70,7 +71,8 @@ function shellTitle(view: ShellView, route: Route) {
     case 'page': return pageTitle(route)
     case 'loading': return 'Проверяем вход'
     case 'error': return 'Вход не проверен'
-    case 'login': return 'Вход'
+    // A guest with the invite of a new family sees its own screen in place of the sign-in.
+    case 'login': return route.kind === 'family-new' ? pageTitle(route) : 'Вход'
     case 'forbidden': return 'Раздел модератора каталога'
     case 'not-found': return 'Страница не найдена'
   }
@@ -105,6 +107,7 @@ function pageContent({ route, returnTo }: NavigationSnapshot, username: string) 
     case 'account': return <AccountPage username={username} />
     case 'export': return <ExportPage query={route.query} />
     case 'family': return <FamilyPage joinToken={route.token} />
+    case 'family-new': return <NewFamilySignedIn />
     case 'invalid-query': return <RequestState kind="empty" message="В адресе указаны некорректные фильтры или номер страницы. Сбросьте параметры и попробуйте снова." action={<Link className="action-link" to={route.resetTo} replace>Сбросить параметры</Link>} />
     case 'not-found': return notFound
   }
@@ -208,10 +211,13 @@ export default function App() {
   const username = signedIn ? session.user.username : ''
   // The sign-in is drawn alone, on the address the person opened: no header, menu or footer.
   // Its form is labelled by this heading, so the heading goes into the screen, which draws its own <main>.
-  if (view === 'login') return (
-    <LoginPage expired={session.kind === 'guest' && session.expired}
-      heading={<h1 id="page-heading" ref={heading} tabIndex={-1}>{title}</h1>} />
-  )
+  if (view === 'login') {
+    const guestHeading = <h1 id="page-heading" ref={heading} tabIndex={-1}>{title}</h1>
+    // The link of a new family is for a guest: its form takes the place of the sign-in on its own address.
+    return route.kind === 'family-new'
+      ? <NewFamilyPage key={route.token ?? ''} token={route.token} heading={guestHeading} />
+      : <LoginPage expired={session.kind === 'guest' && session.expired} heading={guestHeading} />
+  }
   let body: ReactNode
   switch (view) {
     case 'page': body = <Fragment key={contentKey}>{pageContent(navigation, username)}</Fragment>; break

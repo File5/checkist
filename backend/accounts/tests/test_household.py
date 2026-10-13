@@ -34,7 +34,8 @@ class FamilyMixin(IsolationMixin):
     def setUpTestData(cls):
         super().setUpTestData()
         cls.third = make_user("synthetic-user-three")
-        cls.family = Household.objects.create(name="Демо-семья")
+        # С ИИ, как семьи до accounts.0004: повтор задания снова отправляет фото модели (accounts.ai).
+        cls.family = Household.objects.create(name="Демо-семья", ai_enabled=True)
         for account in (cls.first, cls.third):
             Membership.objects.create(user=account, household=cls.family)
 

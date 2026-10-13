@@ -4,7 +4,7 @@ import type { JsonRequest } from './http.ts'
 import { clearRecognitionCsrf } from './local.ts'
 import { forgetCachedAnswers } from '../offline/service-worker.ts'
 import type { Guard } from './schema.ts'
-import { isAuthCsrf, isMe, isPasswordIssues, isRetryAfter } from './session-schema.ts'
+import { isAuthCsrf, isFamilyInviteCheck, isMe, isPasswordIssues, isRetryAfter } from './session-schema.ts'
 import type { PASSWORD_ISSUES } from './session-schema.ts'
 import type { RequestOptions } from './types.ts'
 import type { Person } from '../lib/people.ts'
@@ -38,6 +38,8 @@ export type AuthFailureReason =
   | 'not_authenticated' | 'invalid_credentials' | 'login_throttled'
   | 'invalid_parameter' | 'invalid_request' | 'not_found' | 'csrf_failed'
   | 'network' | 'timeout' | 'server' | 'invalid_response'
+  /** Only the invite of a new family: a wrong, expired or used link; a signed-in person. */
+  | 'invite_invalid' | 'already_signed_in'
 export type AuthFailure = {
   kind: 'error'
   reason: AuthFailureReason
@@ -63,6 +65,9 @@ function readAuthError(status: number, body: unknown, refusal401: Refusal401 | u
     // The term travels next to `error`: the transport does not read headers.
     const retryAfter = (body as { retry_after?: unknown }).retry_after
     return isRetryAfter(retryAfter) ? { kind: 'error', reason: code, status, retryAfter } : invalid
+  }
+  if ((status === 400 && code === 'invite_invalid') || (status === 409 && code === 'already_signed_in')) {
+    return { kind: 'error', reason: code, status }
   }
   const { reason, fields } = readError(status, body, true)
   switch (reason) {
@@ -139,6 +144,20 @@ export async function logout(options: RequestOptions = {}): Promise<AuthResult<n
   const isEmpty = (value: unknown): value is null => value === null
   const result = await post('auth/logout/', {}, isEmpty, options, { successStatuses: [], emptyStatuses: [204] })
   if (result.kind === 'ok') sessionChanged(options)
+  return result
+}
+
+/** The invite of a new family (`/family/new?token=…`) is still valid: until when. A guest asks it, like the sign-in. */
+export function checkFamilyInvite(token: string, options: RequestOptions = {}): Promise<AuthResult<{ expires_at: string }>> {
+  return post('auth/new-family/check/', { token }, isFamilyInviteCheck, options)
+}
+
+export type NewFamilyInput = { token: string; name: string; username: string; first_name: string; password: string }
+/** A guest with the invite: a new account and a new family with them as the head; the session is signed in after it. */
+export async function createFamilyAccount(input: NewFamilyInput, options: RequestOptions = {}): Promise<AuthResult<Me>> {
+  const { token, name, username, first_name, password } = input
+  const result = await post('auth/new-family/', { token, name, username, first_name, password }, isMe, options, { successStatuses: [201] })
+  if (result.kind === 'ok') sessionChanged(options, result.data.csrf_token)
   return result
 }
 

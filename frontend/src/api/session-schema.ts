@@ -9,6 +9,9 @@ const csrfToken: Check = (value) => typeof value === 'string' && /^[A-Za-z0-9_]{
 const username: Check = (value) => typeof value === 'string' && value.length > 0 && value.length <= 150
 
 export const isAuthCsrf = object<AuthCsrf>({ csrf_token: csrfToken })
+export const isFamilyInviteCheck = object<{ expires_at: string }>({
+  expires_at: (value) => typeof value === 'string' && !Number.isNaN(Date.parse(value)),
+})
 /** A field an older server leaves out: missing passes, anything else must pass `check`. */
 const optional = (value: unknown, key: string, check: Check) => !Object.hasOwn(value as object, key) || check((value as Record<string, unknown>)[key])
 const isUser = object<Omit<Me['user'], 'display_name'>>({ id: isId, username, is_staff: bool })

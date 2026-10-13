@@ -30,8 +30,11 @@ class MembershipInline(admin.TabularInline):
 
 @admin.register(Household)
 class HouseholdAdmin(admin.ModelAdmin):
-    """Семьи заводит администратор: название и члены; пользователь — не больше чем в одной."""
+    """Семьи заводит администратор: название и члены; пользователь — не больше чем в одной.
 
-    list_display = ("name", "created_at")
+    ИИ семьи: включатель (его же меняет главный на «Семье») и дневная квота запросов — только здесь.
+    """
+
+    list_display = ("name", "ai_enabled", "ai_daily_limit", "created_at")
     search_fields = ("name", "memberships__user__username")
     inlines = (MembershipInline,)

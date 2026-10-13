@@ -1,20 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import {
-  addMember, createFamily, createInvite, getFamily, joinFamily, leaveFamily, removeMember, renameFamily, revokeInvite, transferHead,
+  addMember, createFamily, createFamilyInvite, createInvite, getFamily, joinFamily, leaveFamily, removeMember, renameFamily,
+  revokeFamilyInvite, revokeInvite, setFamilyAi, transferHead,
 } from '../../api/family'
-import type { Family, FamilyMember } from '../../api/family'
+import type { Family, FamilyAi, FamilyInvite, FamilyMember } from '../../api/family'
 import type { LocalApiResult } from '../../api/types'
 import Sheet from '../../components/Sheet'
 import { loadSession } from '../../session'
 import { initials } from '../../lib/people'
-import { familyFailure, familyTexts, inviteUrl, memberMeta } from './family-state'
+import { aiUsageText, familyFailure, familyTexts, inviteUrl, memberMeta } from './family-state'
 import type { FamilyAction } from './family-state'
 import '../auth/Auth.css'
 import './Family.css'
 
-/** Something shown once: a new password or an invite address. */
-export type FamilySecret = { kind: 'password'; username: string; value: string } | { kind: 'invite'; value: string }
+/** Something shown once: a new password, an invite address, the address of a new family (for the server owner). */
+export type FamilySecret = { kind: 'password'; username: string; value: string } | { kind: 'invite' | 'family-invite'; value: string }
 /** A question in the sheet before an action that changes the family for another person. */
 export type FamilyConfirm = { kind: 'remove' | 'head'; member: FamilyMember } | { kind: 'leave' }
 
@@ -30,18 +31,80 @@ export type FamilyViewProps = {
   onRevoke: (id: number) => void
   onAsk: (confirm: FamilyConfirm) => void
   onCopy: (value: string) => void
+  /** The head switches ИИ of the family. */
+  onAi?: (enabled: boolean) => void
+  /** The server owner invites a new family and revokes such an invite. */
+  onFamilyInvite?: () => void
+  onRevokeFamily?: (id: number) => void
 }
 
 const star = <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m12 2.5 2.8 6.1 6.7.7-5 4.5 1.4 6.6L12 17l-5.9 3.4 1.4-6.6-5-4.5 6.7-.7L12 2.5Z" /></svg>
 const chevron = <svg className="family-chevron" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 6l6 6-6 6" /></svg>
 const linkIcon = <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" /><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" /></svg>
 
+const secretTexts = (secret: FamilySecret) => {
+  switch (secret.kind) {
+    case 'password': return { label: `Пароль для ${secret.username}`, note: familyTexts.passwordOnce }
+    case 'invite': return { label: 'Ссылка-приглашение', note: familyTexts.inviteOnce }
+    case 'family-invite': return { label: 'Ссылка на новую семью', note: familyTexts.familyInviteOnce }
+  }
+}
+
 function Secret({ secret, onCopy }: { secret: FamilySecret; onCopy: (value: string) => void }) {
+  const { label, note } = secretTexts(secret)
   return <section className="ck-auth-panel family-secret" role="status" data-family-secret={secret.kind}>
-    <p className="family-secret-label">{secret.kind === 'password' ? `Пароль для ${secret.username}` : 'Ссылка-приглашение'}</p>
+    <p className="family-secret-label">{label}</p>
     <p className="family-secret-value"><code>{secret.value}</code></p>
-    <p className="family-note">{secret.kind === 'password' ? familyTexts.passwordOnce : familyTexts.inviteOnce}</p>
+    <p className="family-note">{note}</p>
     <button type="button" className="ck-auth-primary" onClick={() => onCopy(secret.value)}>Скопировать</button>
+  </section>
+}
+
+/** One active invite: the icon, until when, «Отозвать». */
+function InviteRow({ invite, label, onRevoke }: { invite: FamilyInvite; label: string; onRevoke: (id: number) => void }) {
+  return <li className="family-invite">
+    <span className="family-invite-icon">{linkIcon}</span>
+    <span className="family-member-text">
+      <span>{label}</span>
+      <span className="family-member-meta">до <time dateTime={invite.expires_at}>{new Date(invite.expires_at).toLocaleDateString('ru-RU')}</time></span>
+    </span>
+    <button type="button" className="ck-auth-danger" onClick={() => onRevoke(invite.id)}>Отозвать</button>
+  </li>
+}
+
+/** ИИ of the family: the switch of the head (a member sees the state), what it means, the requests of today. */
+function AiPanel({ ai, head, busy, onAi }: { ai: FamilyAi; head: boolean; busy: boolean; onAi?: (enabled: boolean) => void }) {
+  const share = ai.daily_limit > 0 ? Math.min(100, Math.round((ai.used_today / ai.daily_limit) * 100)) : 100
+  return <section className="ck-auth-panel family-ai" aria-labelledby="family-ai-heading" data-family-ai={ai.enabled ? 'on' : 'off'}>
+    <div className="family-ai-head">
+      <h2 id="family-ai-heading">Распознавание и подсказки ИИ</h2>
+      {head
+        ? <button type="button" role="switch" className="family-switch" aria-checked={ai.enabled} aria-labelledby="family-ai-heading"
+          aria-describedby="family-ai-note" aria-disabled={busy || undefined} data-family-ai-switch
+          onClick={busy ? undefined : () => onAi?.(!ai.enabled)}><span className="family-switch-thumb" /></button>
+        : <span className={`family-ai-state${ai.enabled ? ' family-ai-on' : ''}`}>{ai.enabled ? 'Включено' : 'Выключено'}</span>}
+    </div>
+    <p id="family-ai-note" className="family-note family-sub">{familyTexts.aiNote}{head ? '' : ` ${familyTexts.aiHeadOnly}`}</p>
+    <div className="family-ai-usage">
+      <p data-family-ai-usage>{aiUsageText(ai)}</p>
+      <div className="ck-bar" aria-hidden="true"><span style={{ width: `${share}%` }} /></div>
+    </div>
+  </section>
+}
+
+/** The server owner: invites of new families — a link for a person without an account, who creates it and a family. */
+function NewFamiliesPanel({ family, secret, busy, onFamilyInvite, onRevokeFamily, onCopy }: Pick<FamilyViewProps,
+  'family' | 'secret' | 'busy' | 'onFamilyInvite' | 'onRevokeFamily' | 'onCopy'>) {
+  const invites = family.family_invites ?? []
+  return <section className="ck-auth-panel" aria-labelledby="family-new-heading" data-family-new-invites>
+    <h2 id="family-new-heading">Новые семьи</h2>
+    <p className="family-note family-sub">{familyTexts.familyInvites}</p>
+    {secret?.kind === 'family-invite' && <Secret secret={secret} onCopy={onCopy} />}
+    {invites.length > 0 && <ul className="family-invites" aria-label="Действующие приглашения новых семей">
+      {invites.map((invite) => <InviteRow key={invite.id} invite={invite} label="Новая семья" onRevoke={(id) => onRevokeFamily?.(id)} />)}
+    </ul>}
+    <button type="button" className="ck-auth-secondary" aria-disabled={busy || undefined} data-family-new-invite
+      onClick={busy ? undefined : onFamilyInvite}>Пригласить новую семью</button>
   </section>
 }
 
@@ -100,22 +163,25 @@ function AddMemberForm({ busy, onAdd }: { busy: boolean; onAdd: FamilyViewProps[
   </form>
 }
 
-export function FamilyView({ family, busy, message, secret, onCreate, onRename, onAdd, onInvite, onRevoke, onAsk, onCopy }: FamilyViewProps) {
+export function FamilyView(props: FamilyViewProps) {
+  const { family, busy, message, secret, onCreate, onRename, onAdd, onInvite, onRevoke, onAsk, onCopy, onAi } = props
   const [renaming, setRenaming] = useState(false)
   const [managing, setManaging] = useState<FamilyMember | null>(null)
   const household = family.household
   const status = message && <p className="family-notice" role="status" data-family-message>{message}</p>
+  const newFamilies = family.can_invite_families ? <NewFamiliesPanel {...props} /> : null
   if (!household) {
     return <div className="ck-auth" data-family="none">
       {status}
       <CreateForm busy={busy} onCreate={onCreate} />
+      {newFamilies}
     </div>
   }
   const head = family.is_head
   const count = household.members.length
   return <div className="ck-auth" data-family={head ? 'head' : 'member'}>
     {status}
-    {secret && <Secret secret={secret} onCopy={onCopy} />}
+    {secret && secret.kind !== 'family-invite' && <Secret secret={secret} onCopy={onCopy} />}
     <section className="ck-auth-panel" aria-labelledby="family-members-heading">
       <div className="ck-auth-head">
         <h2 id="family-members-heading">{household.name}</h2>
@@ -147,19 +213,15 @@ export function FamilyView({ family, busy, message, secret, onCreate, onRename, 
       </ul>
       {!head && <button type="button" className="ck-auth-danger" data-family-leave onClick={() => onAsk({ kind: 'leave' })}>Выйти из семьи</button>}
     </section>
+    {family.ai && <AiPanel ai={family.ai} head={head} busy={busy} onAi={onAi} />}
     {head && <>
       <AddMemberForm busy={busy} onAdd={onAdd} />
       <section className="ck-auth-panel" aria-labelledby="family-invite-heading" data-family-invites>
         <h2 id="family-invite-heading">Приглашение</h2>
         <p className="family-note family-sub">Для человека, у которого уже есть учётная запись. {familyTexts.inviteOnce}</p>
-        {family.invites.length > 0 && <ul className="family-invites" aria-label="Действующие приглашения">{family.invites.map((invite) => <li key={invite.id} className="family-invite">
-          <span className="family-invite-icon">{linkIcon}</span>
-          <span className="family-member-text">
-            <span>Приглашение</span>
-            <span className="family-member-meta">до <time dateTime={invite.expires_at}>{new Date(invite.expires_at).toLocaleDateString('ru-RU')}</time></span>
-          </span>
-          <button type="button" className="ck-auth-danger" onClick={() => onRevoke(invite.id)}>Отозвать</button>
-        </li>)}</ul>}
+        {family.invites.length > 0 && <ul className="family-invites" aria-label="Действующие приглашения">
+          {family.invites.map((invite) => <InviteRow key={invite.id} invite={invite} label="Приглашение" onRevoke={onRevoke} />)}
+        </ul>}
         <button type="button" className="ck-auth-secondary" aria-disabled={busy || undefined} onClick={busy ? undefined : onInvite}>Создать приглашение</button>
       </section>
       <Sheet open={managing !== null} onClose={() => setManaging(null)} title={managing?.display_name ?? ''} id="family-member-sheet">
@@ -175,6 +237,7 @@ export function FamilyView({ family, busy, message, secret, onCreate, onRename, 
         <RenameForm key={household.name} initial={household.name} busy={busy} onSubmit={(name) => { setRenaming(false); onRename(name) }} />
       </Sheet>
     </>}
+    {newFamilies}
   </div>
 }
 
@@ -253,6 +316,13 @@ export default function FamilyPage({ joinToken }: { joinToken?: string }) {
       })}
       onInvite={() => run('invite', () => createInvite(), (data) => { setSecret({ kind: 'invite', value: inviteUrl(data.path, window.location.origin) }); return 'Приглашение создано.' })}
       onRevoke={(id) => run('revoke', () => revokeInvite(id), () => 'Приглашение отозвано.')}
+      // The switch and the link of a new family answer in place: the switch itself, the link inside its card.
+      onAi={(enabled) => run('ai', () => setFamilyAi(enabled), (data) => { asFamily(data); return null })}
+      onFamilyInvite={() => run('family-invite', () => createFamilyInvite(), (data) => {
+        setSecret({ kind: 'family-invite', value: inviteUrl(data.path, window.location.origin) })
+        return null
+      })}
+      onRevokeFamily={(id) => run('family-revoke', () => revokeFamilyInvite(id), () => 'Приглашение новой семьи отозвано.')}
       onAsk={setConfirm}
       onCopy={(value) => { void navigator.clipboard?.writeText(value).then(() => setMessage('Скопировано.'), () => setMessage('Скопируйте вручную.')) }} />
     <Sheet open={confirm !== null} onClose={() => setConfirm(null)} title={asked?.title ?? ''} id="family-confirm">

@@ -6,6 +6,7 @@ from rest_framework.exceptions import ParseError
 from rest_framework.response import Response
 
 from accounts.access import owner_q
+from accounts.ai import use_ai
 from api.common import get_or_404
 from api.pagination import paginate
 from api.params import MAX_ID, Params
@@ -75,8 +76,11 @@ class PhotosView(LocalAPIView):
             raise InvalidRequest()
         if len(request.FILES.getlist("file")) != 1 or len(data.getlist("file")) != 1:
             raise InvalidParameter({"file": ["Выберите один файл."]})
+        owner = request_owner(request)
+        # Фото уходит модели: ИИ семьи выключен — 403 ai_disabled, квота суток исчерпана — 429 ai_quota.
+        use_ai(owner)
         try:
-            photo, created = accept_upload(request.FILES["file"], owner=request_owner(request))
+            photo, created = accept_upload(request.FILES["file"], owner=owner)
         except ImageError as exc:
             raise RecognitionApiError("upload_too_large" if exc.code == "file_too_large" else exc.code) from None
         except StorageError:
@@ -166,6 +170,8 @@ class RetryView(JobMutationView):
         self.empty_body(request)
         previous = self.own_job(request, pk)
         with transaction.atomic():
+            # Повтор снова отправляет фото модели; отказы ниже откатывают и счёт запроса.
+            use_ai(request_owner(request))
             SourcePhoto.objects.select_for_update().get(pk=previous.photo_id)
             if ProcessingJob.objects.filter(photo_id=previous.photo_id, status__in=ACTIVE_JOB_STATUSES).exists():
                 raise RecognitionApiError("job_active")

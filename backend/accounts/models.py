@@ -26,10 +26,16 @@ class Household(models.Model):
 
     Семью и членов заводит администратор в ``/admin/``. Правило доступа — только
     ``accounts.access.owner_q``; ``owner`` чека и фото по-прежнему значит «кто добавил».
+
+    ИИ семьи (``accounts.ai``): ``ai_enabled`` — фото и тексты семьи уходят внешней модели
+    (у семей до ``0004`` — включено, у новых — выключено, меняет главный); ``ai_daily_limit`` —
+    запросов к модели на семью за сутки (меняет администратор).
     """
 
     name = models.CharField(max_length=100)
     created_at = models.DateTimeField(auto_now_add=True)
+    ai_enabled = models.BooleanField(default=False)
+    ai_daily_limit = models.PositiveIntegerField(default=50)
 
     class Meta:
         verbose_name = "household"
@@ -89,12 +95,20 @@ class Profile(models.Model):
 
 
 class Invite(models.Model):
-    """Одноразовое приглашение в семью (``accounts.family``): хранится только SHA-256 токена.
+    """Одноразовое приглашение (``accounts.family``): хранится только SHA-256 токена.
 
+    ``join`` — в семью ``household`` (выдаёт главный, принимает вошедший без семьи);
+    ``new_family`` — новая семья без ``household`` (выдаёт администратор сервера,
+    ``is_staff``; принимающий заводит учётную запись и семью, где становится главным).
     Действует 7 дней; принятое (``used_at``) или отозванное (строка удалена) больше не работает.
     """
 
-    household = models.ForeignKey(Household, on_delete=models.CASCADE, related_name="invites")
+    class Kind(models.TextChoices):
+        JOIN = "join", "В семью"
+        NEW_FAMILY = "new_family", "Новая семья"
+
+    kind = models.CharField(max_length=10, choices=Kind.choices, default=Kind.JOIN)
+    household = models.ForeignKey(Household, null=True, blank=True, on_delete=models.CASCADE, related_name="invites")
     token_hash = models.CharField(max_length=64, unique=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+")
     created_at = models.DateTimeField(auto_now_add=True)
@@ -107,6 +121,33 @@ class Invite(models.Model):
         verbose_name = "invite"
         verbose_name_plural = "invites"
         ordering = ("-created_at", "-id")
+        constraints = [
+            # Приглашение в семью — всегда с семьёй, в новую семью — всегда без неё.
+            models.CheckConstraint(
+                condition=models.Q(kind="join", household__isnull=False) | models.Q(kind="new_family", household__isnull=True),
+                name="accounts_invite_kind_household"),
+        ]
 
     def __str__(self):
-        return f"{self.household} — {self.created_at:%Y-%m-%d}"
+        return f"{self.household or self.get_kind_display()} — {self.created_at:%Y-%m-%d}"
+
+
+class AiUsage(models.Model):
+    """Запросы семьи к модели за сутки (``accounts.ai.use_ai``); строка на семью и день.
+
+    День — ``timezone.localdate()`` (``TIME_ZONE`` сервера, UTC): новые сутки — новая строка, счёт с нуля.
+    """
+
+    household = models.ForeignKey(Household, on_delete=models.CASCADE, related_name="ai_usage")
+    day = models.DateField()
+    count = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        verbose_name = "AI usage"
+        verbose_name_plural = "AI usage"
+        constraints = [
+            models.UniqueConstraint(fields=("household", "day"), name="accounts_aiusage_household_day_uniq"),
+        ]
+
+    def __str__(self):
+        return f"{self.household} — {self.day}: {self.count}"

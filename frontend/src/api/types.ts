@@ -23,6 +23,7 @@ export type LocalApiErrorReason = ApiErrorReason
   | 'upload_too_large' | 'unsupported_media_type' | 'unsupported_format' | 'invalid_image' | 'image_too_large'
   | 'invalid_pdf' | 'pdf_encrypted' | 'pdf_too_many_pages'
   | 'storage_unavailable' | 'database_unavailable' | 'method_not_allowed' | 'not_acceptable'
+  | 'ai_disabled' | 'ai_quota'
 export type ApiFailure = {
   kind: 'error'
   reason: ApiErrorReason
@@ -36,6 +37,8 @@ export type LocalApiFailure = Omit<ApiFailure, 'reason'> & {
   reason: LocalApiErrorReason
   /** Only with review_invalid: causes in the shape of crop issues, indexed by the arrays of the sent body. */
   issues?: RecognitionIssue[]
+  /** Only with ai_quota: when the family's requests to the model start again (UTC ISO 8601). */
+  resetsAt?: string
 }
 export type LocalApiResult<T> = { kind: 'ok'; data: T } | LocalApiFailure | { kind: 'aborted' }
 export type RequestOptions = { signal?: AbortSignal; baseUrl?: string }

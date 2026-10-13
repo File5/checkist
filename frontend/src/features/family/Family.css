@@ -38,7 +38,7 @@
 /* Something shown once: a password or the address of an invite, on the gold tint. */
 .family-secret { background: var(--ck-accent-bg); box-shadow: none; }
 .family-secret-label { color: var(--ck-accent-text); font-size: var(--ck-text-sm); font-weight: 800; }
-.family-secret-value { padding: 12px 14px; border: 1px dashed var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-surface); font-size: var(--ck-text-base); font-weight: 700; overflow-wrap: anywhere; user-select: all; }
+.family-secret-value { padding: 12px 14px; border: 1px dashed var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-surface); font-size: var(--ck-text-base); font-weight: 700; overflow-wrap: anywhere; word-break: break-all; user-select: all; }
 .family-secret-value code { font-family: inherit; }
 
 /* Invites: one row each — the icon, until when, «Отозвать». */
@@ -50,10 +50,30 @@
 .family-invite .family-member-text { font-size: var(--ck-text-sm); font-weight: 700; }
 .family-invite button { flex: none; min-height: 44px; padding: 8px 14px; font-size: var(--ck-text-sm); }
 
+/* ИИ of the family: the heading and the switch in one row, the note, the requests of today over a bar. */
+.family-ai-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-width: 0; }
+.family-ai-head > h2 { min-width: 0; }
+/* The switch of the head: a pill track, the thumb on the right when on; the state is in `aria-checked`, not the colour only. */
+.family-switch { position: relative; flex: none; width: 56px; min-width: 56px; height: 32px; min-height: 32px; margin: 0; padding: 0; border: 2px solid var(--ck-border-field); border-radius: var(--ck-radius-pill); background: var(--ck-track); }
+.family-switch:hover, .family-switch:active { border-color: var(--ck-border-field); background: var(--ck-track); }
+.family-switch[aria-checked="true"], .family-switch[aria-checked="true"]:hover, .family-switch[aria-checked="true"]:active { border-color: var(--ck-primary); background: var(--ck-primary); }
+.family-switch-thumb { position: absolute; top: 2px; left: 2px; width: 24px; height: 24px; border-radius: 50%; background: var(--ck-surface); box-shadow: 0 1px 2px var(--ck-panel-shadow); }
+.family-switch[aria-checked="true"] .family-switch-thumb { left: 26px; background: var(--ck-on-primary); }
+/* A pending request keeps the position of the thumb; only the colours go quiet (the shared rule of .ck-auth). */
+.ck-auth .family-switch[aria-disabled="true"] .family-switch-thumb { background: var(--ck-surface); }
+/* Read only for a member: the state in words, a pill. */
+.family-ai-state { flex: none; min-height: 28px; padding: 4px 12px; border-radius: var(--ck-radius-pill); background: var(--ck-track); color: var(--ck-text-muted); font-size: var(--ck-text-xs); font-weight: 800; white-space: nowrap; }
+.family-ai-state.family-ai-on { background: var(--ck-success-bg); color: var(--ck-success-text); }
+.family-ai-usage { display: grid; gap: 8px; }
+.family-ai-usage p { font-size: var(--ck-text-sm); font-weight: 600; font-variant-numeric: tabular-nums; }
+
 /* The answer of the sheet: the action first, «Отмена» under it. */
 .family-confirm { display: grid; gap: 16px; padding-bottom: 4px; }
 .family-confirm .ck-auth-actions button { width: 100%; }
 
 @media (forced-colors: active) {
-  .family-avatar, .family-role, .family-invite-icon { border: 1px solid CanvasText; }
+  .family-avatar, .family-role, .family-invite-icon, .family-ai-state { border: 1px solid CanvasText; }
+  .family-switch { border-color: ButtonText; }
+  .family-switch[aria-checked="true"] { background: Highlight; }
+  .family-switch-thumb { border: 1px solid ButtonText; }
 }

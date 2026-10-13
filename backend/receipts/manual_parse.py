@@ -68,6 +68,8 @@ def request(owner, text, today=None):
     обходят лимит.
     """
     with transaction.atomic():
+        from accounts.ai import use_ai  # ИИ семьи: 403 ai_disabled / 429 ai_quota
+        use_ai(owner)  # в транзакции: отказ ParseLimit ниже откатывает и счёт
         get_user_model().objects.select_for_update().filter(pk=owner.pk).first()
         own = ManualParseRequest.objects.filter(owner=owner)
         now = timezone.now()
