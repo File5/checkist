@@ -6,6 +6,7 @@ import { Link } from '../../navigation'
 import { applyMe, isHead, useSession } from '../../session'
 import { useTheme } from '../../theme'
 import type { Theme } from '../../theme'
+import { listIconsNames, setListIcons, useListIcons } from '../../lib/list-icons'
 import SettingsSection from './SettingsSection'
 import PushSection from '../push/PushSection'
 import { checkPassword, useAuthForm } from './auth-state'
@@ -48,6 +49,15 @@ function ThemeChoice() {
   </div>
 }
 
+/** What the squares of the spends show, in the same segments: the category or how the spend came in (lib/list-icons). */
+function ListIconsChoice() {
+  const mode = useListIcons()
+  return <div className="ck-auth-segments" role="group" aria-labelledby="account-icons-label">
+    {listIconsNames.map(([value, name]) => <button key={value} type="button" className="ck-auth-segment" aria-pressed={mode === value}
+      onClick={() => setListIcons(value)}>{name}</button>)}
+  </div>
+}
+
 export function AccountView({ username, displayName, family, password, values, onChange, onPassword, signOut, onSignOut, settings }: AccountViewProps) {
   const saving = password.kind === 'pending'
   const leaving = signOut.kind === 'pending'
@@ -80,6 +90,10 @@ export function AccountView({ username, displayName, family, password, values, o
           <li className="ck-auth-row">
             <span id="account-theme-label" className="ck-auth-row-label">Тема</span>
             <ThemeChoice />
+          </li>
+          <li className="ck-auth-row">
+            <span id="account-icons-label" className="ck-auth-row-label">Значки</span>
+            <ListIconsChoice />
           </li>
           <li>
             <Link className="ck-auth-row" to="/family" data-auth-family>

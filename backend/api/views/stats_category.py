@@ -80,7 +80,7 @@ class CategorySpendsView(LocalAPIView):
                        if found.currency != converter.base]
         return Response({
             "month": month.label(), "previous_month": month.previous().label(),
-            "category": tree.category(category),
+            "category": {**tree.category(category), "icon": tree.icon(category)},
             "children": [{"id": pk, "name": tree.name(pk)} for pk in tree.children(category)],
             "currencies": [_block(found, tree) for found in blocks],
             **stats_common.base_fields(converter, block and _block(block, tree), unconverted),

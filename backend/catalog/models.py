@@ -5,6 +5,29 @@ from django.db.models.functions import Lower
 from catalog.units import BaseUnit, Unit
 
 
+class CategoryIcon(models.TextChoices):
+    """Pictures of spend rows (2026-10-13); the client draws each key (frontend/src/components/Icon.tsx)."""
+
+    CART = "cart", "Тележка"
+    BUS = "bus", "Автобус"
+    CAR = "car", "Машина"
+    DINING = "dining", "Вилка и нож"
+    HOME = "home", "Дом"
+    PHONE = "phone", "Телефон"
+    HEART = "heart", "Сердце"
+    SHIRT = "shirt", "Футболка"
+    TICKET = "ticket", "Билет"
+    GIFT = "gift", "Подарок"
+    BABY = "baby", "Мишка"
+    BOX = "box", "Коробка"
+    BANK = "bank", "Банк"
+    BEAUTY = "beauty", "Ножницы"
+    PLANE = "plane", "Самолёт"
+    BOOK = "book", "Книга"
+    PAW = "paw", "Лапа"
+    TAG = "tag", "Ярлык"
+
+
 class Category(models.Model):
     """Category tree as an adjacency list."""
 
@@ -12,6 +35,8 @@ class Category(models.Model):
     parent = models.ForeignKey(
         "self", null=True, blank=True, on_delete=models.PROTECT, related_name="children",
     )
+    # Empty — the icon of the nearest ancestor that has one (api.common.CategoryTree.icon).
+    icon = models.CharField(max_length=16, blank=True, default="", choices=CategoryIcon.choices)
 
     class Meta:
         verbose_name_plural = "categories"

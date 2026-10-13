@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { dashboardFixture } from '../../api/budget-test-support'
 import {
-  badgeLetter, capitalize, categoryIds, categoryTone, cents, compareMonths, dayAndMonth, daysLeftText, dashboardErrorMessage, deviceMonth,
-  currencyName, deviceDate, formatMoney, formatNumber, hasLimit, initials, relativeDay, inMonth, monthIsEmpty, monthSlide, monthTitle, plural, progress, recentMeta, shiftMonth,
+  capitalize, categoryIds, categoryTone, cents, compareMonths, dayAndMonth, daysLeftText, dashboardErrorMessage, deviceMonth,
+  currencyName, deviceDate, formatMoney, formatNumber, hasLimit, initials, relativeDay, inMonth, monthIsEmpty, monthSlide, monthTitle, plural, progress, recentMeta, recentSource, shiftMonth,
 } from './dashboard-state'
 
 const nb = (text: string) => text.replaceAll(' ', '\u00a0')
@@ -123,9 +123,10 @@ describe('colours, avatars and recent spends', () => {
     expect(hasLimit({ category_id: 1, name: 'Жильё', spent: '1.00', limit: null, limit_id: null, children: [
       { category_id: 2, name: 'Аренда', spent: '1.00', limit: '5.00', limit_id: 3, children: [] }] })).toBe(true)
     expect(hasLimit({ category_id: 1, name: 'Жильё', spent: '1.00', limit: null, limit_id: null })).toBe(false)
-    expect(badgeLetter('продукты', 'Magnum')).toBe('П')
-    expect(badgeLetter(null, 'magnum')).toBe('M')
-    expect(badgeLetter(null, '')).toBe('•')
+    // A spend from a bank statement names its bank, as in «Траты» (an older server sends no note).
+    expect(recentMeta({ ...manual, note: 'Кофе · Выписка Kaspi Gold' }, later)).toBe(`andrey · ${nb('11 октября')} · Выписка Kaspi Gold`)
+    expect(recentSource({ ...manual, note: 'Кофе · Выписка Kaspi Gold' })).toBe('statement')
+    expect([recentSource(photo), recentSource(manual)]).toEqual(['photo', 'manual'])
   })
   it('finds category ids by name for the badges', () => {
     expect(categoryIds(dashboardFixture()).get('Продукты')).toBe(3)

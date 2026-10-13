@@ -157,6 +157,8 @@ describe('account page (Node server markup, not browser behavior)', () => {
     expect(html).toContain('<p class="ck-auth-hint" data-auth-family-name="true">Семья Пустовых · главный</p>')
     // A server render sees the dark theme.
     expect(html).toContain('<div class="ck-auth-segments" role="group" aria-labelledby="account-theme-label"><button type="button" class="ck-auth-segment" aria-pressed="false">Светлая</button><button type="button" class="ck-auth-segment" aria-pressed="true">Тёмная</button></div>')
+    // What the squares of the spends show, in the same segments: the category by default (lib/list-icons).
+    expect(html).toContain('<li class="ck-auth-row"><span id="account-icons-label" class="ck-auth-row-label">Значки</span><div class="ck-auth-segments" role="group" aria-labelledby="account-icons-label"><button type="button" class="ck-auth-segment" aria-pressed="true">Категория</button><button type="button" class="ck-auth-segment" aria-pressed="false">Как внесена</button></div></li>')
     expect(html).toMatch(/<a [^>]*href="\/family"[^>]*>/)
     expect(accountHtml()).not.toContain('data-auth-family-name')
   })

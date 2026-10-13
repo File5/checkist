@@ -103,7 +103,7 @@ class ListFieldsTests(TestCase):
         receipt = self.receipt(1, {"product": self.milk, "raw_name": "MILCH"}, {"category": self.cheese, "raw_name": "Käse"},
                                {"raw_name": "Unbekannt"})
         item = self.listed()[receipt.pk]
-        self.assertEqual(item["category"], {"id": self.food.pk, "name": "Демо-продукты"})
+        self.assertEqual(item["category"], {"id": self.food.pk, "name": "Демо-продукты", "icon": None})
         self.assertEqual(item["first_line"], "MILCH")
 
     def test_several_top_level_categories_or_none_give_null(self):
@@ -123,10 +123,20 @@ class ListFieldsTests(TestCase):
         listed = self.listed()
         milk = self.milk.generic.category
         self.assertEqual(listed[mixed.pk]["categories"],
-                         sorted([{"id": milk.pk, "name": milk.name}, {"id": self.home.pk, "name": "Демо-дом"}],
+                         sorted([{"id": milk.pk, "name": milk.name, "icon": None}, {"id": self.home.pk, "name": "Демо-дом", "icon": None}],
                                 key=lambda entry: (entry["name"], entry["id"])))
         self.assertEqual(listed[bare.pk]["categories"], [])
         self.assertNotIn("categories", self.client.get(f"/api/receipts/{mixed.pk}/").json())
+
+    def test_icon_is_own_or_of_the_nearest_ancestor(self):
+        Category.objects.filter(pk=self.food.pk).update(icon="cart")
+        receipt = self.receipt(1, {"category": self.cheese})
+        item = self.listed()[receipt.pk]
+        self.assertEqual(item["category"], {"id": self.food.pk, "name": "Демо-продукты", "icon": "cart"})
+        self.assertEqual(item["categories"], [{"id": self.cheese.pk, "name": "Демо-сыры", "icon": "cart"}])
+        Category.objects.filter(pk=self.dairy.pk).update(icon="heart")
+        item = self.listed()[receipt.pk]
+        self.assertEqual((item["category"]["icon"], item["categories"][0]["icon"]), ("cart", "heart"))
 
     def test_first_line_follows_position_not_creation(self):
         receipt = make_receipt(self.store, "EUR", date(2026, 10, 4), total=D("10.00"))
@@ -134,7 +144,7 @@ class ListFieldsTests(TestCase):
         make_line(receipt, position=1, raw_name="Erste", category=self.home)
         item = self.listed()[receipt.pk]
         self.assertEqual(item["first_line"], "Erste")
-        self.assertEqual(item["category"], {"id": self.home.pk, "name": "Демо-дом"})
+        self.assertEqual(item["category"], {"id": self.home.pk, "name": "Демо-дом", "icon": None})
 
     def test_detail_keeps_its_shape(self):
         receipt = self.receipt(1, {"product": self.milk})

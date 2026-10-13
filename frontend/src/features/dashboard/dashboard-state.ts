@@ -4,6 +4,8 @@ import type { Person } from '../../lib/people'
 import type { Decimal, LocalApiFailure } from '../../api/types'
 import { currencySymbol, formatCentsNumber } from '../../lib/money'
 import { NBSP, glue } from '../../lib/text'
+import { sourceMark, spendSource } from '../receipts/spends'
+import type { SpendSource } from '../receipts/spends'
 
 /** Money is counted in cents with BigInt: a Decimal never becomes a Number. A malformed value counts as zero. */
 export function cents(value: Decimal | null | undefined): bigint {
@@ -138,11 +140,6 @@ export function subCategories(category: DashboardCategory | DashboardSubCategory
   return category.children ?? []
 }
 
-/** First letter of a category for its badge. */
-export function badgeLetter(name: string | null, title: string): string {
-  return ([...(name ?? title).trim()][0] ?? '•').toUpperCase()
-}
-
 /** The calendar date of the device, «2026-10-13». */
 export function deviceDate(now: Date = new Date()): string {
   return `${String(now.getFullYear()).padStart(4, '0')}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
@@ -155,9 +152,16 @@ export function relativeDay(date: string, today: string = deviceDate()): string 
   return date === deviceDate(new Date(year, month - 1, day - 1)) ? 'вчера' : dayAndMonth(date)
 }
 
-/** «Лиза · сегодня · 23 позиции», «вручную» for a spend without a receipt; the name, or the username without one. */
+/** How a recent spend came in, as in «Траты»: a statement is told by its note (an older server sends none). */
+export function recentSource(item: DashboardRecent): SpendSource {
+  return spendSource({ source: item.source, note: item.note ?? '' })
+}
+
+/** «Лиза · сегодня · 23 позиции», «вручную» for a spend without a receipt, «Выписка Kaspi Gold» for one from a statement;
+ * the name, or the username without one. */
 export function recentMeta(item: DashboardRecent, today: string = deviceDate()): string {
-  const what = item.source === 'manual' ? 'вручную'
+  const source = recentSource(item)
+  const what = source === 'statement' ? sourceMark(item.source, item.note) : source === 'manual' ? 'вручную'
     : glue(String(item.lines_count), plural(item.lines_count, 'позиция', 'позиции', 'позиций'))
   return [ownerName(item), relativeDay(item.purchased_on, today), what].join(' · ')
 }

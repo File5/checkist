@@ -13,9 +13,10 @@ import { useQuickShot } from '../recognition/QuickShot'
 import RecurringDue from '../recurring/RecurringDue'
 import IncomeSummary from '../incomes/IncomeSummary'
 import {
-  allowanceView, badgeLetter, capitalize, categoryIds, categoryTone, cents, compareMonths, currencyName, daysLeftText, dashboardErrorMessage, dashboardPeople, deviceDate, deviceMonth,
-  formatMoney, formatNumber, hasLimit, initials, inMonth, monthIsEmpty, monthSlide, monthTitle, progress, recentMeta, shiftMonth,
+  allowanceView, capitalize, categoryIds, categoryTone, cents, compareMonths, currencyName, daysLeftText, dashboardErrorMessage, dashboardPeople, deviceDate, deviceMonth,
+  formatMoney, formatNumber, hasLimit, initials, inMonth, monthIsEmpty, monthSlide, monthTitle, progress, recentMeta, recentSource, shiftMonth,
 } from './dashboard-state'
+import { useSpendIcon } from '../../lib/list-icons'
 import type { MonthSlide, Progress } from './dashboard-state'
 import { categorySpendsHref } from './category-spends-state'
 import { baseTwin, currencySymbol } from '../../lib/money'
@@ -155,14 +156,14 @@ function Unconverted({ items }: { items: ExcludedSpends[] }) {
   </section>
 }
 
-/** The two big actions of the artifact: the camera of «Снять чек» and the form of «Трата». Not pinned: they stand in
- * the page under the total, the «＋» of the bottom bar is the action that is always at hand. */
+/** The two big actions of the artifact: the camera of «Снять чек» and «＋ Добавить» — the form that opens on «Трата» with
+ * «Доход» beside it. Not pinned: they stand in the page under the total, the «＋» of the bottom bar is always at hand. */
 function Actions() {
   const shot = useQuickShot('camera')
   return <div className="dash-actions">
     <button type="button" className="dash-action dash-action-shot" onClick={shot.open}><Icon name="camera" />Снять чек</button>
     {shot.field}
-    <Link className="dash-action dash-action-spend" to="/receipts/new"><Icon name="plus" />Трата</Link>
+    <Link className="dash-action dash-action-spend" to="/receipts/new"><Icon name="plus" />Добавить</Link>
   </div>
 }
 
@@ -279,9 +280,11 @@ function LimitsCard({ block, several, month, fold, budget }: { block: DashboardC
 function RecentItem({ item, tone, date, base }: { item: DashboardRecent; tone: number; date: string; base?: string }) {
   // «20 $» and under it «≈ 8 979 ₸»: a spend in another currency keeps its own amount, the total above counts the twin.
   const twin = baseTwin(item.currency, item.base_total, base)
+  // The category's picture or how the spend came in — the choice of the device (lib/list-icons), as in «Траты».
+  const icon = useSpendIcon(recentSource(item), item.category_icon)
   return <li>
     <Link className="ck-row dash-recent-item" to={`/receipts/${item.id}`}>
-      <span className={`ck-row-badge dash-badge dash-cat-${tone}`} aria-hidden="true">{badgeLetter(item.category_name, item.title)}</span>
+      <span className={`ck-row-badge dash-badge dash-cat-${tone}`} data-icon={icon} aria-hidden="true"><Icon name={icon} size={20} /></span>
       <span className="ck-row-main">
         <span className="ck-row-title dash-recent-title">{item.title || (item.source === 'manual' ? 'Трата' : 'Чек')}</span>
         <span className="ck-row-meta">{recentMeta(item, date)}</span>

@@ -80,3 +80,12 @@
   .ck-catalog-category-list [data-compact="true"] > .ck-catalog-category-list { padding-inline-start: 0; }
   .ck-catalog-product-prices { border-top: 1px solid var(--ck-divider); padding-top: 16px; }
 }
+
+/* «Значок в тратах» of a moderator (CategoryIconPicker.tsx): squares of the pictures, «Как у родителя» on a row of its
+   own, the chosen one in the colours of a selected chip. */
+.ck-catalog-icon-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(48px, 1fr)); gap: 8px; margin-top: 12px; }
+.ck-catalog-icon-grid button { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-width: 48px; min-height: 48px; padding: 0 12px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-surface); color: var(--ck-text); font-size: var(--ck-text-sm); font-weight: 600; }
+.ck-catalog-icon-grid button:hover { border-color: var(--ck-text-muted); background: var(--ck-surface-raised); }
+.ck-catalog-icon-grid button[aria-pressed="true"] { border-color: var(--ck-chip-selected-bg); background: var(--ck-chip-selected-bg); color: var(--ck-chip-selected-text); }
+.ck-catalog-icon-grid .ck-catalog-icon-inherit { grid-column: 1 / -1; justify-content: flex-start; }
+.ck-catalog-icons .ck-catalog-note + .ck-catalog-icon-grid + p { margin-top: 10px; }

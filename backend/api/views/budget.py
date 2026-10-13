@@ -247,13 +247,15 @@ def read_month(params, today):
     return dashboard.Month(int(match[1]), int(match[2]))
 
 
-def _recent_object(receipt, category_name, converter):
+def _recent_object(receipt, category_name, icon, converter):
     if receipt.store_id is not None:
         title = common.store_name(receipt.store)
     else:
         title = receipt.note or category_name or "Без места"
     return {
         "id": receipt.pk, "source": receipt.source, "title": title, "category_name": category_name,
+        # Значок категории (свой либо предка, null — нет) и комментарий: по нему клиент узнаёт трату из выписки.
+        "category_icon": icon, "note": receipt.note,
         "owner": receipt.owner.get_username(), "owner_name": display_name(receipt.owner),
         "purchased_on": common.iso_date(receipt.purchased_on),
         "total": common.amount(receipt.total), "currency": receipt.currency_id, "lines_count": receipt.lines_total,
@@ -333,7 +335,7 @@ class DashboardView(LocalAPIView):
         converter = stats_common.converter(request, found.needs() | {
             *((limit.currency_id, rate_day) for limit in limits),
             *(((budget.currency_id, rate_day),) if budget is not None else ()),
-            *((row.currency_id, row.purchased_on) for row, _name in latest)})
+            *((row.currency_id, row.purchased_on) for row, _name, _icon in latest)})
         blocks = dashboard.currency_blocks(found, limits, month, tree)
         in_base = dashboard.currency_blocks(found, limits, month, tree, converter, today)
         block = stats_common.base_block(in_base, converter.base)
@@ -344,7 +346,7 @@ class DashboardView(LocalAPIView):
             "currencies": stats_common.primary_first(request, [_block_object(block) for block in blocks]),
             **stats_common.base_fields(converter, block and _block_object(block),
                                        spending.unconverted(found.data, converter)),
-            "recent": [_recent_object(row, name, converter) for row, name in latest],
+            "recent": [_recent_object(row, name, icon, converter) for row, name, icon in latest],
             # Общий бюджет месяца и «можно тратить в день» (только текущий месяц) — в основной валюте.
             "budget": _month_budget(budget, converter, rate_day, block),
             "allowance": _allowance_object(allowance.daily(

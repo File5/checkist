@@ -13,17 +13,21 @@ import { glue } from '../../lib/text'
 import type { MonthSlide } from './dashboard-state'
 import { categorySpendsHref, partShare, showsLines, spendNote, spendSource, spendTitle, wholeReceipt } from './category-spends-state'
 import { categoryTone } from '../../lib/category-tone'
+import { useSpendIcon } from '../../lib/list-icons'
+import { spendSource as entrySource } from '../receipts/spends'
 import './Dashboard.css'
 
-function SpendItem({ item, currency, tone }: { item: CategorySpendItem; currency: string; tone: number }) {
+function SpendItem({ item, currency, tone, icon }: { item: CategorySpendItem; currency: string; tone: number; icon?: string | null }) {
   const note = spendNote(item)
+  // The picture of the category or how the spend came in — the choice of the device (lib/list-icons), as in «Траты».
+  const picture = useSpendIcon(entrySource(item), icon)
   const whole = wholeReceipt(item, currency)
   // A spend in another currency, counted in the base one: its own amount first, the converted one under it.
   const original = item.currency !== undefined && item.currency !== currency && item.original_amount !== undefined
   return <li className="cat-spend">
     <Link className="cat-spend-row" to={`/receipts/${item.receipt_id}`}>
-      {/* By a receipt or by hand, as in «Траты»: the picture says it, the meta line names it. */}
-      <span className={`cat-spend-badge dash-cat-${tone}`} aria-hidden="true"><Icon name={item.source === 'photo' ? 'receipt' : 'pencil'} size={20} /></span>
+      {/* The meta line names the source whatever the picture shows. */}
+      <span className={`cat-spend-badge dash-cat-${tone}`} data-icon={picture} aria-hidden="true"><Icon name={picture} size={20} /></span>
       <span className="cat-spend-main">
         <span className="cat-spend-title">{spendTitle(item)}</span>
         {note && <span className="cat-spend-note">{note}</span>}
@@ -58,8 +62,8 @@ function MonthSteps({ categoryId, month, today }: { categoryId: number; month: s
   </nav>
 }
 
-function CurrencyBlock({ block, month, hero, categoryName, tone, steps, note }: {
-  block: CategorySpendCurrency; month: string; hero: boolean; categoryName: string; tone: number; steps?: ReactNode; note?: string
+function CurrencyBlock({ block, month, hero, categoryName, tone, icon, steps, note }: {
+  block: CategorySpendCurrency; month: string; hero: boolean; categoryName: string; tone: number; icon?: string | null; steps?: ReactNode; note?: string
 }) {
   const headingId = `cat-spends-items-${block.currency}`
   const parts = block.parts.filter((part) => !part.direct || block.parts.length > 1)
@@ -90,7 +94,7 @@ function CurrencyBlock({ block, month, hero, categoryName, tone, steps, note }: 
     </section>
     <section className="ck-panel dash-card cat-spends-items" aria-labelledby={headingId}>
       <div className="ck-panel-head"><h2 id={headingId}>Траты и чеки{hero ? '' : ` · ${currencySymbol(block.currency)}`}</h2></div>
-      <ul className="cat-spend-list">{block.items.map((item) => <SpendItem key={item.receipt_id} item={item} currency={block.currency} tone={tone} />)}</ul>
+      <ul className="cat-spend-list">{block.items.map((item) => <SpendItem key={item.receipt_id} item={item} currency={block.currency} tone={tone} icon={icon} />)}</ul>
     </section>
   </>
 }
@@ -111,7 +115,7 @@ export function CategorySpendsView({ data, today = deviceMonth(), slide }: Categ
     </nav>}
     {data.currencies.length
       ? data.currencies.map((block, index) => <CurrencyBlock key={block.currency} block={block} month={month} hero={index === 0} categoryName={category.name}
-        tone={tone} steps={index === 0 ? steps : undefined} note={index === 0 ? excludedNote(data.excluded) : undefined} />)
+        tone={tone} icon={category.icon} steps={index === 0 ? steps : undefined} note={index === 0 ? excludedNote(data.excluded) : undefined} />)
       : <>
         <section className="ck-panel dash-card cat-spends-total" aria-label="Месяц">{steps}
           {data.excluded?.length ? <p className="dash-note">{excludedNote(data.excluded)}</p> : null}</section>

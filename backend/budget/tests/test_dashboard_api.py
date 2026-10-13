@@ -149,8 +149,8 @@ class DashboardNumbersTests(FixtureMixin, TestCase):
         photo = next(row for row in recent if row["id"] == self.photo.pk)
         self.assertEqual(photo, {
             "id": self.photo.pk, "source": "photo", "title": common.store_name(self.store),
-            "category_name": "Демо-продукты", "owner": "local", "owner_name": "local", "purchased_on": "2026-10-05",
-            "total": "1000.00", "currency": "KZT", "lines_count": 4, "base_total": "1000.00",
+            "category_name": "Демо-продукты", "category_icon": None, "note": "", "owner": "local", "owner_name": "local",
+            "purchased_on": "2026-10-05", "total": "1000.00", "currency": "KZT", "lines_count": 4, "base_total": "1000.00",
         })
         coffee = next(row for row in recent if row["id"] == self.coffee_spend.pk)
         self.assertEqual((coffee["source"], coffee["title"], coffee["category_name"], coffee["lines_count"]),
@@ -159,6 +159,18 @@ class DashboardNumbersTests(FixtureMixin, TestCase):
         self.assertEqual(euro["title"], "Демо-продукты")
         dates = [row["purchased_on"] for row in recent]
         self.assertEqual(dates, sorted(dates, reverse=True))
+
+    def test_recent_icon_of_the_only_category_or_of_the_main_one(self):
+        Category.objects.filter(pk=self.food.pk).update(icon="cart")
+        Category.objects.filter(pk=self.cafe.pk).update(icon="dining")
+        recent = {row["id"]: row for row in self.get()["recent"]}
+        # Фото-чек: молочное и «Не разобрано» — значок главной категории; кофе — своей ветви, от предка.
+        self.assertEqual(recent[self.photo.pk]["category_icon"], "cart")
+        self.assertEqual((recent[self.coffee_spend.pk]["category_icon"], recent[self.coffee_spend.pk]["note"]),
+                         ("dining", "Капучино"))
+        Category.objects.filter(pk=self.coffee.pk).update(icon="heart")
+        self.assertEqual(next(row for row in self.get()["recent"] if row["id"] == self.coffee_spend.pk)["category_icon"],
+                         "heart")
 
     def test_recent_category_follows_the_merge_survivor_like_the_categories_block(self):
         from api.tests.test_stats_spending import absorb

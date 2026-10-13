@@ -243,16 +243,17 @@ def _root(tree, category_id):
 
 
 def recent(receipts, tree, limit=RECENT_LIMIT, product_ref=None):
-    """Последние ``limit`` чеков по моменту покупки; у каждого — главная категория.
+    """Последние ``limit`` чеков по моменту покупки: ``(чек, главная категория, значок)``.
 
     Главная категория — корень с наибольшей суммой строк чека (при равенстве — по
-    имени), ``None``, если у строк чека категорий нет. ``product_ref`` — выражение
-    «товар строки», как в ``currency_blocks``: строка поглощённого слиянием товара
-    относится к категории оставляемого. Три запроса.
+    имени), ``None``, если у строк чека категорий нет. Значок — как в списке «Траты»:
+    у строк одна категория — её (``CategoryTree.icon``), иначе главной. ``product_ref`` —
+    выражение «товар строки», как в ``currency_blocks``: строка поглощённого слиянием
+    товара относится к категории оставляемого. Три запроса.
     """
     rows = list(receipts.select_related("store__merchant", "owner")
                 .annotate(lines_total=Count("lines")).order_by("-purchased_at", "-id")[:limit])
-    paid = {}
+    paid, leaves = {}, {}
     lines = list(
         ReceiptLine.objects.filter(receipt_id__in=[row.pk for row in rows], kind=ReceiptLine.Kind.PRODUCT)
         .values("receipt_id", "category_id")
@@ -265,13 +266,17 @@ def recent(receipts, tree, limit=RECENT_LIMIT, product_ref=None):
     product_category = dict(Product.objects.filter(pk__in=owners).values_list("pk", "generic__category_id"))
     for receipt_id, line_category, owner, amount in lines:
         category = product_category.get(owner) if owner is not None else None
-        root = _root(tree, category if category is not None else line_category)
+        leaf = category if category is not None else line_category
+        root = _root(tree, leaf)
         if root is not None:
             sums = paid.setdefault(receipt_id, {})
             sums[root] = sums.get(root, _ZERO) + amount
+            leaves.setdefault(receipt_id, set()).add(leaf)
     result = []
     for row in rows:
         sums = paid.get(row.pk, {})
         main = min(sums, key=lambda pk: (-sums[pk], tree.name(pk), pk)) if sums else None
-        result.append((row, None if main is None else tree.name(main)))
+        only = leaves.get(row.pk, set())
+        shown = next(iter(only)) if len(only) == 1 else main
+        result.append((row, None if main is None else tree.name(main), None if shown is None else tree.icon(shown)))
     return result

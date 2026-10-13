@@ -30,6 +30,9 @@ export type DashboardCurrency = {
 /** A recent spend: the title is the store, or what a manual spend was about. */
 export type DashboardRecent = {
   id: number; source: ReceiptSource; title: string; category_name: string | null
+  /** The picture of the category (its own or an ancestor's; null — none, the tag) and the note that tells a spend from a
+   * statement (2026-10-13); missing from an older server. */
+  category_icon?: string | null; note?: string
   /** `owner` — username; `owner_name` — the name to show, missing from an older server. */
   owner: string; owner_name?: string
   purchased_on: ISODate; total: Decimal; currency: CurrencyCode; lines_count: number
@@ -76,7 +79,8 @@ export type CategorySpendCurrency = {
 export type CategorySpends = InBase & {
   base?: CategorySpendCurrency | null
   month: MonthCode; previous_month: MonthCode
-  category: { id: number; name: string; path: { id: number; name: string }[] }
+  /** `icon` — the picture of the category, inherited (2026-10-13); missing from an older server. */
+  category: { id: number; name: string; path: { id: number; name: string }[]; icon?: string | null }
   children: { id: number; name: string }[]
   currencies: CategorySpendCurrency[]
 }
