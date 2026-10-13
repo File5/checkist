@@ -1,6 +1,7 @@
 import type { CategoryRef, CurrencyCode, Decimal, ISODate, ISODateTime } from './types.ts'
 import type { ReceiptSource } from './receipts-types.ts'
 import type { Person } from '../lib/people.ts'
+import type { InBase } from './base-currency.ts'
 
 /** `YYYY-MM`: a calendar month in the server's timezone. */
 export type MonthCode = string
@@ -32,11 +33,16 @@ export type DashboardRecent = {
   /** `owner` — username; `owner_name` — the name to show, missing from an older server. */
   owner: string; owner_name?: string
   purchased_on: ISODate; total: Decimal; currency: CurrencyCode; lines_count: number
+  /** The total in the family's base currency at the rate of its day; null — no rate; missing from an older server. */
+  base_total?: Decimal | null
 }
 /** `GET /api/dashboard/?month=YYYY-MM`. `members` — usernames of the family, or just one's own;
  * `people` — the same with names to show, missing from an older server. */
-export type Dashboard = {
+export type Dashboard = InBase & {
+  /** The month in the base currency (null — nothing to show); read into `currencies` by `getDashboard`. */
+  base?: DashboardCurrency | null
   month: MonthCode; previous_month: MonthCode; days_left: number; members: string[]; people?: Person[]
+  /** One block per currency from an older server; one block of the base currency (or none) from a newer one (api/base-currency.ts). */
   currencies: DashboardCurrency[]; recent: DashboardRecent[]
 }
 
@@ -46,6 +52,9 @@ export type CategorySpendLine = { id: number; name: string; amount: Decimal; cat
 export type CategorySpendItem = {
   receipt_id: number; source: ReceiptSource; purchased_on: ISODate; store: { id: number; name: string } | null; note: string
   owner: string; owner_name: string; receipt_total: Decimal; category_amount: Decimal; lines: CategorySpendLine[]
+  /** The currency of the receipt and the sum of its lines of the category in it: in a block of the base currency the
+   * amounts above are converted. Missing from an older server. */
+  currency?: CurrencyCode; original_amount?: Decimal
 }
 /** A direct sub-category with its descendants, or the category itself (`direct`). */
 export type CategorySpendPart = { id: number; name: string; direct: boolean; children_count: number; amount: Decimal; lines_count: number }
@@ -53,7 +62,8 @@ export type CategorySpendCurrency = {
   currency: CurrencyCode; total: Decimal; receipts_count: number; parts: CategorySpendPart[]; items: CategorySpendItem[]
 }
 /** `GET /api/stats/category-spends/?category=ID&month=YYYY-MM`: what the money of a category went on in a month. */
-export type CategorySpends = {
+export type CategorySpends = InBase & {
+  base?: CategorySpendCurrency | null
   month: MonthCode; previous_month: MonthCode
   category: { id: number; name: string; path: { id: number; name: string }[] }
   children: { id: number; name: string }[]
@@ -61,7 +71,12 @@ export type CategorySpends = {
 }
 
 /** A monthly limit of a category (any level) in one currency, shared by the family (or one's own without a family). */
-export type BudgetLimit = { id: number; category_id: number; category_name: string; currency: CurrencyCode; amount: Decimal }
+export type BudgetLimit = {
+  id: number; category_id: number; category_name: string; currency: CurrencyCode; amount: Decimal
+  /** The family's base currency and the limit in it at today's rate (null — no rate); missing from an older server.
+   * A new or changed limit is in the base currency only; an older one in another currency stays readable. */
+  base_currency?: CurrencyCode; base_amount?: Decimal | null
+}
 /** Body of `POST /api/budget/limits/`. */
 export type BudgetLimitInput = { category_id: number; currency: CurrencyCode; amount: Decimal }
 

@@ -1,5 +1,7 @@
 import { amount, array, bool, choice, country, currency, isId, isISODate, named, nonNegativeInteger, nullable, object, price, quantity, text, unit } from './schema.ts'
 import type { Check, Guard } from './schema.ts'
+import { withBase } from './base-currency.ts'
+import type { InBase } from './base-currency.ts'
 import { receiptIntervals, spendingGroupings, spendingSpecialKinds } from './stats-types.ts'
 import type {
   CompareChange, CompareCurrency, CompareEffects, ComparePeriod, ComparePriceIndex, CompareProduct, ComparePurchase, CompareSide,
@@ -36,15 +38,17 @@ const totals: Guard<SpendingTotals> = (value): value is SpendingTotals => totals
   && (value.receipts_total === null) === (value.difference === null)
 const spendingBlock = object<SpendingCurrency>({ currency, totals, items: array(item), other: nullable(other) })
 const categoryRef = object<CategoryRef>({ id: isId, name: text, path: array(named) })
-const spendingShape = object<Spending>({
+const spendingShape = object<Omit<Spending, keyof InBase | 'base'>>({
   group_by: choice(...spendingGroupings), date_from: nullable(isISODate), date_to: nullable(isISODate),
   parent: nullable(categoryRef), currencies: array(spendingBlock),
 })
-export const isSpending: Guard<Spending> = (value): value is Spending => spendingShape(value)
+const spending: Guard<Spending> = (value): value is Spending => spendingShape(value)
   && distinct(value.currencies)
   // Regular items are of the requested grouping; a store grouping has only «Без места» among the special ones.
   && value.currencies.every((block) => block.items.every((entry) => entry.kind === value.group_by
     || (value.group_by === 'store' ? entry.kind === 'no_store' : special(entry.kind) && entry.kind !== 'no_store')))
+/** In the family's base currency too (api/base-currency.ts). */
+export const isSpending = withBase(spending)
 
 const bucketShape = object<ReceiptBucket>({
   period_start: isISODate, receipts_count: isId, total: amount, avg_receipt: amount, median_receipt: amount,
@@ -56,10 +60,11 @@ const seriesBlockShape = object<ReceiptSeriesCurrency>({ currency, refunds_exclu
 /** A currency without visits gives no block; intervals without visits are left out. */
 const seriesBlock: Guard<ReceiptSeriesCurrency> = (value): value is ReceiptSeriesCurrency => seriesBlockShape(value)
   && value.buckets.length > 0 && ascending(value.buckets)
-const seriesShape = object<ReceiptSeries>({
+const seriesShape = object<Omit<ReceiptSeries, keyof InBase | 'base'>>({
   interval: choice(...receiptIntervals), date_from: nullable(isISODate), date_to: nullable(isISODate), currencies: array(seriesBlock),
 })
-export const isReceiptSeries: Guard<ReceiptSeries> = (value): value is ReceiptSeries => seriesShape(value) && distinct(value.currencies)
+/** In the family's base currency too (api/base-currency.ts). */
+export const isReceiptSeries = withBase<ReceiptSeries>((value): value is ReceiptSeries => seriesShape(value) && distinct(value.currencies))
 
 const period = object<ComparePeriod>({ date_from: isISODate, date_to: isISODate })
 const sideShape = object<CompareSide>({
@@ -98,5 +103,6 @@ const compareBlock: Guard<CompareCurrency> = (value): value is CompareCurrency =
   && (value.change.avg_receipt !== null || (value.change.avg_receipt_percent === null && value.effects === null))
   && value.products_total === (value.price_index?.matched_products ?? 0)
   && value.products.length <= value.products_total
-const compareShape = object<ReceiptCompare>({ base: period, current: period, currencies: array(compareBlock) })
-export const isReceiptCompare: Guard<ReceiptCompare> = (value): value is ReceiptCompare => compareShape(value) && distinct(value.currencies)
+const compareShape = object<Omit<ReceiptCompare, keyof InBase | 'in_base'>>({ base: period, current: period, currencies: array(compareBlock) })
+export const isReceiptCompare = withBase<ReceiptCompare>((value): value is ReceiptCompare => compareShape(value) && distinct(value.currencies),
+  { from: 'in_base', to: 'currencies' })

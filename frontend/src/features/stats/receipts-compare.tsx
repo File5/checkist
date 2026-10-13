@@ -1,4 +1,5 @@
 import { useId, useMemo } from 'react'
+import { excludedNote } from '../../lib/base-currency'
 import type { CompareCurrency, CompareProduct, ComparePriceIndex, ReceiptCompare } from '../../api/stats'
 import RequestState from '../../components/RequestState'
 import { useLocalRequestFocus } from '../../components/useLocalRequestFocus'
@@ -192,7 +193,7 @@ function CompareBody({ state, query, onRetry }: CompareBlockProps) {
         action={<Link className="action-link" to={receiptsStatsHref(query.interval ? { interval: query.interval } : {})}>Сбросить периоды и фильтры</Link>} />
     case 'ok': {
       const { data } = state
-      if (data.currencies.length === 0) {
+      if (data.currencies.length === 0 && !data.excluded?.length) {
         return hasScope(query)
           ? <RequestState kind="empty" message="По выбранным стране, валюте и магазинам походов нет ни в одном из периодов."
             action={<Link className="action-link" to={receiptsStatsHref(withoutScope(query))}>Убрать фильтры, оставить периоды</Link>} />
@@ -204,6 +205,7 @@ function CompareBody({ state, query, onRetry }: CompareBlockProps) {
             Валюты не складываются и не пересчитываются: по каждой валюте чеков — свой разбор.
           </p>}
           {data.currencies.map((block) => <CompareCurrencySection key={block.currency} block={block} data={data} />)}
+          {data.excluded?.length ? <p className="stats-note">{excludedNote(data.excluded)}</p> : null}
         </>
       )
     }

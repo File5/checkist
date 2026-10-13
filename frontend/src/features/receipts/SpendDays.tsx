@@ -4,6 +4,7 @@ import type { ReceiptsQuery } from '../../navigation'
 import { categoryTone, groupByDay, isRowFlag, rowMeta, rowTitle, spendSource, withHidden, withOwner } from './spends'
 import type { OwnerChip, SpendSource } from './spends'
 import { money } from './state'
+import { baseTwin } from '../../lib/money'
 import ChipScroller from '../../components/ChipScroller'
 
 /** The badge of a row: a slip of a photo receipt, a pencil of a spend typed by hand, a card of a bank statement. Strokes of
@@ -22,6 +23,12 @@ export function SourceIcon({ source }: { source: SpendSource }) {
   </svg>
 }
 
+/** «≈ 8 979 ₸» under «20 $»: a spend in another currency keeps its own amount, the totals count this converted one. */
+export function BaseTwin({ receipt }: { receipt: Pick<ReceiptListItem, 'currency' | 'base_total' | 'base_currency'> }) {
+  const twin = baseTwin(receipt.currency, receipt.base_total, receipt.base_currency)
+  return twin ? <span className="spends-row-twin">{twin}</span> : null
+}
+
 function SpendRow({ receipt, showOwner }: { receipt: ReceiptListItem; showOwner: boolean }) {
   const tone = receipt.category ? categoryTone(receipt.category.id) : undefined
   const source = spendSource(receipt)
@@ -33,7 +40,8 @@ function SpendRow({ receipt, showOwner }: { receipt: ReceiptListItem; showOwner:
         <span className="spends-row-meta">{rowMeta(receipt, showOwner).map((text, index) => <span key={index} className={isRowFlag(text) ? 'spends-row-flag' : undefined}>
           {index > 0 && ' · '}{text}</span>)}</span>
       </span>
-      <span className="spends-row-amount ck-figures">{money(receipt.total, receipt.currency)}</span>
+      <span className="spends-row-amount ck-figures">{money(receipt.total, receipt.currency)}
+        <BaseTwin receipt={receipt} /></span>
     </Link>
   </li>
 }

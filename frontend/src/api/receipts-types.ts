@@ -19,6 +19,9 @@ export type Receipt = {
   created_at: ISODateTime; updated_at: ISODateTime; lines_url: string; discounts_url: string; taxes_url: string; images_url: string
   /** A payment hidden by the family head: only the head ever gets one (detail, list with `hidden: '1'`); missing from an older server. */
   hidden?: boolean
+  /** The family's base currency and the total in it at the rate of the National Bank on `purchased_on` (null — no rate);
+   * only the list and the detail send them, an older server none. */
+  base_currency?: CurrencyCode; base_total?: Decimal | null
 }
 /** An item of `GET /api/receipts/` (the list only): the first line's name and the one top-level category of the lines.
  * Optional for an older server: a missing field reads as null. */

@@ -1,5 +1,6 @@
 /** Wire types of the statistics API (docs/api-contract.md). Money, quantities, prices and percents stay strings. */
 import type { CategoryRef, CountryCode, CurrencyCode, Decimal, ISODate, NamedObject, Unit } from './types.ts'
+import type { InBase } from './base-currency.ts'
 
 /** Common filters of `/api/stats/*`. Empty strings and an empty store list are not sent. */
 export type StatsFilters = {
@@ -49,7 +50,9 @@ export type SpendingTotals = {
 }
 /** One currency is one block: amounts of different currencies are never added. */
 export type SpendingCurrency = { currency: CurrencyCode; totals: SpendingTotals; items: SpendingItem[]; other: SpendingOther | null }
-export type Spending = StatsPeriod & {
+export type Spending = StatsPeriod & InBase & {
+  /** The same in the family's base currency (null — nothing to show); `getSpending` reads it into `currencies`. */
+  base?: SpendingCurrency | null
   group_by: SpendingGroupBy
   /** Category of the `category` filter under any grouping; `null` without the filter or for an unknown category. */
   parent: CategoryRef | null
@@ -68,7 +71,7 @@ export type ReceiptBucket = {
   paid_per_line: Decimal | null
 }
 export type ReceiptSeriesCurrency = { currency: CurrencyCode; refunds_excluded: number; buckets: ReceiptBucket[] }
-export type ReceiptSeries = StatsPeriod & { interval: ReceiptInterval; currencies: ReceiptSeriesCurrency[] }
+export type ReceiptSeries = StatsPeriod & InBase & { interval: ReceiptInterval; currencies: ReceiptSeriesCurrency[]; base?: ReceiptSeriesCurrency | null }
 
 /** All four dates are mandatory and `base_to` must precede `current_from`. */
 export type ReceiptCompareParams = Pick<StatsFilters, 'country' | 'currency' | 'store'> & {
@@ -106,7 +109,8 @@ export type CompareCurrency = {
   price_index: ComparePriceIndex | null
   products: CompareProduct[]; products_total: number
 }
-export type ReceiptCompare = { base: ComparePeriod; current: ComparePeriod; currencies: CompareCurrency[] }
+/** `base` is the base period here: the block in the family's base currency is `in_base`. */
+export type ReceiptCompare = InBase & { base: ComparePeriod; current: ComparePeriod; currencies: CompareCurrency[]; in_base?: CompareCurrency | null }
 
 /** Chart value of a wire decimal; `null` stays `null`, anything that is not a finite decimal becomes `null`. */
 export function decimalNumber(value: Decimal | null | undefined): number | null {

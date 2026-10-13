@@ -1,5 +1,7 @@
 import { amount, array, bool, currency, isId, named, nonNegativeInteger, nullable, object, price, text, unit } from './schema.ts'
 import type { Check, Guard } from './schema.ts'
+import { withBase } from './base-currency.ts'
+import type { InBase } from './base-currency.ts'
 import type {
   TrendsCategory, TrendsCategoryCurrency, TrendsCategoryMonth, TrendsCategoryOption, TrendsCategoryRow, TrendsIndexPoint, TrendsLegendCategory,
   TrendsLimit, TrendsLimitChange, TrendsLimitMonth, TrendsLimits, TrendsSummary,
@@ -48,22 +50,26 @@ const monthlyBlockShape = object<TrendsMonthlyCurrency>({
 const monthlyBlock: Guard<TrendsMonthlyCurrency> = (value): value is TrendsMonthlyCurrency => monthlyBlockShape(value)
   && value.months.every((entry) => new Set(entry.categories.map((part) => part.id)).size === entry.categories.length
     && entry.categories.every((part) => value.categories.some((category) => category.id === part.id)))
-const monthlyShape = object<TrendsMonthly>({ ...windowFields, currencies: array(monthlyBlock) })
-export const isTrendsMonthly: Guard<TrendsMonthly> = (value): value is TrendsMonthly => monthlyShape(value)
+const monthlyShape = object<Omit<TrendsMonthly, keyof InBase | 'base'>>({ ...windowFields, currencies: array(monthlyBlock) })
+const monthly: Guard<TrendsMonthly> = (value): value is TrendsMonthly => monthlyShape(value)
   && distinct(value.currencies) && fullWindow(value, value.currencies.map((block) => block.months))
   && value.currencies.every((block) => rowsFit(value, block.rows) && block.summary.month === value.month_to)
+/** In the family's base currency too (api/base-currency.ts). */
+export const isTrendsMonthly = withBase(monthly)
 
 const option = object<TrendsCategoryOption>({ id: isId, name: text, path: array(text), depth: nonNegativeInteger })
 const categoryMonth = object<TrendsCategoryMonth>({ month, amount, lines_count: nonNegativeInteger })
 const categoryBlock = object<TrendsCategoryCurrency>({ currency, total: amount, average: amount, months: array(categoryMonth), parts: array(categoryRow) })
-const categoryShape = object<TrendsCategory>({
+const categoryShape = object<Omit<TrendsCategory, keyof InBase | 'base'>>({
   ...windowFields, category: nullable(categoryRef), suggested: bool, options: array(option), currencies: array(categoryBlock),
 })
-export const isTrendsCategory: Guard<TrendsCategory> = (value): value is TrendsCategory => categoryShape(value)
+const category: Guard<TrendsCategory> = (value): value is TrendsCategory => categoryShape(value)
   && distinct(value.currencies) && fullWindow(value, value.currencies.map((block) => block.months))
   && value.currencies.every((block) => rowsFit(value, block.parts))
   // Without a category there is nothing to draw.
   && (value.category !== null || value.currencies.length === 0)
+/** In the family's base currency too (api/base-currency.ts). */
+export const isTrendsCategory = withBase(category)
 
 const point = object<TrendsIndexPoint>({
   month, index: nullable(percent), base_month: nullable(month), link_percent: nullable(percent), matched_products: nonNegativeInteger,
@@ -90,9 +96,10 @@ const limitMonth = object<TrendsLimitMonth>({
   month, spent: amount, percent: nullable(percent), limit: nullable(amount), change: nullable(limitChange),
 })
 const limit = object<TrendsLimit>({ id: nullable(isId), category: nullable(categoryRef), currency, amount: nullable(amount), months: array(limitMonth) })
-const limitsShape = object<TrendsLimits>({ ...windowFields, limits: array(limit) })
-export const isTrendsLimits: Guard<TrendsLimits> = (value): value is TrendsLimits => limitsShape(value)
-  && fullWindow(value, value.limits.map((entry) => entry.months))
+const limitsShape = object<Omit<TrendsLimits, keyof InBase | 'base_limits'>>({ ...windowFields, limits: array(limit) })
+/** In the family's base currency too: `base_limits` (api/base-currency.ts). */
+export const isTrendsLimits = withBase<TrendsLimits>((value): value is TrendsLimits => limitsShape(value)
+  && fullWindow(value, value.limits.map((entry) => entry.months)), { from: 'base_limits', to: 'limits', list: true })
 
 const rangeShape = object<TrendsRange>({ first_month: nullable(month), last_month: nullable(month), current_month: month, max_months: isId })
 /** Both months or neither, in order. */

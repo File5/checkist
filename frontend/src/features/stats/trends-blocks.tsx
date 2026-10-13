@@ -1,4 +1,5 @@
 import { useId, useMemo, useState } from 'react'
+import { excludedNote } from '../../lib/base-currency'
 import type { ReactNode } from 'react'
 import type { TrendsCategory, TrendsCategoryCurrency, TrendsCategoryOption, TrendsMonthly, TrendsMonthlyCurrency, TrendsPrices, TrendsPricesCurrency } from '../../api/trends'
 import RequestState from '../../components/RequestState'
@@ -113,9 +114,12 @@ export function MonthlyBlock({ state, query, onRetry }: { state: BlockState<Tren
   let body: ReactNode
   switch (shown.kind) {
     case 'loading': body = <RequestState kind="loading" message="Загружаем траты по месяцам…" />; break
-    case 'ok': body = shown.data.currencies.length === 0
+    case 'ok': body = shown.data.currencies.length === 0 && !shown.data.excluded?.length
       ? <RequestState kind="empty" message="За это время трат нет. Снимите чек или добавьте трату — месяцы появятся здесь." />
-      : shown.data.currencies.map((block) => <MonthlyCurrency key={block.currency} block={block} query={query} several={shown.data.currencies.length > 1} />)
+      : <>
+        {shown.data.currencies.map((block) => <MonthlyCurrency key={block.currency} block={block} query={query} several={shown.data.currencies.length > 1} />)}
+        {shown.data.excluded?.length ? <p className="stats-note">{excludedNote(shown.data.excluded)}</p> : null}
+      </>
       break
     default: body = <Failure state={shown} onRetry={onRetry} />
   }

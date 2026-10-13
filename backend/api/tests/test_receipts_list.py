@@ -145,9 +145,10 @@ class ListFieldsTests(TestCase):
     def test_queries_do_not_grow_with_the_page(self):
         for day in range(1, 6):
             self.receipt(day, {"product": self.milk}, {"category": self.home})
-        # count + page + category tree; without categories on the page — no tree.
+        # count + page + category tree + the family's base currency and the rates of the page (EUR here);
+        # without categories on the page — no tree, an empty page needs no base currency.
         for size in (1, 5):
-            with self.subTest(size=size), self.assertNumQueries(3):
+            with self.subTest(size=size), self.assertNumQueries(5):
                 self.assertEqual(self.client.get(f"/api/receipts/?page_size={size}").status_code, 200)
         with self.assertNumQueries(2):
             self.assertEqual(self.client.get("/api/receipts/?q=nothing-matches").status_code, 200)

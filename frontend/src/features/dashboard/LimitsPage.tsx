@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties, FormEvent } from 'react'
-import { createBudgetLimit, deleteBudgetLimit, getBudgetLimitHistory, getBudgetLimits, updateBudgetLimit } from '../../api/budget'
+import { createBudgetLimit, deleteBudgetLimit, getBudgetLimitBook, getBudgetLimitHistory, getBudgetLimits, updateBudgetLimit } from '../../api/budget'
 import type { BudgetLimit, BudgetLimitChange } from '../../api/budget'
 import { getCategories } from '../../api/catalog'
 import { getManualDefaults } from '../../api/receipts'
@@ -10,9 +10,9 @@ import RequestState from '../../components/RequestState'
 import { Link } from '../../navigation'
 import { useSession } from '../../session'
 import { categoryTone, dashboardErrorMessage, formatMoney } from './dashboard-state'
-import { currencySymbol } from '../../lib/money'
+import { currencySymbol, formatMoneyWithBase } from '../../lib/money'
 import {
-  amountInput, changedRows, filterHistory, historyCategories, historyEntries, isDuplicateCreate, limitCurrencies, limitFailureMessage, limitFor,
+  amountInput, changedRows, filterHistory, historyCategories, historyEntries, isDuplicateCreate, legacyLimit, limitCurrencies, limitFailureMessage, limitFor,
   limitTree, openByDefault, parseCurrency, rowAction, saveBarLabel, subCategoriesText, visibleRows, withLimit, withoutLimit,
 } from './limits-state'
 import ChipScroller from '../../components/ChipScroller'
@@ -24,6 +24,9 @@ const rowKey = (categoryId: number, currency: string) => `${categoryId}:${curren
 
 export type LimitsViewProps = {
   categories: Category[]; limits: BudgetLimit[]; currencies: string[]; currency: string; family: boolean
+  /** The family's base currency (a newer server): limits are set in it only, no other currency is offered; a limit of
+   * another currency set before is shown converted and moves to the base one when its row is saved. */
+  base?: string
   drafts: Record<string, string>; statuses: Record<string, RowStatus>
   /** Top-level rows the person opened (`true`) or closed (`false`); the others follow `openByDefault`. */
   toggled?: Record<number, boolean>
@@ -113,7 +116,7 @@ function AddCurrency({ onAdd }: { onAdd: (input: string) => string | undefined }
 
 /** The limits screen without loading: the markup tests render it directly. */
 export function LimitsView({
-  categories, limits, currencies, currency, family, drafts, statuses, toggled = {}, onToggle = () => {}, onCurrency, onAddCurrency, onDraft, onSave,
+  categories, limits, currencies, currency, family, base, drafts, statuses, toggled = {}, onToggle = () => {}, onCurrency, onAddCurrency, onDraft, onSave,
   onSaveAll = (changed) => changed.forEach(onSave), onDelete, history, historyCategory = null, onHistoryCategory, onHistoryRetry,
 }: LimitsViewProps) {
   const tree = limitTree(categories)
@@ -126,18 +129,24 @@ export function LimitsView({
       ? 'Лимит — сколько семья готова потратить на категорию за месяц. Лимиты общие: их видят и меняют все члены семьи.'
       : 'Лимит — сколько вы готовы потратить на категорию за месяц.'} Лимит можно задать и подкатегории: её траты входят
       и в её лимит, и в лимит категории выше.</p>
-    <section className="ck-panel dash-card limits-currencies" aria-labelledby="limits-currency-heading">
+    {base ? <section className="ck-panel dash-card limits-currencies" aria-labelledby="limits-currency-heading">
+      <h2 id="limits-currency-heading" className="limits-small-heading">Валюта · {currencySymbol(base)}</h2>
+      <p className="dash-note limits-base-note">{`Лимиты — в основной валюте${family ? ' семьи' : ''} (${base}): траты в других `
+        + 'валютах пересчитываются по курсу Нацбанка на день покупки. Основную валюту '
+        + `${family ? 'выбирает главный в семье' : 'вы выбираете'} в «`}<Link className="dash-inline-link" to="/account">Аккаунте</Link>».</p>
+    </section> : <section className="ck-panel dash-card limits-currencies" aria-labelledby="limits-currency-heading">
       <h2 id="limits-currency-heading" className="limits-small-heading">Валюта</h2>
       <ChipScroller label="Валюта лимитов">
         {currencies.map((code) => <button key={code} type="button" className="dash-chip" aria-pressed={code === currency}
           onClick={() => onCurrency(code)}>{code}</button>)}
       </ChipScroller>
       <AddCurrency onAdd={onAddCurrency} />
-    </section>
+    </section>}
     {categories.length ? <ul className="limits-list" aria-label={`Лимиты в ${currency}`}>
       {visibleRows(tree, isOpen).map(({ category, depth, rootId, descendants }) => {
         const key = rowKey(category.id, currency)
         const limit = limitFor(limits, category.id, currency)
+        const legacy = base ? legacyLimit(limits, category.id, base) : undefined
         const draft = drafts[key]
         const status = statuses[key] ?? idle
         const action = rowAction(draft, limit)
@@ -159,7 +168,8 @@ export function LimitsView({
                 {depth > 0 && <span className="dash-visually-hidden">{category.path.slice(0, -1).map((step) => step.name).join(' › ')} › </span>}
                 {category.name}
               </label>
-              <span className="limits-current ck-figures">{limit ? formatMoney(limit.amount, currency) : 'без лимита'}</span>
+              <span className="limits-current ck-figures">{limit ? formatMoney(limit.amount, currency)
+                : legacy ? formatMoneyWithBase(legacy.amount, legacy.currency, legacy.base_amount, base) : 'без лимита'}</span>
             </div>
             <div className="limits-controls">
               <span className="limits-input">
@@ -169,8 +179,8 @@ export function LimitsView({
                   onChange={(event) => onDraft(key, event.target.value)} />
                 <span className="limits-input-currency" aria-hidden="true">{currencySymbol(currency)}</span>
               </span>
-              {limit && <button type="button" className="ck-button-danger limits-delete" disabled={busy}
-                aria-label={`Удалить лимит «${category.name}»`} onClick={() => onDelete(limit)}>Удалить</button>}
+              {(limit ?? legacy) && <button type="button" className="ck-button-danger limits-delete" disabled={busy}
+                aria-label={`Удалить лимит «${category.name}»`} onClick={() => onDelete((limit ?? legacy) as BudgetLimit)}>Удалить</button>}
             </div>
             {status.kind === 'error' && <p className="receipt-field-error" id={messageId} role="alert">{status.text}</p>}
             {status.kind === 'done' && <p className="limits-done" id={messageId} role="status">{status.text}</p>}
@@ -190,7 +200,7 @@ export function LimitsView({
   </div>
 }
 
-type Loaded = { categories: Category[]; currency: string }
+type Loaded = { categories: Category[]; currency: string; base?: string }
 type Load = { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'ok'; data: Loaded }
 
 /** `/budget/limits`: a limit per category (any level) and currency, saved and deleted row by row. */
@@ -214,15 +224,16 @@ export default function LimitsPage() {
   useEffect(() => {
     const controller = new AbortController()
     const { signal } = controller
-    void Promise.all([getCategories({}, { signal }), getBudgetLimits({ signal }), getManualDefaults({ signal })]).then(([categories, saved, defaults]) => {
+    void Promise.all([getCategories({}, { signal }), getBudgetLimitBook({ signal }), getManualDefaults({ signal })]).then(([categories, saved, defaults]) => {
       if (signal.aborted) return
       for (const result of [categories, saved, defaults]) {
         if (result.kind === 'aborted') return
         if (result.kind === 'error') { setLoad({ kind: 'error', message: dashboardErrorMessage(result) }); return }
       }
       if (categories.kind !== 'ok' || saved.kind !== 'ok' || defaults.kind !== 'ok') return
-      setLimits(saved.data)
-      setLoad({ kind: 'ok', data: { categories: categories.data.results, currency: defaults.data.currency } })
+      setLimits(saved.data.limits)
+      const base = saved.data.baseCurrency
+      setLoad({ kind: 'ok', data: { categories: categories.data.results, currency: base ?? defaults.data.currency, base } })
     })
     return () => controller.abort()
   }, [attempt])
@@ -246,8 +257,9 @@ export default function LimitsPage() {
   if (load.kind === 'error') return <RequestState kind="error" message={load.message}
     onRetry={() => { setLoad({ kind: 'loading' }); setAttempt((value) => value + 1) }} />
 
-  const currencies = limitCurrencies(load.data.currency, limits, added)
-  const selected = currency ?? currencies[0]
+  const { base } = load.data
+  const currencies = base ? [base] : limitCurrencies(load.data.currency, limits, added)
+  const selected = base ?? currency ?? currencies[0]
   const setStatus = (key: string, status: RowStatus) => setStatuses((all) => ({ ...all, [key]: status }))
   const begin = (key: string) => {
     controllers.current.get(key)?.abort()
@@ -268,9 +280,13 @@ export default function LimitsPage() {
     if (action.kind === 'none') return
     if (action.kind === 'invalid') { setStatus(key, { kind: 'error', text: action.error }); return }
     const controller = begin(key)
-    const result = action.kind === 'create'
-      ? await createBudgetLimit({ category_id: category.id, currency: selected, amount: action.amount }, { signal: controller.signal })
-      : await updateBudgetLimit(action.id, action.amount, { signal: controller.signal })
+    // A limit of another currency set before: saving the row moves it to the base currency with the new amount.
+    const legacy = base && action.kind === 'create' ? legacyLimit(limits, category.id, base) : undefined
+    const result = legacy
+      ? await updateBudgetLimit(legacy.id, action.amount, { signal: controller.signal }, base)
+      : action.kind === 'create'
+        ? await createBudgetLimit({ category_id: category.id, currency: selected, amount: action.amount }, { signal: controller.signal })
+        : await updateBudgetLimit(action.id, action.amount, { signal: controller.signal })
     if (controller.signal.aborted || result.kind === 'aborted') return
     controllers.current.delete(key)
     if (result.kind === 'error') {
@@ -290,7 +306,8 @@ export default function LimitsPage() {
   }
 
   const remove = async (limit: BudgetLimit) => {
-    const key = rowKey(limit.category_id, limit.currency)
+    // A converted limit of another currency stands in the row of the base currency.
+    const key = rowKey(limit.category_id, base ?? limit.currency)
     const controller = begin(key)
     const result = await deleteBudgetLimit(limit.id, { signal: controller.signal })
     if (controller.signal.aborted || result.kind === 'aborted') return
@@ -303,7 +320,7 @@ export default function LimitsPage() {
     setStatus(key, { kind: 'done', text: 'Лимит удалён.' })
   }
 
-  return <LimitsView categories={load.data.categories} limits={limits} currencies={currencies} currency={selected} family={family}
+  return <LimitsView categories={load.data.categories} limits={limits} currencies={currencies} currency={selected} family={family} base={base}
     drafts={drafts} statuses={statuses} toggled={toggled} onToggle={(rootId, open) => setToggled((all) => ({ ...all, [rootId]: open }))}
     onCurrency={setCurrency}
     onAddCurrency={(input) => {

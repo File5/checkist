@@ -66,6 +66,10 @@
 .dash-others .ck-panel-head { padding-top: 4px; }
 .dash-currency-badge { background: var(--ck-accent-bg); color: var(--ck-accent-text); font-size: var(--ck-text-lg); }
 .dash-other { min-height: 60px; }
+.dash-unconverted .ck-row-meta { white-space: normal; }
+/* A spend in another currency: its own amount, and under it the twin in the base currency that the total counts. */
+.dash-recent-item .ck-row-amount { text-align: right; }
+.dash-recent-twin { display: block; color: var(--ck-text-muted); font-size: var(--ck-text-xs); font-weight: 600; }
 
 /* Полоса прогресса: дорожка и заполненная часть; сверх лимита — свой цвет. */
 .dash-bar { height: 10px; overflow: hidden; border-radius: 5px; background: var(--ck-track); }

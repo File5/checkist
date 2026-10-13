@@ -93,6 +93,13 @@ export function limitFor(limits: BudgetLimit[], categoryId: number, currency: st
   return limits.find((limit) => limit.category_id === categoryId && limit.currency === currency)
 }
 
+/** A limit of the category in another currency than the base one — set before limits were base-only (2026-10-13):
+ * shown converted; saving the row moves it to the base currency. None when the category has a base limit. */
+export function legacyLimit(limits: BudgetLimit[], categoryId: number, base: string): BudgetLimit | undefined {
+  if (limitFor(limits, categoryId, base)) return undefined
+  return limits.find((limit) => limit.category_id === categoryId && limit.currency !== base)
+}
+
 export type RowAction =
   | { kind: 'none' }
   | { kind: 'invalid'; error: string }

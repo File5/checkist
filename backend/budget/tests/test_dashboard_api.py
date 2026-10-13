@@ -150,7 +150,7 @@ class DashboardNumbersTests(FixtureMixin, TestCase):
         self.assertEqual(photo, {
             "id": self.photo.pk, "source": "photo", "title": common.store_name(self.store),
             "category_name": "Демо-продукты", "owner": "local", "owner_name": "local", "purchased_on": "2026-10-05",
-            "total": "1000.00", "currency": "KZT", "lines_count": 4,
+            "total": "1000.00", "currency": "KZT", "lines_count": 4, "base_total": "1000.00",
         })
         coffee = next(row for row in recent if row["id"] == self.coffee_spend.pk)
         self.assertEqual((coffee["source"], coffee["title"], coffee["category_name"], coffee["lines_count"]),

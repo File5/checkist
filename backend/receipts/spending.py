@@ -13,8 +13,13 @@
 категориям лежит в своей категории, по обобщённым продуктам и товарам — в особом
 элементе ``no_product``. Чеки без магазина (``store`` NULL) в разбивке по магазинам —
 особый элемент ``no_store``. Строка без товара и без категории — ``unmatched``, как раньше.
+
+Основная валюта семьи (2026-10-13): ``rebase`` переводит строки и итоги чеков в неё по курсу
+на дату покупки (``rates.convert``) — ``summarize`` по такому набору даёт блок основной валюты,
+куда сложены все валюты, и блоки только тех трат, курса которых нет («без курса»).
 """
 from dataclasses import dataclass, field
+from datetime import date
 from decimal import Decimal
 from typing import NamedTuple
 
@@ -59,6 +64,16 @@ class ReceiptRow(NamedTuple):
     total: Decimal
 
 
+class DayTotal(NamedTuple):
+    """Чеки одного магазина в одной валюте за один день: для пересчёта по курсу дня."""
+
+    currency: str
+    store_id: int | None
+    day: date
+    count: int
+    total: Decimal
+
+
 class ProductInfo(NamedTuple):
     name: str
     generic_id: int
@@ -71,6 +86,12 @@ class Collected:
     lines: list
     receipts: list
     products: dict
+    days: dict = field(default_factory=dict)  # {receipt_id: purchased_on} строк ``lines``
+    day_totals: list = field(default_factory=list)  # DayTotal; ``receipts`` — их сумма по магазину
+
+    def needs(self):
+        """Пары ``(валюта, день)`` трат набора: какие курсы нужны для ``rebase``."""
+        return {(row.currency, row.day) for row in self.day_totals}
 
 
 @dataclass
@@ -114,9 +135,11 @@ def collect(receipts, product_ref=None):
     ``product_id``. Слой API передаёт выражение, относящее строку поглощённого
     слиянием товара к оставляемому.
     """
-    lines = [
-        LineRow(*row) for row in ReceiptLine.objects.filter(receipt__in=receipts.values("pk"))
-        .values("receipt__currency_id", "receipt_id", "receipt__store_id", "kind", "unit", "category_id")
+    lines, days = [], {}
+    for *row, day in (
+        ReceiptLine.objects.filter(receipt__in=receipts.values("pk"))
+        .values("receipt__currency_id", "receipt_id", "receipt__store_id", "kind", "unit", "category_id",
+                "receipt__purchased_on")
         .annotate(
             owner=product_ref if product_ref is not None else F("product_id"),
             paid=Sum(F("amount") - F("discount_amount")), lines=Count("pk"), quantity_sum=Sum("quantity"),
@@ -124,20 +147,63 @@ def collect(receipts, product_ref=None):
         .order_by()
         .values_list(
             "receipt__currency_id", "receipt_id", "receipt__store_id", "owner", "kind", "unit",
-            "paid", "lines", "quantity_sum", "category_id",
+            "paid", "lines", "quantity_sum", "category_id", "receipt__purchased_on",
         )
-    ]
-    totals = [
-        ReceiptRow(*row) for row in receipts.values("currency_id", "store_id")
+    ):
+        lines.append(LineRow(*row))
+        days[row[1]] = day
+    day_totals = [
+        DayTotal(*row) for row in receipts.values("currency_id", "store_id", "purchased_on")
         .annotate(count=Count("pk"), total_sum=Sum("total")).order_by()
-        .values_list("currency_id", "store_id", "count", "total_sum")
+        .values_list("currency_id", "store_id", "purchased_on", "count", "total_sum")
     ]
     ids = {row.product_id for row in lines if row.product_id is not None}
     products = {
         pk: ProductInfo(*info) for pk, *info in Product.objects.filter(pk__in=ids)
         .values_list("pk", "name", "generic_id", "generic__name", "generic__category_id")
     }
-    return Collected(lines, totals, products)
+    return Collected(lines, by_store(day_totals), products, days, day_totals)
+
+
+def by_store(day_totals):
+    """``[ReceiptRow]`` — чеки по валюте и магазину из ``DayTotal`` (дни сложены)."""
+    found = {}
+    with price_context():
+        for row in day_totals:
+            key = (row.currency, row.store_id)
+            count, total = found.get(key, (0, _ZERO))
+            found[key] = (count + row.count, total + row.total)
+    return [ReceiptRow(currency, store_id, count, total) for (currency, store_id), (count, total) in found.items()]
+
+
+def rebase(data, converter):
+    """Набор ``data`` в основной валюте ``converter.base``: суммы строк и чеков — по курсу дня покупки.
+
+    Строки и чеки, курса которых нет, остаются в своей валюте: ``summarize`` даст им отдельные
+    блоки — траты «без курса», не вошедшие в основной. БД не используется.
+    """
+    lines = []
+    for row in data.lines:
+        paid = converter.convert(row.paid, row.currency, data.days.get(row.receipt_id))
+        lines.append(row if paid is None or row.currency == converter.base
+                     else row._replace(currency=converter.base, paid=paid))
+    day_totals = []
+    for row in data.day_totals:
+        total = converter.convert(row.total, row.currency, row.day)
+        day_totals.append(row if total is None or row.currency == converter.base
+                          else row._replace(currency=converter.base, total=total))
+    return Collected(lines, by_store(day_totals), data.products, data.days, day_totals)
+
+
+def unconverted(data, converter):
+    """Траты без курса (``converter`` не знает курса валюты на день покупки): ``[(валюта, чеков, сумма)]``."""
+    found = {}
+    with price_context():
+        for row in data.day_totals:
+            if row.currency != converter.base and converter.factor(row.currency, row.day) is None:
+                count, total = found.get(row.currency, (0, _ZERO))
+                found[row.currency] = (count + row.count, total + row.total)
+    return [(currency, count, total) for currency, (count, total) in sorted(found.items())]
 
 
 class _Bucket:

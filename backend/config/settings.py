@@ -114,6 +114,7 @@ INSTALLED_APPS = [
     "budget.apps.BudgetConfig",
     "recurring.apps.RecurringConfig",
     "statements.apps.StatementsConfig",
+    "rates.apps.RatesConfig",
 ]
 MIDDLEWARE = [
     "config.robots.NoIndexMiddleware",
@@ -354,3 +355,11 @@ SECURE_HSTS_SECONDS = env_integer("DJANGO_HSTS_SECONDS", 0 if DEBUG else 3600, 0
 SECURE_HSTS_INCLUDE_SUBDOMAINS = False
 SECURE_HSTS_PRELOAD = False
 STATIC_ROOT = env_directory("DJANGO_STATIC_ROOT", BASE_DIR.parent / "staticfiles")
+
+# Official exchange rates of the National Bank of Kazakhstan (rates): the source URL with {date} = DD.MM.YYYY,
+# the deadlines of `manage.py rates fetch` and of the lazy fetch of fresh days during a request, and whether
+# that lazy fetch runs at all (0 — only the command loads rates; never in a test database).
+RATES_NBRK_URL = env_text("RATES_NBRK_URL", "https://nationalbank.kz/rss/get_rates.cfm?fdate={date}")
+RATES_FETCH_TIMEOUT_SECONDS = env_integer("RATES_FETCH_TIMEOUT_SECONDS", 20, 1, 120)
+RATES_LAZY_TIMEOUT_SECONDS = env_integer("RATES_LAZY_TIMEOUT_SECONDS", 3, 1, 30)
+RATES_AUTO_FETCH = env_flag("RATES_AUTO_FETCH", "1")

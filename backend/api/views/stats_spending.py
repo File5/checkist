@@ -40,7 +40,11 @@ def _block(block):
 
 
 class SpendingView(LocalAPIView):
-    """Траты за период по валютам; число запросов не зависит от объёма данных."""
+    """Траты за период по валютам и в основной валюте семьи; число запросов не зависит от объёма данных.
+
+    ``currencies`` — по валютам, как раньше; ``base`` — тот же расчёт по тратам всех валют,
+    пересчитанным по курсу дня покупки, ``excluded`` — траты без курса (в ``base`` не вошли).
+    """
 
     def get(self, request):
         params = Params(request.query_params)
@@ -55,7 +59,10 @@ class SpendingView(LocalAPIView):
         tree = common.CategoryTree.load() if group_by == "category" or category is not None else None
         if category is not None:
             if category not in tree:  # как в списках каталога: пусто, не ошибка
-                return Response({**head, "currencies": []})
+                from rates.convert import request_base_currency
+
+                return Response({**head, "currencies": [], "base_currency": request_base_currency(request),
+                                 "base": None, "excluded": []})
             head["parent"] = tree.category(category)
         data = spending.collect(stats_common.receipts(request, scope, period), stats_common.owner_product_id())
         stores = None
@@ -65,7 +72,12 @@ class SpendingView(LocalAPIView):
                 store.pk: common.store_brief(store)
                 for store in Store.objects.filter(pk__in=ids).select_related("merchant")
             }
-        blocks = spending.summarize(
-            data, group_by=group_by, limit=limit, tree=tree, category=category, generic=generic, stores=stores,
-        )
-        return Response({**head, "currencies": stats_common.primary_first(request, [_block(block) for block in blocks])})
+        options = {"group_by": group_by, "limit": limit, "tree": tree, "category": category, "generic": generic,
+                   "stores": stores}
+        blocks = spending.summarize(data, **options)
+        converter = stats_common.converter(request, data.needs())
+        block = stats_common.base_block(spending.summarize(spending.rebase(data, converter), **options), converter.base)
+        return Response({
+            **head, "currencies": stats_common.primary_first(request, [_block(block) for block in blocks]),
+            **stats_common.base_fields(converter, block and _block(block), spending.unconverted(data, converter)),
+        })

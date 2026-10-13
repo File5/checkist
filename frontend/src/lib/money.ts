@@ -65,3 +65,21 @@ export function formatMoney(value: Decimal | null | undefined, currency: string 
 export function formatCents(cents: bigint, currency: string | null | undefined): string {
   return glue(formatCentsNumber(cents), currencySymbol(currency))
 }
+
+/** «≈ 8 979 ₸»: an amount converted into the family's base currency at the rate of the National Bank on its day. */
+export function formatApproxMoney(value: Decimal | null | undefined, currency: string | null | undefined): string {
+  return glue('≈', formatMoney(value, currency))
+}
+
+/** The converted twin of an amount in another currency — «≈ 8 979 ₸» beside «20 $»; `null` for an amount in the base
+ * currency itself, without a rate, or from an older server that sends no base currency. */
+export function baseTwin(currency: string, baseTotal: Decimal | null | undefined, baseCurrency: string | null | undefined): string | null {
+  if (!baseCurrency || currency === baseCurrency || baseTotal === null || baseTotal === undefined) return null
+  return formatApproxMoney(baseTotal, baseCurrency)
+}
+
+/** «20 $ · ≈ 8 979 ₸» in one line; just «20 $» when there is no twin. */
+export function formatMoneyWithBase(value: Decimal, currency: string, baseTotal: Decimal | null | undefined, baseCurrency: string | null | undefined): string {
+  const twin = baseTwin(currency, baseTotal, baseCurrency)
+  return twin ? `${formatMoney(value, currency)} · ${twin}` : formatMoney(value, currency)
+}

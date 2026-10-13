@@ -20,6 +20,10 @@
 меняют.
 
 ``collect_*`` читают БД постоянным числом запросов; остальное — чистые функции.
+
+Основная валюта семьи (2026-10-13): ``rebase`` переводит траты окна в неё по курсу дня покупки
+(``rates.convert``); ``monthly``, ``category_series`` и ``limit_history`` по такому набору дают
+блок основной валюты и блоки только тех трат, курса которых нет. Индекс цен — по валютам, как был.
 """
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -88,6 +92,56 @@ class SpendRows:
     lines: list  # (currency, month, kind, line_category_id, product_id, paid, lines_count)
     totals: dict  # {(currency, month): Σ Receipt.total}
     product_category: dict  # {product_id: generic__category_id}
+    # Те же строки и итоги по дням покупки — для пересчёта по курсу дня (``rebase``).
+    day_lines: list = field(default_factory=list)  # (currency, day, kind, line_category_id, product_id, paid, count)
+    day_totals: list = field(default_factory=list)  # (currency, day, count, Σ Receipt.total)
+
+    def needs(self):
+        """Пары ``(валюта, день)`` трат окна."""
+        return {(currency, day) for currency, day, _count, _total in self.day_totals}
+
+
+def _by_month(day_lines, day_totals, product_category):
+    """``SpendRows`` с месячными ``lines`` и ``totals`` из строк и итогов по дням."""
+    lines, totals = {}, {}
+    with price_context():
+        for currency, day, kind, category, product, paid, count in day_lines:
+            key = (currency, month_start(day), kind, category, product)
+            before = lines.get(key, (_ZERO, 0))
+            lines[key] = (before[0] + paid, before[1] + count)
+        for currency, day, _count, total in day_totals:
+            key = (currency, month_start(day))
+            totals[key] = totals.get(key, _ZERO) + total
+    return SpendRows([(*key, paid, count) for key, (paid, count) in lines.items()], totals, product_category,
+                     day_lines, day_totals)
+
+
+def rebase(rows, converter):
+    """``rows`` в основной валюте ``converter.base``; траты без курса остаются в своей валюте. БД не используется."""
+    def moved(currency, day, amount):
+        converted = None if currency == converter.base else converter.convert(amount, currency, day)
+        return (currency, amount) if converted is None else (converter.base, converted)
+
+    day_lines = []
+    for currency, day, kind, category, product, paid, count in rows.day_lines:
+        currency, paid = moved(currency, day, paid)
+        day_lines.append((currency, day, kind, category, product, paid, count))
+    day_totals = []
+    for currency, day, count, total in rows.day_totals:
+        currency, total = moved(currency, day, total)
+        day_totals.append((currency, day, count, total))
+    return _by_month(day_lines, day_totals, rows.product_category)
+
+
+def unconverted(rows, converter):
+    """Траты окна без курса: ``[(валюта, чеков, сумма)]`` по коду валюты."""
+    found = {}
+    with price_context():
+        for currency, day, count, total in rows.day_totals:
+            if currency != converter.base and converter.factor(currency, day) is None:
+                before = found.get(currency, (0, _ZERO))
+                found[currency] = (before[0] + count, before[1] + total)
+    return [(currency, count, total) for currency, (count, total) in sorted(found.items())]
 
 
 def _in_window(receipts, months):
@@ -101,27 +155,24 @@ def collect_spending(receipts, months, product_ref=None):
     поглощённого слиянием товара к оставляемому); по умолчанию ``product_id``.
     """
     inside = _in_window(receipts, months)
-    month = Trunc("receipt__purchased_on", "month", output_field=DateField())
-    lines = list(
+    day_lines = list(
         ReceiptLine.objects.filter(receipt__in=inside.values("pk"))
-        .annotate(month=month)
-        .values("receipt__currency_id", "month", "kind", "category_id")
+        .values("receipt__currency_id", "receipt__purchased_on", "kind", "category_id")
         .annotate(
             owner=product_ref if product_ref is not None else F("product_id"),
             paid=Sum(F("amount") - F("discount_amount")), lines_count=Count("pk"),
         )
         .order_by()
-        .values_list("receipt__currency_id", "month", "kind", "category_id", "owner", "paid", "lines_count")
+        .values_list("receipt__currency_id", "receipt__purchased_on", "kind", "category_id", "owner", "paid",
+                     "lines_count")
     )
-    totals = {
-        (currency, bucket): total for currency, bucket, total in
-        inside.annotate(month=Trunc("purchased_on", "month", output_field=DateField()))
-        .values("currency_id", "month").annotate(total_sum=Sum("total")).order_by()
-        .values_list("currency_id", "month", "total_sum")
-    }
-    ids = {row[4] for row in lines if row[4] is not None and row[2] == _KIND.PRODUCT}
+    day_totals = list(
+        inside.values("currency_id", "purchased_on").annotate(count=Count("pk"), total_sum=Sum("total")).order_by()
+        .values_list("currency_id", "purchased_on", "count", "total_sum")
+    )
+    ids = {row[4] for row in day_lines if row[4] is not None and row[2] == _KIND.PRODUCT}
     product_category = dict(Product.objects.filter(pk__in=ids).values_list("pk", "generic__category_id"))
-    return SpendRows(lines, totals, product_category)
+    return _by_month(day_lines, day_totals, product_category)
 
 
 def _line_category(rows, kind, line_category, product_id):

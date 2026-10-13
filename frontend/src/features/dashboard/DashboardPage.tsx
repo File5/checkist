@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { getDashboard } from '../../api/budget'
 import type { Dashboard, DashboardCategory, DashboardCurrency, DashboardRecent, DashboardSubCategory } from '../../api/budget'
+import type { ExcludedSpends } from '../../api/base-currency'
 import Icon from '../../components/Icon'
 import { HeaderSlot } from '../../components/PageHeader'
 import { usePageTitle } from '../../components/page-header'
@@ -16,7 +17,7 @@ import {
 } from './dashboard-state'
 import type { MonthSlide, Progress } from './dashboard-state'
 import { categorySpendsHref } from './category-spends-state'
-import { currencySymbol } from '../../lib/money'
+import { baseTwin, currencySymbol } from '../../lib/money'
 import { collapsedHint, isExpanded, readExpanded, rowChildren, subListId, withChoice, writeExpanded } from './limit-collapse-state'
 import type { ExpandedChoices } from './limit-collapse-state'
 import { subCategoriesText } from './limits-state'
@@ -103,6 +104,24 @@ function OtherCurrencies({ blocks, data }: { blocks: DashboardCurrency[]; data: 
           <span className="ck-row-amount ck-figures dash-other-amount">{formatMoney(block.spent, block.currency)}</span>
         </li>
       })}
+    </ul>
+  </section>
+}
+
+/** Spends of the month in a currency whose rate of the National Bank on the day of purchase is not loaded yet: not in
+ * the total above, so they are named here instead of silently missing. Every other currency is in the total. */
+function Unconverted({ items }: { items: ExcludedSpends[] }) {
+  return <section className="ck-panel dash-card dash-others dash-unconverted" aria-labelledby="dash-unconverted-heading">
+    <div className="ck-panel-head"><h2 id="dash-unconverted-heading">Без курса</h2></div>
+    <ul className="ck-list">
+      {items.map((item) => <li key={item.currency} className="ck-row dash-other" aria-label={`Без курса, ${item.currency}`}>
+        <span className="ck-row-badge dash-currency-badge" aria-hidden="true">{currencySymbol(item.currency)}</span>
+        <span className="ck-row-main">
+          <span className="ck-row-title">{currencyName(item.currency)}</span>
+          <span className="ck-row-meta">Нет курса Нацбанка на дату покупки — не в итоге</span>
+        </span>
+        <span className="ck-row-amount ck-figures dash-other-amount">{formatMoney(item.total, item.currency)}</span>
+      </li>)}
     </ul>
   </section>
 }
@@ -227,7 +246,9 @@ function LimitsCard({ block, several, month, fold }: { block: DashboardCurrency;
   </section>
 }
 
-function RecentItem({ item, tone, date }: { item: DashboardRecent; tone: number; date: string }) {
+function RecentItem({ item, tone, date, base }: { item: DashboardRecent; tone: number; date: string; base?: string }) {
+  // «20 $» and under it «≈ 8 979 ₸»: a spend in another currency keeps its own amount, the total above counts the twin.
+  const twin = baseTwin(item.currency, item.base_total, base)
   return <li>
     <Link className="ck-row dash-recent-item" to={`/receipts/${item.id}`}>
       <span className={`ck-row-badge dash-badge dash-cat-${tone}`} aria-hidden="true">{badgeLetter(item.category_name, item.title)}</span>
@@ -235,7 +256,8 @@ function RecentItem({ item, tone, date }: { item: DashboardRecent; tone: number;
         <span className="ck-row-title dash-recent-title">{item.title || (item.source === 'manual' ? 'Трата' : 'Чек')}</span>
         <span className="ck-row-meta">{recentMeta(item, date)}</span>
       </span>
-      <span className="ck-row-amount ck-figures">{formatMoney(item.total, item.currency)}</span>
+      <span className="ck-row-amount ck-figures">{formatMoney(item.total, item.currency)}
+        {twin && <span className="dash-recent-twin">{twin}</span>}</span>
     </Link>
   </li>
 }
@@ -258,6 +280,7 @@ export type DashboardViewProps = {
 export function DashboardView({ data, today = deviceMonth(), family = data.members.length > 1, slide, expanded, date = deviceDate() }: DashboardViewProps) {
   const current = data.month === today
   const empty = monthIsEmpty(data)
+  const unconverted = data.excluded ?? []
   const ids = categoryIds(data)
   const several = data.currencies.length > 1
   const [choices, setChoices] = useState<ExpandedChoices>(() => expanded ?? readExpanded())
@@ -278,7 +301,7 @@ export function DashboardView({ data, today = deviceMonth(), family = data.membe
   return <div className={`dash${slide ? ` dash-slide-${slide}` : ''}`}>
     <MonthHeader month={data.month} today={today} people={dashboardPeople(data)} family={family} />
     <div className="dash-column dash-column-main">
-      {empty || !hero
+      {(empty || !hero) && unconverted.length > 0 ? null : empty || !hero
         ? <section className="ck-panel dash-card dash-empty">
           <p className="dash-empty-title">{capitalize(inMonth(data.month))} трат {current ? 'пока нет' : 'не было'}</p>
           {current && <p className="dash-note">Снимите чек или добавьте трату — сумма появится здесь.</p>}
@@ -286,6 +309,7 @@ export function DashboardView({ data, today = deviceMonth(), family = data.membe
         </section>
         : <HeroCard block={hero} data={data} family={family} current={current} />}
       {!empty && others.length > 0 && <OtherCurrencies blocks={others} data={data} />}
+      {unconverted.length > 0 && <Unconverted items={unconverted} />}
       <Actions />
       <RecurringDue month={data.month} />
       <section className="ck-panel dash-card dash-recent" aria-labelledby="dash-recent-heading">
@@ -294,7 +318,7 @@ export function DashboardView({ data, today = deviceMonth(), family = data.membe
           <Link className="dash-card-link" to="/receipts">Все</Link>
         </div>
         {data.recent.length
-          ? <ul className="ck-list dash-recent-list">{data.recent.map((item) => <RecentItem key={item.id} item={item} date={date}
+          ? <ul className="ck-list dash-recent-list">{data.recent.map((item) => <RecentItem key={item.id} item={item} date={date} base={data.base_currency}
             tone={categoryTone(item.category_name === null ? null : ids.get(item.category_name))} />)}</ul>
           : <p className="dash-note">Трат пока нет.</p>}
       </section>

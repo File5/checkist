@@ -94,6 +94,37 @@ def primary_first(request, blocks):
     return sorted(blocks, key=lambda block: code(block) != primary)
 
 
+# --- основная валюта семьи ---
+
+def converter(request, needs):
+    """``rates.convert.Converter`` основной валюты семьи пользователя запроса для пар ``(валюта, день)``.
+
+    Не больше трёх запросов: основная валюта, курсы и — после ленивой догрузки свежих дней — курсы ещё раз.
+    """
+    from rates import convert
+
+    return convert.converter(convert.request_base_currency(request), needs)
+
+
+def excluded(unconverted):
+    """Траты без курса по валютам (``spending.unconverted``): ``[{currency, receipts_count, total}]``."""
+    return [{"currency": currency, "receipts_count": count, "total": money(total)}
+            for currency, count, total in unconverted]
+
+
+def base_fields(converter, block, unconverted):
+    """Поля ответа в основной валюте: ``base_currency``, ``base`` (блок либо ``None``) и ``excluded``.
+
+    ``excluded`` — траты без курса: в ``base`` они не вошли.
+    """
+    return {"base_currency": converter.base, "base": block, "excluded": excluded(unconverted)}
+
+
+def base_block(blocks, base):
+    """Блок основной валюты из блоков расчёта либо ``None``."""
+    return next((block for block in blocks if block.currency == base), None)
+
+
 # --- слитые товары ---
 
 def owner_product_id(prefix=""):

@@ -9,7 +9,7 @@ from rest_framework.test import APIClient
 from accounts.models import Household, Membership
 from api.tests.accounts_helpers import NOT_FOUND, TwoUsers, accounts_mode, local_single_mode, make_user
 from api.tests.factories import make_product, make_receipt
-from api.tests.test_stats_spending import absorb
+from api.tests.test_stats_spending import absorb, strip_base
 from budget.models import BudgetLimit
 from catalog.models import Category, GenericProduct
 from catalog.units import BaseUnit
@@ -162,7 +162,7 @@ class TrendsAPITests(TrendsFixture, TestCase):
 
     def test_monthly_by_root_category_with_empty_months(self):
         food, housing = self.food.pk, self.housing.pk
-        body = self.get(MONTHLY)
+        body = strip_base(self.get(MONTHLY))
         for block in body["currencies"]:
             del block["summary"], block["rows"]
         self.assertEqual(body, {
@@ -335,7 +335,7 @@ class TrendsAPITests(TrendsFixture, TestCase):
         self.assertEqual([entry["percent"] for entry in body["limits"][1]["months"]], ["100.00", "0.00", "120.00", "200.00"])
         self.assertEqual([entry["percent"] for entry in body["limits"][2]["months"]], ["93.75", "0.00", "100.00", "109.38"])
         BudgetLimit.objects.all().delete()
-        with self.assertNumQueries(4):  # категории, пользователь local, лимиты, журнал — чеки не читаются
+        with self.assertNumQueries(5):  # категории, пользователь local, лимиты, журнал, основная валюта — чеки не читаются
             self.assertEqual(self.get(LIMITS)["limits"], [])
 
     def test_manual_spends_do_not_make_a_price_block(self):
@@ -416,8 +416,9 @@ class TrendsAPITests(TrendsFixture, TestCase):
     def test_query_count_does_not_grow_with_data(self):
         # Категории, строки, итоги чеков, товары; у цен — покупки и имена.
         BudgetLimit.objects.create(user=local_user(), category=self.food, currency_id="EUR", amount=D("5"))
-        # Несколько валют: +1 запрос основной валюты профиля; у лимитов — ещё журнал.
-        cases = ((MONTHLY, 5), (CATEGORY, 5), (PRICES, 3), (LIMITS, 7), (RANGE, 1))
+        # Несколько валют: +1 запрос основной валюты профиля; у лимитов — ещё журнал; в основной валюте семьи —
+        # +2: её запрос и курсы.
+        cases = ((MONTHLY, 7), (CATEGORY, 7), (PRICES, 3), (LIMITS, 9), (RANGE, 1))
 
         def measure():
             for url, expected in cases:

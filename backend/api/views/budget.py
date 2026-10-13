@@ -19,6 +19,8 @@ from budget.access import limit_owner, limits_q, people
 from budget.models import BudgetLimit, BudgetLimitChange
 from catalog.models import Category
 from config.exceptions import InvalidParameter
+from rates.convert import request_base_currency
+from receipts import spending
 from receipts.models import Receipt
 from stores.models import Currency
 
@@ -45,11 +47,35 @@ MESSAGES = {
 }
 
 
-def limit_object(limit):
+def base_only_message(base):
+    return f"Лимиты задаются в основной валюте семьи — {base}."
+
+
+def limit_object(limit, converter):
+    """Лимит; ``base_amount`` — его сумма в основной валюте семьи по сегодняшнему курсу (null — курса нет)."""
     return {
         "id": limit.pk, "category_id": limit.category_id, "category_name": limit.category.name,
         "currency": limit.currency_id, "amount": common.amount(limit.amount),
+        "base_currency": converter.base,
+        "base_amount": common.amount(converter.convert(limit.amount, limit.currency_id, timezone.localdate())),
     }
+
+
+def limit_objects(request, limits):
+    """Лимиты ответа: курсы всех — одним запросом."""
+    today = timezone.localdate()
+    converter = stats_common.converter(request, {(limit.currency_id, today) for limit in limits})
+    return [limit_object(limit, converter) for limit in limits]
+
+
+def check_base(request, limit):
+    """Новый либо изменённый лимит — только в основной валюте семьи (``rates.convert``); иначе ``400`` у ``currency``.
+
+    Прежние лимиты другой валюты читаются и удаляются как раньше, а правка переводит их в основную.
+    """
+    base = request_base_currency(request)
+    if limit.currency_id != base:
+        raise InvalidParameter({"currency": [base_only_message(base)]})
 
 
 def visible_limits(request):
@@ -133,12 +159,20 @@ class LimitsView(LocalAPIView):
         page = params.page()
         params.check()
         limits = visible_limits(request).order_by("category__name", "currency_id", "pk")
-        return Response(paginate(limits, page, limit_object))
+        data = paginate(limits, page)
+        today = timezone.localdate()
+        converter = stats_common.converter(request, {(limit.currency_id, today) for limit in data["results"]})
+        data["results"] = [limit_object(limit, converter) for limit in data["results"]]
+        # Основная валюта семьи: в ней задаются новые лимиты (и при пустом списке).
+        data["base_currency"] = converter.base
+        return Response(data)
 
     def post(self, request):
         values = read_limit(manual_body(request), partial=False)
-        limit = save_limit(BudgetLimit(**limit_owner(request), **values), request_user(request))
-        return Response(limit_object(limit), status=status.HTTP_201_CREATED)
+        limit = BudgetLimit(**limit_owner(request), **values)
+        check_base(request, limit)
+        limit = save_limit(limit, request_user(request))
+        return Response(limit_objects(request, [limit])[0], status=status.HTTP_201_CREATED)
 
 
 class LimitView(LocalAPIView):
@@ -148,13 +182,14 @@ class LimitView(LocalAPIView):
     parser_classes = [LimitBodyParser]
 
     def get(self, request, pk):
-        return Response(limit_object(common.get_or_404(visible_limits(request), path_id(pk))))
+        return Response(limit_objects(request, [common.get_or_404(visible_limits(request), path_id(pk))])[0])
 
     def patch(self, request, pk):
         limit = common.get_or_404(visible_limits(request), path_id(pk))
         for name, value in read_limit(manual_body(request), partial=True).items():
             setattr(limit, name, value)
-        return Response(limit_object(save_limit(limit, request_user(request))))
+        check_base(request, limit)
+        return Response(limit_objects(request, [save_limit(limit, request_user(request))])[0])
 
     def delete(self, request, pk):
         history.delete_limit(common.get_or_404(visible_limits(request), path_id(pk)), request_user(request))
@@ -172,7 +207,7 @@ def read_month(params, today):
     return dashboard.Month(int(match[1]), int(match[2]))
 
 
-def _recent_object(receipt, category_name):
+def _recent_object(receipt, category_name, converter):
     if receipt.store_id is not None:
         title = common.store_name(receipt.store)
     else:
@@ -182,6 +217,8 @@ def _recent_object(receipt, category_name):
         "owner": receipt.owner.get_username(), "owner_name": display_name(receipt.owner),
         "purchased_on": common.iso_date(receipt.purchased_on),
         "total": common.amount(receipt.total), "currency": receipt.currency_id, "lines_count": receipt.lines_total,
+        # В основной валюте семьи по курсу дня покупки; null — курса нет.
+        "base_total": common.amount(converter.convert(receipt.total, receipt.currency_id, receipt.purchased_on)),
     }
 
 
@@ -203,17 +240,22 @@ def _block_object(block):
 
 
 def month_limits(request, month, today):
-    """Лимиты месяца дашборда: текущий и будущие — нынешние, прошлый — суммы того месяца по журналу."""
-    limits = visible_limits(request)
+    """Лимиты месяца дашборда по ``pk``: текущий и будущие — нынешние, прошлый — суммы того месяца по журналу."""
+    limits = visible_limits(request).order_by("pk")
     if month.first >= history.month_start(today):
-        return limits
+        return list(limits)
     changes = (BudgetLimitChange.objects.filter(limits_q(request))
                .select_related("category"))
     return history.limits_at(list(limits), list(changes), month.first)
 
 
 class DashboardView(LocalAPIView):
-    """Месяц семьи: потрачено и прошлый месяц по валютам, категории с лимитами, последние траты."""
+    """Месяц семьи: потрачено и прошлый месяц, категории с лимитами, последние траты.
+
+    ``currencies`` — по валютам, как раньше (валюты не складываются); ``base`` — всё в основной
+    валюте семьи (``base_currency``) по курсу дня покупки, ``excluded`` — траты месяца без курса.
+    Число запросов от объёма данных не зависит.
+    """
 
     def get(self, request):
         today = timezone.localdate()
@@ -223,12 +265,23 @@ class DashboardView(LocalAPIView):
         tree = common.CategoryTree.load()
         receipts = Receipt.objects.filter(visible_receipts_q(request))
         product_ref = stats_common.owner_product_id()
-        blocks = dashboard.currency_blocks(receipts, month_limits(request, month, today), month, tree, product_ref)
+        found = dashboard.collect_month(receipts, month, product_ref)
+        limits = month_limits(request, month, today)
+        latest = dashboard.recent(receipts, tree, product_ref=product_ref)
         family = people(request)
+        rate_day = dashboard.limit_day(month, today)
+        converter = stats_common.converter(request, found.needs() | {
+            *((limit.currency_id, rate_day) for limit in limits),
+            *((row.currency_id, row.purchased_on) for row, _name in latest)})
+        blocks = dashboard.currency_blocks(found, limits, month, tree)
+        in_base = dashboard.currency_blocks(found, limits, month, tree, converter, today)
+        block = stats_common.base_block(in_base, converter.base)
         return Response({
             "month": month.label(), "previous_month": month.previous().label(),
             "days_left": dashboard.days_left(month, today),
             "members": [item["username"] for item in family], "people": family,
             "currencies": stats_common.primary_first(request, [_block_object(block) for block in blocks]),
-            "recent": [_recent_object(*pair) for pair in dashboard.recent(receipts, tree, product_ref=product_ref)],
+            **stats_common.base_fields(converter, block and _block_object(block),
+                                       spending.unconverted(found.data, converter)),
+            "recent": [_recent_object(row, name, converter) for row, name in latest],
         })

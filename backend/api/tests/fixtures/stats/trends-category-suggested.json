@@ -105,5 +105,14 @@
       ],
       "parts": []
     }
+  ],
+  "base_currency": "KZT",
+  "base": null,
+  "excluded": [
+    {
+      "currency": "EUR",
+      "receipts_count": 24,
+      "total": "1099.96"
+    }
   ]
 }

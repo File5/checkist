@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { statsFixture } from './stats-test-support'
+import { statsAnswer, statsFixture } from './stats-test-support'
 import { getTrendsCategory, getTrendsLimits, getTrendsMonthly, getTrendsPrices } from './trends'
 import { isTrendsCategory, isTrendsLimits, isTrendsMonthly, isTrendsPrices } from './trends-schema'
 import type { TrendsLimits, TrendsMonthly, TrendsPrices } from './trends-types'
@@ -17,7 +17,7 @@ describe('trends readers', () => {
     ['stats/trends/limits/', () => getTrendsLimits(), 'trends-limits.json'],
   ])('GET %s validates the backend example', async (path, call, fixture) => {
     fetchMock.mockResolvedValue(json(statsFixture(fixture)))
-    expect(await call()).toEqual({ kind: 'ok', data: statsFixture(fixture) })
+    expect(await call()).toEqual({ kind: 'ok', data: statsAnswer(fixture) })
     expect(fetchMock.mock.calls[0][0]).toBe(`/api/${path}`)
   })
   it('refuses a wrong window or category locally and an answer of another endpoint', async () => {

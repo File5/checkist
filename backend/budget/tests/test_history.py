@@ -309,9 +309,9 @@ class HistoryAPITests(TrendsFixtureMixin, TestCase):
         with at(moment(2026, 9, 20)):
             APIClient().patch(f"{LIMITS}{created['id']}/", {"amount": "150000"}, format="json")
         with at(moment(2026, 10, 2)):
-            eur = APIClient().post(LIMITS, {"category_id": self.food.pk, "currency": "EUR", "amount": "50"},
-                                   format="json").json()
-            APIClient().delete(f"{LIMITS}{eur['id']}/")
+            # A limit in another currency is one saved before the base-currency rule (2026-10-13): by the service.
+            eur = history.save_limit(BudgetLimit(user=local, category=self.food, currency_id="EUR", amount=D("50")), local)
+            APIClient().delete(f"{LIMITS}{eur.pk}/")
         body = self.get("from=2026-07&to=2026-10")
         self.assertEqual((body["months"], body["month_from"], body["month_to"]), (4, "2026-07", "2026-10"))
         self.assertEqual([(c["kind"], c["currency"], c["old_amount"], c["new_amount"], c["change_percent"], c["effective_month"])

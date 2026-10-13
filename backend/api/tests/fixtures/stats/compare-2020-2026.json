@@ -290,5 +290,154 @@
       ],
       "products_total": 11
     }
+  ],
+  "base_currency": "KZT",
+  "in_base": {
+    "currency": "KZT",
+    "base": {
+      "receipts_count": 12,
+      "months": "12.02",
+      "receipts_per_month": "1.00",
+      "refunds_excluded": 0,
+      "total": "36651.51",
+      "avg_receipt": "3054.29",
+      "median_receipt": "2892.32",
+      "lines_count": 66,
+      "lines_per_receipt": "5.50",
+      "paid_per_line": "555.3259"
+    },
+    "current": {
+      "receipts_count": 9,
+      "months": "8.97",
+      "receipts_per_month": "1.00",
+      "refunds_excluded": 0,
+      "total": "67312.93",
+      "avg_receipt": "7479.21",
+      "median_receipt": "7836.00",
+      "lines_count": 67,
+      "lines_per_receipt": "7.44",
+      "paid_per_line": "1004.6706"
+    },
+    "change": {
+      "avg_receipt": "4424.92",
+      "avg_receipt_percent": "144.88"
+    },
+    "effects": {
+      "quantity": "1516.66",
+      "price": "2822.60",
+      "mix": "85.66",
+      "price_per_line": "2908.26",
+      "quantity_percent": "34.28",
+      "price_percent": "63.79",
+      "mix_percent": "1.94"
+    },
+    "price_index": {
+      "fisher": "1.7853",
+      "laspeyres": "1.7926",
+      "paasche": "1.7780",
+      "matched_products": 11,
+      "coverage_base_percent": "95.89",
+      "coverage_current_percent": "97.04"
+    },
+    "products": [
+      {
+        "product": {
+          "id": 37,
+          "name": "Демо Курица охлаждённая 1 кг"
+        },
+        "unit": "pcs",
+        "base": {
+          "price": "1828.6000",
+          "quantity": "5.000",
+          "amount": "9143.00"
+        },
+        "current": {
+          "price": "3364.3333",
+          "quantity": "6.000",
+          "amount": "20186.00"
+        },
+        "price_change_percent": "83.98"
+      },
+      {
+        "product": {
+          "id": 39,
+          "name": "Демо Печенье сливочное"
+        },
+        "unit": "pcs",
+        "base": {
+          "price": "459.6667",
+          "quantity": "3.000",
+          "amount": "1379.00"
+        },
+        "current": {
+          "price": "759.1429",
+          "quantity": "7.000",
+          "amount": "5314.00"
+        },
+        "price_change_percent": "65.15"
+      },
+      {
+        "product": {
+          "id": 31,
+          "name": "Демо Чай чёрный 100 г"
+        },
+        "unit": "pcs",
+        "base": {
+          "price": "740.6000",
+          "quantity": "5.000",
+          "amount": "3703.00"
+        },
+        "current": {
+          "price": "1250.6667",
+          "quantity": "6.000",
+          "amount": "7504.00"
+        },
+        "price_change_percent": "68.87"
+      },
+      {
+        "product": {
+          "id": 3,
+          "name": "Демо Молоко 2,5% 1 л"
+        },
+        "unit": "pcs",
+        "base": {
+          "price": "371.5000",
+          "quantity": "18.000",
+          "amount": "6687.00"
+        },
+        "current": {
+          "price": "678.2857",
+          "quantity": "14.000",
+          "amount": "9496.00"
+        },
+        "price_change_percent": "82.58"
+      },
+      {
+        "product": {
+          "id": 32,
+          "name": "Демо Яблоки весовые"
+        },
+        "unit": "kg",
+        "base": {
+          "price": "519.9084",
+          "quantity": "5.350",
+          "amount": "2781.51"
+        },
+        "current": {
+          "price": "941.3327",
+          "quantity": "5.200",
+          "amount": "4894.93"
+        },
+        "price_change_percent": "81.06"
+      }
+    ],
+    "products_total": 11
+  },
+  "excluded": [
+    {
+      "currency": "EUR",
+      "receipts_count": 84,
+      "total": "2942.49"
+    }
   ]
 }
