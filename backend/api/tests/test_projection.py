@@ -442,16 +442,17 @@ SKIPPED_ROUTES = {
          "product-merges-exclude", "product-classifications-confirm-many", "product-classifications-confirm",
          "product-classifications-reject", "receipts-manual-parse", "receipts-hide", "receipts-unhide",
          "family-members", "family-member", "family-head", "family-leave", "family-invites", "family-invite",
-         "family-join"),
+         "family-join", "recurring-decision", "recurring-suggestion-accept", "recurring-suggestion-dismiss"),
         "только POST",
     ),
+    "recurring-payment": "регулярный платёж семьи или пользователя; id чеков в нём нет",
     "receipts-manual-parse-detail": "запрос «Трата словами» своего пользователя; id чеков в нём нет",
     "family": "только в accounts (в local_single — 404); id чеков в ответе нет",
     "budget-limit": "лимит семьи или пользователя; id чеков в нём нет",
     **dict.fromkeys(
         ("api-not-found", "recognition-not-found", "receipts-not-found", "product-merges-not-found",
          "product-classifications-not-found", "stats-not-found", "budget-not-found", "export-not-found",
-         "family-not-found"),
+         "family-not-found", "recurring-not-found"),
         "ответ 404 без данных",
     ),
     **dict.fromkeys(
@@ -524,7 +525,7 @@ class NoForeignReceiptIdTests(ProjectionMixin, TestCase):
             "/api/product-merges/", "/api/product-classifications/", "/api/product-classifications/status/",
             "/api/product-classifications/runs/", "/api/budget/limits/", "/api/budget/limits/history/", "/api/dashboard/",
             "/api/dashboard/?month=2026-06", "/api/export/",
-            "/api/export/?include=receipts,lines,media,stores,summary",
+            "/api/export/?include=receipts,lines,media,stores,summary", "/api/recurring/",
         ]
         paths += [f"/api/categories/{pk}/" for pk in Category.objects.values_list("pk", flat=True)]
         months = sorted({day.strftime("%Y-%m") for day in Receipt.objects.values_list("purchased_on", flat=True)})

@@ -9,6 +9,7 @@ import RequestState from '../../components/RequestState'
 import type { Person } from '../../lib/people'
 import { Link } from '../../navigation'
 import { useQuickShot } from '../recognition/QuickShot'
+import RecurringDue from '../recurring/RecurringDue'
 import {
   badgeLetter, capitalize, categoryIds, categoryTone, cents, compareMonths, currencyName, daysLeftText, dashboardErrorMessage, dashboardPeople, deviceDate, deviceMonth,
   formatMoney, formatNumber, hasLimit, initials, inMonth, monthIsEmpty, monthSlide, monthTitle, progress, recentMeta, shiftMonth,
@@ -286,6 +287,7 @@ export function DashboardView({ data, today = deviceMonth(), family = data.membe
         : <HeroCard block={hero} data={data} family={family} current={current} />}
       {!empty && others.length > 0 && <OtherCurrencies blocks={others} data={data} />}
       <Actions />
+      <RecurringDue month={data.month} />
       <section className="ck-panel dash-card dash-recent" aria-labelledby="dash-recent-heading">
         <div className="ck-panel-head">
           <h2 id="dash-recent-heading">Последние траты</h2>

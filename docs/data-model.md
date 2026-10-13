@@ -865,3 +865,23 @@ docker compose -p checkist_dev cp postgres:/tmp/checkist.dump ./checkist.dump
 - `accounts.Invite` — `household`, `token_hash` (SHA-256, уникален), `created_by`, `created_at`, `expires_at` (+7 дней), `used_at`, `used_by`; сам токен не хранится.
 - `receipts.Receipt.hidden` (bool, по умолчанию `false`), `hidden_by` (FK пользователь, NULL, `SET_NULL`), `hidden_at`. Скрытый платёж не виден членам семьи и не входит ни в какие суммы; правило — `accounts.access.visible_receipts_q`.
 - Миграции: `accounts.0003_profile_head_invite` (Profile, Invite, `role`, ограничение), `receipts.0008_receipt_hidden` — схема без данных. Откат: `migrate receipts 0007_manual_parse_request`, `migrate accounts 0002_household_membership` (роли, настройки и приглашения теряются; скрытые платежи снова видны всем).
+
+## Регулярные платежи (2026-10-13, ветка `feature/recurring`)
+
+Приложение `recurring` (миграция `recurring.0001_initial`; откат — `migrate recurring zero`, удаляет платежи, ответы и
+скрытые предложения, траты и чеки не трогает).
+
+- `RecurringPayment` — владелец как у лимита: `household` либо `user` (ровно один, `recurring_payment_one_owner`);
+  `name` (100), `store` → `stores.Store` (NULL, `SET_NULL`, без обратной связи), `category` → `catalog.Category`
+  (`PROTECT`), `currency` (`PROTECT`), `amount` > 0 (ожидаемая сумма, Decimal 14,2), `due_day` 1–31, `active`,
+  `created_by` (`SET_NULL`), `created_at`, `updated_at`.
+- `RecurringDecision` — ответ на «платёж за месяц не найден»: `payment` (`CASCADE`), `month` (первое число,
+  `recurring_decision_month_start`), `decision` `added` | `skipped` | `elsewhere`, `receipt` → `receipts.Receipt` без
+  ограничения БД и без обратной связи (`db_constraint=False`, `DO_NOTHING`: удаление чека его не трогает и запросов не
+  добавляет; удалённая трата снова открывает вопрос), `decided_by`, `decided_at`; уникален на платёж и месяц.
+- `DismissedSuggestion` — скрытое предложение: владелец как у платежа, ключ `store` + `category` + `currency` (`CASCADE`),
+  уникален на владельца и ключ.
+
+Оплата месяца не хранится — сверка при чтении (`recurring.matching`, правило — [api-contract.md](api-contract.md#регулярные-платежи-2026-10-13-ветка-featurerecurring));
+сигналов и правок в `receipts` нет. Одно чтение месяца — около восьми запросов независимо от числа платежей и трат
+(траты 13 месяцев и их категории читаются целиком, сверка — в памяти).
