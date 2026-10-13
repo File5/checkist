@@ -63,12 +63,14 @@ def _sum(values):
     return sum((value for value in values if value is not None), _ZERO)
 
 
-def daily(user, month, *, income=None, today=None):
+def daily(user, month, *, income=None, today=None, limited_spent=None):
     """daily(user, month, *, income=None) -> Allowance | None; ``None`` — не текущий месяц либо основы нет.
 
     ``month`` — ``budget.dashboard.Month`` либо дата внутри месяца; ``income`` — доход месяца в основной
     валюте (``incomes.services.month_income``) либо функция без аргументов, которая его вернёт: основа только
-    без бюджета и лимитов, и функция зовётся только тогда.
+    без бюджета и лимитов, и функция зовётся только тогда. ``limited_spent`` — траты месяца в категориях с
+    лимитом в основной валюте (полоса лимитов Главной): при основе «лимиты» вычитаются они, а не все траты —
+    иначе жильё без лимита давало «перерасход» рядом с «осталось» той же полосы.
     """
     from recurring.access import as_request  # recurring зависит от budget: импорт внутри
     from recurring.services import unpaid
@@ -105,6 +107,8 @@ def daily(user, month, *, income=None, today=None):
     if amount is None:
         return None
     spent = _sum(converter.convert(total, currency, day) for currency, day, total in spends)
+    if basis == "limits" and limited_spent is not None:
+        spent = limited_spent
     owed = [converter.convert(payment["amount"], payment["currency"], today) for payment in payments]
     unpaid_total = _sum(owed)
     days = days_left(month, today)

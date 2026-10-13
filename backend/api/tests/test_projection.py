@@ -457,11 +457,12 @@ SKIPPED_ROUTES = {
     "family": "только в accounts (в local_single — 404); id чеков в ответе нет",
     "budget-limit": "лимит семьи или пользователя; id чеков в нём нет",
     "income": "доход, видимый автору и главному; id чеков в нём нет",
+    "insights-detail": "запрос к ИИ своего пользователя (чужой — 404); id чеков в нём нет",
     **dict.fromkeys(
         ("api-not-found", "recognition-not-found", "receipts-not-found", "product-merges-not-found",
          "product-classifications-not-found", "stats-not-found", "budget-not-found", "export-not-found",
          "family-not-found", "recurring-not-found", "store-merges-not-found", "statements-not-found",
-         "incomes-not-found", "goals-not-found", "push-not-found"),
+         "incomes-not-found", "goals-not-found", "push-not-found", "insights-not-found"),
         "ответ 404 без данных",
     ),
     **dict.fromkeys(
@@ -539,7 +540,7 @@ class NoForeignReceiptIdTests(ProjectionMixin, TestCase):
             "/api/export/?include=receipts,lines,media,stores,summary", "/api/recurring/",
             "/api/statements/", "/api/statements/rules/",
             "/api/incomes/", "/api/incomes/summary/", "/api/incomes/categories/", "/api/stats/trends/incomes/",
-            "/api/goals/", "/api/push/",
+            "/api/goals/", "/api/push/", "/api/insights/review/", "/api/insights/ask/",
         ]
         paths += [f"/api/categories/{pk}/" for pk in Category.objects.values_list("pk", flat=True)]
         months = sorted({day.strftime("%Y-%m") for day in Receipt.objects.values_list("purchased_on", flat=True)})

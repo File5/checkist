@@ -349,5 +349,6 @@ class DashboardView(LocalAPIView):
             "budget": _month_budget(budget, converter, rate_day, block),
             "allowance": _allowance_object(allowance.daily(
                 request_user(request), month, today=today,
-                income=lambda: month_income(request_user(request), month))),
+                income=lambda: month_income(request_user(request), month),
+                limited_spent=(block.limited_spent or Decimal("0.00")) if block is not None else None)),
         })

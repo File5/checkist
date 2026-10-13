@@ -119,6 +119,14 @@ class DailyTests(TestCase):
         value = self.daily()
         self.assertEqual((value.per_day, value.overspent), (None, D("40000.00")))
 
+    def test_dashboard_with_limits_counts_the_spends_under_the_limits(self):
+        # Лимит только на еду: 70 000 на дом без лимита не делают «перерасхода» рядом с «осталось» полосы лимитов.
+        self.limit(self.food, "60000")
+        with today():
+            body = APIClient().get(DASHBOARD, {"month": "2026-10"}).json()
+        self.assertEqual({key: body["allowance"][key] for key in ("basis", "spent", "per_day", "overspent")},
+                         {"basis": "limits", "spent": "30000.00", "per_day": "1578.94", "overspent": None})
+
     def test_unpaid_recurring_payments_are_set_aside(self):
         self.limit(self.food, "200000")
         rent = RecurringPayment.objects.create(user=self.owner, name="Демо-аренда", category=self.rent, currency_id="KZT",
