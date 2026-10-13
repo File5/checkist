@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 import App from '../App'
+import { preloadScreens } from '../screens'
 import type { NavigationSnapshot } from '../navigation'
 import { buildRoute } from '../navigation'
 import type { NavigableRoute } from '../navigation'
@@ -14,6 +15,9 @@ vi.mock('../session', async (importOriginal) => ({
   ...await importOriginal<typeof import('../session')>(),
   useSession: () => ({ kind: 'user', mode: 'local_single', user: { id: 1, username: 'local', is_staff: false }, household: null, permissions: { moderate_catalog: true } }),
 }))
+
+// The screens come in parts (src/screens.ts): loaded first, the shell renders their real markup at once.
+beforeAll(preloadScreens)
 
 describe('new page wiring (SSR only, no browser interaction)', () => {
   it.each<[NavigableRoute, string, string, string]>([

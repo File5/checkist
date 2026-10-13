@@ -1,0 +1,86 @@
+/* Skeletons of a loading state (components/Skeleton.tsx, feature/split-skeletons 2026-10-13): grey blocks in the shape
+   of the coming content, about its height, so nothing jumps when it arrives. The blocks are --ck-skeleton on the
+   card of the state (--ck-surface) or on the page; both themes through the tokens. No text sizes here.
+   Motion: none by default; a slow pulse of the blocks only under prefers-reduced-motion: no-preference. */
+
+/* The words of the state: for a screen reader only. */
+.ck-skel-message { position: absolute; width: 1px; height: 1px; margin: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+.ck-skel { display: grid; gap: 16px; width: 100%; min-width: 0; }
+.ck-skel-line, .ck-skel-figure, .ck-skel-badge, .ck-skel-bar, .ck-skel-action { border-radius: 6px; background: var(--ck-skeleton); }
+.ck-skel-line { width: 100%; height: 14px; }
+.ck-skel-small { height: 10px; border-radius: 5px; }
+.ck-skel-figure { height: 32px; border-radius: 10px; }
+.ck-skel-hero-figure { height: 44px; }
+.ck-skel-w30 { width: 30%; }
+.ck-skel-w35 { width: 35%; }
+.ck-skel-w45 { width: 45%; }
+.ck-skel-w55 { width: 55%; }
+.ck-skel-w60 { width: 60%; }
+.ck-skel-w80 { width: 80%; }
+.ck-skel-amount { flex: none; width: 64px; }
+.ck-skel-bar { height: 10px; border-radius: 5px; }
+
+/* A row of a list: the badge 40 × 40, two lines, the sum at the right; 64 px, as .ck-row and a row of «Трат». */
+.ck-skel-rows { display: grid; }
+.ck-skel-row { display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 64px; padding: 12px 0; }
+.ck-skel-rows > .ck-skel-row + .ck-skel-row { border-top: 1px solid var(--ck-divider); }
+.ck-skel-badge { flex: none; width: 40px; height: 40px; border-radius: var(--ck-radius-sm); }
+.ck-skel-main { display: grid; flex: 1; gap: 8px; min-width: 0; }
+
+/* The cards of «Главная» and «Трат» stand on the page, as their own cards do. */
+.ck-skel-card { display: grid; gap: 16px; min-width: 0; padding: 20px; border-radius: var(--ck-radius); background: var(--ck-surface); box-shadow: var(--ck-card-shadow); }
+.ck-skel-list { gap: 0; padding-block: 0; }
+
+/* «Главная»: one column of a phone in the order of the screen (the month, the actions, the limits, the latest spends),
+   two columns from 960 px — as Dashboard.css. */
+.ck-skel-home { max-width: 760px; }
+.ck-skel-column { display: contents; }
+.ck-skel-side > * { order: 1; }
+.ck-skel-recent { order: 2; }
+.ck-skel-hero { gap: 12px; }
+.ck-skel-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.ck-skel-action { height: 64px; border-radius: var(--ck-radius-button); }
+.ck-skel-limit { display: grid; gap: 8px; padding-block: 4px; }
+.ck-skel-limit-line { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+@media (min-width: 960px) {
+  .ck-skel-home { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; max-width: none; }
+  .ck-skel-column { display: grid; gap: 16px; min-width: 0; }
+}
+
+/* A line with something at its right end (a link, a sum); a ruled one starts a part of the card, as the day allowance. */
+.ck-skel-split { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; }
+.ck-skel-ruled { padding-top: 12px; border-top: 1px solid var(--ck-divider); }
+.ck-skel-split .ck-skel-figure { height: 24px; border-radius: 8px; }
+
+/* «Траты»: days of a header line over a card of rows. */
+.ck-skel-spends { max-width: 760px; }
+.ck-skel-day { display: grid; gap: 8px; min-width: 0; }
+.ck-skel-day-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 22px; padding: 0 4px; }
+.ck-skel-list .ck-skel-rows { margin: 0; }
+
+/* The top of «Трат» (App's fallback): the search field, a chip (the round «Фильтры» of a phone), and from 541 px the form
+   of filters in the page; 16 px over the days, as .receipts-page. */
+.ck-skel-screen { display: grid; gap: 16px; min-width: 0; }
+.ck-skel-field, .ck-skel-chip { border: 1px solid var(--ck-divider); background: var(--ck-surface); }
+.ck-skel-field { height: 48px; border-radius: var(--ck-radius-pill); }
+.ck-skel-chip { width: 44px; height: 44px; border-radius: var(--ck-radius-pill); }
+.ck-skel-filters .ck-skel-field { border-radius: var(--ck-radius-sm); }
+.ck-skel-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.ck-skel-labelled { display: grid; gap: 10px; min-width: 0; }
+.ck-skel-button { width: 132px; height: 46px; }
+@media (max-width: 540px) {
+  .ck-skel-filters { display: none; }
+}
+@media (min-width: 541px) {
+  .ck-skel-chip { width: 160px; }
+}
+
+/* Inside a card: two small lines. */
+.ck-skel-compact { gap: 10px; padding-block: 6px; }
+.ck-skel-compact .ck-skel-line { height: 10px; border-radius: 5px; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .ck-skel-line, .ck-skel-figure, .ck-skel-badge, .ck-skel-bar, .ck-skel-action { animation: ck-skel-pulse 1.6s ease-in-out infinite; }
+  @keyframes ck-skel-pulse { 50% { opacity: 0.5; } }
+}

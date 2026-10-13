@@ -6,7 +6,8 @@ const raw = (path: string) => readFileSync(new URL(path, source), 'utf8')
 const read = (path: string) => raw(path).replace(/\/\*[\s\S]*?\*\//g, '')
 const css = read('components/ActionBar.css')
 const tokens = read('theme/tokens.css')
-const main = raw('main.tsx')
+// Every stylesheet is imported by styles.ts, in the order of the cascade (main.tsx imports it first).
+const styles = raw('styles.ts')
 
 const rules = (text: string) => [...text.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
   .flatMap((match) => match[1].split(',').map((selector) => ({ selector: selector.trim(), body: match[2].trim().replace(/\s+/g, ' ') })))
@@ -88,8 +89,8 @@ describe('action bar guards (text of the rules, not rendering)', () => {
     expect(css).not.toMatch(/font-size|!important|transition|animation|@keyframes/)
   })
 
-  it('is imported by main.tsx right after App.css', () => {
-    const imports = [...main.matchAll(/^import '(\.[^']+\.css)'$/gm)].map((match) => match[1])
-    expect(imports).toEqual(['./theme/tokens.css', './App.css', './components/ActionBar.css'])
+  it('is imported right after App.css, the last stylesheet of the cascade', () => {
+    const imports = [...styles.matchAll(/^import '(\.[^']+\.css)'$/gm)].map((match) => match[1])
+    expect(imports.slice(-3)).toEqual(['./theme/tokens.css', './App.css', './components/ActionBar.css'])
   })
 })

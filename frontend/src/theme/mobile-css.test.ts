@@ -78,10 +78,11 @@ describe('text sizes go through the scale (mobile design 2026-10-12, text of the
       .toEqual(['.brand: 1.3rem', '.intro-text: 1.05rem', '.service-state: 0.85rem'])
   })
 
-  it('moves only in the sheet: no other stylesheet of the client has an animation', () => {
+  it('moves only in the sheet, the month, the network bar and the skeleton: no other stylesheet of the client has an animation', () => {
     const moving = files.filter((path) => path.endsWith('.css') && !/(^|[/-])preview\//.test(path) && /@keyframes/.test(strip(raw(path))))
-    // The plan allows two motions: the sheet and the change of a month on «Главная» (both under reduced motion).
-    expect(moving).toEqual(['components/Sheet.css', 'features/dashboard/Dashboard.css'])
+    // The plan allows two motions: the sheet and the change of a month on «Главная»; loading in parts (2026-10-13) adds
+    // the running segment of the network bar and the pulse of a skeleton. All of them only under reduced motion.
+    expect(moving.sort()).toEqual(['components/NetworkBar.css', 'components/Sheet.css', 'components/Skeleton.css', 'features/dashboard/Dashboard.css'])
   })
 })
 

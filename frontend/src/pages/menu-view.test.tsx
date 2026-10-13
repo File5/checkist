@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '../App'
+import { preloadScreens } from '../screens'
 import { menuScrollLeft } from '../menu-view'
 import type { NavigationSnapshot, Route } from '../navigation'
 import type { Session } from '../session'
@@ -76,6 +77,9 @@ function render(session: Session, route: Route, href: string) {
 const fetchMock = vi.fn<typeof fetch>()
 beforeEach(() => { fetchMock.mockReset(); vi.stubGlobal('fetch', fetchMock) })
 afterEach(() => { expect(fetchMock).not.toHaveBeenCalled(); vi.unstubAllGlobals() })
+
+// The screens come in parts (src/screens.ts): loaded first, the shell renders their real markup at once.
+beforeAll(preloadScreens)
 
 describe('current item of the header menu is brought into view again (SSR only, the scroll itself is checked by a person)', () => {
   it.each(narrow)('when «Я» is read on the same address: %s', (_item, route, href) => {

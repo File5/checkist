@@ -6,6 +6,7 @@ import {
 } from '../../api/family'
 import type { Family, FamilyAi, FamilyInvite, FamilyMember } from '../../api/family'
 import type { LocalApiResult } from '../../api/types'
+import RequestState from '../../components/RequestState'
 import Sheet from '../../components/Sheet'
 import { loadSession } from '../../session'
 import { initials } from '../../lib/people'
@@ -316,7 +317,7 @@ export default function FamilyPage({ joinToken }: { joinToken?: string }) {
     run('join', () => joinFamily(joinToken), (data) => { asFamily(data); return 'Вы в семье.' })
   })
   if (loadFailed) return <p role="alert">Не удалось загрузить семью. Обновите страницу.</p>
-  if (!family) return <p role="status">Загружаем…</p>
+  if (!family) return <RequestState kind="loading" message="Загружаем семью…" />
   const asked = confirm && confirmTexts(confirm)
   const answer = () => {
     if (!confirm) return

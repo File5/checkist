@@ -1,33 +1,23 @@
-import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { buildRoute, Link, navigate, useNavigation } from './navigation'
 import type { NavigationSnapshot, Route } from './navigation'
-import HealthPage from './pages/HealthPage'
-import CatalogPage from './features/catalog/CatalogPage'
-import CategoryPage from './features/catalog/CategoryPage'
-import ProductPage from './features/product/ProductPage'
 import RequestState from './components/RequestState'
+import ScreenBoundary, { ScreenFallback, ScreenSkeleton } from './components/ScreenBoundary'
+import NetworkBar from './components/NetworkBar'
 import Icon from './components/Icon'
 import { PageHeaderContext } from './components/page-header'
 import type { PageHeaderSlots } from './components/page-header'
-import { UploadPage, JobsPage, JobPage } from './features/recognition'
-import { ReceiptsPage, ReceiptPage } from './features/receipts'
-import { ExpensePage } from './features/expense'
-import { CategorySpendsPage, DashboardPage, LimitsPage } from './features/dashboard'
-import { MergesPage, MergePage } from './features/merges'
-import { ClassificationPage } from './features/classification'
-import { SpendingPage, ReceiptsStatsPage, TrendsPage, IncomesStatsPage } from './features/stats'
+// The screens come in parts of the build (screens.ts); only the sign-in is in the shell: a guest sees it first.
+import {
+  AccountPage, AskPage, CatalogPage, CategoryPage, CategorySpendsPage, ClassificationPage, DashboardPage, ExpensePage, ExportPage,
+  FamilyPage, GoalPage, GoalsPage, HealthPage, IncomesPage, IncomesStatsPage, JobPage, JobsPage, LimitsPage, MergePage, MergesPage, MorePage,
+  NewFamilyPage, NewFamilySignedIn, ProductPage, ReceiptPage, ReceiptsPage, ReceiptsStatsPage, RecurringPage, ReviewPage, SpendingPage,
+  StatementPage, StatementRulesPage, StoresPage, TrendsPage, UploadPage, UploadStatementPage,
+  preloadRoute, warmScreens,
+} from './screens'
 import { rememberStats, statsTabHref, statsTabs } from './features/stats/stats-memory'
-import { LoginPage, AccountPage } from './features/auth'
-import { ExportPage } from './features/export'
-import MorePage from './features/more/MorePage'
-import { RecurringPage } from './features/recurring'
-import { IncomesPage } from './features/incomes'
-import { StoresPage } from './features/stores'
-import { FamilyPage, NewFamilyPage, NewFamilySignedIn } from './features/family'
-import { StatementPage, StatementRulesPage, UploadStatementPage } from './features/statements'
-import { AskPage, ReviewPage } from './features/insights'
-import { GoalPage, GoalsPage } from './features/goals'
+import LoginPage from './features/auth/LoginPage'
 import { pageKey, shellView, watchSession } from './features/auth/auth-state'
 import type { ShellView } from './features/auth/auth-state'
 import { moderatorOnlyText } from './features/auth/labels'
@@ -182,6 +172,10 @@ export default function App() {
   }
 
   useEffect(() => watchSession(loadSession, document), [])
+  // The script of the opened screen starts at once, beside the check of the session; the others follow when it is shown.
+  useEffect(() => { void preloadRoute(route.kind) }, [route.kind])
+  const shown = view === 'page'
+  useEffect(() => { if (shown) warmScreens(preloadRoute(route.kind)) }, [shown, route.kind])
   // Spends kept on the phone without network belong to one person and are sent when the network is back — once the
   // server confirmed who that person is (a session started from the device is `provisional` until then).
   usePendingSync(session.kind === 'user' && !session.provisional ? session.user.username : null)
@@ -257,13 +251,16 @@ export default function App() {
     const guestHeading = <h1 id="page-heading" ref={heading} tabIndex={-1}>{title}</h1>
     // The link of a new family is for a guest: its form takes the place of the sign-in on its own address.
     return route.kind === 'family-new'
-      ? <NewFamilyPage key={route.token ?? ''} token={route.token} heading={guestHeading} />
-      : <LoginPage expired={session.kind === 'guest' && session.expired} heading={guestHeading} />
+      ? <><NetworkBar /><ScreenBoundary resetKey={navigation.href}><Suspense fallback={<ScreenFallback kind={route.kind} />}><NewFamilyPage key={route.token ?? ''} token={route.token} heading={guestHeading} /></Suspense></ScreenBoundary></>
+      : <><NetworkBar /><LoginPage expired={session.kind === 'guest' && session.expired} heading={guestHeading} /></>
   }
   let body: ReactNode
   switch (view) {
-    case 'page': body = <Fragment key={contentKey}>{pageContent(navigation, username)}</Fragment>; break
-    case 'loading': body = <RequestState kind="loading" message="Проверяем вход…" />; break
+    // A screen whose script is still on its way shows its skeleton; a script that did not come — «Повторить».
+    case 'page': body = <ScreenBoundary key={contentKey} resetKey={navigation.href}>
+      <Suspense fallback={<ScreenFallback kind={route.kind} />}>{pageContent(navigation, username)}</Suspense>
+    </ScreenBoundary>; break
+    case 'loading': body = <ScreenSkeleton kind={route.kind} message="Проверяем вход…" />; break
     case 'error': body = <RequestState kind="error" message="Не удалось проверить вход. Проверьте соединение и повторите попытку." onRetry={() => { void loadSession() }} />; break
     case 'forbidden': body = <RequestState kind="empty" message={`${moderatorOnlyText}.`} action={<Link className="action-link" to="/catalog">В каталог</Link>} />; break
     case 'not-found': body = notFound; break
@@ -271,6 +268,7 @@ export default function App() {
   return (
     <PageHeaderContext.Provider value={headerSlots}>
       <a className="skip-link" href="#page-heading">К содержимому</a>
+      <NetworkBar />
       <OfflineBanner />
       <header className="brand-bar">
         <Link className="brand" to="/" aria-label="Чекист — главная">

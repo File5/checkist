@@ -157,7 +157,7 @@ export function ReceiptsView({ query, state, retry, showOwner = false, narrow = 
     </Sheet>}
     <ReviewBanner count={review} />
     {/* The days are the cards themselves: the block keeps its heading for a screen reader only. */}
-    <ReceiptBlock title="Список трат" state={state} retry={retry} recovery={recovery} bare>
+    <ReceiptBlock title="Список трат" state={state} retry={retry} recovery={recovery} bare skeleton="spends">
       {/* A page whose spends were all just deleted keeps its count and pages: the list is not «empty». */}
       {state.kind === 'ok' && (results.length || removed ? <>
         <SpendDays receipts={results} today={today} showOwner={showOwner} onDelete={onDelete} />

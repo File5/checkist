@@ -1,9 +1,10 @@
 import { renderToStaticMarkup } from 'react-dom/server'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Classification, ClassificationState } from '../../api/product-classifications'
 import type { Me } from '../../api/session'
 import type { GenericProduct, LocalApiFailure, Page } from '../../api/types'
 import App from '../../App'
+import { preloadScreens } from '../../screens'
 import type { ClassificationQuery, NavigationSnapshot } from '../../navigation'
 import { applyMe } from '../../session'
 import { resetSession } from '../../session/store'
@@ -50,6 +51,9 @@ type Props = { query?: ClassificationQuery; state?: RequestState<ClassificationS
 const view = ({ query = { page: 1 }, state = success(stateOf('status.json')), list = success(records()), action = idle, open }: Props = {}) =>
   renderToStaticMarkup(<ClassificationView query={query} state={state} list={list} action={action} open={open}
     onRun={noop} onRetryAction={noop} onRetryState={noop} onRetryList={noop} onAction={noop} onOpen={noop} onClose={noop} />)
+
+// The screens come in parts (src/screens.ts): loaded first, the shell renders their real markup at once.
+beforeAll(preloadScreens)
 
 describe('shell of the catalog section (SSR in Node, not browser behavior)', () => {
   const shell = (href: string, route: NavigationSnapshot['route']) => {

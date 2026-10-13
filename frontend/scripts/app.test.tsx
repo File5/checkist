@@ -1,7 +1,8 @@
 import { renderToStaticMarkup } from 'react-dom/server'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { NavigationSnapshot } from '../src/navigation'
 import App from '../src/App'
+import { preloadScreens } from '../src/screens'
 
 const navigation = vi.hoisted(() => ({ snapshot: undefined as NavigationSnapshot | undefined }))
 vi.mock('../src/navigation', async (importOriginal) => ({
@@ -11,10 +12,13 @@ vi.mock('../src/navigation', async (importOriginal) => ({
 // The shell needs to know who works: these tests check the unchanged interface of local_single.
 vi.mock('../src/session', async (importOriginal) => ({
   ...await importOriginal<typeof import('../src/session')>(),
-  useSession: () => ({ kind: 'user', mode: 'local_single', user: { id: 1, username: 'local', is_staff: false }, permissions: { moderate_catalog: true } }),
+  useSession: () => ({ kind: 'user', mode: 'local_single', user: { id: 1, username: 'local', is_staff: false }, household: null, permissions: { moderate_catalog: true } }),
 }))
 
 beforeEach(() => { navigation.snapshot = { href: '/catalog', route: { kind: 'catalog', query: { page: 1 } } } })
+
+// The screens come in parts (src/screens.ts): loaded first, the shell renders their real markup at once.
+beforeAll(preloadScreens)
 
 describe('App feature connections (Node server markup, not browser behavior)', () => {
   it('connects the catalog and passes the search query', () => {
@@ -60,6 +64,17 @@ describe('App feature connections (Node server markup, not browser behavior)', (
     expect(html).toContain('Загружаем траты месяца…')
     expect(html).not.toContain('ck-quick-actions')
     expect(html.match(/<h1\b/g)).toHaveLength(1)
+  })
+
+  it('draws the skeletons of «Главная» and «Траты» while their data loads, not the fallback of a script on its way', () => {
+    navigation.snapshot = { href: '/', route: { kind: 'dashboard' } }
+    const home = renderToStaticMarkup(<App />)
+    expect(home).toContain('<p class="ck-skel-message">Загружаем траты месяца…</p><div class="ck-skel ck-skel-home" data-skeleton="home" aria-hidden="true">')
+    expect(home).not.toContain('Открываем экран…')
+    navigation.snapshot = { href: '/receipts', route: { kind: 'receipts', query: { page: 1 } } }
+    const spends = renderToStaticMarkup(<App />)
+    expect(spends).toContain('<p class="ck-skel-message">Загружаем: список трат…</p><div class="ck-skel ck-skel-spends" data-skeleton="spends" aria-hidden="true">')
+    expect(spends).not.toContain('Открываем экран…')
   })
 
   it('connects the limits screen', () => {

@@ -91,7 +91,7 @@ export function PriceHistory({ rows }: Props) {
   Область прилипания — ближайший родитель; между панелью и окном не должно быть предка с `overflow`.
 - В панели только кнопки. Пояснения (`aria-describedby`) и сообщения об отказе остаются вне её.
 - Панель добавляет обёртке поля 10 px сверху и снизу, верхнюю рамку и фон `--ck-surface`.
-- Стили — `src/components/ActionBar.css`, подключён в `main.tsx` после `App.css`. Правил состояний там нет.
+- Стили — `src/components/ActionBar.css`, подключён в `src/styles.ts` сразу после `App.css`. Правил состояний там нет.
 
 ## Токены раскладки (`theme/tokens.css`, `:root`)
 

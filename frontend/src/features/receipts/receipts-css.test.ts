@@ -23,7 +23,7 @@ const weight = (selector: string) => {
   return (text.replace(/::[\w-]+/g, '').replace(/:not\(|\)/g, ' ').match(/\.[\w-]+|\[[^\]]*\]|:[\w-]+/g) ?? []).length
 }
 
-/** Screen stylesheets: the build puts every one of them BEFORE App.css (main.tsx imports App first). */
+/** Screen stylesheets: the build puts every one of them BEFORE App.css (src/styles.ts lists them first). */
 const screens = (readdirSync(new URL('.', source), { recursive: true }) as string[])
   .map((path) => path.replaceAll('\\', '/'))
   .filter((path) => path.endsWith('.css') && path !== 'App.css' && path !== 'theme/tokens.css' && !path.includes('/preview/'))

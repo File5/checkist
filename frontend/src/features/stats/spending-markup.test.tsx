@@ -116,7 +116,9 @@ describe('spending screen markup (Vitest/SSR — not what the browser shows, foc
   it('reserves the block while the first answer loads', () => {
     const html = render({}, { kind: 'loading' })
     expect(html).toMatch(/<section class="spending-panel" aria-labelledby="[^"]+" aria-busy="true">/)
-    expect(html).toContain('<div class="request-state request-state-loading" aria-live="polite" aria-busy="true"><p>Загружаем траты…</p></div>')
+    // A skeleton of the coming block; the words stay for a screen reader (components/Skeleton.tsx).
+    expect(html).toContain('<div class="request-state request-state-loading" aria-live="polite" aria-busy="true"><p class="ck-skel-message">Загружаем траты…</p>'
+      + '<div class="ck-skel ck-skel-page" data-skeleton="page" aria-hidden="true">')
     expect(html).toContain('<p class="spending-status" role="status"></p>')
     expect(html).not.toContain('spending-currency')
     // The filters and the breakdown switch are usable meanwhile.

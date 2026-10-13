@@ -519,3 +519,13 @@
   --ck-swipe-delete-text: var(--ck-on-brand);
   --ck-z-toast: 25;
 }
+
+/* feature/split-skeletons (2026-10-13): загрузка частями. Скелет загрузки — серые блоки цветом дорожки полосы
+   (--ck-track: в светлой #EBE0C8 на карточке #FFFAF0, в тёмной #3A312B на #1F1A17 — декор, не текст). Тонкая полоса
+   сети сверху окна — цвет главного действия (--ck-primary) на бледной дорожке того же цвета; слой — над листом, под
+   ссылкой «к содержимому». */
+:root {
+  --ck-skeleton: var(--ck-track);
+  --ck-network-track: color-mix(in srgb, var(--ck-primary) 25%, transparent);
+  --ck-z-network-bar: 38;
+}

@@ -136,7 +136,10 @@ input::-webkit-date-and-time-value { text-align: left; }
 .request-state-error { border-color: var(--ck-error-border); }
 /* Inside a panel: the words and the action only, the panel is the card. */
 .request-state-compact { min-height: 0; padding: 4px 0; border: 0; background: none; box-shadow: none; }
-.request-state-loading { color: var(--ck-text-muted); }
+/* Loading: a skeleton of the coming content (components/Skeleton.tsx, Skeleton.css) from the top of the card. «Главная»
+   and «Траты» draw cards of their own: the bare state is no card. */
+.request-state-loading { align-items: stretch; justify-content: flex-start; color: var(--ck-text-muted); }
+.request-state-bare { min-height: 0; padding: 0; border: 0; background: none; box-shadow: none; }
 .request-state-title { font-size: var(--ck-text-lg); }
 /* The action of an empty or failed state: a link or a button beside the words, never alone at the end of a page. */
 .request-state-action { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; max-width: 100%; }
@@ -236,6 +239,7 @@ footer { border-top: 1px solid var(--ck-divider); color: var(--ck-text-muted); p
   .intro-text { font-size: 1.05rem; }
   .health-panel { padding: 20px; }
   .request-state { padding: 20px; min-height: 160px; }
+  .request-state-bare { min-height: 0; padding: 0; }
   .panel-heading { flex-wrap: wrap; gap: 14px; }
   .panel-heading button { width: 100%; }
   .health-summary { padding: 14px; min-height: 182px; }

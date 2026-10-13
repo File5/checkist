@@ -1,0 +1,12 @@
+/* The thin bar of the network (components/NetworkBar.tsx, feature/split-skeletons 2026-10-13): 3 px at the very top of
+   the window, under the status bar of a phone (safe area), over everything but the skip link; the colour of the main
+   action (--ck-primary: red in the light theme, gold in the dark one). It never takes a touch.
+   Motion: a static full bar by default; a running segment over a faint track only under
+   prefers-reduced-motion: no-preference. */
+.ck-network-bar { position: fixed; top: env(safe-area-inset-top, 0px); right: 0; left: 0; z-index: var(--ck-z-network-bar); height: 3px; overflow: hidden; background: var(--ck-primary); pointer-events: none; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .ck-network-bar { background: var(--ck-network-track); }
+  .ck-network-bar::before { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 40%; background: var(--ck-primary); animation: ck-network-run 1.2s ease-in-out infinite; }
+  @keyframes ck-network-run { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+}

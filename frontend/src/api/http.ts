@@ -3,6 +3,7 @@ import {
   startRefresh, trackRead,
 } from './answer-cache.ts'
 import { reportAuthSignal } from './auth-signal.ts'
+import { begin, end } from './activity.ts'
 import { OFFLINE_HEADER, reportApiAnswer } from '../offline/status.ts'
 import { isRecognitionIssue } from './recognition-schema.ts'
 import type { ApiFailure, ApiResult, LocalApiFailure, LocalApiResult, RequestOptions } from './types.ts'
@@ -293,11 +294,13 @@ async function transport<T, F extends { kind: 'error' } | { kind: 'aborted' }>(
       return interrupted() ?? { kind: 'error', reason: 'network' }
     }
   }
+  if (!init.keepalive) begin()
   try {
     // The deadline also settles a fetch/body implementation that ignores its signal.
     return await Promise.race([stopped, request()])
   } finally {
     clearTimeout(timeout)
     signal?.removeEventListener('abort', cancel)
+    if (!init.keepalive) end()
   }
 }

@@ -1,9 +1,10 @@
 import { renderToStaticMarkup } from 'react-dom/server'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Me } from '../../api/session'
 import { detail, pageOf, product } from '../../api/test-support'
 import type { NavigationSnapshot } from '../../navigation'
 import App from '../../App'
+import { preloadScreens } from '../../screens'
 import { applyMe } from '../../session'
 import { resetSession } from '../../session/store'
 import ProductList from '../catalog/ProductList'
@@ -40,6 +41,9 @@ const loading = { kind: 'loading' as const }
 const kept = { ...product, id: 5, name: 'Steinhof.PizzaSpezial' }
 const other = { ...product, id: 77, name: 'Pizza Hot Dog' }
 const route = { kind: 'catalog' as const, query: { q: 'pizza', page: 1 } }
+
+// The screens come in parts (src/screens.ts): loaded first, the shell renders their real markup at once.
+beforeAll(preloadScreens)
 
 describe('catalog list marks', () => {
   it('marks the kept product of a pending group with a link to the group', () => {

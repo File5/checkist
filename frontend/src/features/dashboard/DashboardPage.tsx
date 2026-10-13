@@ -395,7 +395,7 @@ export default function DashboardPage({ month }: { month?: string }) {
   // month shown before stays in its place.
   const before = load?.kind === 'ok' ? load.data : undefined
   const waiting = <MonthHeader month={month ?? today} today={today} people={before ? dashboardPeople(before) : []} family={before ? before.members.length > 1 : false} />
-  if (!load || load.key !== key) return <>{waiting}<RequestState kind="loading" message="Загружаем траты месяца…" /></>
+  if (!load || load.key !== key) return <>{waiting}<RequestState kind="loading" message="Загружаем траты месяца…" shape="home" /></>
   if (load.kind === 'error') return <>{waiting}<RequestState kind="error" message={load.message} onRetry={() => setAttempt((value) => value + 1)} /></>
   return <DashboardView data={load.data} slide={load.slide} />
 }

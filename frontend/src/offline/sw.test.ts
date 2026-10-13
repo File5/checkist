@@ -147,6 +147,26 @@ describe('sw.js strategies', () => {
       .toEqual(['/assets/emblem-96-B7.webp', '/assets/chunk-Q.js'])
   })
 
+  it('finds the parts of the screens in the dependency map of the entry script, and no address of another site', () => {
+    const { api } = loadSw(async () => new Response(''))
+    // The shape Vite writes for lazy screens (src/screens.ts): names without the leading slash.
+    const entry = 'const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/HealthPage-BC1.js","assets/jsx-runtime-D2.js",'
+      + '"assets/Receipts-E3.css"])))=>i.map(i=>d[i]);import("./HealthPage-BC1.js");fetch("https://cdn.example/assets/x.js")'
+    expect(api.nestedAssetUrls(entry)).toEqual(['/assets/HealthPage-BC1.js', '/assets/jsx-runtime-D2.js', '/assets/Receipts-E3.css'])
+  })
+
+  it('pre-caches the parts of the screens named by the entry script', async () => {
+    const entryText = 'm.f=["assets/DashboardPage-A1.js","assets/money-B2.js"]'
+    const fetcher = vi.fn<Fetch>(async (input) => String(input).endsWith('/') ? page(html('index-A'))
+      : String(input).endsWith('index-A.js') ? new Response(entryText) : new Response('asset'))
+    const { listeners, caches, api } = loadSw(fetcher)
+    const event = new FakeEvent(request('/'))
+    listeners.install(event)
+    await Promise.all(event.waits)
+    const shell = caches.stores.get(api.SHELL_PREFIX + api.shellVersion(html('index-A')))!
+    expect([...shell.entries.keys()]).toEqual(expect.arrayContaining([abs('/assets/DashboardPage-A1.js'), abs('/assets/money-B2.js')]))
+  })
+
   it('install pre-caches index.html with its assets and takes over at once', async () => {
     const fetcher = vi.fn<Fetch>(async (input) => String(input).endsWith('/') ? page(html('index-A'))
       : String(input).endsWith('.css') ? new Response('@font-face{src:url(/assets/font-F.woff2)}a{b:url(/assets/gone.png)}')

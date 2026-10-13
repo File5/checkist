@@ -55,9 +55,15 @@ function assetUrls(html) {
   return [...found]
 }
 
-/** `/assets/…` files named inside a built script or style sheet: fonts, images, lazy chunks. */
+/** `/assets/…` files named inside a built script or style sheet: fonts, images, lazy chunks. The screens come in parts
+ * (src/screens.ts): the entry script names every part in the dependency map of Vite as `"assets/<name>.js"`, without
+ * the leading slash. A name inside another address (`https://cdn…/assets/x.js`) is not ours. */
 function nestedAssetUrls(text) {
-  return [...new Set(String(text).match(/\/assets\/[\w.-]+\.(?:js|css|woff2?|webp|png|jpe?g|svg)\b/g) || [])]
+  const found = new Set()
+  for (const match of String(text).matchAll(/(?:^|[^\w./-])\/?assets\/([\w.-]+\.(?:js|css|woff2?|webp|png|jpe?g|svg))\b/g)) {
+    found.add(`/assets/${match[1]}`)
+  }
+  return [...found]
 }
 
 /** FNV-1a of the page: the version of the shell. Same page — same name. */

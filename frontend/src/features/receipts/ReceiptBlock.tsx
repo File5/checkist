@@ -1,6 +1,7 @@
 import { useId } from 'react'
 import type { ReactNode } from 'react'
 import RequestState from '../../components/RequestState'
+import type { SkeletonShape } from '../../components/Skeleton'
 import { paginationItems } from '../../components/pagination-items'
 import { useLocalRequestFocus } from '../../components/useLocalRequestFocus'
 import type { ReceiptRequestState } from './request'
@@ -11,9 +12,11 @@ import { errorMessage } from './state'
  * the loading, the error with «Повторить» or a recovery, then the content. `bare` — no card of its own (the days of
  * «Траты» on a phone are the cards): the heading stays for a screen reader and for the focus after a retry.
  */
-export function ReceiptBlock<T>({ title, state, retry, recovery, children, id, aside, bare = false, className }: {
+export function ReceiptBlock<T>({ title, state, retry, recovery, children, id, aside, bare = false, className, skeleton }: {
   title: string; state: ReceiptRequestState<T>; retry: () => void; recovery?: ReactNode; children: ReactNode; id?: string
   aside?: ReactNode; bare?: boolean; className?: string
+  /** The shape of the loading skeleton (components/Skeleton.tsx): the days of «Траты» are `spends`. */
+  skeleton?: SkeletonShape
 }) {
   const heading = useId()
   const block = useLocalRequestFocus(state)
@@ -21,7 +24,7 @@ export function ReceiptBlock<T>({ title, state, retry, recovery, children, id, a
   const h2 = <h2 id={heading} data-request-focus-target tabIndex={-1} className={bare ? 'receipt-visually-hidden' : undefined}>{title}</h2>
   return <section id={id} ref={block} className={classes} aria-labelledby={heading} aria-busy={state.kind === 'loading'}>
     {aside && state.kind === 'ok' ? <div className="receipt-block-head">{h2}{aside}</div> : h2}
-    {state.kind === 'loading' && <RequestState kind="loading" message={`Загружаем: ${title.toLocaleLowerCase('ru-RU')}…`} />}
+    {state.kind === 'loading' && <RequestState kind="loading" message={`Загружаем: ${title.toLocaleLowerCase('ru-RU')}…`} shape={skeleton} />}
     {state.kind === 'error' && (recovery
       ? <RequestState kind="empty" message={errorMessage(state)} action={recovery} />
       : <RequestState kind="error" message={errorMessage(state)} onRetry={retry} />)}

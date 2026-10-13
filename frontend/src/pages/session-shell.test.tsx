@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '../App'
+import { preloadScreens } from '../screens'
 import type { NavigationSnapshot, Route } from '../navigation'
 import type { Session } from '../session'
 
@@ -87,6 +88,9 @@ const fullMenu = menuWith()
 const fetchMock = vi.fn<typeof fetch>()
 beforeEach(() => { fetchMock.mockReset(); vi.stubGlobal('fetch', fetchMock) })
 afterEach(() => { expect(fetchMock).not.toHaveBeenCalled(); vi.unstubAllGlobals() })
+
+// The screens come in parts (src/screens.ts): loaded first, the shell renders their real markup at once.
+beforeAll(preloadScreens)
 
 describe('session gate of the shell (SSR only, no browser interaction)', () => {
   it.each([...everywhere, loginRoute])('a guest at %j sees the sign-in alone on that very address: no shell and no data screen', (route, href) => {
