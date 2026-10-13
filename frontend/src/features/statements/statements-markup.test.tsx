@@ -74,7 +74,7 @@ describe('statement draft screen', () => {
     expect(html).toContain('Сохранить 4 траты и 1 взнос')
     const goals = [{ id: 30, name: 'Отпуск' }].map((goal) => ({ ...goal, amount: '1.00', currency: 'KZT', deadline: null, shared: true,
       owner: null, created_by: null, saved: '0.00', percent: 0, remaining: '1.00', reached: false, excluded: [], contributions_count: 0,
-      pace: null, need_per_month: null, overdue: false }))
+      pace: null, need_per_month: null, overdue: false, kind: 'saving' as const, rate: null, capitalization: 'monthly' as const, deposit: null }))
     const transfer = view({ open: 9, goals })
     expect(transfer).toContain('<span>Это взнос в цель</span>')
     expect(transfer).toContain('<option value="30" selected="">Отпуск</option>')

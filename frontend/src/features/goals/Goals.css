@@ -58,6 +58,19 @@
 .goal-confirm p { margin: 0; font-size: var(--ck-text-sm); }
 .goal-form button[aria-disabled="true"] { border-color: var(--ck-disabled-border); background: var(--ck-disabled-bg); color: var(--ck-disabled-text); cursor: default; }
 
+/* A deposit (feature/goal-deposit): contributions and interest side by side, the growth chart with the forecast dashed,
+   «Сверить с банком»; a record «проценты» in the history carries «%» in a green badge. */
+.goal-deposit { gap: 12px; }
+.goal-split { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.goal-split > div { display: grid; gap: 2px; min-width: 0; padding: 10px 12px; border-radius: var(--ck-radius-sm); background: var(--ck-neutral-bg); }
+.goal-split dt { color: var(--ck-text-muted); font-size: var(--ck-text-xs); font-weight: 600; }
+.goal-split dd { margin: 0; color: var(--ck-text); font-size: var(--ck-text-base); font-weight: 800; white-space: nowrap; }
+.goal-interest { background: var(--ck-success-bg); color: var(--ck-success-text); font-weight: 800; }
+.goal-reconcile { width: 100%; min-height: 48px; }
+/* «депозит 14,5 % · до 30 июн. 2027» of a list row wraps between its parts on a narrow phone, never inside one. */
+.goal-row-meta { white-space: normal; }
+.goal-row-meta > span { white-space: nowrap; }
+
 @media (forced-colors: active) {
   .goal-bar > span, .goal-bar-big > span { background: CanvasText; }
 }

@@ -445,7 +445,7 @@ SKIPPED_ROUTES = {
          "family-join", "recurring-decision", "recurring-pay", "recurring-suggestion-accept", "recurring-suggestion-dismiss",
          "store-merges-merge", "store-merges-dismiss", "family-ai", "family-new-invites", "family-new-invite",
          "auth-new-family", "auth-new-family-check", "statements-save", "statements-goal", "goal-contributions",
-         "push-subscribe", "push-unsubscribe", "push-test"),
+         "push-subscribe", "push-unsubscribe", "push-test", "goal-reconcile"),
         "только POST",
     ),
     "recurring-payment": "регулярный платёж семьи или пользователя; id чеков в нём нет",
