@@ -444,7 +444,8 @@ SKIPPED_ROUTES = {
          "family-members", "family-member", "family-head", "family-leave", "family-invites", "family-invite",
          "family-join", "recurring-decision", "recurring-suggestion-accept", "recurring-suggestion-dismiss",
          "store-merges-merge", "store-merges-dismiss", "family-ai", "family-new-invites", "family-new-invite",
-         "auth-new-family", "auth-new-family-check", "statements-save"),
+         "auth-new-family", "auth-new-family-check", "statements-save", "push-subscribe", "push-unsubscribe",
+         "push-test"),
         "только POST",
     ),
     "recurring-payment": "регулярный платёж семьи или пользователя; id чеков в нём нет",
@@ -456,7 +457,8 @@ SKIPPED_ROUTES = {
     **dict.fromkeys(
         ("api-not-found", "recognition-not-found", "receipts-not-found", "product-merges-not-found",
          "product-classifications-not-found", "stats-not-found", "budget-not-found", "export-not-found",
-         "family-not-found", "recurring-not-found", "store-merges-not-found", "statements-not-found"),
+         "family-not-found", "recurring-not-found", "store-merges-not-found", "statements-not-found",
+         "push-not-found"),
         "ответ 404 без данных",
     ),
     **dict.fromkeys(
@@ -531,7 +533,7 @@ class NoForeignReceiptIdTests(ProjectionMixin, TestCase):
             "/api/product-classifications/runs/", "/api/budget/limits/", "/api/budget/limits/history/", "/api/dashboard/",
             "/api/dashboard/?month=2026-06", "/api/export/",
             "/api/export/?include=receipts,lines,media,stores,summary", "/api/recurring/",
-            "/api/statements/", "/api/statements/rules/",
+            "/api/statements/", "/api/statements/rules/", "/api/push/",
         ]
         paths += [f"/api/categories/{pk}/" for pk in Category.objects.values_list("pk", flat=True)]
         months = sorted({day.strftime("%Y-%m") for day in Receipt.objects.values_list("purchased_on", flat=True)})

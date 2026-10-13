@@ -13,6 +13,9 @@
  * navigation re-reads index.html; a new hash pre-caches the assets it references and drops the older shell caches.
  * A deploy therefore needs no change of this file. `CACHE_SCHEMA` is bumped only when this file changes the layout
  * of its caches; `activate` deletes every `checkist-*` cache of another schema.
+ *
+ * Push (`feature/push`): a push of the server (`{title, body, url}`, push/services.py) is always shown — iOS drops the
+ * subscription of a site whose push shows nothing; a tap opens `url` of this site in the app.
  */
 const CACHE_SCHEMA = 'v1'
 const SHELL_PREFIX = `checkist-shell-${CACHE_SCHEMA}-`
@@ -224,10 +227,51 @@ function onMessage(event) {
   if (event.data && event.data.type === CLEAR_MESSAGE) event.waitUntil(clearApi())
 }
 
+/** The notification of a push: `{title, body, url}`; an unreadable one still shows the app's name. */
+function pushMessage(text) {
+  let data
+  try { data = JSON.parse(text) } catch { data = null }
+  if (!data || typeof data !== 'object') data = {}
+  return {
+    title: typeof data.title === 'string' && data.title ? data.title : 'Чекист',
+    body: typeof data.body === 'string' ? data.body : '',
+    url: typeof data.url === 'string' ? data.url : '/',
+  }
+}
+
+/** Where a tap on a notification leads: an address of this site only. */
+function pushTarget(url, origin) {
+  try {
+    const target = new URL(url, origin)
+    return target.origin === origin ? target.href : `${origin}/`
+  } catch {
+    return `${origin}/`
+  }
+}
+
+function onPush(event) {
+  const message = pushMessage(event.data ? event.data.text() : '')
+  event.waitUntil(self.registration.showNotification(message.title, {
+    body: message.body, data: { url: message.url }, icon: '/icon-192.png', lang: 'ru',
+  }))
+}
+
+function onNotificationClick(event) {
+  event.notification.close()
+  const url = pushTarget(event.notification.data && event.notification.data.url, self.location.origin)
+  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windows) => {
+    const open = windows[0]
+    if (!open) return self.clients.openWindow(url)
+    return open.focus().then(() => open.navigate(url)).catch(() => self.clients.openWindow(url))
+  }))
+}
+
 self.addEventListener('install', onInstall)
 self.addEventListener('activate', onActivate)
 self.addEventListener('fetch', onFetch)
 self.addEventListener('message', onMessage)
+self.addEventListener('push', onPush)
+self.addEventListener('notificationclick', onNotificationClick)
 
 // For the unit test only: the decisions above, without a browser.
-self.checkistSw = { route, assetUrls, nestedAssetUrls, shellVersion, refreshShell, API_CACHE, SHELL_PREFIX, SHELL_URL, OFFLINE_HEADER, CLEAR_MESSAGE, FRESH_HEADER }
+self.checkistSw = { route, assetUrls, nestedAssetUrls, shellVersion, refreshShell, pushMessage, pushTarget, API_CACHE, SHELL_PREFIX, SHELL_URL, OFFLINE_HEADER, CLEAR_MESSAGE, FRESH_HEADER }

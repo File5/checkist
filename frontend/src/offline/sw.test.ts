@@ -14,6 +14,8 @@ type SwApi = {
   assetUrls: (html: string) => string[]
   nestedAssetUrls: (text: string) => string[]
   shellVersion: (html: string) => string
+  pushMessage: (text: string) => { title: string; body: string; url: string }
+  pushTarget: (url: unknown, origin: string) => string
   API_CACHE: string; SHELL_PREFIX: string; SHELL_URL: string; OFFLINE_HEADER: string; CLEAR_MESSAGE: string; FRESH_HEADER: string
 }
 
@@ -332,5 +334,46 @@ describe('sw.js strategies', () => {
     await Promise.all(event.waits)
     expect((await caches.keys()).sort()).toEqual([API_CACHE, api.SHELL_PREFIX + 'abc', 'other-app'].sort())
     expect(self.clients.claim).toHaveBeenCalled()
+  })
+})
+
+describe('sw.js push', () => {
+  it('reads the message of the server and never shows an empty one', () => {
+    const { api } = loadSw(async () => new Response(''))
+    expect(api.pushMessage(JSON.stringify({ title: 'Скоро платёж: Аренда', body: '200 000 ₸', url: '/recurring' })))
+      .toEqual({ title: 'Скоро платёж: Аренда', body: '200 000 ₸', url: '/recurring' })
+    expect(api.pushMessage('not json')).toEqual({ title: 'Чекист', body: '', url: '/' })
+    expect(api.pushMessage('null')).toEqual({ title: 'Чекист', body: '', url: '/' })
+  })
+
+  it('a tap leads only to an address of this site', () => {
+    const { api } = loadSw(async () => new Response(''))
+    expect(api.pushTarget('/review?month=2026-09', ORIGIN)).toBe(`${ORIGIN}/review?month=2026-09`)
+    expect(api.pushTarget('https://evil.example/x', ORIGIN)).toBe(`${ORIGIN}/`)
+    expect(api.pushTarget(undefined, ORIGIN)).toBe(`${ORIGIN}/undefined`)
+  })
+
+  it('shows the notification of a push and opens its address on a tap', async () => {
+    const { listeners, self } = loadSw(async () => new Response(''))
+    const showNotification = vi.fn(async () => undefined)
+    const navigate = vi.fn(async () => undefined)
+    const focus = vi.fn(async () => undefined)
+    const openWindow = vi.fn(async () => undefined)
+    Object.assign(self, { registration: { showNotification } })
+    Object.assign(self.clients, { matchAll: vi.fn(async () => [{ focus, navigate }]), openWindow })
+    const push = { waits: [] as Promise<unknown>[], waitUntil(promise: Promise<unknown>) { this.waits.push(promise) },
+      data: { text: () => JSON.stringify({ title: 'Траты за неделю', body: 'Потрачено 33 000 ₸.', url: '/stats' }) } }
+    listeners.push(push)
+    await Promise.all(push.waits)
+    expect(showNotification).toHaveBeenCalledWith('Траты за неделю', expect.objectContaining({ body: 'Потрачено 33 000 ₸.', data: { url: '/stats' } }))
+    const close = vi.fn()
+    const click = { waits: [] as Promise<unknown>[], waitUntil(promise: Promise<unknown>) { this.waits.push(promise) },
+      notification: { close, data: { url: '/stats' } } }
+    listeners.notificationclick(click)
+    await Promise.all(click.waits)
+    expect(close).toHaveBeenCalled()
+    expect(focus).toHaveBeenCalled()
+    expect(navigate).toHaveBeenCalledWith(`${ORIGIN}/stats`)
+    expect(openWindow).not.toHaveBeenCalled()
   })
 })
