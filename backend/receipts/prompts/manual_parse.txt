@@ -29,7 +29,7 @@ Fields:
   nothing is left. Never repeat the way of payment here.
 - payment_method: how the spend was paid when the text says it: "kaspi_gold" — Kaspi or Kaspi Gold
   ("с каспи", "каспи голд", "kaspi"); "forte" — ForteBank ("картой форте", "с форте"); "cash" — cash
-  ("наличными", "налом", "кэшем"); "card" — any other card ("картой", "другой картой"). null when the text
+  ("наличными", "налом", "кэшем"); "crypto" — cryptocurrency ("криптой", "в USDT", "биткоином"); "card" — any other card ("картой", "другой картой"). null when the text
   does not say it and for an income.
 - lines: positions when the text lists several items with their own amounts ("молоко 450, хлеб 230");
   each with name (as typed, first letter capital), amount (decimal string), quantity (decimal string

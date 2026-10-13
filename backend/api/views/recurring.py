@@ -58,7 +58,7 @@ MESSAGES = {
     "store": "Магазин не найден.",
     "kind": "Вид — spend или income; у сохранённого шаблона не меняется.",
     "pay_month": "Месяц не позже текущего, не раньше чем за год, в формате ГГГГ-ММ.",
-    "payment_method": "Способ оплаты — kaspi_gold, forte, cash, card либо пусто.",
+    "payment_method": "Способ оплаты — kaspi_gold, forte, cash, crypto, card либо пусто.",
     "purchased_on": "Дата в формате ГГГГ-ММ-ДД, не позже сегодняшней.",
 }
 _MONTH = re.compile(r"([0-9]{4})-([0-9]{2})")

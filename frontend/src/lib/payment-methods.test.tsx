@@ -24,8 +24,8 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals() })
 
 describe('the way of payment (Vitest/SSR, not browser visual acceptance)', () => {
-  it('knows the four ways and «не указан»', () => {
-    for (const value of ['', 'kaspi_gold', 'forte', 'cash', 'card']) expect(isPaymentMethod(value)).toBe(true)
+  it('knows the five ways and «не указан»', () => {
+    for (const value of ['', 'kaspi_gold', 'forte', 'cash', 'crypto', 'card']) expect(isPaymentMethod(value)).toBe(true)
     for (const value of [null, undefined, 'visa', 1]) expect(isPaymentMethod(value)).toBe(false)
   })
   it('remembers the last chosen way on this device', () => {
@@ -41,11 +41,12 @@ describe('the way of payment (Vitest/SSR, not browser visual acceptance)', () =>
     rememberMethod('cash')
     expect(lastMethod()).toBe('')
   })
-  it('offers four chips, the chosen one pressed', () => {
+  it('offers five chips, the chosen one pressed', () => {
     const html = renderToStaticMarkup(<MethodChips value="cash" onChange={() => {}} labelledBy="label" />)
     expect(html).toBe('<div class="ck-method-chips" role="group" aria-labelledby="label">'
       + '<button type="button" class="ck-chip" aria-pressed="false">Kaspi Gold</button><button type="button" class="ck-chip" aria-pressed="false">ForteBank</button>'
-      + '<button type="button" class="ck-chip" aria-pressed="true">Наличные</button><button type="button" class="ck-chip" aria-pressed="false">Другая карта</button></div>')
+      + '<button type="button" class="ck-chip" aria-pressed="true">Наличные</button><button type="button" class="ck-chip" aria-pressed="false">Криптовалюта</button>'
+      + '<button type="button" class="ck-chip" aria-pressed="false">Другая карта</button></div>')
   })
   it('shows the way short and whole under the amount of a row and on the page of a spend', () => {
     const rows: ReceiptListItem[] = [

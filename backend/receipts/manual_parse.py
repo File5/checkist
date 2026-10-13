@@ -59,7 +59,8 @@ FAKE_SCENARIO_ENV = "MANUAL_PARSE_FAKE_SCENARIO"
 INCOME_WORDS = re.compile(r"зарплат|аванс|преми|подработ|кэшб|кешб|процент|доход|продал", re.IGNORECASE)
 # Fake-исполнитель: способ оплаты по словам текста, первое совпадение по порядку (модель решает сама, по промпту).
 METHOD_WORDS = (("kaspi_gold", re.compile(r"каспи|kaspi", re.IGNORECASE)), ("forte", re.compile(r"форте|forte", re.IGNORECASE)),
-                ("cash", re.compile(r"наличн|налом|кэшем", re.IGNORECASE)), ("card", re.compile(r"карт", re.IGNORECASE)))
+                ("cash", re.compile(r"наличн|налом|кэшем", re.IGNORECASE)),
+                ("crypto", re.compile(r"крипт|usdt|usdc|btc|биткоин|crypto", re.IGNORECASE)), ("card", re.compile(r"карт", re.IGNORECASE)))
 
 
 class ParseLimit(Exception):

@@ -19,6 +19,7 @@ class Receipt(models.Model):
         KASPI_GOLD = "kaspi_gold", "Kaspi Gold"
         FORTE = "forte", "ForteBank"
         CASH = "cash", "Наличные"
+        CRYPTO = "crypto", "Криптовалюта"
         CARD = "card", "Другая карта"
 
     # Значения по умолчанию нет: забытый владелец — ошибка, а не тихий local.

@@ -40,7 +40,7 @@ MANUAL_MESSAGES = {
     "unknown": "Значение не найдено.",
     "mismatch": "Итог не совпадает с суммой позиций.",
     "itemized": "У траты с позициями категорию задают позициям.",
-    "choice": "Способ оплаты — kaspi_gold, forte, cash, card либо пусто.",
+    "choice": "Способ оплаты — kaspi_gold, forte, cash, crypto, card либо пусто.",
 }
 
 

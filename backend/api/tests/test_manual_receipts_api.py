@@ -263,12 +263,12 @@ class ManualChangeTests(ManualMixin, TestCase):
         self.assertEqual(self.spend["payment_method"], "")  # не указан
         created = self.post(self.client, {"total": "1200", "category": self.cafe.pk, "payment_method": "kaspi_gold"})
         self.assertEqual((created.status_code, created.json()["payment_method"]), (201, "kaspi_gold"))
-        for method in ("forte", "cash", "card"):
+        for method in ("forte", "cash", "crypto", "card"):
             self.assertEqual(self.patch({"payment_method": method}).json()["payment_method"], method)
         self.assertEqual(self.patch({"total": "500"}).json()["payment_method"], "card")  # без ключа — прежний
         self.assertEqual(self.patch({"payment_method": None}).json()["payment_method"], "")
         wrong = self.patch({"payment_method": "visa"})
-        self.assertEqual(fields(wrong), {"payment_method": ["Способ оплаты — kaspi_gold, forte, cash, card либо пусто."]})
+        self.assertEqual(fields(wrong), {"payment_method": ["Способ оплаты — kaspi_gold, forte, cash, crypto, card либо пусто."]})
         self.assertEqual(self.client.get("/api/receipts/").json()["results"][-1]["payment_method"], "")
         # У чека с фото поле есть, но правка по-прежнему не принимается.
         photo = make_receipt(samples.lidl_store(), "EUR", date(2026, 9, 1), owner=local_user(), total=D("1.00"))

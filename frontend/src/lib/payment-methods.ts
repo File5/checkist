@@ -1,14 +1,14 @@
 /** The way a spend was paid (`Receipt.payment_method`, 2026-10-13): `''` — not said. A spend has one; an income has none. */
-export const paymentMethods = ['kaspi_gold', 'forte', 'cash', 'card'] as const
+export const paymentMethods = ['kaspi_gold', 'forte', 'cash', 'crypto', 'card'] as const
 export type PaymentMethod = typeof paymentMethods[number]
 export type PaymentMethodValue = PaymentMethod | ''
 
 /** The names of the chips, the page of a spend and the history of a regular payment. */
 export const methodLabels: Record<PaymentMethod, string> = {
-  kaspi_gold: 'Kaspi Gold', forte: 'ForteBank', cash: 'Наличные', card: 'Другая карта',
+  kaspi_gold: 'Kaspi Gold', forte: 'ForteBank', cash: 'Наличные', crypto: 'Криптовалюта', card: 'Другая карта',
 }
 /** The short name under the amount of a row of «Траты»: it fits whole next to the amount. */
-export const methodShort: Record<PaymentMethod, string> = { kaspi_gold: 'Kaspi', forte: 'Forte', cash: 'Наличные', card: 'Карта' }
+export const methodShort: Record<PaymentMethod, string> = { kaspi_gold: 'Kaspi', forte: 'Forte', cash: 'Наличные', crypto: 'Крипта', card: 'Карта' }
 
 export const isPaymentMethod = (value: unknown): value is PaymentMethodValue =>
   value === '' || (paymentMethods as readonly unknown[]).includes(value)

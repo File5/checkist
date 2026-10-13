@@ -64,7 +64,7 @@ class SampleDataTests(SimpleTestCase):
         for model in (Receipt, ReceiptLine, ReceiptDiscount, ReceiptTax, Merchant, Store):
             for field in model._meta.get_fields():
                 if (model.__name__, field.name) in ALLOWED_PAYMENT_FIELDS:
-                    self.assertEqual(Receipt.PaymentMethod.values, ["", "kaspi_gold", "forte", "cash", "card"])
+                    self.assertEqual(Receipt.PaymentMethod.values, ["", "kaspi_gold", "forte", "cash", "crypto", "card"])
                     continue
                 with self.subTest(model=model.__name__, field=field.name):
                     self.assertFalse([marker for marker in PAYMENT_FIELD_MARKERS if marker in field.name])

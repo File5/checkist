@@ -171,7 +171,8 @@ class ExecuteTests(ParseFixture, TestCase):
 
     def test_fake_hears_the_way_of_payment(self):
         for text, method in (("такси 4500 наличными", "cash"), ("кофе 900 с каспи", "kaspi_gold"),
-                             ("обед 3000 картой форте", "forte"), ("билеты 7000 картой", "card"), ("хлеб 230", "")):
+                             ("обед 3000 картой форте", "forte"), ("билеты 7000 картой", "card"),
+                             ("vpn 2500 оплатил в USDT", "crypto"), ("хлеб 230", "")):
             with self.subTest(text=text):
                 self.assertEqual(self.run_one(FakeTextParser(), text).draft["payment_method"], method)
 
