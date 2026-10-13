@@ -6,6 +6,7 @@ import type { CategorySpendItem, CategorySpends } from '../../api/budget'
 import { backTarget } from '../../menu/back-target'
 import { buildRoute, parseRoute } from '../../navigation/routes'
 import { CategorySpendsView } from './CategorySpendsPage'
+import { setListIcons } from '../../lib/list-icons'
 import { categorySpendsHref, partShare, showsLines, spendNote, spendSource, spendTitle, wholeReceipt } from './category-spends-state'
 
 const nb = (text: string) => text.replaceAll(' ', ' ')
@@ -113,7 +114,17 @@ describe('«Траты категории» markup (Vitest/SSR, not browser visu
   it('lists each spend with its place, source, who added it and the part of this category', () => {
     const html = view()
     // By hand or by a receipt, as in «Траты»: a picture on the tint of the top-level category, the meta line says it.
-    expect(html).toMatch(/<a class="cat-spend-row" href="\/receipts\/812"><span class="cat-spend-badge dash-cat-5" aria-hidden="true"><svg[^>]*>.*?<\/svg><\/span><span class="cat-spend-main"><span class="cat-spend-title">Steam<\/span><span class="cat-spend-note">Steam purchase<\/span>/)
+    expect(html).toMatch(/<a class="cat-spend-row" href="\/receipts\/812"><span class="cat-spend-badge dash-cat-5" data-icon="tag" aria-hidden="true"><svg[^>]*>.*?<\/svg><\/span><span class="cat-spend-main"><span class="cat-spend-title">Steam<\/span><span class="cat-spend-note">Steam purchase<\/span>/)
+    // The picture of the category of the page (inherited by the server), or how each spend came in by the choice of the device.
+    const icons = (markup: string) => [...markup.matchAll(/class="cat-spend-badge[^"]*" data-icon="([a-z]+)"/g)].map((match) => match[1])
+    const games = { ...fixture(), category: { ...fixture().category, icon: 'ticket' } }
+    expect(new Set(icons(view(games)))).toEqual(new Set(['ticket']))
+    setListIcons('source')
+    try {
+      expect(icons(view(games))).toContain('card')
+    } finally {
+      setListIcons('category')
+    }
     expect(html).toContain(`<time dateTime="2026-10-09">${nb('9 октября')}</time> · Выписка Kaspi Gold · Андрей`)
     expect(html).toContain(`<span class="ck-figures">${nb('501 ₸')}</span><span class="cat-spend-whole">из ${nb('12 500 ₸')} по чеку</span>`)
     expect(html).toContain('<details class="cat-spend-lines"><summary>Позиции: 2</summary>')

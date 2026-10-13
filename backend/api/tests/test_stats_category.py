@@ -50,7 +50,7 @@ class CategorySpendsTests(FixtureMixin, TestCase):
     def test_category_with_descendants_lists_receipts_and_their_lines(self):
         body = self.get(f"category={self.food.pk}&month=2026-10")
         self.assertEqual((body["month"], body["previous_month"]), ("2026-10", "2026-09"))
-        self.assertEqual(body["category"], {"id": self.food.pk, "name": "Демо-продукты",
+        self.assertEqual(body["category"], {"id": self.food.pk, "name": "Демо-продукты", "icon": None,
                                             "path": [{"id": self.food.pk, "name": "Демо-продукты"}]})
         self.assertEqual(body["children"], [{"id": self.dairy.pk, "name": "Демо-молочное"}])
         eur, kzt = body["currencies"]  # по коду валюты, не складываются

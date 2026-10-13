@@ -44,12 +44,14 @@
       "first_line": "MILCH 1 L",
       "category": {
         "id": 81,
-        "name": "Тест"
+        "name": "Тест",
+        "icon": null
       },
       "categories": [
         {
           "id": 81,
-          "name": "Тест"
+          "name": "Тест",
+          "icon": null
         }
       ],
       "base_currency": "KZT",

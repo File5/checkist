@@ -8,6 +8,7 @@ import Sheet from '../components/Sheet'
 import Icon from '../components/Icon'
 import type { IconName } from '../components/Icon'
 import { ThemeToggle } from '../theme'
+import ListIconsToggle from '../components/ListIconsToggle'
 import { menuItems, ADD_AFTER } from './menu-items'
 import type { MenuItem } from './menu-items'
 import { MORE_MENU_CLOSED, PRESS_END_EVENTS, moreMenuStep } from './more-menu'
@@ -86,7 +87,7 @@ function usePopup() {
 }
 
 /** «＋» of the phone's bar: a raised round button and a sheet from the bottom (components/Sheet) with «Снять чек»,
- * «Из галереи» and «Добавить трату». «Снять чек» opens the camera and «Из галереи» the picker from the very press
+ * «Из галереи», «Трата или доход» (one form with the switch at its top) and «Загрузить выписку». «Снять чек» opens the camera and «Из галереи» the picker from the very press
  * (both fields stay mounted outside of the sheet); the chosen file goes to the upload page and is sent by itself.
  * The sheet is a modal dialog: Esc, the backdrop and its close button close it, the focus returns to «＋». */
 function AddMenu() {
@@ -105,14 +106,14 @@ function AddMenu() {
     <div className="main-add">
       {/* Hidden wherever the menu is a row of links. */}
       <button type="button" className="main-add-toggle" aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? ADD_SHEET_ID : undefined}
-        aria-label="Добавить: снять чек, выбрать из галереи, добавить трату или загрузить выписку" onClick={() => setOpen(true)}>
+        aria-label="Добавить: снять чек, выбрать из галереи, внести трату или доход, загрузить выписку" onClick={() => setOpen(true)}>
         <Icon name="plus" size={26} />
       </button>
       <Sheet open={open} onClose={close} title="Добавить" id={ADD_SHEET_ID}>
         <div className="main-add-list">
           <button type="button" className="main-add-action main-add-primary" onClick={choose(shot.open)}>{body('camera', 'Снять чек', 'Камера — чек распознается сам')}</button>
           <button type="button" className="main-add-action" onClick={choose(gallery.open)}>{body('image', 'Из галереи', 'Фото чека или PDF с телефона')}</button>
-          <Link className="main-add-action" to="/receipts/new" onClick={close}>{body('pencil', 'Добавить трату', 'Вручную или словами, без чека')}</Link>
+          <Link className="main-add-action" to="/receipts/new" onClick={close}>{body('pencil', 'Трата или доход', 'Вручную или словами, без чека')}</Link>
           <Link className="main-add-action" to="/statements/new" onClick={close}>{body('statement', 'Загрузить выписку', 'PDF Kaspi Gold или ForteBank')}</Link>
         </div>
       </Sheet>
@@ -143,8 +144,9 @@ export default function MainMenu({ session, route, menuRef }: { session: Session
           data-current={currentInMore ? '' : undefined} onClick={onToggle}><Icon name="more" />Ещё</button>
         <div className="main-more-list" id={MORE_LIST_ID} ref={list} onClick={onListClick}>
           {more.map(item)}
-          {/* The header of a phone is gone: its theme switch lives at the end of this list (hidden on wider screens). */}
-          <div className="main-more-theme"><ThemeToggle placement="menu" /></div>
+          {/* The header of a phone is gone: its theme switch lives at the end of this list (hidden on wider screens), and
+              beside it what the squares of the spends show (lib/list-icons). */}
+          <div className="main-more-theme"><ThemeToggle placement="menu" /><ListIconsToggle /></div>
         </div>
       </div>}
     </nav>

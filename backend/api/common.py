@@ -124,12 +124,14 @@ class CategoryTree:
     """
 
     def __init__(self, rows):
-        """``rows`` — ``(id, name, parent_id)``; в коде используйте ``CategoryTree.load()``."""
+        """``rows`` — ``(id, name, parent_id[, icon])``; в коде используйте ``CategoryTree.load()``."""
         self._names = {}
         self._parents = {}
-        for pk, name, parent_id in rows:
+        self._icons = {}
+        for pk, name, parent_id, *icon in rows:
             self._names[pk] = name
             self._parents[pk] = parent_id
+            self._icons[pk] = icon[0] if icon else ""
         cyclic = self._cyclic()
         # Родитель для обходов: у корня, узла из цикла и узла-сироты его нет.
         self._effective = {
@@ -145,7 +147,7 @@ class CategoryTree:
 
     @classmethod
     def load(cls, limit=MAX_CATEGORIES):
-        rows = list(Category.objects.order_by("pk").values_list("pk", "name", "parent_id")[:limit + 1])
+        rows = list(Category.objects.order_by("pk").values_list("pk", "name", "parent_id", "icon")[:limit + 1])
         if len(rows) > limit:
             raise CategoryLimitExceeded(f"Категорий больше {limit}.")
         return cls(rows)
@@ -228,3 +230,11 @@ class CategoryTree:
     def category(self, pk):
         """Вложенный объект категории: ``{"id", "name", "path"}``."""
         return {"id": pk, "name": self._names[pk], "path": self.path(pk)}
+
+    def own_icon(self, pk):
+        """Значок самой категории; ``None`` — не задан."""
+        return self._icons[pk] or None
+
+    def icon(self, pk):
+        """Значок строки трат: свой либо ближайшего предка; ``None`` — ни у кого в ветви (клиент рисует ярлык)."""
+        return next((self._icons[node] for node in reversed(self.path_ids(pk)) if self._icons[node]), None)

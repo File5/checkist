@@ -29,7 +29,7 @@ const dashboardCurrencyShape = object<Omit<DashboardCurrency, 'limited_spent'>>(
   currency, spent: amount, previous_spent: amount, limit_total: nullable(amount), categories: array(dashboardCategory),
 })
 const dashboardCurrency: Check = (value) => dashboardCurrencyShape(value) && optional(value, 'limited_spent', nullable(amount))
-const dashboardRecent = object<Omit<DashboardRecent, 'owner_name' | 'base_total'>>({
+const dashboardRecent = object<Omit<DashboardRecent, 'owner_name' | 'base_total' | 'category_icon' | 'note'>>({
   id: isId, source: choice('photo', 'manual'), title: text, category_name: nullable(text), owner: username,
   purchased_on: isISODate, total: amount, currency, lines_count: nonNegativeInteger,
 })
@@ -67,7 +67,7 @@ const categorySpendCurrency = object<CategorySpendCurrency>({
 })
 const categorySpends = object<Omit<CategorySpends, 'base' | keyof InBase>>({
   month: isMonthCode, previous_month: isMonthCode,
-  category: object<CategorySpends['category']>({ id: isId, name: text, path: array(named) }),
+  category: object<Omit<CategorySpends['category'], 'icon'>>({ id: isId, name: text, path: array(named) }),
   children: array(named), currencies: array(categorySpendCurrency),
 }) as Guard<CategorySpends>
 export const isCategorySpends = withBase<CategorySpends>(categorySpends, undefined, false)

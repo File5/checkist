@@ -33,6 +33,9 @@
 a.ck-auth-row:hover .ck-auth-row-label { color: var(--ck-link-hover); text-decoration: underline; }
 .ck-auth-chevron { flex: none; width: 20px; height: 20px; fill: none; stroke: var(--ck-text-muted); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .ck-auth-row-label { min-width: 0; }
+/* A row of segments (Тема, Значки): the segments go under the word when both do not fit a narrow phone. */
+li.ck-auth-row { flex-wrap: wrap; }
+li.ck-auth-row > .ck-auth-segments { margin-left: auto; }
 
 /* The person: initials in a circle, the name and the login under it. */
 .ck-auth-profile { display: flex; align-items: center; gap: 16px; min-width: 0; }

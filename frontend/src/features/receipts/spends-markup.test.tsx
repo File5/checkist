@@ -7,6 +7,7 @@ import type { Page } from '../../api/types'
 import { ReceiptsView, ReviewBanner } from './ReceiptsPage'
 import { OwnerChips, SpendDays } from './SpendDays'
 import { ownerChips } from './spends'
+import { setListIcons } from '../../lib/list-icons'
 
 const NBSP = ' '
 const noop = () => {}
@@ -45,18 +46,34 @@ describe('«Траты» on a phone (Vitest/SSR, not browser visual acceptance)'
     expect(html).toContain('<span class="spends-row-title">Такси<span class="spends-hidden"> (трата без чека)</span></span>')
   })
 
-  it('tints the badge by the category colour and leaves it neutral without one; a slip, a pencil or a card by the source', () => {
+  it('tints the badge by the category colour and leaves it neutral without one; the category picture or a slip, a pencil or a card', () => {
     const statement = { ...rows[1], id: 4, note: 'Steam · Выписка Kaspi Gold', category: null }
-    const html = renderToStaticMarkup(<SpendDays receipts={[...rows, statement]} today="2026-10-12" showOwner={false} />)
+    const receipts = [{ ...rows[0], category: { id: 3, name: 'Продукты', icon: 'cart' } }, rows[1], rows[2], statement]
+    const render = () => renderToStaticMarkup(<SpendDays receipts={receipts} today="2026-10-12" showOwner={false} />)
+    const html = render()
     const badges = html.match(/<span class="spends-badge"[^>]*>/g)
+    // The category by default: its picture (the server sends it inherited), none — the tag.
     expect(badges).toEqual([
-      '<span class="spends-badge" data-tone="3" aria-hidden="true">',
-      '<span class="spends-badge" data-tone="2" aria-hidden="true">',
-      '<span class="spends-badge" aria-hidden="true">',
-      '<span class="spends-badge" aria-hidden="true">',
+      '<span class="spends-badge" data-tone="3" data-icon="cart" aria-hidden="true">',
+      '<span class="spends-badge" data-tone="2" data-icon="tag" aria-hidden="true">',
+      '<span class="spends-badge" data-icon="tag" aria-hidden="true">',
+      '<span class="spends-badge" data-icon="tag" aria-hidden="true">',
     ])
-    // The statement is of the same day as the first two rows.
-    expect(html.match(/data-source="[a-z]+"/g)).toEqual(['data-source="photo"', 'data-source="manual"', 'data-source="statement"', 'data-source="photo"'])
+    expect(html).toMatch(/<span class="spends-badge" data-tone="3" data-icon="cart" aria-hidden="true"><svg class="ck-icon" viewBox="0 0 24 24" width="20" height="20"[^>]*>.*?<\/svg><\/span>/)
+    // The only category of the lines gives its own picture, several — the one of their common root.
+    const leaf = { ...rows[0], category: { id: 3, name: 'Продукты', icon: 'cart' }, categories: [{ id: 31, name: 'Молочное', icon: 'heart' }] }
+    expect(renderToStaticMarkup(<SpendDays receipts={[leaf]} today="2026-10-12" showOwner={false} />)).toContain('data-icon="heart"')
+    const two = { ...leaf, categories: [...leaf.categories, { id: 32, name: 'Хлеб', icon: 'cart' }] }
+    expect(renderToStaticMarkup(<SpendDays receipts={[two]} today="2026-10-12" showOwner={false} />)).toContain('data-icon="cart"')
+    // How the spend came in by the choice of the device; the colour stays the category's. The statement is of the same
+    // day as the first two rows.
+    setListIcons('source')
+    try {
+      expect(render().match(/data-icon="[a-z]+"/g)).toEqual(['data-icon="receipt"', 'data-icon="pencil"', 'data-icon="card"', 'data-icon="receipt"'])
+      expect(render()).toContain('<span class="spends-badge" data-tone="3" data-icon="receipt" aria-hidden="true">')
+    } finally {
+      setListIcons('category')
+    }
     expect(html).toContain('<span class="spends-hidden"> (из выписки)</span>')
     expect(html).not.toContain('liza')
   })

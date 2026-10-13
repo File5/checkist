@@ -6,6 +6,7 @@ import type { Dashboard } from '../../api/budget'
 import type { Category } from '../../api/types'
 import { DashboardView } from './DashboardPage'
 import { LimitsView } from './LimitsPage'
+import { setListIcons } from '../../lib/list-icons'
 import type { LimitsViewProps } from './LimitsPage'
 
 const nb = (text: string) => text.replaceAll(' ', '\u00a0')
@@ -51,12 +52,12 @@ describe('«Главная» markup (Vitest/SSR, not browser visual acceptance)'
     expect(html).toContain(`<span class="dash-over">Сверх лимита на <span class="dash-value">${nb('10 000 ₸')}</span></span>`)
     expect(html).not.toContain('dash-days')
   })
-  it('has the two big actions of the artifact, in the page and not pinned: the camera of «Снять чек» and the form of «Трата»', () => {
+  it('has the two big actions of the artifact, in the page and not pinned: the camera of «Снять чек» and «＋ Добавить» (a spend or an income)', () => {
     const html = view()
     const actions = between(html, 'class="dash-actions"', '</div>')
     expect(actions).toMatch(/<button type="button" class="dash-action dash-action-shot"><svg class="ck-icon"[^>]*>.*?<\/svg>Снять чек<\/button>/)
     expect(actions).toContain('<input class="ck-quick-shot-input" type="file" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true"/>')
-    expect(actions).toMatch(/<a class="dash-action dash-action-spend" href="\/receipts\/new"><svg class="ck-icon"[^>]*>.*?<\/svg>Трата<\/a>/)
+    expect(actions).toMatch(/<a class="dash-action dash-action-spend" href="\/receipts\/new"><svg class="ck-icon"[^>]*>.*?<\/svg>Добавить<\/a>/)
     // «Из галереи» lives in the «＋» sheet of the bottom bar.
     expect(actions).not.toContain('Из галереи')
     expect(html).not.toContain('ck-action-bar')
@@ -140,6 +141,22 @@ describe('«Главная» markup (Vitest/SSR, not browser visual acceptance)'
     // A row without sub-categories has no button.
     expect(between(view(), 'dash-cat-3', '</li>')).not.toContain('dash-sub-toggle')
   })
+  it('draws the picture of the category by default and how the spend came in by the choice of the device', () => {
+    const data = dashboardFixture()
+    data.recent = [
+      { ...data.recent[0], category_icon: 'cart' }, { ...data.recent[1], category_icon: 'bus' },
+      { ...data.recent[2], source: 'manual', note: 'Кофе · Выписка Kaspi Gold' },
+    ]
+    const icons = (html: string) => [...html.matchAll(/class="ck-row-badge dash-badge[^"]*" data-icon="([a-z]+)"/g)].map((match) => match[1])
+    expect(icons(view(data))).toEqual(['cart', 'bus', 'tag'])
+    setListIcons('source')
+    try {
+      expect(icons(view(data))).toEqual(['receipt', 'pencil', 'card'])
+    } finally {
+      setListIcons('category')
+    }
+    expect(view(data)).toContain(`andrey · ${nb('1 октября')} · Выписка Kaspi Gold`)
+  })
   it('shows the names of the family and of who added a spend, the usernames without them', () => {
     const data = { ...dashboardFixture(), people: [{ username: 'andrey', display_name: 'Андрей' }, { username: 'liza', display_name: 'Лиза' }] }
     data.recent = data.recent.map((item) => ({ ...item, owner_name: item.owner === 'liza' ? 'Лиза' : 'Андрей' }))
@@ -152,9 +169,9 @@ describe('«Главная» markup (Vitest/SSR, not browser visual acceptance)'
   it('lists recent spends as rows of the list brick, linked to their receipts, with a tinted badge', () => {
     const recent = between(view(), 'dash-recent"', '</section>')
     expect(recent).toContain('<div class="ck-panel-head"><h2 id="dash-recent-heading">Последние траты</h2><a class="dash-card-link" href="/receipts">Все</a></div>')
-    expect(recent).toContain(`<li><a class="ck-row dash-recent-item" href="/receipts/12"><span class="ck-row-badge dash-badge dash-cat-3" aria-hidden="true">П</span><span class="ck-row-main"><span class="ck-row-title dash-recent-title">Magnum</span><span class="ck-row-meta">liza · ${nb('12 октября')} · ${nb('23 позиции')}</span></span><span class="ck-row-amount ck-figures">${nb('18 940 ₸')}</span></a></li>`)
+    expect(noIcons(recent)).toContain(`<li><a class="ck-row dash-recent-item" href="/receipts/12"><span class="ck-row-badge dash-badge dash-cat-3" data-icon="tag" aria-hidden="true"></span><span class="ck-row-main"><span class="ck-row-title dash-recent-title">Magnum</span><span class="ck-row-meta">liza · ${nb('12 октября')} · ${nb('23 позиции')}</span></span><span class="ck-row-amount ck-figures">${nb('18 940 ₸')}</span></a></li>`)
     expect(recent).toContain(`andrey · ${nb('11 октября')} · вручную`)
-    expect(recent).toContain('<span class="ck-row-badge dash-badge dash-cat-0" aria-hidden="true">К</span>')
+    expect(recent).toMatch(/<span class="ck-row-badge dash-badge dash-cat-0" data-icon="tag" aria-hidden="true"><svg class="ck-icon"[^>]*>.*?<\/svg><\/span>/)
     // «сегодня» and «вчера» by the date of the device.
     expect(renderToStaticMarkup(<DashboardView data={dashboardFixture()} today="2026-10" date="2026-10-12" />)).toContain(`liza · сегодня · ${nb('23 позиции')}`)
   })

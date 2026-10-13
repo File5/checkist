@@ -39,7 +39,7 @@ describe('«Траты»: the list item of the API', () => {
 
   it('accepts the item with the two list fields, with null and without them (an older server)', () => {
     expect(item.first_line).toBe('MILCH 1 L')
-    expect(item.category).toEqual({ id: 81, name: 'Тест' })
+    expect(item.category).toEqual({ id: 81, name: 'Тест', icon: null })
     expect(isReceiptListItem(item)).toBe(true)
     expect(isReceiptListItem({ ...item, first_line: null, category: null })).toBe(true)
     const older = { ...item }

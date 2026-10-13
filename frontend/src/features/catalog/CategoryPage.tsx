@@ -11,6 +11,7 @@ import CatalogSearch from './CatalogSearch'
 import { CategoryBreadcrumbs, CategoryChips, CategoryLinks } from './CategoryLinks'
 import { useNarrow } from '../../lib/cards'
 import ProductsSection from './ProductsSection'
+import CategoryIconPicker from './CategoryIconPicker'
 import './Catalog.css'
 
 export function CategoryPage({ categoryId, query }: CategoryPageProps) {
@@ -32,6 +33,7 @@ export function CategoryPage({ categoryId, query }: CategoryPageProps) {
       {node && <p className="ck-catalog-note">Товаров в этой ветви: {node.products_total.toLocaleString('ru-RU')}</p>}
     </section>
     {node && <>
+      <CategoryIconPicker categoryId={categoryId} root={node.parent_id === null} />
       {node.children.length > 0 && <section aria-labelledby="ck-catalog-subcategories-heading">
         <h2 id="ck-catalog-subcategories-heading">Подкатегории</h2>
         {narrow ? <CategoryChips categories={node.children} label="Подкатегории" />

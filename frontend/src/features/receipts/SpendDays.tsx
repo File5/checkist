@@ -10,23 +10,11 @@ import { baseTwin } from '../../lib/money'
 import { methodLabels, methodShort } from '../../lib/payment-methods'
 import ChipScroller from '../../components/ChipScroller'
 import Icon from '../../components/Icon'
+import { useSpendIcon } from '../../lib/list-icons'
 import { SWIPE_REVEAL, swipeEnd } from './undo-delete'
 
-/** The badge of a row: a slip of a photo receipt, a pencil of a spend typed by hand, a card of a bank statement. Strokes of
- * the 24px grid, the colour of the category. */
-const sourceIcons: Record<SpendSource, string[]> = {
-  photo: ['M6 2h12v20l-3-2-3 2-3-2-3 2z', 'M9 7h6M9 11h6M9 15h4'],
-  manual: ['M12 20h9', 'M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z'],
-  statement: ['M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z', 'M2 10h20M6 15h4'],
-}
-/** What the badge says, for a screen reader: it is hidden from it. */
+/** How a spend came in, for a screen reader: the badge is hidden from it and may show the category instead. */
 const sourceWords: Record<SpendSource, string> = { photo: ' (по чеку)', manual: ' (трата без чека)', statement: ' (из выписки)' }
-
-export function SourceIcon({ source }: { source: SpendSource }) {
-  return <svg viewBox="0 0 24 24" width="20" height="20" focusable="false" data-source={source}>
-    {sourceIcons[source].map((d) => <path key={d} d={d} />)}
-  </svg>
-}
 
 /** «≈ 8 979 ₸» under «20 $»: a spend in another currency keeps its own amount, the totals count this converted one. */
 export function BaseTwin({ receipt }: { receipt: Pick<ReceiptListItem, 'currency' | 'base_total' | 'base_currency'> }) {
@@ -96,12 +84,15 @@ function useSwipe(onDelete: (() => void) | undefined) {
 function SpendRow({ receipt, showOwner, onDelete }: { receipt: ReceiptListItem; showOwner: boolean; onDelete?: SpendDelete }) {
   const tone = receipt.category ? categoryTone(receipt.category.id) : undefined
   const source = spendSource(receipt)
+  // The badge: the picture of the category (of the only one of the lines, else of their common root) or how the spend
+  // came in — the choice of the device (lib/list-icons); its colour is the tone of the category either way.
+  const icon = useSpendIcon(source, receipt.categories?.length === 1 ? receipt.categories[0].icon : receipt.category?.icon)
   // Only a spend typed by hand is swiped away: a photo receipt is deleted on its page, with the photo and its checks.
   const deletable = onDelete && receipt.source === 'manual' ? onDelete : undefined
   const swipe = useSwipe(deletable && (() => deletable(receipt, false)))
   const row = <Link className="spends-row" to={`/receipts/${receipt.id}`} data-hidden={receipt.hidden ? '' : undefined}
     style={swipe.style} data-dragging={swipe.dragging ? '' : undefined} {...swipe.handlers}>
-      <span className="spends-badge" data-tone={tone} aria-hidden="true"><SourceIcon source={source} /></span>
+      <span className="spends-badge" data-tone={tone} data-icon={icon} aria-hidden="true"><Icon name={icon} size={20} /></span>
       <span className="spends-row-main">
         <span className="spends-row-title">{rowTitle(receipt)}<span className="spends-hidden">{sourceWords[source]}</span></span>
         <span className="spends-row-meta">{rowMeta(receipt, showOwner).map((text, index) => <span key={index} className={isRowFlag(text) ? 'spends-row-flag' : undefined}>
@@ -124,7 +115,7 @@ function SpendRow({ receipt, showOwner, onDelete }: { receipt: ReceiptListItem; 
 }
 
 /** «Траты» like the mockup, on a phone and in the column of a wide screen: a day — its name and its total in a quiet line, then one card with a row
- * per receipt (a badge by the source in the colour of the category, the place, who and on what, the amount). */
+ * per receipt (a badge in the colour of the category — its picture or the source, the place, who and on what, the amount). */
 export function SpendDays({ receipts, today, showOwner, onDelete }: { receipts: ReceiptListItem[]; today: string; showOwner: boolean; onDelete?: SpendDelete }) {
   return <div className="spends-days">{groupByDay(receipts, today).map((day) => <section key={day.day} className="spends-day" aria-label={day.label}>
     <div className="spends-day-head">

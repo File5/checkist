@@ -29,10 +29,12 @@ export type Receipt = {
 /** An item of `GET /api/receipts/` (the list only): the first line's name and the one top-level category of the lines.
  * Optional for an older server: a missing field reads as null. */
 export type ReceiptListItem = Receipt & {
-  first_line?: string | null; category?: NamedObject | null
+  first_line?: string | null; category?: ListCategory | null
   /** Every category of the lines, as precise as the lines name it, by name (2026-10-12). */
-  categories?: NamedObject[] | null
+  categories?: ListCategory[] | null
 }
+/** `icon` — the picture of the category: its own or its nearest ancestor's, null — none (2026-10-13); missing from an older server. */
+export type ListCategory = NamedObject & { icon?: string | null }
 export type Line = {
   id: number; position: number; kind: LineKind; parent_id: number | null; name: string; name_i18n: Record<string, string>
   store_item_code: string; barcode: string; quantity: Decimal; unit: Unit; unit_price: Decimal; amount: Decimal

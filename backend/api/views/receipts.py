@@ -92,7 +92,7 @@ def receipt_converter(request, receipts):
 
 def list_items(receipts, request):
     """Объекты списка: ``receipt_object`` + ``category`` (общая категория верхнего уровня либо null) + ``first_line``
-    + сумма в основной валюте (``base_total``).
+    + сумма в основной валюте (``base_total``). У категорий — ``icon``: свой значок либо предка (``CategoryTree.icon``).
 
     Дерево категорий читается одним запросом и только если на странице есть строки с категорией.
     """
@@ -105,8 +105,8 @@ def list_items(receipts, request):
         # Every category of the lines, as precise as the lines name it (2026-10-12): the list answers «на что».
         leaves = sorted((pk for pk in receipt.line_category_ids or () if pk in tree), key=lambda pk: (tree.name(pk), pk))
         items.append({**receipt_object(receipt), "first_line": receipt.first_line or None,
-                      "category": None if root is None else {"id": root, "name": tree.name(root)},
-                      "categories": [{"id": pk, "name": tree.name(pk)} for pk in leaves],
+                      "category": None if root is None else {"id": root, "name": tree.name(root), "icon": tree.icon(root)},
+                      "categories": [{"id": pk, "name": tree.name(pk), "icon": tree.icon(pk)} for pk in leaves],
                       **base_total(receipt, converter)})
     return items
 
