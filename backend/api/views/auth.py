@@ -19,6 +19,7 @@ from accounts.access import (
 from accounts.models import Membership
 from accounts.people import display_name, household_people
 from config.exceptions import AuthApiError, InvalidParameter, InvalidRequest, ObjectNotFound, PasswordRejected
+from push import services as push
 from rates.convert import request_base_currency
 from recognition.auth import enforce_csrf
 
@@ -247,6 +248,9 @@ class PasswordView(AuthMutationView):
         account.set_password(data["new_password"])
         account.save(update_fields=["password"])
         # Эта сессия остаётся, остальные сессии пользователя перестают действовать.
+        session_key = request._request.session.session_key
         update_session_auth_hash(request._request, account)
+        # Новый ключ сессии: уведомления этого устройства остаются (push.services.signed_in).
+        push.session_moved(session_key, request._request.session.session_key)
         request.user = account
         return Response(me_object(request))

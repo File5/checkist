@@ -7,6 +7,7 @@ import base64
 import json
 import os
 from datetime import date, datetime
+from importlib import import_module
 from decimal import Decimal
 from io import StringIO
 from unittest import mock
@@ -14,6 +15,9 @@ from zoneinfo import ZoneInfo
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
+from django.conf import settings
+from django.contrib.auth import BACKEND_SESSION_KEY, HASH_SESSION_KEY, SESSION_KEY
+from django.contrib.sessions.models import Session
 from django.core.management import call_command
 from django.test import SimpleTestCase, TestCase, override_settings, tag
 from pywebpush import WebPushException
@@ -54,8 +58,18 @@ CONFIGURED = override_settings(WEBPUSH_VAPID_PUBLIC_KEY=VAPID["WEBPUSH_VAPID_PUB
                                WEBPUSH_VAPID_SUBJECT="mailto:push-test@example.invalid")
 
 
+def live_session(user):
+    """Ключ сессии входа ``user``, как после ``login``."""
+    store = import_module(settings.SESSION_ENGINE).SessionStore()
+    store.update({SESSION_KEY: str(user.pk), BACKEND_SESSION_KEY: settings.AUTHENTICATION_BACKENDS[0],
+                  HASH_SESSION_KEY: user.get_session_auth_hash()})
+    store.create()
+    return store.session_key
+
+
 def device(user, endpoint=ENDPOINT):
-    return PushSubscription.objects.create(user=user, endpoint=endpoint, **KEYS)
+    """Устройство ``user`` с живым входом."""
+    return PushSubscription.objects.create(user=user, endpoint=endpoint, session_key=live_session(user), **KEYS)
 
 
 def spend(owner, category, total, on, currency="KZT", store=None):
@@ -104,13 +118,27 @@ class NotifyTests(TestCase):
         self.assertEqual(call["vapid_claims"], {"sub": "mailto:push-test@example.invalid"})
         self.assertEqual(PushNotification.objects.get().sent_at, now)
 
-    def test_quiet_hours_defer_to_nine_and_flush_sends(self, webpush):
-        services.notify(self.user, "weekly", "Траты", "Текст", "/stats", "week:1", now=at(2026, 10, 11, 23))
+    def test_quiet_hours_defer_to_nine_and_flush_sends_the_reason_built_again(self, webpush):
+        services.notify(self.user, "monthly", "Старый текст", "Старый текст", "/", "review:2026-09",
+                        now=at(2026, 10, 1, 2))
         webpush.assert_not_called()
-        self.assertEqual(services.flush(at(2026, 10, 12, 8, 59)), 0)
-        self.assertEqual(services.flush(at(2026, 10, 12, 9, 0)), 1)
-        self.assertEqual(services.flush(at(2026, 10, 12, 9, 5)), 0)
-        self.assertEqual(len(sent(webpush)), 1)
+        self.assertEqual(services.flush(at(2026, 10, 1, 8, 59)), 0)
+        self.assertEqual(services.flush(at(2026, 10, 1, 9, 0)), 1)
+        self.assertEqual(services.flush(at(2026, 10, 1, 9, 5)), 0)
+        self.assertEqual(sent(webpush), [{"title": "Разбор сентября", "url": "/review?month=2026-09",
+                                          "body": "Сентябрь закончился: на что ушли деньги и что изменилось."}])
+
+    def test_deferred_without_its_reason_is_dropped(self, webpush):
+        services.notify(self.user, "weekly", "Траты", "Текст", "/stats", "week:1", now=at(2026, 10, 11, 23))
+        self.assertEqual(services.flush(at(2026, 10, 12, 9)), 0)
+        webpush.assert_not_called()
+        self.assertIsNotNone(PushNotification.objects.get().sent_at)  # не повторяется
+
+    def test_deferred_and_switched_off_is_dropped(self, webpush):
+        services.notify(self.user, "monthly", "Т", "Т", "/", "review:2026-09", now=at(2026, 10, 1, 2))
+        PushSettings.objects.create(user=self.user, monthly=False)
+        self.assertEqual(services.flush(at(2026, 10, 1, 9)), 0)
+        webpush.assert_not_called()
 
     def test_switched_off_kind_and_large_by_default_send_nothing(self, webpush):
         now = at(2026, 10, 12, 12)
@@ -272,6 +300,40 @@ class ReasonTests(TestCase):
         self.tick(now)
         self.assertEqual(len(self.notes("large")), 1)
 
+    def test_deferred_large_spend_is_sent_only_while_its_person_sees_it(self, webpush):
+        PushSettings.objects.create(user=self.user, large=True)
+        hidden = spend(self.other, self.food, 150000, date(2026, 10, 12), store="Синтетика-тайна")
+        deleted = spend(self.other, self.food, 160000, date(2026, 10, 12), store="Синтетика-удалённая")
+        kept = spend(self.other, self.food, 170000, date(2026, 10, 12), store="Синтетика-видимая")
+        Receipt.objects.filter(pk__in=[hidden.pk, deleted.pk, kept.pk]).update(created_at=at(2026, 10, 12, 22, 30))
+        self.tick(at(2026, 10, 12, 23))
+        self.assertEqual(len(self.notes("large")), 3)
+        webpush.assert_not_called()
+        Receipt.objects.filter(pk=hidden.pk).update(hidden=True)
+        deleted.delete()
+        self.tick(at(2026, 10, 13, 9))
+        self.assertEqual(sent(webpush), [{"title": "Крупная трата: Лиза", "body": "170 000 ₸ — Синтетика-видимая.",
+                                          "url": f"/receipts/{kept.pk}"}])
+
+    def test_deferred_family_limit_is_not_sent_after_leaving_the_family(self, webpush):
+        BudgetLimit.objects.create(household=self.family, category=self.food, currency_id="KZT", amount=D("50000"))
+        spend(self.other, self.food, 45000, date(2026, 10, 5))
+        self.tick(at(2026, 10, 12, 23))
+        self.assertEqual(len(self.notes("limits")), 1)
+        Membership.objects.filter(user=self.user).delete()
+        self.tick(at(2026, 10, 13, 9))
+        self.tick(at(2026, 10, 13, 12))
+        webpush.assert_not_called()
+
+    def test_deferred_limit_is_built_from_the_spends_of_the_morning(self, webpush):
+        BudgetLimit.objects.create(household=self.family, category=self.food, currency_id="KZT", amount=D("50000"))
+        spend(self.other, self.food, 45000, date(2026, 10, 5))
+        self.tick(at(2026, 10, 12, 23))
+        spend(self.other, self.food, 3000, date(2026, 10, 12))
+        self.tick(at(2026, 10, 13, 9))
+        self.assertEqual(sent(webpush), [{"title": "Синтетика-еда: 96 % лимита", "url": "/",
+                                          "body": "Потрачено 48 000 ₸ из 50 000 ₸. Осталось 2 000 ₸."}])
+
     def test_tick_skips_people_without_devices_and_unconfigured_server(self, webpush):
         spend(self.other, self.food, 1000, date(2026, 10, 5))
         self.assertEqual(self.tick(at(2026, 11, 1, 10))["users"], 1)
@@ -351,6 +413,51 @@ class ApiTests(TestCase):
             "large": ["Включатель — true или false."],
             "large_threshold": ["Сумма больше нуля, не больше двух знаков после запятой."],
             "sound": ["Неизвестное поле."]})
+
+    @CONFIGURED
+    def test_foreign_device_moves_only_with_its_keys(self, webpush):
+        self.client.post(self.URL + "subscribe/", {"endpoint": ENDPOINT, "keys": KEYS}, format="json")
+        other = signed_in(self.second, csrf=True)
+        response = other.post(self.URL + "subscribe/", {"endpoint": ENDPOINT, "keys": {"p256dh": "BOther", "auth": "Other"}},
+                              format="json")
+        self.assertEqual(response.json()["error"]["fields"], {"keys": ["Ключи не совпадают с подпиской этого устройства."]})
+        found = PushSubscription.objects.get()
+        self.assertEqual((found.user, found.p256dh), (self.user, KEYS["p256dh"]))
+        self.assertEqual(other.post(self.URL + "test/").json()["sent"], 0)
+        other.post(self.URL + "unsubscribe/", {"endpoint": ENDPOINT}, format="json")
+        self.assertEqual(self.client.post(self.URL + "test/").json()["sent"], 1)
+
+    @CONFIGURED
+    def test_sign_out_removes_this_device_only(self, webpush):
+        self.client.post(self.URL + "subscribe/", {"endpoint": ENDPOINT, "keys": KEYS}, format="json")
+        device(self.user, ENDPOINT + "-phone")
+        self.assertEqual(self.client.post("/api/auth/logout/", {}, format="json").status_code, 204)
+        self.assertEqual(list(PushSubscription.objects.values_list("endpoint", flat=True)), [ENDPOINT + "-phone"])
+
+    @CONFIGURED
+    def test_password_change_keeps_this_device_and_drops_the_other_sessions(self, webpush):
+        self.user.set_password("synthetic-old-pass-1")
+        self.user.save()
+        client = signed_in(self.user, csrf=True)
+        client.post(self.URL + "subscribe/", {"endpoint": ENDPOINT, "keys": KEYS}, format="json")
+        device(self.user, ENDPOINT + "-phone")
+        response = client.post("/api/auth/password/", {"current_password": "synthetic-old-pass-1",
+                                                       "new_password": "Kvartira-Zima-2026!"}, format="json")
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(client.post(self.URL + "test/").json()["sent"], 1)
+        self.assertEqual([call.kwargs["subscription_info"]["endpoint"] for call in webpush.call_args_list], [ENDPOINT])
+        self.assertEqual(list(PushSubscription.objects.values_list("endpoint", flat=True)), [ENDPOINT])
+
+    @CONFIGURED
+    def test_device_without_a_live_session_of_its_person_is_dropped(self, webpush):
+        ended = device(self.user, ENDPOINT + "-ended")
+        Session.objects.filter(session_key=ended.session_key).delete()
+        PushSubscription.objects.create(user=self.user, endpoint=ENDPOINT + "-foreign", session_key=live_session(self.second),
+                                        **KEYS)
+        PushSubscription.objects.create(user=self.user, endpoint=ENDPOINT + "-none", **KEYS)
+        live = device(self.user)
+        self.assertEqual(services.send(self.user, "Т", "Т", "/"), 1)
+        self.assertEqual(list(PushSubscription.objects.all()), [live])
 
     def test_writes_need_csrf(self, webpush):
         from rest_framework.test import APIClient

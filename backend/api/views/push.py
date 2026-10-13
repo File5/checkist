@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 
 from django.conf import settings
 from django.db import transaction
+from django.utils.crypto import constant_time_compare
 from rest_framework.response import Response
 
 from accounts.access import request_user
@@ -114,7 +115,11 @@ class PushView(LocalAPIView):
 
 
 class SubscribeView(LocalAPIView):
-    """Подписка этого устройства; то же устройство у другого человека переходит к пользователю запроса."""
+    """Подписка этого устройства за пользователем запроса и его сессией входа.
+
+    Подписка с тем же ``endpoint`` у другого человека переходит к нему только с теми же ключами ``p256dh`` и
+    ``auth`` — их знает лишь браузер этого устройства; иначе ``400`` у ``keys``, подписка не меняется.
+    """
 
     http_method_names = ["post", "options"]
     parser_classes = [JsonObjectParser]
@@ -122,9 +127,14 @@ class SubscribeView(LocalAPIView):
     def post(self, request):
         _configured()
         endpoint, keys = _subscription(manual_body(request))
+        user = request_user(request)
         with transaction.atomic():
-            PushSubscription.objects.update_or_create(
-                endpoint=endpoint, defaults={"user": request_user(request), **keys})
+            found = PushSubscription.objects.select_for_update().filter(endpoint=endpoint).first()
+            if found is not None and found.user_id != user.pk and not constant_time_compare(
+                    f"{found.p256dh}.{found.auth}", f"{keys['p256dh']}.{keys['auth']}"):
+                raise InvalidParameter({"keys": ["Ключи не совпадают с подпиской этого устройства."]})
+            PushSubscription.objects.update_or_create(endpoint=endpoint, defaults={
+                "user": user, **keys, "session_key": request._request.session.session_key})
         return Response(state(request))
 
 

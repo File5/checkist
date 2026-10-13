@@ -169,6 +169,25 @@ def large(user, now, prefs):
 REASONS = {"recurring": recurring_due, "limits": limits, "weekly": weekly, "monthly": monthly, "large": large}
 
 
+def refresh(notification):
+    """Отложенное уведомление перед отправкой: ``(title, body, url)`` из того, что человек видит сейчас, либо ``None``.
+
+    Повод ищется заново на момент, когда он был найден (``created_at``), но по нынешним данным: человек вышел из
+    семьи, трата скрыта или удалена, платёж оплачен, повод выключен — ключа больше нет, уведомление не уходит.
+    """
+    user = notification.user
+    prefs = services.preferences(user)
+    if not user.is_active or not getattr(prefs, notification.kind, False):
+        return None
+    find = REASONS.get(notification.kind)
+    if find is None:
+        return notification.title, notification.body, notification.url
+    for key, title, body, url in find(user, notification.created_at, prefs):
+        if key == notification.key:
+            return title, body, url
+    return None
+
+
 def tick(now=None):
     """Найти поводы людей с устройствами и отправить отложенное; ``{"users", "notified", "released"}``."""
     now = now or timezone.now()

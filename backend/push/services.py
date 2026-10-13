@@ -3,20 +3,29 @@
 ``notify(user, kind, title, body, url, key)`` — единственный вход для поводов: выключенный повод,
 человек без устройств или выключенный на сервере push (нет ключей VAPID) — ничего; тот же
 ``(user, kind, key)`` второй раз — ничего; в тишину 22:00–9:00 (``LOCAL_TZ``) уведомление
-записывается и уходит в 9:00 со следующим ``flush`` (``manage.py push tick``).
+записывается и уходит в 9:00 со следующим ``flush`` (``manage.py push tick``). Решение «показать» —
+в момент отправки: отложенное строится заново из того, что человек видит сейчас (``reasons.refresh``);
+повода больше нет (вышел из семьи, трата скрыта или удалена, повод выключен) — не уходит.
 
+Устройство получает, только пока его сессия входа жива и принадлежит тому же человеку с тем же
+паролем (``signed_in``): выход, смена пароля на другом устройстве и истечение сессии снимают подписку.
 Шифрование и подпись — ``pywebpush``; ответ 404/410 push-сервиса удаляет подписку устройства.
 """
 import json
 import logging
 from datetime import datetime, time, timedelta
 from decimal import ROUND_UP, Decimal
+from importlib import import_module
 from zoneinfo import ZoneInfo
 
 import requests
 from django.conf import settings
+from django.contrib.auth import HASH_SESSION_KEY, SESSION_KEY
 from django.utils import timezone
+from django.utils.crypto import constant_time_compare
 from pywebpush import WebPushException, webpush
+
+from accounts.access import LOCAL_SINGLE, mode
 
 from .models import PushNotification, PushSettings, PushSubscription
 
@@ -77,18 +86,51 @@ def _push(subscription, payload, ttl):
     return False
 
 
+def signed_in(subscription):
+    """Сессия устройства жива, это вход того же человека и пароль с тех пор не менялся (как у ``AuthenticationMiddleware``)."""
+    if mode() == LOCAL_SINGLE:
+        return True
+    if not subscription.session_key:
+        return False
+    session = import_module(settings.SESSION_ENGINE).SessionStore(session_key=subscription.session_key)
+    user = subscription.user
+    stored = session.get(HASH_SESSION_KEY) or ""
+    return (user.is_active and session.get(SESSION_KEY) == str(user.pk)
+            and any(constant_time_compare(stored, value)
+                    for value in (user.get_session_auth_hash(), *user.get_session_auth_fallback_hash())))
+
+
+def session_moved(old_key, new_key):
+    """Смена ключа сессии на этом устройстве (смена пароля): его подписки остаются за ним."""
+    if old_key and new_key:
+        PushSubscription.objects.filter(session_key=old_key).update(session_key=new_key)
+
+
+def forget_session(session_key):
+    """Выход на этом устройстве: его подписки снимаются сразу."""
+    if session_key:
+        PushSubscription.objects.filter(session_key=session_key).delete()
+
+
 def send(user, title, body, url, ttl=TTL_SECONDS):
-    """Сразу на все устройства ``user``, без настроек и тишины; число принявших устройств."""
+    """Сразу на все устройства ``user`` с живым входом, без настроек и тишины; число принявших устройств."""
     payload = json.dumps({"title": title, "body": body, "url": url}, ensure_ascii=False)
-    return sum(_push(item, payload, ttl) for item in list(PushSubscription.objects.filter(user=user)))
+    sent = 0
+    for subscription in list(PushSubscription.objects.filter(user=user).select_related("user")):
+        if signed_in(subscription):
+            sent += _push(subscription, payload, ttl)
+        else:
+            subscription.delete()
+    return sent
 
 
-def _deliver(notification, now):
+def _deliver(notification, now, content=None):
+    """Отправить, если ещё никто не отправил; ``content`` — ``(title, body, url)`` взамен записанных, ``None`` — не слать."""
     # Захват строкой UPDATE: два одновременных тика не отправят одно уведомление дважды.
     claimed = PushNotification.objects.filter(pk=notification.pk, sent_at__isnull=True).update(sent_at=now)
-    if claimed:
-        send(notification.user, notification.title, notification.body, notification.url)
-    return bool(claimed)
+    if claimed and content is not None:
+        send(notification.user, *content)
+    return bool(claimed) and content is not None
 
 
 def notify(user, kind, title, body, url, key, *, now=None):
@@ -99,16 +141,27 @@ def notify(user, kind, title, body, url, key, *, now=None):
         return None
     notification, created = PushNotification.objects.get_or_create(
         user=user, kind=kind, key=key[:100],
-        defaults={"title": title[:200], "body": body[:500], "url": url[:300], "send_after": release_at(now)})
+        defaults={"title": title[:200], "body": body[:500], "url": url[:300], "created_at": now,
+                  "send_after": release_at(now)})
     if not created:
         return None
     if notification.send_after <= now:
-        _deliver(notification, now)
+        _deliver(notification, now, (notification.title, notification.body, notification.url))
     return notification
 
 
 def flush(now=None):
-    """Отправить отложенные тишиной; число отправленных уведомлений."""
+    """Отправить отложенные тишиной, каждое — построенное заново (``reasons.refresh``); число отправленных."""
+    from .reasons import refresh
+
     now = now or timezone.now()
     due = PushNotification.objects.filter(sent_at__isnull=True, send_after__lte=now).select_related("user")
-    return sum(_deliver(notification, now) for notification in list(due))
+    sent = 0
+    for notification in list(due):
+        try:
+            content = refresh(notification)
+        except Exception:  # повод не прочитался — уведомление ждёт следующего тика
+            logger.exception("push: refresh of %s failed", notification.pk)
+            continue
+        sent += _deliver(notification, now, content)
+    return sent

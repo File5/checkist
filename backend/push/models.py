@@ -4,17 +4,23 @@ from decimal import Decimal
 from django.conf import settings
 from django.db import models
 from django.db.models import Q
+from django.utils import timezone
 
 LARGE_THRESHOLD = Decimal("100000.00")
 
 
 class PushSubscription(models.Model):
-    """Подписка Push API одного устройства (браузера); ``endpoint`` — адрес push-сервиса, ключи — шифрование."""
+    """Подписка Push API одного устройства (браузера); ``endpoint`` — адрес push-сервиса, ключи — шифрование.
+
+    ``session_key`` — сессия входа на этом устройстве: уведомление уходит, только пока она жива и принадлежит тому
+    же человеку с тем же паролем (выход, смена пароля на другом устройстве, истечение — подписка удаляется).
+    """
 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="push_subscriptions")
     endpoint = models.CharField(max_length=2048, unique=True)
     p256dh = models.CharField(max_length=200)
     auth = models.CharField(max_length=100)
+    session_key = models.CharField(max_length=40, null=True, blank=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
 
@@ -40,7 +46,8 @@ class PushNotification(models.Model):
     title = models.CharField(max_length=200)
     body = models.CharField(max_length=500)
     url = models.CharField(max_length=300)
-    created_at = models.DateTimeField(auto_now_add=True)
+    # Когда повод найден: отложенное тишиной уведомление перед отправкой строится заново на этот момент.
+    created_at = models.DateTimeField(default=timezone.now)
     send_after = models.DateTimeField()
     sent_at = models.DateTimeField(null=True, blank=True)
 
