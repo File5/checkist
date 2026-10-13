@@ -201,9 +201,11 @@ def _year(row):
             total = (total or 0) + spend.total
             methods[spend.method] = methods.get(spend.method, 0) + spend.total
     return {
-        # ``payment_method`` — способ оплаты найденной траты (``""`` — не указан; у дохода всегда ``""``).
+        # ``payment_method`` — способ оплаты найденной траты (``""`` — не указан; у дохода всегда ``""``);
+        # ``source`` — ``photo`` | ``manual`` (у дохода ``""``): клиент ведёт ручную трату сразу на правку.
         "months": [{"month": month.label(), "state": state,
-                    "paid": None if spend is None else {**_paid(spend, row.payment), "payment_method": spend.method}}
+                    "paid": None if spend is None else {**_paid(spend, row.payment), "payment_method": spend.method,
+                                                         "source": spend.source}}
                    for month, state, spend in row.year],
         "total": common.amount(total),
         "methods": [{"payment_method": method, "total": common.amount(value)}

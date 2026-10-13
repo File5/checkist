@@ -140,7 +140,7 @@ def load_spends(request, first, last, parents, unassigned):
     с товаром — категория его обобщённого продукта); «Не разобрано» не считается.
     """
     receipts = Receipt.objects.filter(visible_receipts_q(request), purchased_on__gte=first, purchased_on__lte=last)
-    rows = list(receipts.values_list("id", "purchased_on", "store_id", "currency_id", "total", "payment_method"))
+    rows = list(receipts.values_list("id", "purchased_on", "store_id", "currency_id", "total", "payment_method", "source"))
     lines = (ReceiptLine.objects.filter(receipt_id__in=receipts.values("id"))
              .annotate(line_category=Coalesce(F("category_id"), F("product__generic__category_id")))
              .filter(line_category__isnull=False).values_list("receipt_id", "line_category").distinct())
@@ -149,8 +149,9 @@ def load_spends(request, first, last, parents, unassigned):
         if category_id not in unassigned:
             categories.setdefault(receipt_id, set()).add(category_id)
     return [
-        matching.Spend(pk, day, store_id, matching.common_category(categories.get(pk, ()), parents), currency, total, method)
-        for pk, day, store_id, currency, total, method in rows
+        matching.Spend(pk, day, store_id, matching.common_category(categories.get(pk, ()), parents), currency, total, method,
+                       source)
+        for pk, day, store_id, currency, total, method, source in rows
     ]
 
 

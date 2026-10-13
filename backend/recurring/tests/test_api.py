@@ -228,7 +228,8 @@ class RecurringLocalTests(Fixture, TestCase):
         # Не «добавлен по средней»: сумму, день и способ ввёл человек.
         self.assertEqual((row["state"], row["paid"]["receipt_id"], row["added"]), ("paid", receipt.pk, False))
         self.assertEqual(row["year"]["months"][0], {"month": "2026-10", "state": "paid", "paid": {
-            "receipt_id": receipt.pk, "purchased_on": "2026-10-12", "total": "5000.00", "payment_method": "cash"}})
+            "receipt_id": receipt.pk, "purchased_on": "2026-10-12", "total": "5000.00", "payment_method": "cash",
+            "source": "manual"}})
         self.assertEqual((row["year"]["total"], row["year"]["methods"]),
                          ("5000.00", [{"payment_method": "cash", "total": "5000.00"}]))
         again = self.pay(phone["id"])

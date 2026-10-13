@@ -55,6 +55,7 @@ class Spend:
     currency: str
     total: Decimal
     method: str = ""
+    source: str = ""  # photo | manual — история платежа ведёт на правку ручной траты
 
 
 @dataclass(frozen=True)

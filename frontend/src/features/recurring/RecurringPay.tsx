@@ -1,9 +1,11 @@
 import { Fragment, useId, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import type { RecurringMonthPayment, RecurringPayInput } from '../../api/recurring'
+import Icon from '../../components/Icon'
 import MethodChips from '../../components/MethodChips'
 import { formatMoney } from '../../lib/money'
 import { lastMethod } from '../../lib/payment-methods'
+import { Link } from '../../navigation'
 import type { PaymentMethodValue } from '../../lib/payment-methods'
 import { monthTitle } from '../dashboard/dashboard-state'
 import { evaluateAmount, groupDigits, hasOperator, ungrouped } from '../expense/amount-calc'
@@ -98,13 +100,22 @@ export function PaymentYear({ row, today }: { row: RecurringMonthPayment; today:
     {methods.length > 0 && <p className="rec-year-methods">{methods.map((item, index) => <Fragment key={item.payment_method}>
       {index > 0 && ' · '}<span className="rec-year-method">{methodName(item.payment_method)} <span className="ck-figures">
         {formatMoney(item.total, row.currency)}</span></span></Fragment>)}</p>}
-    <ul className="ck-list rec-year-list">{months.map((item) => <li key={item.month} className="ck-row rec-year-row">
-      <span className="ck-row-main">
-        <span className="ck-row-title">{monthTitle(item.month)}</span>
-        <span className={`ck-row-meta rec-meta-${item.state}`}>{yearMonthText(item, today)}</span>
-      </span>
-      <span className="ck-row-amount ck-figures">{item.paid ? formatMoney(item.paid.total, row.currency) : '—'}</span>
-    </li>)}</ul>
+    <ul className="ck-list rec-year-list">{months.map((item) => {
+      const body = <>
+        <span className="ck-row-main">
+          <span className="ck-row-title">{monthTitle(item.month)}</span>
+          <span className={`ck-row-meta rec-meta-${item.state}`}>{yearMonthText(item, today)}</span>
+        </span>
+        <span className="ck-row-amount ck-figures">{item.paid ? formatMoney(item.paid.total, row.currency) : '—'}</span>
+      </>
+      const receipt = item.paid?.receipt_id
+      // The spend of a month opens from here: a manual one straight on its form (the way of payment, the amount), a receipt
+      // with a photo on its page.
+      return receipt ? <li key={item.month}>
+        <Link className="ck-row rec-year-row rec-year-link" to={item.paid?.source === 'manual' ? `/receipts/${receipt}/edit` : `/receipts/${receipt}`}>
+          {body}<Icon name="forward" size={18} className="ck-icon rec-year-go" /></Link>
+      </li> : <li key={item.month} className="ck-row rec-year-row">{body}</li>
+    })}</ul>
   </section>
 }
 

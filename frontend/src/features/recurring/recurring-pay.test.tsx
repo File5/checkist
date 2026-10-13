@@ -13,7 +13,7 @@ const NBSP = String.fromCharCode(0xa0)
 const plain = (text: string) => text.replaceAll(NBSP, ' ')
 const html = (node: ReactElement) => plain(renderToStaticMarkup(node).replace(/<svg\b.*?<\/svg>/g, ''))
 const TODAY = '2026-10-13'
-const paid = (purchased_on: string, total: string, payment_method: PaymentMethodValue) => ({ receipt_id: 100, purchased_on, total, payment_method })
+const paid = (purchased_on: string, total: string, payment_method: PaymentMethodValue, source: 'photo' | 'manual' = 'manual') => ({ receipt_id: 100, purchased_on, total, payment_method, source })
 const year: RecurringYear = {
   months: [
     { month: '2026-10', state: 'paid', paid: paid('2026-10-05', '220000.00', 'kaspi_gold') },
@@ -50,7 +50,12 @@ describe('«Оплатил» and the history of a payment (Vitest/SSR, not brows
     expect(page).toContain('<span class="ck-row-title">Октябрь 2026</span><span class="ck-row-meta rec-meta-paid">5 октября · Kaspi Gold</span></span>'
       + '<span class="ck-row-amount ck-figures">220 000 ₸</span>')
     expect(page).toContain('<span class="ck-row-meta rec-meta-overdue">просрочен</span></span><span class="ck-row-amount ck-figures">—</span>')
-    expect(page.match(/<li /g)).toHaveLength(5)
+    expect(page.match(/<li[ >]/g)).toHaveLength(5)
+    // A paid month opens its spend: a manual one straight on its form, a receipt with a photo on its page.
+    expect(page.match(/<a class="ck-row rec-year-row rec-year-link" href="\/receipts\/100\/edit">/g)).toHaveLength(2)
+    const photo = { ...year, months: [{ month: '2026-10', state: 'paid' as const, paid: paid('2026-10-05', '220000.00', '', 'photo') }] }
+    expect(html(<PaymentYear row={monthPaymentFixture({ year: photo })} today={TODAY} />))
+      .toContain('<a class="ck-row rec-year-row rec-year-link" href="/receipts/100">')
     expect(page).not.toContain('Май')
     expect(html(<PaymentYear row={monthPaymentFixture({ year: null })} today={TODAY} />)).toBe('')
     expect(html(<PaymentYear row={monthPaymentFixture({ year, kind: 'income' })} today={TODAY} />)).toBe('')

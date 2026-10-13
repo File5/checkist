@@ -118,3 +118,6 @@
 .rec-year-method .ck-figures { color: var(--ck-text); font-weight: 800; }
 .rec-year-list > li:first-child { border-top: 1px solid var(--ck-divider); }
 .rec-year-row { min-height: 52px; padding-block: 8px; }
+/* A paid month is a link to its spend: the arrow says so, a press shows it. */
+.rec-year-go { flex: none; color: var(--ck-text-muted); }
+.rec-year-link:where(:hover) .ck-row-title { text-decoration: underline; }

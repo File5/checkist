@@ -51,7 +51,8 @@ export type RecurringMonthPayment = RecurringPayment & {
 /** A month of the history of a payment, newest first: its state and the spend found (or added) with its way of payment. */
 export type RecurringYearMonth = {
   month: string; state: RecurringState
-  paid: { receipt_id: number | null; purchased_on: ISODate; total: Decimal; payment_method: PaymentMethodValue } | null
+  /** `source` — `manual` opens straight on the form of the spend, `photo` on the page of the receipt; `''` for an income. */
+  paid: { receipt_id: number | null; purchased_on: ISODate; total: Decimal; payment_method: PaymentMethodValue; source: '' | 'photo' | 'manual' } | null
 }
 /** The twelve months and what was paid in them in the currency of the payment, by way of payment, the most first. */
 export type RecurringYear = { months: RecurringYearMonth[]; total: Decimal | null; methods: { payment_method: PaymentMethodValue; total: Decimal }[] }
@@ -93,7 +94,7 @@ export const isRecurringPayment = object<RecurringPayment>(paymentShape)
 const paidShape = { receipt_id: nullable(isId), purchased_on: isISODate, total: amount }
 const isYear = object<RecurringYear>({
   months: array(object<RecurringYearMonth>({ month: isMonthCode, state,
-    paid: nullable(object<NonNullable<RecurringYearMonth['paid']>>({ ...paidShape, payment_method: isPaymentMethod })) })),
+    paid: nullable(object<NonNullable<RecurringYearMonth['paid']>>({ ...paidShape, payment_method: isPaymentMethod, source: choice('', 'photo', 'manual') })) })),
   total: nullable(amount), methods: array(object<RecurringYear['methods'][number]>({ payment_method: isPaymentMethod, total: amount })),
 })
 const monthPaymentShape = object<Omit<RecurringMonthPayment, 'year'>>({
