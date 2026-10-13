@@ -38,9 +38,20 @@ export type DashboardRecent = {
 }
 /** `GET /api/dashboard/?month=YYYY-MM`. `members` — usernames of the family, or just one's own;
  * `people` — the same with names to show, missing from an older server. */
+/** The family's budget of the month in the base currency beside what was spent (2026-10-13); null — no budget. */
+export type DashboardBudget = { amount: Decimal; currency: CurrencyCode; spent: Decimal }
+/** «Можно тратить в день» (2026-10-13, the current month only): (`amount` − `spent` − `unpaid`) / `days_left`.
+ * `basis` — the month budget, else the top-level limits, else the income; `per_day` null — `overspent` instead. */
+export type DashboardAllowance = {
+  currency: CurrencyCode; basis: 'budget' | 'limits' | 'income'; amount: Decimal; spent: Decimal; unpaid: Decimal
+  unpaid_count: number; days_left: number; per_day: Decimal | null; overspent: Decimal | null
+}
 export type Dashboard = InBase & {
   /** The month in the base currency (null — nothing to show); read into `currencies` by `getDashboard`. */
   base?: DashboardCurrency | null
+  /** Missing from an older server. */
+  budget?: DashboardBudget | null
+  allowance?: DashboardAllowance | null
   month: MonthCode; previous_month: MonthCode; days_left: number; members: string[]; people?: Person[]
   /** One block per currency from an older server; one block of the base currency (or none) from a newer one (api/base-currency.ts). */
   currencies: DashboardCurrency[]; recent: DashboardRecent[]
@@ -99,3 +110,7 @@ export type BudgetLimitHistory = {
   months: number; month_from: MonthCode; month_to: MonthCode; changes: BudgetLimitChange[]; series: BudgetLimitSeries[]
 }
 export type BudgetLimitHistoryParams = { category?: number; currency?: CurrencyCode; from?: MonthCode; to?: MonthCode }
+
+/** `GET|POST /api/budget/month/`: the family's budget of the current month (one amount, the base currency);
+ * `amount` null — none. `currency` — of the amount (null without one), `base_currency` — new amounts are set in it. */
+export type MonthBudget = { amount: Decimal | null; currency: CurrencyCode | null; base_currency: CurrencyCode }

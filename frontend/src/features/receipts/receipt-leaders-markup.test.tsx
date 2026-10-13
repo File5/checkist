@@ -228,8 +228,9 @@ describe('receipt screen on a phone (Vitest/SSR)', () => {
 })
 
 describe('receipt filters action bar (Vitest/SSR)', () => {
-  const failure = { kind: 'error' as const, reason: 'invalid_parameter' as const, status: 400, fields: ['q'] }
-  const html = renderToStaticMarkup(<ReceiptFilters query={{ page: 1, q: 'MILCH' }} failure={failure} />)
+  // The words of a search live in the line above the list (SpendSearch, 2026-10-13): the form shows the dates.
+  const failure = { kind: 'error' as const, reason: 'invalid_parameter' as const, status: 400, fields: ['date_from'] }
+  const html = renderToStaticMarkup(<ReceiptFilters query={{ page: 1, date_from: '2026-10-01' }} failure={failure} />)
 
   it('adds the pinned bar as the second class of the former wrapper', () => {
     expect(html.match(/ck-action-bar/g)).toHaveLength(1)
@@ -238,7 +239,7 @@ describe('receipt filters action bar (Vitest/SSR)', () => {
 
   it('keeps the explanation and the refusal outside the bar, before it', () => {
     const [before, bar] = html.split('<div class="receipt-actions ck-action-bar">')
-    expect(before).toContain('Поиск: от 2 до 100 символов.')
+    expect(before).toContain('Обе даты включительно, по дате покупки в магазине.')
     expect(before).toContain('<p class="receipt-field-error" role="alert">Исправьте поля фильтров.</p>')
     expect(bar).not.toContain('<p')
     expect(text(bar)).toBe('ПрименитьСбросить')

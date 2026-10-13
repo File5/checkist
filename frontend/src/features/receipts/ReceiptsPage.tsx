@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
 import { getReceipts } from '../../api/receipts'
 import type { Receipt, ReceiptListItem } from '../../api/receipts'
@@ -21,7 +21,11 @@ import ReceiptFilters from './ReceiptFilters'
 import ReceiptMedia from './ReceiptMedia'
 import type { ReceiptRequestState } from './request'
 import { HiddenChip, OwnerChips, SpendDays } from './SpendDays'
-import { localToday, ownerChips, reviewJobsQuery, reviewText, spendsCount } from './spends'
+import type { SpendDelete } from './SpendDays'
+import SpendSearch from './SpendSearch'
+import { hiddenIds, undoDelete } from './undo-delete'
+import type { Deletion } from './undo-delete'
+import { localToday, ownerChips, reviewJobsQuery, reviewText, rowTitle, spendsCount } from './spends'
 import type { OwnerChip } from './spends'
 import { activeFilterCount, hasFilters, money, ownerShown, receiptParams, receiptPlace, recognizedText, recognizedValue } from './state'
 import Sheet from '../../components/Sheet'
@@ -77,7 +81,34 @@ export function FiltersToggle({ count, open, sheetId, onOpen }: { count: number;
   </button>
 }
 
-export function ReceiptsView({ query, state, retry, showOwner = false, narrow = false, chips = [], review, today = localToday(), pending, notice, head = false }: {
+/** «Удалено · Сбербанк [Отменить]» at the bottom of the screen while a deleted spend waits for the server (undo-delete.ts).
+ * The live region is always there so that its text is announced; the focus inside it stops the time. */
+export function UndoBar({ pending, onUndo, onHold, onRelease, focus = false }: {
+  pending: Deletion | null; onUndo: () => void; onHold?: () => void; onRelease?: () => void
+  /** The deletion came from a button: the focus moves to «Отменить». */
+  focus?: boolean
+}) {
+  const button = useRef<HTMLButtonElement>(null)
+  useEffect(() => { if (pending && focus) button.current?.focus() }, [pending, focus])
+  return <div className="spends-undo-region" role="status">
+    {pending && <div className="spends-undo" onFocus={onHold}
+      onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) onRelease?.() }}>
+      <span className="spends-undo-text">Удалено · {pending.title}</span>
+      <button ref={button} type="button" className="spends-undo-action" onClick={onUndo}>Отменить</button>
+    </div>}
+  </div>
+}
+
+export function ReceiptsView({ query, state, retry, showOwner = false, narrow = false, chips = [], review, today = localToday(), pending, notice, head = false,
+  hidden, onDelete, undo, failure }: {
+  /** Spends deleted on this screen (waiting, sent or gone): not shown, the count goes down with them. */
+  hidden?: ReadonlySet<number>
+  /** Swipe and «Удалить» of a spend by hand; left out — the rows are plain links. */
+  onDelete?: SpendDelete
+  /** The bar «Удалено · Отменить». */
+  undo?: ReactNode
+  /** A refused deletion: the row is back, the reason above the list. */
+  failure?: string
   /** The family head: the chip «Показать скрытые». */
   head?: boolean
   query: ReceiptsQuery; state: ReceiptRequestState<Page<ReceiptListItem>>; retry: () => void; showOwner?: boolean
@@ -106,9 +137,13 @@ export function ReceiptsView({ query, state, retry, showOwner = false, narrow = 
   </>
   // Adding a spend is the «＋» of the navigation; the list keeps only the way to the processing of photos, quietly.
   const jobs = <p className="spends-jobs"><Link to="/recognition/jobs">Обработка фото</Link></p>
+  const results = state.kind === 'ok' ? state.data.results.filter((receipt) => !hidden?.has(receipt.id)) : []
+  const removed = state.kind === 'ok' ? state.data.results.length - results.length : 0
   return <div className={`receipts-page spends-page${narrow ? ' spends-page-narrow' : ''}`}>
     {notice && <p className="expense-notice" role="status">{notice}</p>}
+    {failure && <p className="receipt-warning spends-delete-failure" role="alert">{failure}</p>}
     {pending}
+    <SpendSearch query={query} failure={state.kind === 'error' ? state : undefined} />
     {/* Who added it, and on a phone the round «Фильтры» at the end of the same line: the form opens in a sheet. */}
     <div className="spends-toolbar">
       <OwnerChips chips={chips} query={query} />
@@ -123,18 +158,20 @@ export function ReceiptsView({ query, state, retry, showOwner = false, narrow = 
     <ReviewBanner count={review} />
     {/* The days are the cards themselves: the block keeps its heading for a screen reader only. */}
     <ReceiptBlock title="Список трат" state={state} retry={retry} recovery={recovery} bare>
-      {state.kind === 'ok' && (state.data.results.length ? <>
-        <SpendDays receipts={state.data.results} today={today} showOwner={showOwner} />
-        <p className="receipt-note spends-count" role="status">{spendsCount(state.data.count)} · Страница {state.data.page.toLocaleString('ru-RU')} из {state.data.pages.toLocaleString('ru-RU')}</p>
+      {state.kind === 'ok' && (results.length ? <>
+        <SpendDays receipts={results} today={today} showOwner={showOwner} onDelete={onDelete} />
+        <p className="receipt-note spends-count" role="status">{spendsCount(state.data.count - removed)} · Страница {state.data.page.toLocaleString('ru-RU')} из {state.data.pages.toLocaleString('ru-RU')}</p>
         <Pagination page={state.data.page} pages={state.data.pages}
           buildPageHref={(page) => `/receipts${buildReceiptsQuery({ ...query, page })}`} label="Страницы трат" />
       </> : <RequestState kind="empty" title={filtered ? 'Ничего не нашлось' : 'Трат пока нет'}
-        message={filtered ? 'По выбранным фильтрам трат нет.' : 'Загрузите первое фото чека или добавьте трату.'}
-        action={filtered ? <Link className="action-link" to="/receipts">Сбросить фильтры</Link>
-          : <><Link className="action-link" to="/receipts/upload">Загрузить фото</Link><Link className="action-link" to="/receipts/new">Добавить трату</Link></>} />)}
+        message={query.q ? `По запросу «${query.q}» трат нет.` : filtered ? 'По выбранным фильтрам трат нет.' : 'Загрузите первое фото чека или добавьте трату.'}
+        action={query.q ? <Link className="action-link" to={{ kind: 'receipts', query: { ...query, q: undefined, page: 1 } }}>Сбросить поиск</Link>
+          : filtered ? <Link className="action-link" to="/receipts">Сбросить фильтры</Link>
+            : <><Link className="action-link" to="/receipts/upload">Загрузить фото</Link><Link className="action-link" to="/receipts/new">Добавить трату</Link></>} />)}
     </ReceiptBlock>
     {state.kind === 'loading' && <p className="receipt-note spends-count">Страница {query.page.toLocaleString('ru-RU')}</p>}
     {jobs}
+    {undo}
   </div>
 }
 
@@ -152,6 +189,31 @@ export default function ReceiptsPage({ query }: ReceiptsPageProps) {
   // Read once into the state; the module copy is cleared so that a later visit shows no stale notice.
   const [notice] = useState(getReceiptsNotice)
   useEffect(clearReceiptsNotice, [])
+  const removal = useSyncExternalStore(undoDelete.subscribe, undoDelete.getSnapshot, undoDelete.getSnapshot)
+  const [byButton, setByButton] = useState(false)
+  // A deletion waits for its time only while the person is here: leaving the screen, hiding the tab or closing the page
+  // sends it at once (keepalive), so it is never lost on the way out.
+  useEffect(() => {
+    const send = () => undoDelete.flush()
+    const hide = () => { if (document.visibilityState === 'hidden') undoDelete.flush() }
+    window.addEventListener('pagehide', send)
+    document.addEventListener('visibilitychange', hide)
+    return () => {
+      window.removeEventListener('pagehide', send)
+      document.removeEventListener('visibilitychange', hide)
+      undoDelete.flush()
+      undoDelete.dismiss()
+    }
+  }, [])
+  const undo = () => {
+    const id = removal.pending?.id
+    undoDelete.undo()
+    // The row is back: the focus goes to it, not to the top of the page.
+    if (id !== undefined) requestAnimationFrame(() => document.querySelector<HTMLElement>(`a.spends-row[href="/receipts/${id}"]`)?.focus())
+  }
   return <ReceiptsView notice={notice} query={query} state={request.state} retry={request.retry} showOwner={ownerShown(session)} narrow={narrow}
-    chips={chips} head={isHead(session)} review={review.state.kind === 'ok' ? review.state.data.count : undefined} pending={<PendingSpends />} />
+    chips={chips} head={isHead(session)} review={review.state.kind === 'ok' ? review.state.data.count : undefined} pending={<PendingSpends />}
+    hidden={hiddenIds(removal)} failure={removal.failure?.message}
+    onDelete={(receipt, button) => { setByButton(button); undoDelete.schedule({ id: receipt.id, title: rowTitle(receipt) }) }}
+    undo={<UndoBar pending={removal.pending} focus={byButton} onUndo={undo} onHold={undoDelete.hold} onRelease={undoDelete.release} />} />
 }

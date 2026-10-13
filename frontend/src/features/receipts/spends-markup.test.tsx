@@ -130,9 +130,10 @@ describe('family chips and the review banner', () => {
   })
 
   it('hides the filters behind a round «Фильтры (N)» at the end of the chips on a phone and keeps the form on a wide screen', () => {
+    // The words of the search line (2026-10-13) are on the screen anyway: only the date is behind the funnel.
     const query = { page: 1, q: 'MILCH', date_from: '2026-10-01', owner: 'liza' }
     const phone = renderToStaticMarkup(<ReceiptsView narrow query={query} state={{ kind: 'ok', data: page([]) }} retry={noop} chips={family} />)
-    expect(phone).toMatch(/<div class="spends-toolbar"><div class="spends-chips">[\s\S]*<\/div><button type="button" class="spends-filters-toggle" aria-haspopup="dialog" aria-expanded="false" aria-label="Фильтры \(2\)"><svg [^>]*>[\s\S]*?<\/svg><span class="spends-filters-count" aria-hidden="true">2<\/span><\/button><\/div>/)
+    expect(phone).toMatch(/<div class="spends-toolbar"><div class="spends-chips">[\s\S]*<\/div><button type="button" class="spends-filters-toggle" aria-haspopup="dialog" aria-expanded="false" aria-label="Фильтры \(1\)"><svg [^>]*>[\s\S]*?<\/svg><span class="spends-filters-count" aria-hidden="true">1<\/span><\/button><\/div>/)
     expect(phone).not.toContain('Применить')
     // Nothing filtered: the funnel alone.
     const plain = renderToStaticMarkup(<ReceiptsView narrow query={{ page: 1 }} state={{ kind: 'ok', data: page([]) }} retry={noop} chips={family} />)
@@ -145,7 +146,7 @@ describe('family chips and the review banner', () => {
 
   it('puts «Показать скрытые» of the head among the filters and counts it there', () => {
     const wide = renderToStaticMarkup(<ReceiptsView head query={{ page: 1, hidden: 1 }} state={{ kind: 'ok', data: page([]) }} retry={noop} chips={family} />)
-    expect(wide.indexOf('data-hidden-chip')).toBeLessThan(wide.indexOf('Найти чек'))
+    expect(wide.indexOf('data-hidden-chip')).toBeLessThan(wide.indexOf('>Фильтры<'))
     expect(wide).toContain('aria-current="true"')
     const phone = renderToStaticMarkup(<ReceiptsView narrow head query={{ page: 1, hidden: 1 }} state={{ kind: 'ok', data: page([]) }} retry={noop} chips={family} />)
     // The sheet is closed: the chip waits in it, the button counts it.

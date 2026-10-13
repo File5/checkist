@@ -504,3 +504,16 @@
 :where(.ck-bar) { height: 8px; overflow: hidden; border-radius: 4px; background: var(--ck-track); }
 :where(.ck-bar > span) { display: block; height: 100%; border-radius: inherit; background: var(--ck-link); }
 :where(.ck-stack) { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+/* feature/spends-home (2026-10-13): «Удалено · Отменить» внизу «Трат» и «Удалить» под строкой траты при свайпе.
+   Полоса — тёмная, как шапка, в обеих темах: её текст и кольцо фокуса — шапки, «Отменить» — золотом (контраст —
+   как у золота шапки); «Удалить» — красный бренд под белым (7,14). Слой — над нижним меню, под листом «Ещё». */
+:root {
+  --ck-toast-bg: var(--ck-header-bg);
+  --ck-toast-text: var(--ck-header-text);
+  --ck-toast-action: var(--ck-accent);
+  --ck-toast-focus: var(--ck-header-focus);
+  --ck-swipe-delete-bg: var(--ck-brand);
+  --ck-swipe-delete-text: var(--ck-on-brand);
+  --ck-z-toast: 25;
+}

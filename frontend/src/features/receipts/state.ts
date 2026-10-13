@@ -60,10 +60,10 @@ export function hasFilters(query: ReceiptsQuery): boolean {
   return Boolean(query.q || query.date_from || query.date_to || query.operation || query.store || query.product || query.country || query.currency || query.owner)
 }
 
-/** «Фильтры (N)» on a phone: the conditions of the filters form and of the link, and «Показать скрытые» of the family
+/** «Фильтры (N)» on a phone: the conditions of the filters form and of the link (not the words of the search line above), and «Показать скрытые» of the family
  * head that lives in the same sheet; the family chips are seen anyway. */
 export function activeFilterCount(query: ReceiptsQuery): number {
-  const set = [query.q, query.date_from, query.date_to, query.operation, query.store, query.product, query.country, query.currency]
+  const set = [query.date_from, query.date_to, query.operation, query.store, query.product, query.country, query.currency]
     .filter((value) => value !== undefined && value !== null && value !== '').length
   return set + (query.ordering && query.ordering !== '-purchased_at' ? 1 : 0) + (query.hidden === 1 ? 1 : 0)
 }

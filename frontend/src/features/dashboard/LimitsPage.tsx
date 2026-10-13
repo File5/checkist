@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties, FormEvent } from 'react'
-import { createBudgetLimit, deleteBudgetLimit, getBudgetLimitBook, getBudgetLimitHistory, getBudgetLimits, updateBudgetLimit } from '../../api/budget'
-import type { BudgetLimit, BudgetLimitChange } from '../../api/budget'
+import { createBudgetLimit, deleteBudgetLimit, getBudgetLimitBook, getBudgetLimitHistory, getBudgetLimits, getMonthBudget, saveMonthBudget, updateBudgetLimit } from '../../api/budget'
+import type { BudgetLimit, BudgetLimitChange, MonthBudget } from '../../api/budget'
 import { getCategories } from '../../api/catalog'
 import { getManualDefaults } from '../../api/receipts'
 import type { Category } from '../../api/types'
@@ -12,7 +12,7 @@ import { useSession } from '../../session'
 import { categoryTone, dashboardErrorMessage, formatMoney } from './dashboard-state'
 import { currencySymbol, formatMoneyWithBase } from '../../lib/money'
 import {
-  amountInput, changedRows, filterHistory, historyCategories, historyEntries, isDuplicateCreate, legacyLimit, limitCurrencies, limitFailureMessage, limitFor,
+  amountInput, changedRows, filterHistory, historyCategories, historyEntries, isDuplicateCreate, legacyLimit, limitCurrencies, limitFailureMessage, limitFor, parseLimitAmount,
   limitTree, openByDefault, parseCurrency, rowAction, saveBarLabel, subCategoriesText, visibleRows, withLimit, withoutLimit,
 } from './limits-state'
 import ChipScroller from '../../components/ChipScroller'
@@ -43,6 +43,8 @@ export type LimitsViewProps = {
   historyCategory?: number | null
   onHistoryCategory?: (categoryId: number | null) => void
   onHistoryRetry?: () => void
+  /** «Бюджет месяца» (a newer server, with `base`): left out — the panel is not shown. */
+  budget?: { state: BudgetPanelState; onSave: (amount: string | null) => Promise<string | undefined> }
 }
 
 export type HistoryState = { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'ok'; changes: BudgetLimitChange[] }
@@ -93,6 +95,59 @@ export function LimitHistory({ state, category = null, onCategory = () => {}, on
   </section>
 }
 
+export type BudgetPanelState = { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'ok'; budget: MonthBudget }
+
+/** «Бюджет месяца» over the limits (2026-10-13): one amount of the family in the base currency, from this month on.
+ * `onSave` — `null` removes it; resolves to the text of a failure, or nothing. */
+export function MonthBudgetPanel({ state, family, onSave }: {
+  state: BudgetPanelState; family: boolean; onSave: (amount: string | null) => Promise<string | undefined>
+}) {
+  const [draft, setDraft] = useState<string>()
+  const [status, setStatus] = useState<RowStatus>(idle)
+  const heading = <h2 id="limits-budget-heading" className="limits-small-heading">Бюджет месяца</h2>
+  if (state.kind === 'loading') return <section className="ck-panel dash-card" aria-labelledby="limits-budget-heading">{heading}<p className="dash-note" role="status">Загружаем бюджет…</p></section>
+  if (state.kind === 'error') return <section className="ck-panel dash-card" aria-labelledby="limits-budget-heading">{heading}<p className="dash-note">{state.message}</p></section>
+  const { amount, currency, base_currency: base } = state.budget
+  const value = draft ?? (amount ? amountInput(amount) : '')
+  const busy = status.kind === 'busy'
+  const save = async (next: string | null) => {
+    setStatus({ kind: 'busy' })
+    const failure = await onSave(next)
+    if (failure) { setStatus({ kind: 'error', text: failure }); return }
+    setDraft(undefined)
+    setStatus({ kind: 'done', text: next === null ? 'Бюджет убран.' : 'Сохранено.' })
+  }
+  const submit = (event: FormEvent) => {
+    event.preventDefault()
+    const parsed = parseLimitAmount(value)
+    if ('error' in parsed) { setStatus({ kind: 'error', text: parsed.error }); return }
+    void save(parsed.amount)
+  }
+  return <section className="ck-panel dash-card limits-budget" aria-labelledby="limits-budget-heading">
+    {heading}
+    <p className="dash-note">{`Сколько ${family ? 'семья готова' : 'вы готовы'} потратить за месяц на всё. От него Главная считает «можно `
+      + 'тратить в день»; без бюджета — от суммы лимитов. Прошлые месяцы сохраняют свой бюджет.'}</p>
+    <form className="limits-form" noValidate aria-busy={busy} onSubmit={submit}>
+      <div className="limits-row-head">
+        <label className="limits-name" htmlFor="limits-budget">Сумма на месяц</label>
+        <span className="limits-current ck-figures">{amount && currency ? formatMoney(amount, currency) : 'не задан'}</span>
+      </div>
+      <div className="limits-controls">
+        <span className="limits-input">
+          <input id="limits-budget" inputMode="decimal" autoComplete="off" enterKeyHint="done" placeholder="Сумма в месяц" value={value}
+            aria-invalid={status.kind === 'error'} aria-describedby={status.kind === 'error' || status.kind === 'done' ? 'limits-budget-message' : undefined}
+            onChange={(event) => { setDraft(event.target.value); setStatus(idle) }} />
+          <span className="limits-input-currency" aria-hidden="true">{currencySymbol(base)}</span>
+        </span>
+        <button type="submit" className="limits-budget-save" disabled={busy}>Сохранить</button>
+        {amount && <button type="button" className="ck-button-danger limits-delete" disabled={busy} onClick={() => { void save(null) }}>Убрать</button>}
+      </div>
+      {status.kind === 'error' && <p className="receipt-field-error" id="limits-budget-message" role="alert">{status.text}</p>}
+      {status.kind === 'done' && <p className="limits-done" id="limits-budget-message" role="status">{status.text}</p>}
+    </form>
+  </section>
+}
+
 function AddCurrency({ onAdd }: { onAdd: (input: string) => string | undefined }) {
   const [value, setValue] = useState('')
   const [error, setError] = useState<string>()
@@ -117,7 +172,7 @@ function AddCurrency({ onAdd }: { onAdd: (input: string) => string | undefined }
 /** The limits screen without loading: the markup tests render it directly. */
 export function LimitsView({
   categories, limits, currencies, currency, family, base, drafts, statuses, toggled = {}, onToggle = () => {}, onCurrency, onAddCurrency, onDraft, onSave,
-  onSaveAll = (changed) => changed.forEach(onSave), onDelete, history, historyCategory = null, onHistoryCategory, onHistoryRetry,
+  onSaveAll = (changed) => changed.forEach(onSave), onDelete, history, historyCategory = null, onHistoryCategory, onHistoryRetry, budget,
 }: LimitsViewProps) {
   const tree = limitTree(categories)
   const opened = openByDefault(tree, limits, currency, drafts)
@@ -142,6 +197,7 @@ export function LimitsView({
       </ChipScroller>
       <AddCurrency onAdd={onAddCurrency} />
     </section>}
+    {base && budget && <MonthBudgetPanel state={budget.state} family={family} onSave={budget.onSave} />}
     {categories.length ? <ul className="limits-list" aria-label={`Лимиты в ${currency}`}>
       {visibleRows(tree, isOpen).map(({ category, depth, rootId, descendants }) => {
         const key = rowKey(category.id, currency)
@@ -219,6 +275,26 @@ export default function LimitsPage() {
   const [historyCategory, setHistoryCategory] = useState<number | null>(null)
   // Bumped after every saved or deleted limit: the journal gains an entry.
   const [historyAttempt, setHistoryAttempt] = useState(0)
+  const [budget, setBudget] = useState<BudgetPanelState>({ kind: 'loading' })
+
+  useEffect(() => {
+    const controller = new AbortController()
+    // Read apart from the form, like the journal: when it fails, the limits can still be changed.
+    void getMonthBudget({ signal: controller.signal }).then((result) => {
+      if (controller.signal.aborted || result.kind === 'aborted') return
+      setBudget(result.kind === 'ok' ? { kind: 'ok', budget: result.data } : { kind: 'error', message: dashboardErrorMessage(result) })
+    })
+    return () => controller.abort()
+  }, [attempt])
+
+  const saveBudget = async (amount: string | null): Promise<string | undefined> => {
+    const result = await saveMonthBudget(amount)
+    if (result.kind === 'aborted') return undefined
+    if (result.kind === 'error') return limitFailureMessage(result)
+    setBudget((before) => before.kind !== 'ok' ? before
+      : { kind: 'ok', budget: result.data ?? { ...before.budget, amount: null, currency: null } })
+    return undefined
+  }
   const controllers = useRef(new Map<string, AbortController>())
 
   useEffect(() => {
@@ -332,6 +408,7 @@ export default function LimitsPage() {
     }}
     onDraft={(key, value) => { setDrafts((all) => ({ ...all, [key]: value })); setStatus(key, idle) }}
     onSave={(category) => { void save(category) }} onDelete={(limit) => { void remove(limit) }}
+    budget={{ state: budget, onSave: saveBudget }}
     history={history} historyCategory={historyCategory} onHistoryCategory={setHistoryCategory}
     onHistoryRetry={() => { setHistory({ kind: 'loading' }); setHistoryAttempt((value) => value + 1) }} />
 }

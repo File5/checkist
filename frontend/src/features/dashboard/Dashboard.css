@@ -60,6 +60,15 @@
 .dash-days { margin-left: auto; white-space: nowrap; }
 .dash-hero-note { font-size: var(--ck-text-xs); }
 .dash-over { margin: 0; color: var(--ck-over-text); font-size: var(--ck-text-xs); font-weight: 700; }
+/* «Можно тратить в день» (2026-10-13): под суммой-героем за чертой; перерасход — цветом «сверх лимита». */
+.dash-allowance { display: grid; gap: 4px; padding-top: 12px; border-top: 1px solid var(--ck-divider); }
+.dash-allowance-line { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; margin: 0; }
+.dash-allowance-label { font-size: var(--ck-text-sm); font-weight: 700; }
+.dash-allowance-value { font-size: var(--ck-text-xl); font-weight: 800; }
+.dash-allowance-over .dash-allowance-value { color: var(--ck-over-text); }
+.dash-allowance .dash-note, .dash-budget .dash-note { font-size: var(--ck-text-xs); }
+/* «Бюджет месяца» над лимитами категорий: полоса цвета главного действия, черта отделяет его от категорий. */
+.dash-budget { display: grid; gap: 8px; padding-bottom: 16px; border-bottom: 1px solid var(--ck-divider); }
 
 /* Other currencies: a row each, the sign of the currency in the badge. */
 .dash-others { gap: 4px; padding-block: 12px 4px; }
@@ -211,7 +220,7 @@
 .limits-current { color: var(--ck-text-muted); font-weight: 700; }
 .limits-savebar { display: flex; }
 .limits-save { flex: 1 1 auto; min-height: 56px; font-size: var(--ck-text-base); font-weight: 800; white-space: nowrap; }
-.limits-delete { flex: 0 0 auto; min-height: 44px; }
+.limits-delete, .limits-budget-save { flex: 0 0 auto; min-height: 44px; }
 .limits-done { margin: 0; color: var(--ck-success-text); font-size: var(--ck-text-sm); }
 .limits-row .receipt-field-error { margin: 0; }
 /* Подкатегория: отступ по глубине (до четырёх уровней) внутри строки, цвет — цвет её корня. */

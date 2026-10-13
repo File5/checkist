@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createBudgetLimit, deleteBudgetLimit, getBudgetLimits, getDashboard, updateBudgetLimit } from './budget'
+import { createBudgetLimit, deleteBudgetLimit, getBudgetLimits, getDashboard, getMonthBudget, saveMonthBudget, updateBudgetLimit } from './budget'
+import { deleteReceipt } from './receipts'
 import { isBudgetLimit, isDashboard, isMonthCode } from './budget-schema'
 import { dashboardFixture, limitFixture } from './budget-test-support'
 import { clearRecognitionCsrf } from './local'
@@ -113,5 +114,39 @@ describe('budget limits on the wire', () => {
       .mockResolvedValueOnce(failure('not_found', 404))
     expect(await createBudgetLimit({ category_id: 3, currency: 'KZT', amount: '0.00' })).toEqual({ kind: 'error', reason: 'invalid_parameter', status: 400, fields: ['amount'] })
     expect(await deleteBudgetLimit(7)).toEqual({ kind: 'error', reason: 'not_found', status: 404 })
+  })
+})
+
+describe('month budget and «можно тратить в день» (2026-10-13)', () => {
+  const allowance = { currency: 'KZT', basis: 'budget', amount: '700000.00', spent: '287450.00', unpaid: '23000.00', unpaid_count: 2,
+    days_left: 19, per_day: '20449.47', overspent: null }
+  it('accepts the budget and the allowance of the dashboard, both optional and nullable', () => {
+    const body = { ...dashboardFixture(), budget: { amount: '700000.00', currency: 'KZT', spent: '287450.00' }, allowance }
+    expect(isDashboard(body)).toBe(true)
+    expect(isDashboard({ ...body, budget: null, allowance: null })).toBe(true)
+    expect(isDashboard({ ...body, allowance: { ...allowance, per_day: null, overspent: '1.00' } })).toBe(true)
+    expect(isDashboard({ ...body, allowance: { ...allowance, basis: 'salary' } })).toBe(false)
+    expect(isDashboard({ ...body, allowance: { ...allowance, per_day: 20449 } })).toBe(false)
+    expect(isDashboard({ ...body, budget: { amount: '1.00', currency: 'KZT' } })).toBe(false)
+  })
+  it('reads, sets and removes the budget of the month with the CSRF token', async () => {
+    const answer = { amount: '700000.00', currency: 'KZT', base_currency: 'KZT' }
+    fetchMock.mockResolvedValueOnce(json({ ...answer, amount: null, currency: null })).mockResolvedValueOnce(csrf())
+      .mockResolvedValueOnce(json(answer)).mockResolvedValueOnce(new Response(null, { status: 204 }))
+    expect(await getMonthBudget()).toEqual({ kind: 'ok', data: { amount: null, currency: null, base_currency: 'KZT' } })
+    expect(await saveMonthBudget('700000.00')).toEqual({ kind: 'ok', data: answer })
+    expect(fetchMock.mock.calls[2][0]).toBe('/api/budget/month/')
+    expect(fetchMock.mock.calls[2][1]?.method).toBe('POST')
+    expect(fetchMock.mock.calls[2][1]?.body).toBe('{"amount":"700000.00"}')
+    expect((fetchMock.mock.calls[2][1]?.headers as Record<string, string>)['X-CSRFToken']).toBe(token)
+    expect(await saveMonthBudget(null)).toEqual({ kind: 'ok', data: null })
+    expect(fetchMock.mock.calls[3][1]?.method).toBe('DELETE')
+  })
+  it('sends a deferred DELETE of «Траты» with keepalive, an ordinary one without it', async () => {
+    fetchMock.mockResolvedValueOnce(csrf()).mockResolvedValueOnce(new Response(null, { status: 204 })).mockResolvedValueOnce(new Response(null, { status: 204 }))
+    expect(await deleteReceipt(5, { keepalive: true })).toEqual({ kind: 'ok', data: null })
+    expect(fetchMock.mock.calls[1][1]?.keepalive).toBe(true)
+    expect(await deleteReceipt(6)).toEqual({ kind: 'ok', data: null })
+    expect(fetchMock.mock.calls[2][1]).not.toHaveProperty('keepalive')
   })
 })

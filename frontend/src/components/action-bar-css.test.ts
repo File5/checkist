@@ -24,7 +24,9 @@ describe('layout tokens (text of the file, not rendering)', () => {
     expect(token('--ck-safe-bottom')).toBe('env(safe-area-inset-bottom, 0px)')
     expect(token('--ck-bottom-occupied')).toBe('calc(var(--ck-bottom-nav-height) + var(--ck-safe-bottom))')
     expect(token('--ck-action-bar-room')).toMatch(/^\d+px$/)
-    const light = tokens.slice(tokens.indexOf('\n:root[data-theme="light"] {'))
+    // The light block only: blocks of branches after it (feature/spends-home: --ck-z-toast) are the same in both themes.
+    const start = tokens.indexOf('\n:root[data-theme="light"] {')
+    const light = tokens.slice(start, tokens.indexOf('\n}', start))
     expect(light).not.toMatch(/--ck-(bottom|safe|action-bar|z)-/)
   })
 
