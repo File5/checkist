@@ -93,6 +93,9 @@ multiprocess-режим. **Без денег, названий и текстов
   прочитанный столбец. `ALTER DEFAULT PRIVILEGES` нет намеренно: новая таблица закрыта, пока её не добавят
   в `READABLE` и не запустят команду снова (без пароля — пароль прежний). Роль: `LOGIN`, без суперправ,
   5 соединений, `default_transaction_read_only`, `statement_timeout` 30 с.
+- **Категория строки важнее категории товара** (как в приложении с волны 4, `receipts.spending.line_category`):
+  панели «Трат» по категориям относят строку к корню `COALESCE(l.category_id, g.category_id)` — у названной покупки
+  траты вручную товар лежит в «Не разобрано», а сумма — в категории формы.
 - **Агент `checkist-alloy`** (Alloy v1.20.1, как `cave-alloy`): логи контейнеров проекта `checkist` с метками
   `cluster="checkist", job="docker", container, project, service, level` и cAdvisor. Свой cAdvisor нужен потому,
   что `monitoring-cadvisor` v0.50.0 этого сервера контейнеров не видит: Docker 29 хранит образы в containerd

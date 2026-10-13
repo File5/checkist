@@ -196,7 +196,7 @@ ROOTS = ("WITH RECURSIVE roots AS (SELECT id, name FROM catalog_category WHERE p
 LINES = ("FROM receipts_receiptline l JOIN receipts_receipt r ON r.id = l.receipt_id "
          "LEFT JOIN accounts_membership m ON m.user_id = r.owner_id "
          "LEFT JOIN catalog_product p ON p.id = l.product_id LEFT JOIN catalog_genericproduct g ON g.id = p.generic_id "
-         "LEFT JOIN roots ON roots.id = COALESCE(g.category_id, l.category_id)")
+         "LEFT JOIN roots ON roots.id = COALESCE(l.category_id, g.category_id)")
 INCOME = ("SELECT date_trunc('month', i.received_on) AS month, sum(i.amount) AS income FROM incomes_income i "
           "LEFT JOIN accounts_membership m ON m.user_id = i.owner_id WHERE i.currency_id = '$currency' "
           "AND COALESCE(m.household_id, 0)::text IN ($household) AND $__timeFilter(i.received_on) GROUP BY 1")

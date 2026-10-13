@@ -352,7 +352,7 @@
           "format": "time_series",
           "rawQuery": true,
           "editorMode": "code",
-          "rawSql": "WITH RECURSIVE roots AS (SELECT id, name FROM catalog_category WHERE parent_id IS NULL UNION ALL SELECT c.id, roots.name FROM catalog_category c JOIN roots ON c.parent_id = roots.id) SELECT date_trunc('month', r.purchased_on)::timestamp AS time, COALESCE(roots.name, 'Без категории') AS metric, sum(l.amount - l.discount_amount) AS value FROM receipts_receiptline l JOIN receipts_receipt r ON r.id = l.receipt_id LEFT JOIN accounts_membership m ON m.user_id = r.owner_id LEFT JOIN catalog_product p ON p.id = l.product_id LEFT JOIN catalog_genericproduct g ON g.id = p.generic_id LEFT JOIN roots ON roots.id = COALESCE(g.category_id, l.category_id) WHERE NOT r.hidden AND r.currency_id = '$currency' AND COALESCE(m.household_id, 0)::text IN ($household) AND $__timeFilter(r.purchased_on) GROUP BY 1, 2 ORDER BY 1"
+          "rawSql": "WITH RECURSIVE roots AS (SELECT id, name FROM catalog_category WHERE parent_id IS NULL UNION ALL SELECT c.id, roots.name FROM catalog_category c JOIN roots ON c.parent_id = roots.id) SELECT date_trunc('month', r.purchased_on)::timestamp AS time, COALESCE(roots.name, 'Без категории') AS metric, sum(l.amount - l.discount_amount) AS value FROM receipts_receiptline l JOIN receipts_receipt r ON r.id = l.receipt_id LEFT JOIN accounts_membership m ON m.user_id = r.owner_id LEFT JOIN catalog_product p ON p.id = l.product_id LEFT JOIN catalog_genericproduct g ON g.id = p.generic_id LEFT JOIN roots ON roots.id = COALESCE(l.category_id, g.category_id) WHERE NOT r.hidden AND r.currency_id = '$currency' AND COALESCE(m.household_id, 0)::text IN ($household) AND $__timeFilter(r.purchased_on) GROUP BY 1, 2 ORDER BY 1"
         }
       ],
       "fieldConfig": {
@@ -411,7 +411,7 @@
           "format": "table",
           "rawQuery": true,
           "editorMode": "code",
-          "rawSql": "WITH RECURSIVE roots AS (SELECT id, name FROM catalog_category WHERE parent_id IS NULL UNION ALL SELECT c.id, roots.name FROM catalog_category c JOIN roots ON c.parent_id = roots.id) SELECT COALESCE(roots.name, 'Без категории') AS category, sum(l.amount - l.discount_amount) AS spent FROM receipts_receiptline l JOIN receipts_receipt r ON r.id = l.receipt_id LEFT JOIN accounts_membership m ON m.user_id = r.owner_id LEFT JOIN catalog_product p ON p.id = l.product_id LEFT JOIN catalog_genericproduct g ON g.id = p.generic_id LEFT JOIN roots ON roots.id = COALESCE(g.category_id, l.category_id) WHERE NOT r.hidden AND r.currency_id = '$currency' AND COALESCE(m.household_id, 0)::text IN ($household) AND $__timeFilter(r.purchased_on) GROUP BY 1 ORDER BY 2 DESC"
+          "rawSql": "WITH RECURSIVE roots AS (SELECT id, name FROM catalog_category WHERE parent_id IS NULL UNION ALL SELECT c.id, roots.name FROM catalog_category c JOIN roots ON c.parent_id = roots.id) SELECT COALESCE(roots.name, 'Без категории') AS category, sum(l.amount - l.discount_amount) AS spent FROM receipts_receiptline l JOIN receipts_receipt r ON r.id = l.receipt_id LEFT JOIN accounts_membership m ON m.user_id = r.owner_id LEFT JOIN catalog_product p ON p.id = l.product_id LEFT JOIN catalog_genericproduct g ON g.id = p.generic_id LEFT JOIN roots ON roots.id = COALESCE(l.category_id, g.category_id) WHERE NOT r.hidden AND r.currency_id = '$currency' AND COALESCE(m.household_id, 0)::text IN ($household) AND $__timeFilter(r.purchased_on) GROUP BY 1 ORDER BY 2 DESC"
         }
       ],
       "fieldConfig": {
