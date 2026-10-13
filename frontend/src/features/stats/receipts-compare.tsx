@@ -183,9 +183,9 @@ export function CompareCurrencySection({ block, data }: { block: CompareCurrency
 function CompareBody({ state, query, onRetry }: CompareBlockProps) {
   switch (state.kind) {
     case 'idle': return <RequestState kind="empty"
-      message="Выберите готовую пару периодов или свои периоды в фильтрах — здесь появится разбор: изменился ли средний чек и что на него повлияло." />
+      message="Выберите готовую пару периодов или свои периоды — здесь появится разбор: изменился ли средний чек и что на него повлияло." />
     case 'invalid': return <RequestState kind="empty"
-      message={`Сравнение не построено. ${[...new Set(Object.values(state.errors))].join(' ')} Исправьте отмеченные поля в фильтрах.`} />
+      message={`Сравнение не построено. ${[...new Set(Object.values(state.errors))].join(' ')} Исправьте периоды.`} />
     case 'loading': return <RequestState kind="loading" message="Считаем сравнение периодов…" />
     case 'error': return canRetry(state)
       ? <RequestState kind="error" message={failureMessage(state)} onRetry={onRetry} />

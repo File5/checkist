@@ -5,6 +5,7 @@ import { statsFixture } from '../../api/stats-test-support'
 import type { Spending } from '../../api/stats'
 import type { Page, StoreEntry } from '../../api/types'
 import type { SpendingQuery } from '../../navigation'
+import { SpendingPeriodSheet } from './spending-filters'
 import type { SpendingReference } from './spending-filters'
 import { PeriodText } from './period'
 import { SpendingView } from './SpendingPage'
@@ -75,12 +76,12 @@ describe('spending screen markup (Vitest/SSR — not what the browser shows, foc
   })
   it('offers the four breakdowns as links of the same filters', () => {
     const html = render({ date_from: '2026-01-01', group_by: 'product' }, ok('spending-product.json'))
-    // Chips in one sideways row.
-    expect(html).toContain('<nav class="spending-groupings" aria-label="Разбивка трат"><div class="ck-chip-scroller"><div class="ck-chip-scroller-track" role="region" aria-label="Разбивка" tabindex="0">')
-    expect(html).toContain('<a class="ck-chip" href="/stats?date_from=2026-01-01">Категории</a>')
-    expect(html).toContain('<a class="ck-chip" href="/stats?date_from=2026-01-01&amp;group_by=generic">Обобщённые продукты</a>')
-    expect(html).toContain('<a class="ck-chip" aria-current="true" href="/stats?date_from=2026-01-01&amp;group_by=product">Товары</a>')
-    expect(html).toContain('<a class="ck-chip" href="/stats?date_from=2026-01-01&amp;group_by=store">Магазины</a>')
+    // One low switch on the width of the card, short words: nothing is cut on a 360 px phone.
+    expect(html).toContain('<nav class="spending-groupings stats-segments" aria-label="Разбивка трат"><a class="stats-segment" href="/stats?date_from=2026-01-01">Категории</a>')
+    expect(html).toContain('<a class="stats-segment" href="/stats?date_from=2026-01-01&amp;group_by=generic">Продукты</a>')
+    expect(html).toContain('<a class="stats-segment" aria-current="true" href="/stats?date_from=2026-01-01&amp;group_by=product">Товары</a>')
+    expect(html).toContain('<a class="stats-segment" href="/stats?date_from=2026-01-01&amp;group_by=store">Места</a>')
+    expect(html).not.toContain('aria-label="Разбивка"')
     expect(html).toMatch(/<h2 [^>]*data-request-focus-target[^>]*>Траты по товарам<\/h2>/)
     expect(html).toContain('<a href="/catalog/products/24">Demo Hähnchenbrust 600g</a>')
     expect(text(html)).toContain('Прочее Ещё 25 товаров с меньшими суммами, одной строкой. Показать состав 1 201 € 73,17 %')
@@ -120,7 +121,7 @@ describe('spending screen markup (Vitest/SSR — not what the browser shows, foc
     expect(html).not.toContain('spending-currency')
     // The filters and the breakdown switch are usable meanwhile.
     expect(html).toContain('Применить фильтры')
-    expect(html).toContain('<a class="ck-chip" href="/stats?group_by=store">Магазины</a>')
+    expect(html).toContain('<a class="stats-segment" href="/stats?group_by=store">Места</a>')
   })
   it('keeps the previous answer in place, marked busy, while new filters load', () => {
     const last = { query: {}, data: read('spending-category.json') }
@@ -143,7 +144,8 @@ describe('spending screen markup (Vitest/SSR — not what the browser shows, foc
     const filtered = render({ date_from: '2018-01-01', date_to: '2018-12-31', group_by: 'store' }, ok('spending-empty.json'))
     expect(filtered).toContain('По выбранным фильтрам трат нет.')
     expect(filtered).toContain('<a class="action-link" href="/stats?group_by=store">Сбросить фильтры</a>')
-    expect(filtered).toContain('<button type="button" class="spending-secondary">Сбросить фильтры</button>')
+    // «Сбросить» of the form brings the default view back, the breakdown too.
+    expect(filtered).toContain('<button type="button" class="spending-secondary">Сбросить</button>')
     for (const html of [none, filtered]) expect(html).not.toMatch(/<svg|<table|spending-currency/)
   })
   it('offers a retry after a failure that can pass', () => {
@@ -299,8 +301,8 @@ describe('composition of «Прочее» (Vitest/SSR — not what the browser s
     const html = render({ ...open, country: 'DE' }, state, { tail })
     expect(html).toContain('<a class="ck-chip" href="/stats?country=DE&amp;group_by=product&amp;other=open">Всё время</a>')
     expect(html).toContain('<a class="ck-chip" href="/stats?date_from=2025-01-01&amp;date_to=2025-12-31&amp;country=DE&amp;group_by=product&amp;other=open">Прошлый год</a>')
-    expect(html).toContain('<a class="ck-chip" href="/stats?date_from=2026-01-01&amp;date_to=2026-09-30&amp;country=DE&amp;group_by=store">Магазины</a>')
-    expect(html).toContain('<a class="ck-chip" aria-current="true" href="/stats?date_from=2026-01-01&amp;date_to=2026-09-30&amp;country=DE&amp;group_by=product">Товары</a>')
+    expect(html).toContain('<a class="stats-segment" href="/stats?date_from=2026-01-01&amp;date_to=2026-09-30&amp;country=DE&amp;group_by=store">Места</a>')
+    expect(html).toContain('<a class="stats-segment" aria-current="true" href="/stats?date_from=2026-01-01&amp;date_to=2026-09-30&amp;country=DE&amp;group_by=product">Товары</a>')
     const drill = render({ category: 1, currency: 'EUR', other: 'open' }, ok('spending-category-drilldown.json'))
     expect(drill).toContain('<a class="spending-up" href="/stats?currency=EUR">На уровень выше</a>')
     expect(drill).toContain('<li><a href="/stats?currency=EUR">Все траты</a></li>')
@@ -351,7 +353,7 @@ describe('spending filters markup', () => {
   it('has no reset and no selection at the root', () => {
     const html = render({}, ok('spending-category.json'))
     expect(html).toContain('<a class="ck-chip" aria-current="true" href="/stats">Всё время</a>')
-    expect(html).not.toContain('>Сбросить фильтры<')
+    expect(html).not.toContain('>Сбросить<')
     expect(html).toContain('Все магазины. Можно выбрать до 20.')
     expect(count(html, /<input type="checkbox" name="store"/g)).toBe(3)
     expect(html).not.toContain('aria-invalid="true"')
@@ -371,5 +373,34 @@ describe('spending filters markup', () => {
     expect(render({}, { kind: 'loading' }, { reference: loading })).toContain('Загружаем списки стран и магазинов…')
     const long: SpendingReference = { ...reference, stores: { kind: 'ok', data: { ...stores, count: 450, pages: 3 } } }
     expect(render({}, { kind: 'loading' }, { reference: long })).toContain('Показаны первые 3 магазинов справочника.')
+  })
+})
+
+describe('the top of «Траты» on a phone (feature/stats-compact; SSR, not the browser)', () => {
+  it('shows one row: «Период: …» on the left and the picture of the filters with their number on the right', () => {
+    const html = render({ date_from: '2026-01-01', date_to: '2026-12-31', country: 'DE', group_by: 'store' }, ok('spending-category.json'), { narrow: true })
+    const bar = html.slice(html.indexOf('<div class="ck-filters-bar">'), html.indexOf('</section>'))
+    expect(bar).toMatch(/^<div class="ck-filters-bar"><div class="ck-filters-summary"><button type="button" class="stats-period-open" aria-haspopup="dialog" aria-expanded="false"><span class="stats-period-text"><span class="stats-period-word">Период: <\/span><strong>Этот год<\/strong><\/span>/)
+    expect(bar).toContain('<button type="button" class="ck-filters-toggle ck-filters-icon" aria-haspopup="dialog" aria-expanded="false" aria-label="Фильтры (1)">')
+    expect(bar).toContain('<span aria-hidden="true">1</span></button>')
+    // The ready periods are not chips any more, and the form waits in its sheet.
+    expect(html).not.toContain('class="ck-chip"')
+    expect(html).not.toContain('name="date_from"')
+    expect(html).not.toContain('<form')
+  })
+  it('names a period of its own by its dates and counts no period as a filter', () => {
+    const html = render({ date_from: '2026-02-03', date_to: '2026-03-04' }, ok('spending-category.json'), { narrow: true })
+    expect(html).toContain('<strong><time dateTime="2026-02-03">03.02.2026</time> — <time dateTime="2026-03-04">04.03.2026</time></strong>')
+    expect(html).toContain('aria-label="Фильтры"><svg')
+  })
+  it('opens the ready periods as rows and «Свой период» with two dates in the sheet', () => {
+    const html = renderToStaticMarkup(<SpendingPeriodSheet query={{ date_from: '2026-01-01', date_to: '2026-12-31', group_by: 'store' }} today="2026-10-07" open />)
+    expect(html).toContain('role="dialog"')
+    expect(html).toMatch(/<a class="stats-period-choice" aria-current="true" href="\/stats\?date_from=2026-01-01&amp;date_to=2026-12-31&amp;group_by=store"><span class="stats-period-choice-text"><span class="stats-period-choice-label">Этот год<\/span><\/span><svg/)
+    expect(html).toContain('<a class="stats-period-choice" href="/stats?group_by=store"><span class="stats-period-choice-text"><span class="stats-period-choice-label">Всё время</span></span></a>')
+    expect(html).toContain('<form class="spending-form" noValidate="" aria-label="Свой период">')
+    expect(html).toMatch(/name="date_from" value="2026-01-01"/)
+    expect(html).toMatch(/name="date_to" value="2026-12-31"/)
+    expect(html).toContain('<button type="submit">Показать период</button>')
   })
 })

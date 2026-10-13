@@ -7,7 +7,7 @@ import RequestState from '../../components/RequestState'
 import { baseTwin, formatMoney } from '../../lib/money'
 import { Link } from '../../navigation'
 import { dashboardErrorMessage, dayAndMonth, monthTitle, shiftMonth } from '../dashboard/dashboard-state'
-import { takeIncomeNotice } from './incomes-state'
+import { rememberIncomeMonth, sessionIncomeMonth, takeIncomeNotice } from './incomes-state'
 import './Incomes.css'
 
 export type IncomesViewProps = {
@@ -72,8 +72,11 @@ export function IncomesView({ data, categories, notice = null, busy = false, fai
 
 type Load = { kind: 'error'; message: string } | { kind: 'ok'; data: IncomeMonth; categories: IncomeCategory[] }
 
-/** `/incomes`: the records of a month the person may see, the family's total, the categories and a category of one's own. */
-export default function IncomesPage({ month }: { month?: string }) {
+/** `/incomes`: the records of a month the person may see, the family's total, the categories and a category of one's own.
+ * Without `month` — the month opened last in this session, or the server's current one in a new session. */
+export default function IncomesPage({ month: asked }: { month?: string }) {
+  const month = asked ?? sessionIncomeMonth()
+  useEffect(() => { if (asked) rememberIncomeMonth(asked) }, [asked])
   const [load, setLoad] = useState<Load>()
   const [attempt, setAttempt] = useState(0)
   const [notice, setNotice] = useState<string | null>(() => takeIncomeNotice() ?? null)

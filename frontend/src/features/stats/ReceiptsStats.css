@@ -29,7 +29,7 @@
 .stats-number { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .stats-number-note { display: block; font-weight: 400; }
 
-.stats-presets, .stats-intervals { display: grid; gap: 8px; min-width: 0; }
+.stats-presets { display: grid; gap: 8px; min-width: 0; }
 .stats-inline-links, .stats-chip-row { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; margin: 0; padding: 0; }
 .stats-presets-title { color: var(--ck-text-muted); font-size: var(--ck-text-xs); font-weight: 600; }
 

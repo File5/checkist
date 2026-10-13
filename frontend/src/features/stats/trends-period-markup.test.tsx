@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import type { TrendsMonthlyCurrency } from '../../api/trends'
+import { statsIncomesHref } from '../../navigation'
 import { MonthRowCards, MonthToMonthBlock } from './trends-dashboard'
 import TrendsPeriodPicker, { PeriodForm } from './trends-period-picker'
 import { monthRows } from './trends-state'
@@ -22,12 +23,28 @@ describe('«Динамика» period (Vitest/SSR, not browser acceptance)', () 
     expect(markup).not.toContain('role="dialog"')
     expect(text(markup)).toContain('не больше 60 месяцев')
   })
-  it('on a phone keeps the chips and the period and puts the form behind «Свой период»', () => {
-    const markup = html(<TrendsPeriodPicker query={{}} current="2026-10" first={undefined} narrow native />)
-    expect(markup).toContain('aria-haspopup="dialog" aria-expanded="false">Свой период</button>')
-    expect(markup).not.toContain('<form')
-    expect(markup).toContain('<span class="ck-chip trends-chip-off" aria-disabled="true" title="Узнаём, с какого месяца есть чеки…">Всё время</span>')
-    expect(markup).toContain('aria-current="true" href="/stats/trends?from=2025-11&amp;to=2026-10">12 месяцев</a>')
+  it('on a phone shows one button «Период: …» and keeps the ready periods and «Свой период» in its sheet', () => {
+    const closed = html(<TrendsPeriodPicker query={{}} current="2026-10" first={undefined} narrow native />)
+    expect(closed).toContain('<button type="button" class="stats-period-open" aria-haspopup="dialog" aria-expanded="false"><span class="stats-period-text"><span class="stats-period-word">Период: </span><strong>12 месяцев</strong></span>')
+    expect(closed).not.toContain('<form')
+    expect(closed).not.toContain('ck-chip')
+    const custom = html(<TrendsPeriodPicker query={{ from: '2026-05', to: '2026-10', category: 3 }} current="2026-10" first="2024-01" narrow native />)
+    expect(custom).toContain('<strong>6 месяцев</strong>')
+    expect(html(<TrendsPeriodPicker query={{ from: '2026-02', to: '2026-10' }} current="2026-10" first="2024-01" narrow native />))
+      .toMatch(/<strong>фев\.? 2026 — окт\.? 2026<\/strong>/)
+    const open = html(<TrendsPeriodPicker query={{ category: 3 }} current="2026-10" first={undefined} narrow native open />)
+    expect(open).toContain('role="dialog"')
+    expect(open).toContain('<p class="trends-period-current" aria-live="polite">')
+    expect(open).toContain('<span class="stats-period-choice" aria-disabled="true" title="Узнаём, с какого месяца есть чеки…">')
+    expect(open).toMatch(/<a class="stats-period-choice" aria-current="true" href="\/stats\/trends\?from=2025-11&amp;to=2026-10&amp;category=3">.*12 месяцев.*<\/a>/)
+    expect(open).toContain('<h3 class="stats-period-custom">Свой период</h3>')
+    expect(open).toContain('<form class="trends-period-form" noValidate="" aria-label="Свой период">')
+  })
+  it('leads the ready periods of «Доходы» to its own address', () => {
+    const open = html(<TrendsPeriodPicker query={{ months: 24 }} current="2026-10" first="2026-01" narrow native open
+      hrefOf={(period) => statsIncomesHref(period)} />)
+    expect(open).toContain('href="/stats/incomes?from=2026-08&amp;to=2026-10"')
+    expect(open).toMatch(/<a class="stats-period-choice" aria-current="true" href="\/stats\/incomes\?from=2024-11&amp;to=2026-10">/)
   })
   it('uses the native month field where the browser has one', () => {
     const markup = html(<PeriodForm period={{ from: '2026-05', to: '2026-10' }} current="2026-10" native onApply={() => {}} />)

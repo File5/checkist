@@ -2328,3 +2328,29 @@ CSRF). Видимость — только `goals.access.goals_q`: общая ц
 валюте по курсу дня покупки; `unpaid` — неоплаченные регулярные платежи месяца (`recurring.services.unpaid`) по
 сегодняшнему курсу, `unpaid_count` — сколько их вошло; сумма без курса не учитывается. Ушли в минус — `per_day` null,
 `overspent` — на сколько.
+
+## «Статистика → Доходы» (2026-10-13, ветка `feature/stats-compact`)
+
+**`GET /api/stats/incomes/?months=…`** (или `from`/`to`, `ГГГГ-ММ`, как у `trends/monthly/`; смешивать нельзя, ошибки —
+те же `400 invalid_parameter`) — вкладка «Доходы» статистики. Доступ — как у `/api/incomes/` и «Динамики» (`accounts` —
+вход, `local_single` — DEBUG + флаг + loopback); только чтение, миграций нет.
+
+```json
+{"months": 12, "month_from": "2025-11", "month_to": "2026-10", "base_currency": "KZT",
+ "income": "1000000.00", "spent": "200000.00", "saved": "800000.00", "saved_percent": "80.00",
+ "categories_scope": "family",
+ "categories": [{"id": 1, "name": "Зарплата", "total": "950000.00"}, {"id": 2, "name": "Подработка", "total": "50000.00"}],
+ "excluded": [{"currency": "USD", "total": "170.00"}]}
+```
+
+- `income` — доход **всей семьи** за окно (`incomes.services.totals`, `owner_q`: общий доход видят все члены семьи); `null`
+  — дохода за окно нет (тогда `saved` и `saved_percent` тоже `null`). `spent` — `Σ Receipt.total` видимых чеков окна
+  (`visible_receipts_q`, как «Потрачено» Главной), `saved` = `income − spent`, `saved_percent` — доля от дохода.
+- `categories` — доход по категориям доходов от большей суммы, только по записям, **видимым запросу**
+  (`incomes.access.visible_q`). `categories_scope`: `family` — это все записи семьи (главный в семье, человек без семьи,
+  `local_single`; правило — `incomes.access.sees_family`), `own` — только свои записи (член семьи): общий доход он видит
+  в `income`, чужие записи по категориям — нет.
+- Деньги — в основной валюте семьи по курсу дня поступления / покупки (`rates.convert`); суммы без курса не входят ни в
+  итог, ни в категории и названы в `excluded` (доходы и траты вместе, по валютам).
+- Число запросов от объёма данных не зависит. Тесты — `incomes.tests.test_api` (`test_stats_tab_*`), обход
+  `api.tests.test_projection` знает маршрут `stats-incomes`.

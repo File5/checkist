@@ -152,12 +152,9 @@ a.trends-row-name:hover { color: var(--ck-link); text-decoration: underline; tex
 .trends-limit-changes { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; color: var(--ck-text-muted); font-size: var(--ck-text-xs); }
 .trends-limit-changes span { color: var(--ck-accent-text); }
 
-/* The period: on a phone «Свой период» and the ready periods in one row, the period in words under it. */
+/* The period: from 541 px the ready periods, the period in words under them and «Свой период»; on a phone one button
+   «Период: …» (StatsBar.css) opens them in a sheet. */
 .trends-period { display: grid; gap: 8px; min-width: 0; }
-.trends-period-bar { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.trends-period-bar > .ck-chip-scroller { flex: 1 1 auto; min-width: 0; }
-.trends-period-open { flex: none; min-height: 44px; padding: 8px 16px; border: 1px solid var(--ck-link); border-radius: var(--ck-radius-pill); background: var(--ck-surface); color: var(--ck-link); font-weight: 700; white-space: nowrap; }
-.trends-period-open:hover:not(:disabled) { border-color: var(--ck-link-hover); background: var(--ck-surface-raised); color: var(--ck-link-hover); }
 .trends-period-current { margin: 0; padding: 0 4px; color: var(--ck-text-muted); font-size: var(--ck-text-xs); }
 .trends-period-current strong { color: var(--ck-text); }
 .trends-period-current time { white-space: nowrap; }

@@ -82,14 +82,10 @@ export default function TrendBlock(props: TrendBlockProps) {
   return (
     <section ref={block} className="stats-panel" aria-labelledby={id} aria-busy={state.kind === 'loading'}>
       <h3 id={id} data-request-focus-target tabIndex={-1}>Средний чек по времени</h3>
-      <nav className="stats-intervals" aria-label="Интервал графика">
-        <ul className="stats-chip-row">
-          {intervalChoices(query.interval ?? 'month').map((choice) => (
-            <li key={choice.interval}>
-              <Link className="ck-chip" to={intervalHref(query, choice.interval)} aria-current={choice.active ? 'true' : undefined}>{choice.label}</Link>
-            </li>
-          ))}
-        </ul>
+      <nav className="stats-intervals stats-segments" aria-label="Интервал графика">
+        {intervalChoices(query.interval ?? 'month').map((choice) => (
+          <Link key={choice.interval} className="stats-segment" to={intervalHref(query, choice.interval)} aria-current={choice.active ? 'true' : undefined}>{choice.label}</Link>
+        ))}
       </nav>
       <TrendBody {...props} />
       <p className="stats-note stats-footnote">Охват графика: {span}. Интервал без походов — разрыв линии, а не ноль.</p>

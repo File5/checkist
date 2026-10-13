@@ -18,24 +18,28 @@
   .inc-summary-note { display: block; }
 }
 
-/* The page: the month with its total and the records, then the categories. */
+/* The page: the month with its total and the records, then the categories. Low controls as in «Статистика»
+   (feature/stats-compact): headings 18 px, the steps of a month 36 px, the actions 40 px, the chips 32 px. */
 .inc-page { max-width: 760px; }
+.inc-page .ck-panel-head { align-items: center; }
+.inc-page .ck-panel-head > h2 { font-size: var(--ck-text-lg); font-weight: 800; }
 .inc-months { display: flex; flex: none; gap: 8px; }
+.inc-months .ck-round { width: 36px; height: 36px; min-height: 36px; }
 .inc-total { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-sm); font-weight: 600; }
 .inc-total strong { color: var(--ck-success-text); font-size: var(--ck-text-xl); font-weight: 800; white-space: nowrap; }
 .inc-day { background: var(--ck-success-bg); color: var(--ck-success-text); font-size: var(--ck-text-base); font-variant-numeric: tabular-nums; }
 .inc-amount { color: var(--ck-success-text); }
 .inc-note { margin: 0; color: var(--ck-text-muted); font-size: var(--ck-text-sm); }
 .inc-notice { margin: 0; padding: 12px 16px; border-radius: var(--ck-radius-sm); background: var(--ck-info-bg); color: var(--ck-info-text); font-size: var(--ck-text-sm); font-weight: 600; }
-.inc-add { display: flex; align-items: center; justify-content: center; min-height: 48px; padding: 0 20px; border: 1px solid var(--ck-primary); border-radius: var(--ck-radius-button); background: var(--ck-primary); color: var(--ck-on-primary); font-weight: 800; text-decoration: none; white-space: nowrap; }
+.inc-add { display: flex; align-items: center; justify-content: center; min-height: 40px; padding: 0 20px; border: 1px solid var(--ck-primary); border-radius: var(--ck-radius-button); background: var(--ck-primary); color: var(--ck-on-primary); font-weight: 800; text-decoration: none; white-space: nowrap; }
 .inc-add:hover { border-color: var(--ck-primary-hover); background: var(--ck-primary-hover); color: var(--ck-on-primary); }
 .inc-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
-.inc-chip { display: inline-flex; align-items: center; min-height: 36px; padding: 0 14px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-pill); font-size: var(--ck-text-sm); font-weight: 700; white-space: nowrap; }
+.inc-chip { display: inline-flex; align-items: center; min-height: 32px; padding: 0 12px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-pill); font-size: var(--ck-text-xs); font-weight: 700; white-space: nowrap; }
 .inc-category-form { display: grid; gap: 8px; }
 .inc-category-form label { color: var(--ck-text-muted); font-size: var(--ck-text-sm); font-weight: 600; }
 .inc-category-row { display: flex; gap: 8px; min-width: 0; }
-.inc-category-row input { flex: 1; min-width: 0; min-height: 48px; padding: 0 14px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-surface); color: var(--ck-text); font-size: var(--ck-text-base); }
-.inc-category-row button { flex: none; min-height: 48px; }
+.inc-category-row input { flex: 1; min-width: 0; min-height: 40px; padding: 0 14px; border: 1px solid var(--ck-border-field); border-radius: var(--ck-radius-sm); background: var(--ck-surface); color: var(--ck-text); font-size: var(--ck-text-base); }
+.inc-category-row button { flex: none; min-height: 40px; padding: 0 16px; border-radius: var(--ck-radius-pill); }
 .inc-category-row button[aria-disabled="true"] { border-color: var(--ck-disabled-border); background: var(--ck-disabled-bg); color: var(--ck-disabled-text); cursor: default; }
 .inc-failure { margin: 0; color: var(--ck-error-text); font-size: var(--ck-text-sm); font-weight: 600; }
 

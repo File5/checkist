@@ -16,7 +16,8 @@ import { ExpensePage } from './features/expense'
 import { CategorySpendsPage, DashboardPage, LimitsPage } from './features/dashboard'
 import { MergesPage, MergePage } from './features/merges'
 import { ClassificationPage } from './features/classification'
-import { SpendingPage, ReceiptsStatsPage, TrendsPage } from './features/stats'
+import { SpendingPage, ReceiptsStatsPage, TrendsPage, IncomesStatsPage } from './features/stats'
+import { rememberStats, statsTabHref, statsTabs } from './features/stats/stats-memory'
 import { LoginPage, AccountPage } from './features/auth'
 import { ExportPage } from './features/export'
 import { RecurringPage } from './features/recurring'
@@ -50,6 +51,7 @@ function pageTitle(route: Route) {
     case 'spending': return 'Траты за период'
     case 'receipts-stats': return 'Средний чек'
     case 'trends': return 'Динамика'
+    case 'stats-incomes': return 'Доходы'
     case 'health': return 'Состояние сервисов'
     case 'receipts': return 'Траты'
     case 'upload': return 'Загрузка фото чеков'
@@ -108,6 +110,7 @@ function pageContent({ route, returnTo }: NavigationSnapshot, username: string) 
     case 'spending': return <SpendingPage query={route.query} />
     case 'receipts-stats': return <ReceiptsStatsPage query={route.query} />
     case 'trends': return <TrendsPage query={route.query} />
+    case 'stats-incomes': return <IncomesStatsPage query={route.query} />
     case 'health': return <HealthPage />
     case 'receipts': return <ReceiptsPage query={route.query} />
     case 'upload': return <UploadPage />
@@ -234,7 +237,9 @@ export default function App() {
   const mergesActive = route.kind === 'merges' || route.kind === 'merge'
   const classificationActive = route.kind === 'classification'
   const catalogActive = route.kind === 'catalog' || route.kind === 'category' || route.kind === 'product' || mergesActive || classificationActive
-  const statsActive = route.kind === 'spending' || route.kind === 'receipts-stats' || route.kind === 'trends'
+  const statsActive = statsTabs.some((tab) => tab.kind === route.kind)
+  // «Статистика» of the menu and the tabs lead to the address each tab was left with (features/stats/stats-memory.ts).
+  useEffect(() => { if (view === 'page') rememberStats(route) }, [route, view])
   const signedIn = session.kind === 'user'
   const username = signedIn ? session.user.username : ''
   // The sign-in is drawn alone, on the address the person opened: no header, menu or footer.
@@ -286,9 +291,7 @@ export default function App() {
             <Link to="/catalog/classification" aria-current={classificationActive ? 'page' : undefined}>Категории</Link>
           </nav>}
           {statsActive && view === 'page' && <nav className="main-navigation section-navigation" aria-label="Раздел статистики">
-            <Link to="/stats" aria-current={route.kind === 'spending' ? 'page' : undefined}>Траты</Link>
-            <Link to="/stats/receipts" aria-current={route.kind === 'receipts-stats' ? 'page' : undefined}>Средний чек</Link>
-            <Link to="/stats/trends" aria-current={route.kind === 'trends' ? 'page' : undefined}>Динамика</Link>
+            {statsTabs.map((tab) => <Link key={tab.kind} to={statsTabHref(tab.kind, route)} aria-current={route.kind === tab.kind ? 'page' : undefined}>{tab.label}</Link>)}
           </nav>}
           {body}
         </main>

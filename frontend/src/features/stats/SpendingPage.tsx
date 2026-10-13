@@ -34,11 +34,13 @@ export interface SpendingViewProps {
   /** The answer with the long list for the shown one: the composition of «Прочее». */
   tail?: SpendingRequestState
   retryTail?: () => void
+  /** For the tests: the phone view without a browser. */
+  narrow?: boolean
 }
 
-export function SpendingView({ query, state, retry, last, reference, genericName, today, tail, retryTail }: SpendingViewProps) {
+export function SpendingView({ query, state, retry, last, reference, genericName, today, tail, retryTail, narrow }: SpendingViewProps) {
   return <div className="spending-page">
-    <SpendingFilters query={query} failure={state.kind === 'error' ? state : undefined} reference={reference} today={today} />
+    <SpendingFilters query={query} failure={state.kind === 'error' ? state : undefined} reference={reference} today={today} narrow={narrow} />
     <SpendingResults query={query} state={state} retry={retry} last={last} genericName={genericName} tail={tail} retryTail={retryTail} />
   </div>
 }

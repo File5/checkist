@@ -8,7 +8,7 @@
 """
 from django.db.models import Q
 
-from accounts.access import LOCAL_SINGLE, mode
+from accounts.access import LOCAL_SINGLE, is_head, mode
 from budget.access import limits_q
 from receipts.ownership import LOCAL_USERNAME
 
@@ -26,6 +26,14 @@ def visible_q(request, field="owner"):
     headed = Membership.objects.filter(user_id=pk, role=Membership.Role.HEAD).values("household_id")
     return Q(**{f"{field}_id": pk}) | Q(**{f"{field}_id__in": Membership.objects.filter(
         household_id__in=headed).values("user_id")})
+
+
+def sees_family(request):
+    """sees_family(request) -> bool; ``visible_q`` запроса — все записи семьи (главный, человек без семьи, ``local_single``).
+
+    Члену семьи ``visible_q`` отдаёт только его записи: разбивку дохода он видит по своим, общий доход — семьи.
+    """
+    return is_head(request)
 
 
 def categories_q(request):

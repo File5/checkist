@@ -5,6 +5,7 @@ const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf
 const css = (path: string) => read(path).replace(/\/\*[\s\S]*?\*\//g, '')
 const spending = css('./Spending.css')
 const receipts = css('./ReceiptsStats.css')
+const bar = css('./StatsBar.css')
 const compare = read('./receipts-compare.tsx')
 
 interface Rule { selector: string; body: string }
@@ -45,7 +46,7 @@ describe('statistics stylesheet guards (text of the rules, not rendering)', () =
     }
   })
   it('sets every text size from the scale of the theme', () => {
-    for (const text of [spending, receipts]) {
+    for (const text of [spending, receipts, bar]) {
       for (const [, size] of text.matchAll(/font-size:\s*([^;]+);/g)) expect(size).toMatch(/^var\(--ck-text-(xs|sm|base|lg|xl|hero)\)$/)
     }
   })
@@ -84,6 +85,15 @@ describe('statistics stylesheet guards (text of the rules, not rendering)', () =
     for (const frame of frames) expect(frame).toBe('<div className="stats-table-scroll" role="region" aria-labelledby={id} tabIndex={0}>')
   })
   it('takes every colour from the theme tokens', () => {
-    for (const text of [spending, receipts]) expect(text).not.toMatch(/#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(/)
+    for (const text of [spending, receipts, bar]) expect(text).not.toMatch(/#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(/)
+  })
+  it('keeps the top of a tab low and whole: one phone threshold, words never cut (feature/stats-compact)', () => {
+    for (const [, width] of bar.matchAll(/@media \(max-width: (\d+)px\)/g)) expect(width).toBe('540')
+    expect(bar).not.toMatch(/text-overflow|-webkit-line-clamp/)
+    expect(rule(bar, '.stats-segment')).toContain('white-space: nowrap')
+    expect(rule(bar, '.stats-segment')).toContain('flex: 1 1 auto')
+    expect(rule(bar, '.stats-period-open')).toContain('min-height: 40px')
+    // The period button wraps its words rather than cutting them: no single line is forced on it.
+    expect(rule(bar, '.stats-period-open')).not.toContain('nowrap')
   })
 })

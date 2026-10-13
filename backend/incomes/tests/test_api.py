@@ -115,6 +115,39 @@ class FamilyIncomeTests(TwoUsers, TestCase):
         ])
         self.assertEqual(self.client_of(self.third).get("/api/stats/trends/incomes/", {"months": 99}).status_code, 400)
 
+    def test_stats_tab_shows_the_family_total_and_the_categories_one_may_see(self):
+        income(self.first, "50000", date(2026, 9, 20), category="Подработка")
+
+        def stats(account, **params):
+            with today():
+                response = self.client_of(account).get("/api/stats/incomes/", params or {"months": 2})
+            self.assertEqual(response.status_code, 200, response.content)
+            return response.json()
+
+        def rows(data):
+            return data["categories_scope"], [(row["name"], row["total"]) for row in data["categories"]]
+
+        member = stats(self.third)
+        self.assertEqual({key: member[key] for key in ("months", "month_from", "month_to", "base_currency", "income",
+                                                       "spent", "saved", "saved_percent", "excluded")},
+                         {"months": 2, "month_from": "2026-09", "month_to": "2026-10", "base_currency": "KZT",
+                          "income": "1000000.00", "spent": "200000.00", "saved": "800000.00", "saved_percent": "80.00",
+                          "excluded": []})
+        # Член семьи видит общий доход семьи, а разбивку по категориям — только своих записей.
+        self.assertEqual(rows(member), ("own", [("Зарплата", "300000.00")]))
+        self.assertEqual(member["categories"][0]["id"], built_in("Зарплата").pk)
+        head = stats(self.first)
+        self.assertEqual((head["income"], rows(head)), ("1000000.00", ("family", [("Зарплата", "950000.00"),
+                                                                                  ("Подработка", "50000.00")])))
+        outsider = stats(self.second)
+        self.assertEqual((outsider["income"], outsider["spent"], rows(outsider)),
+                         ("999.00", "0.00", ("family", [("Зарплата", "999.00")])))
+        empty = stats(self.third, **{"from": "2026-01", "to": "2026-02"})
+        self.assertEqual((empty["income"], empty["saved"], empty["saved_percent"], rows(empty)),
+                         (None, None, None, ("own", [])))
+        refused = self.client_of(self.third).get("/api/stats/incomes/", {"from": "2026-10", "months": 2})
+        self.assertEqual(refused.status_code, 400)
+
     def test_own_categories_belong_to_the_family(self):
         response = self.client_of(self.third, csrf=True).post(f"{URL}categories/", {"name": "Аренда гаража"}, format="json")
         self.assertEqual(response.status_code, 201, response.content)
@@ -160,6 +193,18 @@ class IncomeLocalTests(TestCase):
         self.assertEqual(services.month_income(local_user(), Month(2026, 10)), D("48000.00"))
         data = self.client.get(f"{URL}summary/", {"month": "2026-10"}).json()
         self.assertEqual((data["income"], data["excluded"]), ("48000.00", [{"currency": "EUR", "total": "5.00"}]))
+
+    def test_stats_tab_counts_the_categories_in_the_base_currency(self):
+        Rate.objects.create(currency="USD", day=date(2026, 10, 5), value=D("480.00"))
+        income(local_user(), "650000", date(2026, 10, 5))
+        income(local_user(), "100", date(2026, 10, 6), category="Подработка", currency="USD")
+        income(local_user(), "5", date(2026, 10, 6), currency="EUR")  # курса нет — ни в итог, ни в разбивку
+        with today():
+            data = self.client.get("/api/stats/incomes/", {"from": "2026-10", "to": "2026-10"}).json()
+        self.assertEqual((data["income"], data["categories_scope"], data["excluded"]),
+                         ("698000.00", "family", [{"currency": "EUR", "total": "5.00"}]))
+        self.assertEqual([(row["name"], row["total"]) for row in data["categories"]],
+                         [("Зарплата", "650000.00"), ("Подработка", "48000.00")])
 
     def test_parse_understands_a_salary(self):
         built_in("Подработка")
