@@ -1,4 +1,5 @@
 """Разбор текста выписок Kaspi Gold и ForteBank и извлечение текста из PDF. Только вымышленные строки."""
+import time
 from datetime import date
 from decimal import Decimal
 from unittest.mock import patch
@@ -32,7 +33,7 @@ class KaspiTests(SimpleTestCase):
     def test_rows_signs_amounts_and_merchants(self):
         text = "\n".join(demo.kaspi_header(DAY, DAY) + [
             "12.09.26 - 2 590,00 ₸ Покупка ТОО \"Магазин у дома\"",
-            "13.09.26 - 1 234 567,89 ₸ (-10,00 USD) Покупка APPLE.COM/BILL",
+            "13.09.26\u00a0-\u00a01\u202f234 567,89 ₸ (-10,00 USD) Покупка APPLE.COM/BILL",
             "14.09.26 + 15 000,00 ₸ Пополнение С Kaspi Депозита",
             "15.09.26 - 990,00 ₸ Разное Комиссия за перевод",
             "16.09.26 - 50 000,00 ₸ Перевод Мария К.",
@@ -78,6 +79,47 @@ class ForteTests(SimpleTestCase):
     def test_parse_picks_the_bank(self):
         bank, rows = parsers.parse("\n".join(demo.demo_forte_lines(DAY)))
         self.assertEqual((bank, len(rows)), (parsers.FORTE, 8))
+
+
+class HostileTextTests(SimpleTestCase):
+    """A crafted PDF must not hold the web process: linear patterns, capped lines, text and rows."""
+
+    LONG = "1 " * 50_000  # 100 000 characters of digits and spaces, no currency after them
+    # A digit and a run of spaces: the former patterns backtracked quadratically here (20 000 spaces — 0,7 s and
+    # 2 s, 100 000 — tens of seconds).
+    SPACES = "1" + " " * 100_000
+
+    def assertFast(self, call):
+        started = time.perf_counter()
+        call()
+        self.assertLess(time.perf_counter() - started, 0.5)
+
+    def test_amount_patterns_are_linear_on_digits_and_spaces(self):
+        self.assertFast(lambda: self.assertIsNone(parsers._KASPI_ROW.match("12.09.26 - " + self.LONG)))
+        self.assertFast(lambda: self.assertIsNone(parsers._FORTE_ROW.match("12.09.2026 -" + self.LONG)))
+        self.assertFast(lambda: self.assertIsNone(parsers._KASPI_ROW.match("12.09.26 - " + "1" * 100_000)))
+        self.assertFast(lambda: self.assertIsNone(parsers._KASPI_ROW.match("12.09.26 - " + self.SPACES)))
+        self.assertFast(lambda: self.assertIsNone(parsers._FORTE_ROW.match("12.09.2026 -" + self.SPACES)))
+
+    def test_long_lines_are_skipped_and_the_statement_still_parses(self):
+        for header, line, parse in ((demo.kaspi_header(DAY, DAY), "12.09.26 - ", parsers.parse_kaspi),
+                                    (demo.forte_header(DAY, DAY), "12.09.2026 -", parsers.parse_forte)):
+            text = "\n".join(header + [line + self.LONG, line + self.SPACES + "₸ Покупка X"] * 5)
+            self.assertFast(lambda: self.assertEqual(parse(text), []))
+        rows = parsers.parse_kaspi("\n".join([demo.kaspi_line(DAY, -100, "Покупка", "Магазин"), "x" * (parsers.MAX_LINE + 1)]))
+        self.assertEqual(len(rows), 1)
+
+    def test_too_much_text_or_rows_is_refused(self):
+        with self.assertRaises(parsers.TooLarge):
+            parsers.parse("Kaspi Gold\n" + "x" * parsers.MAX_TEXT)
+        line = demo.kaspi_line(DAY, -100, "Покупка", "Магазин")
+        with patch.object(parsers, "MAX_ROWS", 3), self.assertRaises(parsers.TooLarge):
+            parsers.parse("\n".join(demo.kaspi_header(DAY, DAY) + [line] * 4))
+        with patch.object(parsers, "MAX_ROWS", 3), self.assertRaises(parsers.TooLarge):
+            parsers.parse("\n".join(demo.forte_header(DAY, DAY) + [demo.forte_line(DAY, -100, "Покупка", "X")] * 4))
+        # A row continues on at most MAX_CONTINUATION lines.
+        text = "\n".join(demo.forte_header(DAY, DAY) + [demo.forte_line(DAY, -100, "Покупка", "A,")] + ["продолжение"] * 50)
+        self.assertLessEqual(parsers.parse_forte(text)[0].details.count("продолжение"), parsers.MAX_CONTINUATION)
 
 
 class ExtractTests(SimpleTestCase):

@@ -36,15 +36,19 @@ _MARKS = (
         re.IGNORECASE)),
 )
 
-_SPACES = re.compile(r"[           \t\f\v]")
-_ZERO_WIDTH = re.compile(r"[​‌‍﻿]")
+_SPACES = re.compile(r"[\u00a0\u2007\u2009\u202f\u2002\u2003\u2004\u2005\u2006\u2008\u200a\t\f\v]")
+_ZERO_WIDTH = re.compile(r"[\u200b\u200c\u200d\ufeff]")
 
+# The integer part of an amount: thousands split by single spaces («1 234 567», after clean_text) or plain digits.
+# It never ends in a space, so it cannot overlap the «\s*» before the currency: no quadratic backtracking on a
+# crafted line of digits and spaces (the parser runs in the web process).
+_INTEGER = r"(?:\d{1,3}(?: \d{3})+|\d+)"
 _KASPI_ROW = re.compile(
-    r"^(?P<d>\d{2})\.(?P<m>\d{2})\.(?P<y>\d{2})\s+(?P<sign>[+-])\s*(?P<amount>\d[\d ]*(?:,\d{1,2})?)\s*₸\s*"
+    r"^(?P<d>\d{2})\.(?P<m>\d{2})\.(?P<y>\d{2})\s+(?P<sign>[+-])\s*(?P<amount>" + _INTEGER + r"(?:,\d{1,2})?)\s*₸\s*"
     r"(?:\((?P<foreign>[^)]*)\)\s*)?(?P<op>Покупка|Перевод|Пополнение|Снятие|Разное|Возврат)\b\s*(?P<details>.*)$"
 )
 _FORTE_ROW = re.compile(
-    r"^(?P<d>\d{2})\.(?P<m>\d{2})\.(?P<y>\d{4})\s+(?P<amount>[+-]?\s?\d[\d ]*(?:[.,]\d{1,2})?)\s*(?P<cur>[A-Z]{3})\b\s*(?P<rest>.*)$"
+    r"^(?P<d>\d{2})\.(?P<m>\d{2})\.(?P<y>\d{4})\s+(?P<amount>[+-]? ?" + _INTEGER + r"(?:[.,]\d{1,2})?)\s*(?P<cur>[A-Z]{3})\b\s*(?P<rest>.*)$"
 )
 _FORTE_BODY = re.compile(
     r"^(?:\((?P<foreign>[^)]*)\)\s*)?(?P<op>Покупка|Пополнение счета|Пополнение|Перевод\S*|Снятие\S*|Списание\S*|Возврат\S*|"
@@ -64,10 +68,20 @@ _LEGAL_PREFIX = re.compile(r"^(?:ТОО|ИП|TOO|IP|LLP)\s+", re.IGNORECASE)
 MERCHANT_MAX = 200
 DETAILS_MAX = 300
 OPERATION_MAX = 40
+# Bounds of the work on one text: a longer line is no row of a statement and is skipped unread; more text or rows —
+# the statement is refused as too large (``TooLarge``).
+MAX_LINE = 500
+MAX_TEXT = 4_000_000
+MAX_ROWS = 3000
+MAX_CONTINUATION = 10
 
 
 class UnsupportedBank(Exception):
     """Шапка называет другой банк либо не называет никакого."""
+
+
+class TooLarge(Exception):
+    """Текст длиннее ``MAX_TEXT`` либо операций больше ``MAX_ROWS``."""
 
 
 @dataclass(frozen=True)
@@ -137,10 +151,24 @@ def forte_merchant(operation, details):
     return text[:MERCHANT_MAX].strip()
 
 
+def _lines(text):
+    """Строки текста без пробелов по краям; длиннее ``MAX_LINE`` — пропускаются, регулярные выражения их не видят."""
+    for line in clean_text(text).split("\n"):
+        line = line.strip()
+        if len(line) <= MAX_LINE:
+            yield line
+
+
+def _add(rows, row):
+    rows.append(row)
+    if len(rows) > MAX_ROWS:
+        raise TooLarge()
+
+
 def parse_kaspi(text):
     rows = []
-    for line in clean_text(text).split("\n"):
-        match = _KASPI_ROW.match(line.strip())
+    for line in _lines(text):
+        match = _KASPI_ROW.match(line)
         if not match:
             continue
         day = _day(match["d"], match["m"], 2000 + int(match["y"]))
@@ -148,7 +176,7 @@ def parse_kaspi(text):
         if day is None or amount is None or amount == 0:
             continue
         details = _cut(match["details"], DETAILS_MAX)
-        rows.append(ParsedRow(
+        _add(rows, ParsedRow(
             date=day, amount=-amount if match["sign"] == "-" else amount, currency="KZT",
             operation=match["op"], details=details, merchant=kaspi_merchant(details),
         ))
@@ -157,12 +185,13 @@ def parse_kaspi(text):
 
 def parse_forte(text):
     heads = []
-    for line in clean_text(text).split("\n"):
-        line = line.strip()
+    for line in _lines(text):
         match = _FORTE_ROW.match(line)
         if match:
             heads.append([match, [match["rest"]]])
-        elif heads and line and not _FORTE_NOISE.match(line):
+            if len(heads) > MAX_ROWS:
+                raise TooLarge()
+        elif heads and line and len(heads[-1][1]) <= MAX_CONTINUATION and not _FORTE_NOISE.match(line):
             heads[-1][1].append(line)
     rows = []
     for match, parts in heads:
@@ -175,7 +204,7 @@ def parse_forte(text):
         operation, details = (found["op"], found["details"]) if found else ("?", body)
         mcc = _MCC.search(details)
         payment = _PAYMENT_ID.search(details)
-        rows.append(ParsedRow(
+        _add(rows, ParsedRow(
             date=day, amount=amount, currency=match["cur"], operation=operation[:OPERATION_MAX],
             details=_cut(details, DETAILS_MAX), merchant=forte_merchant(operation, details),
             mcc=mcc.group(1) if mcc else "", payment_id=payment.group(1)[:8] if payment else "",
@@ -184,6 +213,8 @@ def parse_forte(text):
 
 
 def parse(text):
-    """``(bank, rows)``; ``UnsupportedBank`` — не Kaspi Gold и не ForteBank."""
+    """``(bank, rows)``; ``UnsupportedBank`` — не Kaspi Gold и не ForteBank, ``TooLarge`` — сверх пределов."""
+    if len(text) > MAX_TEXT:
+        raise TooLarge()
     bank = detect_bank(text)
     return bank, parse_kaspi(text) if bank == KASPI else parse_forte(text)

@@ -31,7 +31,7 @@ from .models import StatementImport, StatementRow, StatementRule
 from .rules import RuleBook, learn, normalize
 
 Kind, State = StatementRow.Kind, StatementRow.State
-MAX_ROWS = 3000
+MAX_ROWS = parsers.MAX_ROWS
 DUPLICATE_DAYS = 1
 BILL_DAYS = 10
 # Квитанции: перевод за жильё сверяется с уже внесённой квитанцией той же корневой категории
@@ -96,10 +96,10 @@ def import_text(owner, text, *, sha256, rule_scope):
         bank, parsed = parsers.parse(text)
     except parsers.UnsupportedBank:
         raise StatementError("statement_unsupported_bank") from None
+    except parsers.TooLarge:
+        raise StatementError("statement_too_large") from None
     if not parsed:
         raise StatementError("statement_empty")
-    if len(parsed) > MAX_ROWS:
-        raise StatementError("statement_too_large")
     categories = Categories()
     rows = classify(parsed, RuleBook.load(rule_scope), categories)
     try:
