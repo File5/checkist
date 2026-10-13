@@ -2133,3 +2133,31 @@ Line несёт ещё `category` (`{"id","name"}` либо `null`, после `
 валюты читается и удаляется как раньше; правка суммы без смены валюты — тот же отказ, `PATCH {"amount", "currency": <основная>}`
 переводит его в основную валюту (журнал пишет удаление старой пары и создание новой). Смена основной валюты главным
 меняет её для всей семьи сразу; прежние лимиты прежней основной валюты становятся «другой валютой».
+
+## ИИ о тратах: разбор месяца и вопросы (2026-10-13, ветка `feature/ai-insights`)
+
+Доступ — как у «Траты словами» (`accounts` — вход, `local_single` — DEBUG + флаг + loopback; запись — с CSRF). Строки
+видит только их владелец, не семья: чужая — `404 not_found`. Модель спрашивает `recognition_worker` (очередь
+`insights.InsightRequest`); до постановки в очередь — `accounts.ai.use_ai`: `403 ai_disabled` / `429 ai_quota`
+(`resets_at`, `Retry-After`) как есть, строка не создаётся.
+
+| Запрос | Ответ |
+|---|---|
+| `GET /api/insights/review/?month=ГГГГ-ММ` | `{month, figures, review, pending}`; без `month` — прошлый месяц; будущий месяц — `400` (`month`) |
+| `POST /api/insights/review/` `{"month"?}` | `202` строка разбора; незавершённый разбор того же месяца — он же, без нового запроса к ИИ |
+| `GET /api/insights/ask/` | `{results}` — последние 20 вопросов человека, новые сверху |
+| `POST /api/insights/ask/` `{"question"}` | `202` строка вопроса (1–300 знаков; больше 2 незавершённых или 30 за час — `429 parse_limit`) |
+| `GET /api/insights/{id}/` | строка (своя) |
+
+- `review` — последний готовый разбор месяца, без него — последний любой (идёт или не удался); `pending` — идущий
+  новее готового («Обновить»). `figures` — цифры сервера: сводка, которую получила модель (у разбора — его снимок,
+  пока разбора нет — та же сводка сейчас): `month, currency` (основная валюта семьи), `spent, previous, average`
+  (прошлые месяцы окна с первого месяца с тратами; `null` — их нет), `change_previous, change_average`,
+  `categories[]` (корневые, те же поля + `id, name`), `limit_total, limited_spent`,
+  `limits[] {category, limit, spent, over}`, `places[] {name, spent, count}`, `without_rate[] {currency, receipts, total}`.
+- Строка: `{id, kind: "review"|"ask", month, question, status: queued|running|succeeded|failed, answer, unverified,
+  error: {code, message}|null, created_at, finished_at, executor}`, у разбора ещё `figures`. `answer` — только у
+  `succeeded`: разбор `{summary, changes|null, limits|null, advice[0–3]}`, вопрос `{answer}` — обычный текст.
+  `unverified` — числа от 100 из текста, которых нет среди цифр сводки и вопроса (как написаны).
+- Коды сбоя: `invalid_output` (ответ не прошёл схему), `timeout`, `expired` (ждал воркера > 10 мин), `worker_lost`,
+  `auth_required`, `internal_error` и прочие коды провайдера; `message` — фиксированный текст.
