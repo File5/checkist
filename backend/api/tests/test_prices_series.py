@@ -25,7 +25,7 @@ TOO_LARGE = {"error": {
 BODY_KEYS = {
     "product", "generic", "price", "interval", "skipped_without_normalized", "series", "own_truncated", "similar",
 }
-SERIES_KEYS = {"role", "product", "store", "country", "currency", "unit", "comparable", "observations", "points"}
+SERIES_KEYS = {"role", "product", "store", "country", "currency", "unit", "manual", "comparable", "observations", "points"}
 POINT_KEYS = {"period_start", "count", "min", "max", "avg", "last"}
 
 
@@ -153,13 +153,13 @@ class PriceSeriesTests(SeriesTestCase):
         # Образцы: шесть покупок в Lidl (четыре в июне, по одной в июле и октябре), одна в магазине RU.
         cls.own = {
             "role": "own", "product": {"id": cls.lidl_milk.pk, "name": samples.MILK}, "store": cls.lidl_brief,
-            "country": "DE", "currency": "EUR", "unit": "pcs", "comparable": False, "observations": 6,
+            "country": "DE", "currency": "EUR", "unit": "pcs", "manual": False, "comparable": False, "observations": 6,
             "points": [point("2026-06-01", 4, "1.0500"), point("2026-07-01", 1, "1.0500"),
                        point("2026-10-01", 1, "1.0900")],
         }
         cls.shop_series = {
             "role": "similar", "product": {"id": cls.shop_milk.pk, "name": samples.SHOP_MILK_NAME}, "store": None,
-            "country": "RU", "currency": "RUB", "unit": "pcs", "comparable": False, "observations": 1,
+            "country": "RU", "currency": "RUB", "unit": "pcs", "manual": False, "comparable": False, "observations": 1,
             "points": [point("2026-09-01", 1, "111.0000")],
         }
 

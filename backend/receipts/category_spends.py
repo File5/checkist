@@ -66,7 +66,8 @@ class Block:
 def line_category(kind, line_category_id, owner, product_category):
     """Категория строки по правилам ``receipts.spending`` либо ``None``."""
     if kind == _KIND.PRODUCT:
-        return product_category.get(owner) if owner is not None else line_category_id
+        # Своя категория строки важнее категории товара (названная покупка траты вручную).
+        return line_category_id if line_category_id is not None or owner is None else product_category.get(owner)
     if kind == _KIND.SERVICE:
         return line_category_id
     return None

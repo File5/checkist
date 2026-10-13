@@ -45,7 +45,14 @@ describe('the body of a save', () => {
   it('sends one amount in a category with an empty list of positions', () => {
     expect(draftBody(draft({ amount: '1 200,5', category: 2, place: '  Кофейня ', note: ' с другом ' }))).toEqual({ body: {
       currency: 'KZT', purchased_on: '2026-10-12', store_name: 'Кофейня', note: 'с другом', category: 2, total: '1200.5', lines: [],
+      item_name: null,
     } })
+  })
+  it('sends «Что купили» of one amount and never with positions', () => {
+    expect(draftBody(draft({ amount: '5000', category: 2, item: '  Стрижка ' }))).toMatchObject({ body: { item_name: 'Стрижка', lines: [] } })
+    expect(draftBody(draft({ amount: '5000', category: 2, item: 'я'.repeat(201) }))).toEqual({ errors: { item: messages.item } })
+    const itemized = draftBody(draft({ category: 1, item: 'Стрижка', lines: [line('Хлеб', '250')] }))
+    expect('item_name' in (itemized as { body: object }).body).toBe(false)
   })
   it('sends no place as null', () => {
     const result = draftBody(draft({ amount: '5', category: 1 }))
@@ -74,9 +81,9 @@ describe('the body of a save', () => {
     expect(result).toEqual({ errors: { currency: messages.currency, date: messages.date, place: messages.place, note: messages.note } })
   })
   it('turns server field names into the messages of this form', () => {
-    expect(serverErrors(['total', 'category', 'purchased_on', 'store_name', 'lines.2.amount', 'lines.0.name', 'lines.1.category', 'surprise']))
+    expect(serverErrors(['total', 'category', 'purchased_on', 'store_name', 'item_name', 'lines.2.amount', 'lines.0.name', 'lines.1.category', 'surprise']))
       .toEqual({
-        amount: messages.total, category: messages.category, date: messages.date, place: messages.place,
+        amount: messages.total, category: messages.category, date: messages.date, place: messages.place, item: messages.item,
         'lines.2.amount': messages.lineAmount, 'lines.0.name': messages.lineName, 'lines.1.amount': messages.category, form: messages.unknown,
       })
   })
@@ -84,16 +91,24 @@ describe('the body of a save', () => {
 
 describe('a saved spend in the form', () => {
   const receipt = { id: 5, source: 'manual', store: null, note: 'кофе', currency: 'KZT', purchased_on: '2026-10-01', total: '450.00' } as Receipt
-  const saved = (name: string, amount: string, lineCategory: { id: number; name: string } | null) => ({ name, amount, category: lineCategory }) as Line
+  const saved = (name: string, amount: string, lineCategory: { id: number; name: string } | null,
+    product: { id: number; name: string } | null = null) => ({ name, amount, category: lineCategory, product }) as Line
   it('opens one line named after its category as one amount', () => {
     expect(draftFromReceipt(receipt, [saved('Кафе', '450.00', { id: 2, name: 'Кафе' })])).toEqual({
-      amount: '450', currency: 'KZT', category: 2, date: '2026-10-01', place: '', note: 'кофе', lines: [], method: '',
+      amount: '450', currency: 'KZT', category: 2, date: '2026-10-01', place: '', note: 'кофе', lines: [], method: '', item: '',
     })
     // The way of payment of the spend comes with it and goes back in the body; not said — not sent at all.
     const kaspi = draftFromReceipt({ ...receipt, payment_method: 'kaspi_gold' }, [saved('Кафе', '450.00', { id: 2, name: 'Кафе' })])
     expect(kaspi.method).toBe('kaspi_gold')
     expect(draftBody(kaspi)).toMatchObject({ body: { payment_method: 'kaspi_gold' } })
     expect('payment_method' in (draftBody({ ...kaspi, method: undefined }) as { body: object }).body).toBe(false)
+  })
+  it('opens one named line as one amount with «Что купили»', () => {
+    const named = draftFromReceipt(receipt, [saved('Подписка Claude Max 20x', '450.00', { id: 2, name: 'Кафе' }, { id: 9, name: 'Подписка Claude Max 20x' })])
+    expect([named.amount, named.category, named.item, named.lines]).toEqual(['450', 2, 'Подписка Claude Max 20x', []])
+    // A product named like the category is still a named purchase; an older spend of one position opens the same way.
+    expect(draftFromReceipt(receipt, [saved('Кафе', '450.00', { id: 2, name: 'Кафе' }, { id: 9, name: 'Кафе' })]).item).toBe('Кафе')
+    expect(draftFromReceipt(receipt, [saved('Стрижка', '450.00', { id: 2, name: 'Кафе' })]).item).toBe('Стрижка')
   })
   it('opens any other spend with its positions', () => {
     const result = draftFromReceipt({ ...receipt, store: { id: 1, name: 'Рынок', city: '', country: 'KZ', address: '', timezone: 'Asia/Almaty' } },

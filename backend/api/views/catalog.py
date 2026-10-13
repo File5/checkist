@@ -14,7 +14,7 @@ from catalog.models import Brand, GenericProduct, Product
 from config.exceptions import ObjectNotFound
 from merges.visibility import visible, visible_q
 from receipts.models import ProductAlias, Receipt, ReceiptLine
-from receipts.prices import observation_q, price_history, price_summary
+from receipts.prices import is_manual, observation_q, price_history, price_summary
 from stores.models import Country, Store
 
 from .base import ReadOnlyAPIView
@@ -205,7 +205,7 @@ def _generic_objects(generics, tree):
     countries = {}
     if generics:
         pairs = (
-            _observations().filter(product__generic__in=[generic.pk for generic in generics])
+            _observations().filter(product__generic__in=[generic.pk for generic in generics], receipt__store__isnull=False)
             .values_list("product__generic_id", "receipt__store__country_id").distinct()
         )
         for generic_id, country in pairs:
@@ -281,6 +281,7 @@ def _product_objects(products, tree, request):
                     "comparable": last.normalized_unit is not None and last.normalized_unit == generic.base_unit,
                     "purchased_on": iso_date(last.receipt.purchased_on),
                     "store_id": last.receipt.store_id,
+                    "manual": is_manual(last),
                 },
             })
         objects.append({
@@ -385,9 +386,10 @@ def alias_objects(aliases):
 
 
 def _store_objects(product):
-    """Магазины, где встречался товар: сначала с самой поздней покупкой, затем по ``id``."""
+    """Магазины, где встречался товар: сначала с самой поздней покупкой, затем по ``id``; трата вручную без
+    места в список не входит."""
     rows = list(
-        price_history(product=product).order_by().values("receipt__store_id")
+        price_history(product=product).filter(receipt__store__isnull=False).order_by().values("receipt__store_id")
         .annotate(observations=Count("pk"), last_purchased_on=Max("receipt__purchased_on"))
         .order_by("-last_purchased_on", "receipt__store_id")[:DETAIL_LIST_LIMIT]
     )

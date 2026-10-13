@@ -45,8 +45,9 @@ class ManualParseLocalTests(TestCase):
         data = detail.json()
         self.assertEqual(data["status"], "succeeded")
         self.assertEqual(set(data["draft"]), {"total", "currency", "category", "purchased_on", "store_name", "note", "payment_method",
-                                             "lines"})
+                                             "item_name", "lines"})
         self.assertEqual(data["draft"]["total"], "4500")
+        self.assertEqual(data["draft"]["item_name"], "Такси до аэропорта")  # fake: the words of the text
         self.assertIsNotNone(data["finished_at"])
         self.assertEqual(Receipt.objects.count(), receipts)
         # The draft is a body the manual save accepts as it is.

@@ -27,10 +27,12 @@ def _price(expression):
 
 
 def observation_q(prefix=""):
-    """Условие «строка — наблюдение цены»: товар, положительное количество, чек продажи с фото.
+    """Условие «строка — наблюдение цены»: товар, положительное количество, чек продажи.
 
-    Трата, внесённая вручную (``source=manual``), наблюдением цены не бывает: у неё может
-    не быть магазина, а сумма — не цена с чека.
+    Чек с фото — любая такая строка; трата, внесённая вручную (``source=manual``), — только
+    названная покупка, связанная с товаром каталога (``receipts.manual``, 2026-10-13): её цена —
+    введённая человеком (у позиции — сумма на количество, у «Что купили» — вся сумма), признак
+    ``manual`` в ответах API. Магазина у такой траты может не быть (``store`` NULL — «Без места»).
 
     ``prefix`` — путь до ``ReceiptLine`` от другой модели, например
     ``"receipt_lines__"`` для запросов от ``catalog.Product``.
@@ -39,10 +41,14 @@ def observation_q(prefix=""):
         f"{prefix}kind": ReceiptLine.Kind.PRODUCT,
         f"{prefix}quantity__gt": 0,
         f"{prefix}receipt__operation": Receipt.Operation.SALE,
-        f"{prefix}receipt__source": Receipt.Source.PHOTO,
         # Скрытый платёж не наблюдение цены: он пропадает у всех и ни во что не входит.
         f"{prefix}receipt__hidden": False,
-    })
+    }) & (Q(**{f"{prefix}receipt__source": Receipt.Source.PHOTO}) | Q(**{f"{prefix}product__isnull": False}))
+
+
+def is_manual(line):
+    """Наблюдение — трата, внесённая вручную (чек строки уже загружен)."""
+    return line.receipt.source == Receipt.Source.MANUAL
 
 
 def comparable_q():
@@ -70,6 +76,7 @@ def price_history(*, product=None, generic=None, store=None, country=None, date_
     Аннотации (цены округлены до 4 знаков, в валюте чека — курсы не хранятся):
 
     - ``observed_at`` — ``receipt.purchased_at``;
+    - ``country_code`` — страна магазина, ``NULL`` у траты вручную без места;
     - ``currency_code`` — код валюты чека;
     - ``list_unit_price`` — цена за единицу до скидки;
     - ``paid_unit_price`` — ``(amount - discount_amount) / quantity``;
@@ -117,6 +124,7 @@ def price_history(*, product=None, generic=None, store=None, country=None, date_
     ]
     return lines.annotate(
         observed_at=F("receipt__purchased_at"),
+        country_code=F("receipt__store__country_id"),  # NULL у траты вручную без места
         currency_code=F("receipt__currency_id"),
         list_unit_price=F("unit_price"),
         paid_unit_price=_price(paid),
@@ -137,7 +145,7 @@ class PriceGroup:
     """
 
     product_id: int
-    country: str
+    country: str | None  # None — траты вручную без места
     currency: str
     observations: int
     comparable_observations: int
@@ -253,7 +261,7 @@ def price_summary(
     if not groups:
         return {}
     last = {
-        (line.product_id, line.receipt.store.country_id, line.currency_code): line
+        (line.product_id, line.country_code, line.currency_code): line
         for line in last_prices(products, own=own, **filters)
     }
     summary = {}

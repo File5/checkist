@@ -7,6 +7,7 @@ import { markFor } from '../classification/marks'
 import type { ClassificationMark } from '../classification/marks'
 import { MergeBadge } from '../merges/MergeMarks'
 import type { PendingMark } from '../merges/state'
+import { MANUAL_MARK, NO_PLACE } from '../product/state'
 
 type Marks = { merges?: ReadonlyMap<number, PendingMark>; classifications?: ReadonlyMap<number, ClassificationMark> }
 
@@ -28,7 +29,7 @@ export function ProductRows({ products, merges, classifications }: { products: P
           {product.prices.length === 0 ? <p className="ck-catalog-note">Покупок нет</p>
             : product.prices.map(({ country, currency, last }) => <p key={`${country}/${currency}`}>
               <span className="ck-catalog-price">{formatPrice(last.paid_unit_price, currency)}</span>
-              <span className="ck-catalog-note">{country} · <time dateTime={last.purchased_on}>{formatPurchasedOn(last.purchased_on)}</time></span>
+              <span className="ck-catalog-note">{country ?? NO_PLACE} · <time dateTime={last.purchased_on}>{formatPurchasedOn(last.purchased_on)}</time>{last.manual && ` · ${MANUAL_MARK}`}</span>
             </p>)}
         </div>
       </li>
@@ -65,7 +66,7 @@ export default function ProductList({ products, merges, classifications }: {
           : <ul>
             {product.prices.map(({ country, currency, last }) => <li key={`${country}/${currency}`}>
               <span className="ck-catalog-price">{formatPrice(last.paid_unit_price, currency)}</span>
-              <span className="ck-catalog-note">Страна: {country} · <time dateTime={last.purchased_on}>{formatPurchasedOn(last.purchased_on)}</time></span>
+              <span className="ck-catalog-note">{country ? `Страна: ${country}` : NO_PLACE} · <time dateTime={last.purchased_on}>{formatPurchasedOn(last.purchased_on)}</time>{last.manual && ` · ${MANUAL_MARK}`}</span>
             </li>)}
           </ul>}
       </div>

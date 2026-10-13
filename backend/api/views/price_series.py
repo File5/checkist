@@ -1,8 +1,9 @@
 """``GET /api/products/{id}/prices/series/`` — ряды цен для графика.
 
-Свой товар — ряд на тройку «магазин, валюта, единица»; похожие товары (видимые товары
+Свой товар — ряд на «магазин, валюта, единица»; похожие товары (видимые товары
 того же обобщённого продукта) — ряд на «товар, страна, валюта, единица». Цены разных
-валют и единиц в один ряд не попадают. Наблюдения и цены — ``receipts.prices.price_history``,
+валют и единиц в один ряд не попадают. Цены трат, внесённых вручную, — отдельные ряды
+с ``manual: true`` (у траты без места ``store`` и ``country`` — ``null``). Наблюдения и цены — ``receipts.prices.price_history``,
 интервалы — тот же запрос, что у ``/prices/summary/``.
 """
 from django.db.models import Count, OuterRef, Q, Subquery
@@ -12,6 +13,7 @@ from catalog.models import Product
 from config.exceptions import RangeTooLarge
 from merges.visibility import visible
 from receipts.decimal_math import decimal_average
+from receipts.models import Receipt
 from receipts.prices import price_history
 from receipts.spending import UNASSIGNED_NAME
 from stores.models import Store
@@ -31,6 +33,7 @@ MAX_OWN_SERIES = 20
 MAX_POINTS = MAX_INTERVALS  # на весь ответ: свои и похожие ряды вместе
 
 _STORE, _COUNTRY, _CURRENCY = "receipt__store_id", "receipt__store__country_id", "receipt__currency_id"
+_SOURCE = "receipt__source"  # траты вручную — свои ряды
 
 
 def _observations(params):
@@ -58,7 +61,7 @@ def _grouped(rows, keys):
     return grouped
 
 
-def _series(role, product, store, country, currency, unit, rows, value_field, base_unit):
+def _series(role, product, store, country, currency, unit, rows, value_field, base_unit, *, source=None):
     return {
         "role": role,
         "product": {"id": product[0], "name": product[1]},
@@ -66,6 +69,7 @@ def _series(role, product, store, country, currency, unit, rows, value_field, ba
         "country": country,
         "currency": currency,
         "unit": unit,
+        "manual": source == Receipt.Source.MANUAL,
         # Сравнима только нормализованная цена за базовую единицу обобщённого продукта.
         "comparable": value_field == "normalized_price" and unit == base_unit,
         "observations": sum(row["bucket_count"] for row in rows),
@@ -89,7 +93,7 @@ def _own(lines, interval, value_field, unit_field):
     Рядов не больше ``MAX_OWN_SERIES`` — с наибольшим числом наблюдений, затем по
     магазину, валюте и единице.
     """
-    keys = (_STORE, _CURRENCY, unit_field)
+    keys = (_STORE, _CURRENCY, unit_field, _SOURCE)
     heads = list(
         lines.order_by().values(*keys).annotate(observations=Count("pk"))
         .order_by("-observations", *keys)[:MAX_OWN_SERIES + 1]
@@ -147,12 +151,13 @@ class ProductPriceSeriesView(ReadOnlyAPIView):
         stores = Store.objects.select_related("merchant").in_bulk({key[0] for key in own}) if own else {}
         series = [
             _series(
-                "own", (product.pk, product.name), common.store_brief(stores[store_id]), stores[store_id].country_id,
-                currency, unit, rows, value_field, generic.base_unit,
+                "own", (product.pk, product.name), common.store_brief(stores.get(store_id)),
+                stores[store_id].country_id if store_id is not None else None,
+                currency, unit, rows, value_field, generic.base_unit, source=source,
             )
-            for (store_id, currency, unit), rows in own.items()
+            for (store_id, currency, unit, source), rows in own.items()
         ]
-        # Сортировка устойчива: при равном числе наблюдений остаётся порядок «магазин, валюта, единица».
+        # Сортировка устойчива: при равном числе наблюдений остаётся порядок «магазин, валюта, единица, источник».
         series.sort(key=lambda entry: -entry["observations"])
 
         status, total, shown = "ok", 0, []
@@ -166,16 +171,16 @@ class ProductPriceSeriesView(ReadOnlyAPIView):
                 status = "none"
         if shown:
             names = {row["owner"]: row["owner_name"] for row in shown}
-            keys = ("owner", _COUNTRY, _CURRENCY, unit_field)
+            keys = ("owner", _COUNTRY, _CURRENCY, unit_field, _SOURCE)
             rows = _summary_rows(lines.filter(owner__in=list(names)), keys, interval, value_field)
             if points + len(rows) > MAX_POINTS:
                 raise RangeTooLarge()
             entries = [
                 _series(
                     "similar", (owner, names[owner]), None, country, currency, unit, rows, value_field,
-                    generic.base_unit,
+                    generic.base_unit, source=source,
                 )
-                for (owner, country, currency, unit), rows in _grouped(rows, keys).items()
+                for (owner, country, currency, unit, source), rows in _grouped(rows, keys).items()
             ]
             # Строки идут по «товар, страна, валюта, единица»; устойчивая сортировка ставит товары по name, id.
             entries.sort(key=lambda entry: (entry["product"]["name"], entry["product"]["id"]))

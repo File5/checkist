@@ -42,8 +42,8 @@ class SuggestTests(SuggestMixin, TestCase):
         body = self.client.get(SUGGEST, {"q": "cla"}).json()
         self.assertEqual(body, {"results": [{
             "receipt_id": Receipt.objects.filter(note="Claude Max").get().pk, "store_name": "CLAUDE.AI SUBSCRIPTION",
-            "category": {"id": self.subs.pk, "name": "Демо-подписки"}, "currency": "USD", "total": "225.00",
-            "note": "Claude Max", "purchased_on": "2026-09-12", "lines": [], "uses": 2,
+            "category": {"id": self.subs.pk, "name": "Демо-подписки"}, "item_name": None, "currency": "USD",
+            "total": "225.00", "note": "Claude Max", "purchased_on": "2026-09-12", "lines": [], "uses": 2,
         }]})
         for query in ({}, {"q": ""}, {"q": "c"}, {"q": "225"}):
             with self.subTest(query=query):

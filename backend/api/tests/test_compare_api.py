@@ -124,28 +124,28 @@ class ComparisonBodyTests(CompareTestCase):
             "shop_milk": {
                 "country": "RU", "currency": "RUB", "observations": 1,
                 "last": {"normalized_price": "130.5882", "paid_unit_price": "111.0000",
-                         "purchased_on": "2026-09-28", "store": self.shop},
+                         "purchased_on": "2026-09-28", "store": self.shop, "manual": False},
                 "min": "130.5882", "max": "130.5882", "avg": "130.5882",
                 "rank_in_group": 1, "diff_to_base_percent": None, "converted": None,
             },
             "bio": {
                 "country": "DE", "currency": "EUR", "observations": 2,
                 "last": {"normalized_price": "1.3900", "paid_unit_price": "1.3900",
-                         "purchased_on": "2026-08-05", "store": self.lidl},
+                         "purchased_on": "2026-08-05", "store": self.lidl, "manual": False},
                 "min": "1.2900", "max": "1.3900", "avg": "1.3400",
                 "rank_in_group": 1, "diff_to_base_percent": None, "converted": None,
             },
             "kz_milk": {
                 "country": "KZ", "currency": "KZT", "observations": 1,
                 "last": {"normalized_price": "520.0000", "paid_unit_price": "520.0000",
-                         "purchased_on": "2026-08-01", "store": self.dns},
+                         "purchased_on": "2026-08-01", "store": self.dns, "manual": False},
                 "min": "520.0000", "max": "520.0000", "avg": "520.0000",
                 "rank_in_group": 1, "diff_to_base_percent": None, "converted": None,
             },
             "lidl_milk": {
                 "country": "DE", "currency": "EUR", "observations": 6,
                 "last": {"normalized_price": None, "paid_unit_price": "1.0900",
-                         "purchased_on": "2026-10-01", "store": self.lidl},
+                         "purchased_on": "2026-10-01", "store": self.lidl, "manual": False},
                 "min": None, "max": None, "avg": None,
                 "rank_in_group": None, "diff_to_base_percent": None, "converted": None,
                 "not_comparable_reason": "no_package",
@@ -319,7 +319,7 @@ class ComparisonBodyTests(CompareTestCase):
         self.assertEqual(self.offer(body, self.data.bio), {
             "country": "DE", "currency": "EUR", "observations": 1,
             "last": {"normalized_price": "1.2900", "paid_unit_price": "1.2900",
-                     "purchased_on": "2026-07-05", "store": self.lidl},
+                     "purchased_on": "2026-07-05", "store": self.lidl, "manual": False},
             "min": "1.2900", "max": "1.2900", "avg": "1.2900",
             "rank_in_group": 1, "diff_to_base_percent": None, "converted": None,
         })
@@ -541,6 +541,7 @@ class ScopeTests(CompareTestCase):
                 "store": {
                     "id": self.data.shop_store.pk, "name": "Магазин «Елена»", "city": "Кемерово", "country": "RU",
                 },
+                "manual": False,
             },
             "min": None, "max": None, "avg": None,
             "rank_in_group": None, "diff_to_base_percent": None, "converted": None,

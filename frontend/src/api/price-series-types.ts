@@ -23,13 +23,16 @@ export type PriceSeriesParams = {
 }
 export type PriceSeriesPoint = { period_start: ISODate; count: number; min: Decimal; max: Decimal; avg: Decimal; last: Decimal }
 type PriceSeriesLineBase = {
-  product: NamedObject; country: CountryCode; currency: CurrencyCode; unit: Unit
+  /** Null — the own series of manual spends without a place. */
+  product: NamedObject; country: CountryCode | null; currency: CurrencyCode; unit: Unit
+  /** Prices typed by a person (manual spends, 2026-10-13) — a series of their own. */
+  manual: boolean
   /** The unit equals the base unit of the generic product; possible only for normalized prices. */
   comparable: boolean
   observations: number; points: PriceSeriesPoint[]
 }
-/** The product itself in one store, currency and unit. */
-export type OwnPriceSeries = PriceSeriesLineBase & { role: 'own'; store: StoreBrief }
+/** The product itself in one store, currency and unit; `store` null — manual spends without a place. */
+export type OwnPriceSeries = PriceSeriesLineBase & { role: 'own'; store: StoreBrief | null }
 /** Another visible product of the same generic product in one country, currency and unit; it has no store. */
 export type SimilarPriceSeries = PriceSeriesLineBase & { role: 'similar'; store: null }
 export type PriceSeriesLine = OwnPriceSeries | SimilarPriceSeries

@@ -13,7 +13,7 @@ from config.exceptions import ObjectNotFound
 from merges.visibility import visible
 from receipts.decimal_math import change_percent, decimal_mean
 from receipts.models import ReceiptLine
-from receipts.prices import PriceGroup, last_prices, price_groups
+from receipts.prices import PriceGroup, is_manual, last_prices, price_groups
 
 from .base import ReadOnlyAPIView
 
@@ -55,7 +55,7 @@ def _get(queryset, pk):
 
 
 def _line_key(line):
-    return line.product_id, line.receipt.store.country_id, line.currency_code
+    return line.product_id, line.country_code, line.currency_code
 
 
 def _rank(prices, value):
@@ -140,7 +140,9 @@ def _comparison(params, generic, base, products):
     for values in prices.values():
         values.sort()
     groups = []
-    for country, currency in sorted({offer.key for product_offers in offers.values() for offer in product_offers}):
+    # Страна траты вручную без места — None: такие пары идут первыми.
+    keys = {offer.key for product_offers in offers.values() for offer in product_offers}
+    for country, currency in sorted(keys, key=lambda key: (key[0] or "", key[1])):
         values = prices.get((country, currency), [])
         groups.append({
             "country": country, "currency": currency, "products_with_price": len(values),
@@ -184,6 +186,7 @@ def _comparison(params, generic, base, products):
                 "paid_unit_price": common.price(line.paid_unit_price),
                 "purchased_on": common.iso_date(line.receipt.purchased_on),
                 "store": common.store_brief(line.receipt.store),
+                "manual": is_manual(line),
             },
             "min": common.price(group.normalized_min if show else None),
             "max": common.price(group.normalized_max if show else None),

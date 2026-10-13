@@ -7,6 +7,9 @@ Codex CLI со входом есть только рядом с ``recognition_wo
 клиент опрашивает строку. Ответ модели проверяется схемой и правилами ``manual.parse``;
 черновик — тело ``POST /api/receipts/manual/``. Чеки и каталог разбор не трогает.
 
+«Что купили» (2026-10-13): названная покупка («подписка claude max 225$») — ``item_name`` черновика; в истории
+похожих трат входа — название товара каталога, чтобы модель брала существующее (``receipts.history``).
+
 Доход (2026-10-13): «зарплата 650 000» модель отмечает ``kind: "income"`` — черновик тех же
 полей с ``"kind": "income"``, ``category`` — id категории дохода из ``income_categories`` входа,
 без места и позиций; у траты ключа ``kind`` в черновике нет.
@@ -60,6 +63,8 @@ INCOME_WORDS = re.compile(r"зарплат|аванс|преми|подрабо�
 # Fake-исполнитель: способ оплаты по словам текста, первое совпадение по порядку (модель решает сама, по промпту).
 METHOD_WORDS = (("kaspi_gold", re.compile(r"каспи|kaspi", re.IGNORECASE)), ("forte", re.compile(r"форте|forte", re.IGNORECASE)),
                 ("cash", re.compile(r"наличн|налом|кэшем", re.IGNORECASE)), ("card", re.compile(r"карт", re.IGNORECASE)))
+# Fake-исполнитель: слова текста, которые не входят в «Что купили» (валюта, предлоги способа оплаты).
+NOT_ITEM_WORDS = re.compile(r"^(?:[$€₸₽]|тг|тенге|руб\w*|usd|kzt|eur|rub|доллар\w*|евро|с|со|за)$", re.IGNORECASE)
 
 
 class ParseLimit(Exception):
@@ -190,7 +195,9 @@ def draft_from_output(data, payload):
         "total": data["total"], "currency": data["currency"] or payload["default_currency"],
         "category": data["category"], "purchased_on": data["purchased_on"] or payload["today"],
         "store_name": (data["store_name"] or "").strip() or None, "note": (data["note"] or "").strip(),
-        "payment_method": data["payment_method"] or "", "lines": lines,
+        "payment_method": data["payment_method"] or "",
+        # «Что купили» — только у траты без позиций.
+        "item_name": None if lines else (data["item_name"] or "").strip() or None, "lines": lines,
     }
     try:
         manual.parse({key: value for key, value in body.items() if value is not None})
@@ -205,7 +212,7 @@ def _income_draft(data, payload):
     known = {item["id"] for item in payload.get("income_categories", ())}
     body = {"kind": "income", "total": data["total"], "currency": data["currency"] or payload["default_currency"],
             "category": data["category"], "purchased_on": data["purchased_on"] or payload["today"],
-            "store_name": None, "note": (data["note"] or "").strip(), "lines": []}
+            "store_name": None, "note": (data["note"] or "").strip(), "item_name": None, "lines": []}
     if body["category"] is not None and body["category"] not in known:
         raise ParseOutputError()
     try:
@@ -220,8 +227,9 @@ def _income_draft(data, payload):
 class FakeTextParser:
     """Детерминированный ответ без модели: последнее число текста — сумма, первая категория входа, сегодня.
 
-    С похожей прошлой тратой (первая в ``history``) — как модель по промпту: её место, категория и валюта,
-    без числа в тексте — её сумма. Слово дохода («зарплата», «аванс», «кэшбэк», …) — доход: число с
+    «Что купили» — слова текста без чисел, валюты и способа оплаты, с заглавной буквы.
+    С похожей прошлой тратой (первая в ``history``) — как модель по промпту: её место, категория, валюта и
+    «Что купили», без числа в тексте — её сумма. Слово дохода («зарплата», «аванс», «кэшбэк», …) — доход: число с
     разрядами («650 000») целиком, категория дохода по первым буквам названия, иначе первая. Способ оплаты траты —
     по словам ``METHOD_WORDS`` («наличными», «с каспи», «картой форте»).
     """
@@ -250,12 +258,17 @@ class FakeTextParser:
         if same is not None and same["category"] is not None:
             return {
                 "kind": "spend", "total": total or same["total"], "currency": same["currency"], "category": same["category"],
-                "purchased_on": None, "store_name": same["store_name"], "note": None, "payment_method": method, "lines": [],
+                "purchased_on": None, "store_name": same["store_name"], "note": None, "payment_method": method,
+                "item_name": same.get("item_name"), "lines": [],
             }
+        words = [word for word in payload["text"].split() if not re.search(r"[0-9]", word)
+                 and not NOT_ITEM_WORDS.match(word) and not any(pattern.search(word) for _, pattern in METHOD_WORDS)]
+        item = " ".join(words)
         return {
             "kind": "spend", "total": total, "currency": None,
             "category": payload["categories"][0]["id"] if payload["categories"] else None,
-            "purchased_on": None, "store_name": None, "note": None, "payment_method": method, "lines": [],
+            "purchased_on": None, "store_name": None, "note": None, "payment_method": method,
+            "item_name": item[:1].upper() + item[1:] if item else None, "lines": [],
         }
 
     @staticmethod
@@ -267,7 +280,7 @@ class FakeTextParser:
         chosen = next((item for item in options if item["name"][:5].lower() in lower), options[0] if options else None)
         return {"kind": "income", "total": numbers[-1].replace(",", ".") if numbers else None, "currency": None,
                 "category": chosen and chosen["id"], "purchased_on": None, "store_name": None, "note": None,
-                "payment_method": None, "lines": []}
+                "payment_method": None, "item_name": None, "lines": []}
 
 
 class CodexTextParser:

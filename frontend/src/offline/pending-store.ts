@@ -133,6 +133,7 @@ export function draftFromPending(body: ManualSpendInput, categories: Pick<Catego
     note: body.note ?? '',
     lines: lines.map((line) => ({ ...newLine(), name: line.name, amount: amountText(line.amount), category: category(line.category) })),
     method: body.payment_method,
+    item: lines.length ? '' : body.item_name ?? '',
   }
 }
 

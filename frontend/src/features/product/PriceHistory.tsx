@@ -10,7 +10,7 @@ import { useNarrow } from '../../lib/cards'
 import PriceHistoryCards, { Figure } from './PriceHistoryCards'
 import type { HistoryColumns } from './PriceHistoryCards'
 import ProductRequestState from './ProductRequestState'
-import { hasFilters, storeLabel } from './state'
+import { hasFilters, MANUAL_MARK, storeLabel } from './state'
 import type { RequestState as LoadState } from './state'
 
 /** One source of the texts for the table and for its phone view. */
@@ -53,7 +53,7 @@ export default function PriceHistory({ state, query, stores, retry, reset, build
               {/* The store is the row header and the first column: it stays in place while the table scrolls sideways.
                   A foreign purchase has no receipt or position: the row is identified by its place on the page. */}
               <tbody>{state.data.results.map((point, index) => {
-                const store = knownStores.get(point.store.id)
+                const store = point.store ? knownStores.get(point.store.id) : undefined
                 return <tr key={index}>
                   <th scope="row">{storeLabel(store ?? point.store)}</th>
                   <td><time dateTime={point.purchased_on}>{formatPurchasedOn(point.purchased_on)}</time>{point.own && <span className="product-subtext"><time dateTime={point.observed_at}>{formatObservedAt(point.observed_at, store?.timezone)}</time></span>}</td>
@@ -62,7 +62,8 @@ export default function PriceHistory({ state, query, stores, retry, reset, build
                   <td className="product-number">{point.normalized_price === null ? <span className="product-cell-text">Нет данных для пересчёта</span> : <Figure>{formatPrice(point.normalized_price, point.currency, point.normalized_unit)}</Figure>}
                     {!point.comparable && <span className="product-subtext product-cell-text">Не сопоставимо с базовой единицей товара</span>}
                   </td>
-                  <td>{point.own ? <>Моя · <Link to={{ kind: 'receipt', receiptId: point.receipt_id }}>{numbered('Чек', point.receipt_id)}</Link></> : 'Чужая'}</td>
+                  <td>{point.own ? <>Моя · <Link to={{ kind: 'receipt', receiptId: point.receipt_id }}>{numbered(point.manual ? 'Трата' : 'Чек', point.receipt_id)}</Link></> : 'Чужая'}
+                    {point.manual && <span className="product-subtext product-manual">{MANUAL_MARK}</span>}</td>
                 </tr>
               })}</tbody>
             </table>

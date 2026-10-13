@@ -125,16 +125,19 @@ class ManualCreateTests(ManualMixin, TestCase):
         ]})
         self.assertEqual(response.status_code, 201, response.content)
         self.assertEqual(response.json()["total"], "2350.50")
-        self.assertEqual(self.lines(response.json()["id"]), [
-            ("Хлеб", D("250.50"), D("1.000"), self.food.pk, None),
-            ("Такси", D("1200.00"), D("1.000"), self.transport.pk, None),
-            ("Яблоки", D("900.00"), D("1.500"), self.food.pk, None),
+        self.assertEqual([line[:4] for line in self.lines(response.json()["id"])], [
+            ("Хлеб", D("250.50"), D("1.000"), self.food.pk),
+            ("Такси", D("1200.00"), D("1.000"), self.transport.pk),
+            ("Яблоки", D("900.00"), D("1.500"), self.food.pk),
         ])
+        # Названная позиция — товар каталога (2026-10-13), категория строки — из формы.
+        self.assertEqual(list(ReceiptLine.objects.filter(receipt_id=response.json()["id"]).order_by("position")
+                              .values_list("product__name", flat=True)), ["Хлеб", "Такси", "Яблоки"])
         self.assertEqual(ReceiptLine.objects.get(raw_name="Яблоки").unit_price, D("600.0000"))
-        # Позиция без категории и без общей категории — несопоставленная строка, как у чека.
+        # Позиция без категории и без общей категории — тоже товар: строка сопоставлена, лежит в его категории.
         loose = self.post(self.client, {"lines": [{"name": "Что-то", "amount": "10"}]})
         self.assertEqual(loose.status_code, 201, loose.content)
-        self.assertEqual(loose.json()["unmatched_products_count"], 1)
+        self.assertEqual(loose.json()["unmatched_products_count"], 0)
 
     def test_validation_errors(self):
         cases = [
@@ -340,12 +343,19 @@ class ManualStatsTests(ManualMixin, TestCase):
         _, stores = self.spending("&group_by=store")
         self.assertEqual(stores, [("store", self.store.pk, "3.00"), ("no_store", None, "7.00")])
 
-    def test_manual_lines_are_not_price_observations(self):
-        line = ReceiptLine.objects.filter(receipt__source="manual").first()
-        line.product = self.bun
-        line.save()
+    def test_only_named_manual_lines_are_price_observations(self):
+        # Строка «<категория>» без товара наблюдением не бывает; названная покупка — с признаком manual.
         self.assertEqual(list(price_history(product=self.bun).values_list("receipt__source", flat=True)), ["photo"])
-        self.assertEqual(self.client.get(f"/api/products/{self.bun.pk}/prices/").json()["count"], 1)
+        self.post(self.client, {"total": "4", "category": self.food.pk, "currency": "EUR", "purchased_on": "2026-09-03",
+                                "item_name": "Демо-булка 1 шт"})
+        self.assertEqual(list(price_history(product=self.bun).values_list("receipt__source", flat=True)),
+                         ["photo", "manual"])
+        points = self.client.get(f"/api/products/{self.bun.pk}/prices/").json()["results"]
+        self.assertEqual([(point["paid_unit_price"], point["manual"], point["store"] is None) for point in points],
+                         [("3.0000", False, False), ("4.0000", True, True)])
+        # Категория строки осталась из формы: траты по категориям не изменились из-за товара.
+        _, items = self.spending()
+        self.assertEqual(items, [("category", self.food.pk, "12.00"), ("category", self.transport.pk, "2.00")])
 
 
 @tag("integration")

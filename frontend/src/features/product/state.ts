@@ -63,7 +63,7 @@ export function hasFilters(query: HistoryQuery): boolean {
 }
 
 export function filterOptions(product: ProductDetail) {
-  return { countries: [...new Set(product.prices.map((price) => price.country))].sort(),
+  return { countries: [...new Set(product.prices.flatMap((price) => price.country ? [price.country] : []))].sort(),
     currencies: [...new Set(product.prices.map((price) => price.currency))].sort() }
 }
 
@@ -99,7 +99,13 @@ export function mergeStores(initial: Store[], additional: Store[]): Store[] {
   return [...stores.values()]
 }
 
-export function storeLabel(store: Pick<StoreBrief, 'id'> & Partial<Store>): string {
+/** «Без места» — a manual spend without a place (`store` null). */
+export const NO_PLACE = 'Без места'
+/** «вручную» — the price was typed by a person in a manual spend: the history, the chart and the catalogue mark it. */
+export const MANUAL_MARK = 'вручную'
+
+export function storeLabel(store: (Pick<StoreBrief, 'id'> & Partial<Store>) | null): string {
+  if (store === null) return NO_PLACE
   const address = store.address?.trim()
   // Keep the point identity first, including when a native select clips a long label.
   return [`ID ${store.id}`, store.name?.trim() || 'Не указано', address, store.city?.trim(), store.country,

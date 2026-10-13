@@ -8,7 +8,7 @@ from catalog.models import Product
 from config.exceptions import ObjectNotFound, RangeTooLarge
 from merges.visibility import visible
 from receipts.decimal_math import change_percent, decimal_average, price_context
-from receipts.prices import price_history
+from receipts.prices import is_manual, price_history
 from stores.models import Store
 
 from .. import common
@@ -75,7 +75,8 @@ def _point(line, base_unit):
     """Точка истории цен; ``line.own`` — аннотация ``own_annotation``.
 
     У чужого наблюдения нет полей, по которым находится чек: точного момента, количества,
-    скидки, id чека и позиции. Цена, день и магазин общие.
+    скидки, id чека и позиции. Цена, день и магазин общие. ``manual`` — цена траты, внесённой
+    вручную (у неё ``store`` бывает ``null`` — «Без места»).
     """
     own = line.own
     return {
@@ -94,6 +95,7 @@ def _point(line, base_unit):
         "receipt_id": line.receipt_id if own else None,
         "position": line.position if own else None,
         "own": own,
+        "manual": is_manual(line),
     }
 
 
@@ -235,7 +237,7 @@ class ProductPriceSummaryView(ReadOnlyAPIView):
             if group_by == "country":
                 head = {"country": owner[0]}
             elif group_by == "store":
-                head = {"store": common.store_object(stores[owner[0]])}
+                head = {"store": common.store_object(stores[owner[0]]) if owner[0] is not None else None}
             else:
                 head = {}
             groups.append({**head, "currency": currency, "unit": unit, **_group(rows, interval, value_field)})

@@ -93,7 +93,13 @@ describe('past spends under «Скажите словами» (no model)', () =>
   it('fills the form as a repeat with today', () => {
     expect(draftFromSuggestion(claude, chips, '2026-10-13')).toEqual({
       amount: '225', currency: 'USD', category: 15, date: '2026-10-13', place: 'CLAUDE.AI SUBSCRIPTION', note: 'Claude Max', lines: [],
+      item: '',
     })
+    // A repeat carries «Что купили»; the row names it after the place.
+    const named = { ...claude, item_name: 'Подписка Claude Max 20x' }
+    expect(draftFromSuggestion(named, chips, '2026-10-13').item).toBe('Подписка Claude Max 20x')
+    expect(suggestionMeta(named, '2026-10-13')).toBe('Подписка Claude Max 20x · 12.09')
+    expect(suggestionTitle({ ...named, store_name: null, note: '' })).toBe('Подписка Claude Max 20x')
     const itemized = draftFromSuggestion(groceries, chips, '2026-10-13')
     expect(itemized.amount).toBe('')
     expect(itemized.lines.map(({ name, amount, category }) => [name, amount, category])).toEqual([['Молоко', '450', 1], ['Хлеб', '230.50', null]])

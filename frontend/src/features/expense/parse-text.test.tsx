@@ -66,8 +66,10 @@ describe('«Трата словами»: what the hint says', () => {
 describe('«Трата словами»: the form after a parse', () => {
   it('replaces every field by the draft', () => {
     expect(draftFromParse(draft, chips)).toEqual({
-      amount: '4500', currency: 'KZT', category: 3, date: '2026-10-11', place: '', note: 'до аэропорта', lines: [],
+      amount: '4500', currency: 'KZT', category: 3, date: '2026-10-11', place: '', note: 'до аэропорта', lines: [], item: '',
     })
+    // «подписка claude max 225$» fills «Что купили».
+    expect(draftFromParse({ ...draft, item_name: 'Подписка Claude Max' }, chips).item).toBe('Подписка Claude Max')
     expect(draftFromParse({ ...draft, total: '1299.9', store_name: 'Магнум' }, chips)).toMatchObject({ amount: '1299.90', place: 'Магнум' })
     expect(draftFromParse({ ...draft, total: null }, chips).amount).toBe('')
   })

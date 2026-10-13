@@ -352,6 +352,8 @@ def _restore(group, members, target_id):
     for line in ReceiptLine.objects.filter(product_id=target_id).exclude(pk__in=journaled).select_related(
         "receipt__store",
     ).order_by("pk"):
+        if line.receipt.store is None:  # трата вручную без места: написаний нет, строка остаётся у оставляемого
+            continue
         entries = owners.get((line.receipt.store.merchant_id, name_key(line.raw_name)), ())
         products = {
             product_ref for code, product_ref in entries

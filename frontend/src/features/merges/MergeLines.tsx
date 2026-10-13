@@ -42,7 +42,7 @@ export default function MergeLines({ group, lines, onPage }: { group: MergeGroup
           <th scope="row">{line.name}</th>
           <td className="ck-merge-text">{origin(line)}</td>
           <td><time dateTime={line.purchased_on}>{formatPurchasedOn(line.purchased_on)}</time></td>
-          <td className="ck-merge-text">{line.store.name.trim() || 'Не указано'}<span className="ck-merge-subtext">{[line.store.city.trim(), line.store.country].filter(Boolean).join(' · ')}</span></td>
+          <td className="ck-merge-text">{line.store ? <>{line.store.name.trim() || 'Не указано'}<span className="ck-merge-subtext">{[line.store.city.trim(), line.store.country].filter(Boolean).join(' · ')}</span></> : 'Без места'}</td>
           <td className="ck-merge-number">{formatQuantity(line.quantity, line.unit)}</td>
           <td className="ck-merge-number">{formatPrice(line.unit_price, line.currency)}</td>
           <td className="ck-merge-number">{formatMoney(line.amount, line.currency)}</td>

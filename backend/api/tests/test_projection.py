@@ -40,13 +40,13 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures/auth"
 PRIVATE_POINT_KEYS = ("observed_at", "quantity", "discount_amount", "receipt_id", "position")
 POINT_KEYS = {
     "observed_at", "purchased_on", "store", "currency", "quantity", "unit", "list_unit_price", "paid_unit_price",
-    "discount_amount", "normalized_price", "normalized_unit", "comparable", "receipt_id", "position", "own",
+    "discount_amount", "normalized_price", "normalized_unit", "comparable", "receipt_id", "position", "own", "manual",
 }
 PRODUCT_KEYS = {
     "id", "name", "brand", "model", "gtin", "package", "generic", "category", "last_observed_at", "prices",
 }
 LAST_PRICE_KEYS = {
-    "paid_unit_price", "normalized_price", "normalized_unit", "comparable", "purchased_on", "store_id",
+    "paid_unit_price", "normalized_price", "normalized_unit", "comparable", "purchased_on", "store_id", "manual",
 }
 EMPTY_PAGE = {"count": 0, "page": 1, "page_size": 50, "pages": 0, "results": []}
 PAGE_OUT_OF_RANGE = "page_out_of_range"

@@ -85,7 +85,7 @@ describe('panels of the backend fixtures', () => {
   it('splits one shop by unit and tells apart two points of one chain in one city by ID', () => {
     const data = fixture('unassigned')
     const [first, second] = data.series as OwnPriceSeries[]
-    second.store = { ...first.store, id: 9 }
+    second.store = { ...first.store!, id: 9 }
     const third: OwnPriceSeries = { ...first, unit: 'kg', points: [point] }
     const panels = chartPanels({ ...data, series: [first, second, third] })
     expect(panels.map((panel) => panel.key)).toEqual(['EUR:pcs', 'EUR:kg'])
@@ -98,7 +98,7 @@ describe('labels and texts', () => {
   it('labels own lines by shop and city and similar ones by product and country, with fallbacks', () => {
     const [own, similar] = fixture('milk-paid').series as [OwnPriceSeries, SimilarPriceSeries]
     expect(seriesLabel(own)).toBe('Zahlenfrisch · Musterstadt')
-    expect(seriesLabel({ ...own, store: { ...own.store, name: ' ', city: '' } })).toBe('Не указано')
+    expect(seriesLabel({ ...own, store: { ...own.store!, name: ' ', city: '' } })).toBe('Не указано')
     expect(seriesLabel(similar)).toBe('Demo Landmilch 3,5% 1L · DE')
     expect(seriesLabel({ ...similar, product: { id: 2, name: '' } })).toBe('Не указано · DE')
   })

@@ -1,8 +1,9 @@
 """История трат без чека для «Новой траты»: подсказки при вводе, частые траты, похожие траты и места для модели.
 
 Модель здесь не участвует. Трата повторяется «как в прошлый раз»: место, категория, валюта, сумма, комментарий,
-у траты с позициями — позиции. Одинаковые повторы (место, валюта, категория либо названия позиций) показываются
-один раз — последней тратой и числом таких трат ``uses``. Чеки на входе — уже видимые человеку
+«Что купили» (``item_name`` — название товара каталога, если строка с ним связана), у траты с позициями — позиции.
+Одинаковые повторы (место, валюта, категория и «Что купили» либо названия позиций) показываются один раз —
+последней тратой и числом таких трат ``uses``. Чеки на входе — уже видимые человеку
 (``accounts.access.visible_receipts_q``); число запросов не зависит от числа трат.
 """
 import re
@@ -33,24 +34,30 @@ def _spends(receipts, limit):
                 .order_by("-purchased_at", "-pk")[:limit])
     lines = {}
     for line in (ReceiptLine.objects.filter(receipt_id__in=[row.pk for row in rows]).order_by("position", "pk")
-                 .values("receipt_id", "raw_name", "amount", "category_id", "category__name")):
+                 .values("receipt_id", "raw_name", "amount", "category_id", "category__name", "product__name")):
         lines.setdefault(line["receipt_id"], []).append(line)
     spellings = merging.aliases({row.store_id for row in rows if row.store_id})
     return [_spend(row, lines.get(row.pk, []), spellings.get(row.store_id, [])) for row in rows]
 
 
 def _spend(receipt, lines, aliases):
-    # Как у клиента (draftFromReceipt): одна строка с именем своей категории — трата без позиций.
-    single = len(lines) == 1 and lines[0]["category_id"] is not None and lines[0]["raw_name"] == lines[0]["category__name"]
+    # Как у клиента (draftFromReceipt): одна строка с категорией — трата без позиций; названная покупкой
+    # (с товаром либо не по имени категории) — «Что купили», название — товара каталога, иначе строки.
+    single = len(lines) == 1 and lines[0]["category_id"] is not None
     category = {"id": lines[0]["category_id"], "name": lines[0]["category__name"]} if single else None
+    item = None
+    if single and (lines[0]["product__name"] is not None or lines[0]["raw_name"] != lines[0]["category__name"]):
+        item = lines[0]["product__name"] or lines[0]["raw_name"]
     positions = [] if single else [{"name": line["raw_name"], "amount": str(line["amount"]), "category": line["category_id"]}
                                    for line in lines]
     store = None if receipt.store is None else merging.display_name(receipt.store)
     return {
-        "receipt_id": receipt.pk, "store_name": store, "category": category, "currency": receipt.currency_id,
+        "receipt_id": receipt.pk, "store_name": store, "category": category, "item_name": item,
+        "currency": receipt.currency_id,
         "total": str(receipt.total), "note": receipt.note, "purchased_on": receipt.purchased_on.isoformat(),
         "lines": positions,
-        "key": (receipt.store_id, receipt.currency_id, category["id"] if single else tuple(p["name"] for p in positions)),
+        "key": (receipt.store_id, receipt.currency_id,
+                (category["id"], item) if single else tuple(p["name"] for p in positions)),
         "text": " ".join([store or "", *aliases, receipt.note, *(line["raw_name"] for line in lines)]),
     }
 

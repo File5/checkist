@@ -88,10 +88,14 @@ export type NormalizedPrice = {
 export type LastProductPrice = NormalizedPrice & {
   paid_unit_price: Decimal
   purchased_on: ISODate
-  store_id: number
+  /** Null — a manual spend without a place. */
+  store_id: number | null
+  /** The price was typed by a person (a named purchase of a manual spend, 2026-10-13); missing from an older server. */
+  manual?: boolean
 }
 export type ProductPrice = {
-  country: CountryCode
+  /** Null — manual spends without a place. */
+  country: CountryCode | null
   currency: CurrencyCode
   observations: number
   last: LastProductPrice
@@ -119,7 +123,10 @@ export type ProductDetail = Product & {
 export type PriceProduct = NamedObject & { base_unit: BaseUnit }
 type PricePointBase = NormalizedPrice & {
   purchased_on: ISODate
-  store: StoreBrief
+  /** Null — «Без места»: a manual spend without a place. */
+  store: StoreBrief | null
+  /** The price was typed by a person (a named purchase of a manual spend, 2026-10-13); missing from an older server. */
+  manual?: boolean
   currency: CurrencyCode
   unit: Unit
   list_unit_price: Decimal
@@ -188,7 +195,7 @@ export type PriceSummaryGroup = {
 }
 type PriceSummaryBody = { product: PriceProduct; interval: PriceInterval } & (
   | { group_by: 'country'; groups: (PriceSummaryGroup & { country: CountryCode })[] }
-  | { group_by: 'store'; groups: (PriceSummaryGroup & { store: Store })[] }
+  | { group_by: 'store'; groups: (PriceSummaryGroup & { store: Store | null })[] }
   | { group_by: 'none'; groups: PriceSummaryGroup[] }
 )
 export type PriceSummary = PriceSummaryBody & (
